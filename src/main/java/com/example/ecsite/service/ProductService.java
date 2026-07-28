@@ -25,4 +25,27 @@ public class ProductService {
                 .orElseThrow(() ->
                         new IllegalArgumentException("商品が存在しません。"));
     }
+
+    public Product save(Product product) {
+        return productRepository.save(product);
+    }
+
+    public Product create(Product product) {
+        return productRepository.save(product);
+    }
+
+    public Product update(Long id, Product formProduct) {
+        Product existingProduct = findById(id);
+
+        existingProduct.setName(formProduct.getName());
+        existingProduct.setPrice(formProduct.getPrice());
+        existingProduct.setStock(formProduct.getStock());
+        existingProduct.setDescription(formProduct.getDescription());
+
+        return productRepository.save(existingProduct);
+    }
+
+    public void delete(Long id) {
+        productRepository.deleteById(id);
+    }
 }

@@ -1,6 +1,10 @@
 package com.example.ecsite.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -11,23 +15,40 @@ public class Product {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank(message = "商品名は必須です")
     @Column(nullable = false, length = 100)
     private String name;
 
+    @NotNull(message = "価格は必須です")
+    @Min(value = 0, message = "価格は0以上で入力してください")
     @Column(nullable = false)
     private Integer price;
 
+    @NotNull(message = "在庫は必須です")
+    @Min(value = 0, message = "在庫は0以上で入力してください")
     @Column(nullable = false)
     private Integer stock;
 
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "created_at")
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    public void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 
     public Product() {
     }

@@ -8,6 +8,18 @@
 
 <h1>商品一覧</h1>
 
+<p
+    th:if="${message}"
+    th:text="${message}"
+    style="color:green">
+</p>
+
+<p>
+    <a th:href="@{/products/new}">
+        新規商品登録
+    </a>
+</p>
+
 <p>
     件数：
     <span th:text="${products.size()}"></span>
@@ -19,6 +31,7 @@
         <th>商品名</th>
         <th>価格</th>
         <th>在庫</th>
+        <th>操作</th>
     </tr>
 
     <tr th:each="product : ${products}">
@@ -30,6 +43,23 @@
         </td>
         <td th:text="${product.price}"></td>
         <td th:text="${product.stock}"></td>
+
+        <td>
+            <a th:href="@{/products/{id}/edit(id=${product.id})}">
+                編集
+            </a>
+            <form
+                th:action="@{/products/{id}/delete(id=${product.id})}"
+                method="post"
+                style="display:inline">
+
+                <button
+                    type="submit"
+                    onclick="return confirm('本当に削除しますか？')">
+                    削除
+                </button>
+            </form>
+        </td>
     </tr>
 </table>
 
