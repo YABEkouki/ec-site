@@ -9,7 +9,6 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.validation.BindingResult;
@@ -55,7 +54,7 @@ public class ProductController {
 
     @PostMapping("/products")
     public String create(
-            @Valid @ModelAttribute Product product,
+            @Valid @ModelAttribute("product") Product product,
             BindingResult bindingResult,
             RedirectAttributes redirectAttributes) {
 
@@ -86,7 +85,7 @@ public class ProductController {
     @PostMapping("/products/{id}/update")
     public String update(
             @PathVariable Long id,
-            @Valid @ModelAttribute Product product,
+            @Valid @ModelAttribute("product") Product product,
             BindingResult bindingResult,
             RedirectAttributes redirectAttributes) {
 
