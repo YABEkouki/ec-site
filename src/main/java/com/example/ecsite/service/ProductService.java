@@ -58,12 +58,12 @@ public class ProductService {
     @Transactional(readOnly = true)
     public Page<Product> search(String keyword, int page, int size, String sort) {
 
-    Sort sortCondition = createSort(sort);
+        Sort sortCondition = createSort(sort);
 
-    Pageable pageable = PageRequest.of(
-            page,
-            size,
-            sortCondition);
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                sortCondition);
 
         if (keyword == null || keyword.isBlank()) {
             return productRepository.findAll(pageable);

@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.data.domain.Page;
-
+ 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.form.ProductForm;
@@ -135,5 +135,5 @@ public class ProductController {
 
         return "redirect:/products";
     }
-
 }
+
