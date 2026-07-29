@@ -4,6 +4,10 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.repository.ProductRepository;
@@ -49,5 +53,21 @@ public class ProductService {
     public void delete(Long id) {
         Product product = findById(id);
         productRepository.delete(product);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Product> search(String keyword, int page, int size) {
+
+    Pageable pageable = PageRequest.of(
+            page,
+            size,
+            Sort.by("id").ascending());
+
+        if (keyword == null || keyword.isBlank()) {
+            return productRepository.findAll(pageable);
+        }
+
+        return productRepository
+                .findByNameContainingIgnoreCase(keyword.trim(), pageable);
     }
 }

@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.data.domain.Page;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.service.ProductService;
@@ -28,11 +30,18 @@ public class ProductController {
     }
 
     @GetMapping("/products")
-    public String list(Model model) {
+    public String list(
+        @RequestParam(name = "keyword", required = false) String keyword,
+        @RequestParam(name = "page", defaultValue = "0") int page,
+        Model model) {
 
-        List<Product> products = productService.findAll();
+        int size = 10; // Number of products per page   
 
-        model.addAttribute("products", products);
+        Page<Product> productPage = productService.search(keyword, page, size);
+
+        model.addAttribute("products", productPage.getContent());
+        model.addAttribute("productPage", productPage);
+        model.addAttribute("keyword", keyword);
 
         return "products/list";
     }

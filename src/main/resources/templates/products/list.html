@@ -6,62 +6,112 @@
 </head>
 <body>
 
-<h1>商品一覧</h1>
+    <form th:action="@{/products}" method="get">
 
-<p
-    th:if="${message}"
-    th:text="${message}"
-    style="color:green">
-</p>
+        <label for="keyword">商品名</label>
 
-<p>
-    <a th:href="@{/products/new}">
-        新規商品登録
+        <input type="text"
+            id="keyword"
+            name="keyword"
+            th:value="${keyword}"
+            placeholder="商品名を入力">
+
+        <button type="submit">検索</button>
+
+        <a th:href="@{/products}">
+            クリア
+        </a>
+
+    </form>
+
+    <h1>商品一覧</h1>
+
+    <p
+        th:if="${message}"
+        th:text="${message}"
+        style="color:green">
+    </p>
+
+    <p>
+        <a th:href="@{/products/new}">
+            新規商品登録
+        </a>
+    </p>
+
+    <p th:if="${#lists.isEmpty(products)}">
+        該当する商品はありません。
+    </p>
+
+    <p>
+        件数：
+        <span th:text="${products.size()}"></span>
+    </p>
+
+    <table th:unless="${#lists.isEmpty(products)}">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>商品名</th>
+                <th>価格</th>
+                <th>在庫</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="product : ${products}">
+                <td th:text="${product.id}"></td>
+                <td>
+                    <a th:href="@{/products/{id}(id=${product.id})}"
+                    th:text="${product.name}">
+                    </a>
+                </td>
+                <td th:text="${product.price}"></td>
+                <td th:text="${product.stock}"></td>
+
+                <td>
+                    <a th:href="@{/products/{id}/edit(id=${product.id})}">
+                        編集
+                    </a>
+                    <form
+                        th:action="@{/products/{id}/delete(id=${product.id})}"
+                        method="post"
+                        style="display:inline">
+
+                        <button
+                            type="submit"
+                            onclick="return confirm('本当に削除しますか？')">
+                            削除
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div th:if="${productPage.totalPages > 0}">
+
+    <a th:if="${productPage.hasPrevious()}"
+       th:href="@{/products(
+            keyword=${keyword},
+            page=${productPage.number - 1}
+       )}">
+        前へ
     </a>
-</p>
 
-<p>
-    件数：
-    <span th:text="${products.size()}"></span>
-</p>
+    <span>
+        <span th:text="${productPage.number + 1}"></span>
+        /
+        <span th:text="${productPage.totalPages}"></span>
+    </span>
 
-<table border="1">
-    <tr>
-        <th>ID</th>
-        <th>商品名</th>
-        <th>価格</th>
-        <th>在庫</th>
-        <th>操作</th>
-    </tr>
+    <a th:if="${productPage.hasNext()}"
+       th:href="@{/products(
+            keyword=${keyword},
+            page=${productPage.number + 1}
+       )}">
+        次へ
+    </a>
 
-    <tr th:each="product : ${products}">
-        <td th:text="${product.id}"></td>
-        <td>
-            <a th:href="@{/products/{id}(id=${product.id})}"
-               th:text="${product.name}">
-            </a>
-        </td>
-        <td th:text="${product.price}"></td>
-        <td th:text="${product.stock}"></td>
-
-        <td>
-            <a th:href="@{/products/{id}/edit(id=${product.id})}">
-                編集
-            </a>
-            <form
-                th:action="@{/products/{id}/delete(id=${product.id})}"
-                method="post"
-                style="display:inline">
-
-                <button
-                    type="submit"
-                    onclick="return confirm('本当に削除しますか？')">
-                    削除
-                </button>
-            </form>
-        </td>
-    </tr>
-</table>
-
+</div>
 </body>
 </html>
