@@ -56,12 +56,14 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Product> search(String keyword, int page, int size) {
+    public Page<Product> search(String keyword, int page, int size, String sort) {
+
+    Sort sortCondition = createSort(sort);
 
     Pageable pageable = PageRequest.of(
             page,
             size,
-            Sort.by("id").ascending());
+            sortCondition);
 
         if (keyword == null || keyword.isBlank()) {
             return productRepository.findAll(pageable);
@@ -69,5 +71,16 @@ public class ProductService {
 
         return productRepository
                 .findByNameContainingIgnoreCase(keyword.trim(), pageable);
+    }
+
+    private Sort createSort(String sort) {
+
+        return switch (sort) {
+            case "nameAsc" -> Sort.by("name").ascending();
+            case "priceAsc" -> Sort.by("price").ascending();
+            case "priceDesc" -> Sort.by("price").descending();
+            case "newest" -> Sort.by("id").descending();
+            default -> Sort.by("id").descending(); // Default sort order
+        };
     }
 }

@@ -33,15 +33,17 @@ public class ProductController {
     public String list(
         @RequestParam(name = "keyword", required = false) String keyword,
         @RequestParam(name = "page", defaultValue = "0") int page,
+        @RequestParam(name = "sort", defaultValue = "newest") String sort,
         Model model) {
 
         int size = 10; // Number of products per page   
 
-        Page<Product> productPage = productService.search(keyword, page, size);
+        Page<Product> productPage = productService.search(keyword, page, size, sort);
 
         model.addAttribute("products", productPage.getContent());
         model.addAttribute("productPage", productPage);
         model.addAttribute("keyword", keyword);
+        model.addAttribute("sort", sort);
 
         return "products/list";
     }

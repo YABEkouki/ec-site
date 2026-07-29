@@ -1,20 +1,39 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
     <title>商品一覧</title>
 </head>
+
 <body>
 
     <form th:action="@{/products}" method="get">
 
         <label for="keyword">商品名</label>
 
-        <input type="text"
-            id="keyword"
-            name="keyword"
-            th:value="${keyword}"
-            placeholder="商品名を入力">
+        <input type="text" id="keyword" name="keyword" th:value="${keyword}" placeholder="商品名を入力">
+        <label for="sort">並び順</label>
+
+        <select id="sort" name="sort">
+
+            <option value="newest" th:selected="${sort == 'newest'}">
+                新着順
+            </option>
+
+            <option value="nameAsc" th:selected="${sort == 'nameAsc'}">
+                商品名順
+            </option>
+
+            <option value="priceAsc" th:selected="${sort == 'priceAsc'}">
+                価格の安い順
+            </option>
+
+            <option value="priceDesc" th:selected="${sort == 'priceDesc'}">
+                価格の高い順
+            </option>
+
+        </select>
 
         <button type="submit">検索</button>
 
@@ -26,10 +45,7 @@
 
     <h1>商品一覧</h1>
 
-    <p
-        th:if="${message}"
-        th:text="${message}"
-        style="color:green">
+    <p th:if="${message}" th:text="${message}" style="color:green">
     </p>
 
     <p>
@@ -61,8 +77,7 @@
             <tr th:each="product : ${products}">
                 <td th:text="${product.id}"></td>
                 <td>
-                    <a th:href="@{/products/{id}(id=${product.id})}"
-                    th:text="${product.name}">
+                    <a th:href="@{/products/{id}(id=${product.id})}" th:text="${product.name}">
                     </a>
                 </td>
                 <td th:text="${product.price}"></td>
@@ -72,14 +87,9 @@
                     <a th:href="@{/products/{id}/edit(id=${product.id})}">
                         編集
                     </a>
-                    <form
-                        th:action="@{/products/{id}/delete(id=${product.id})}"
-                        method="post"
-                        style="display:inline">
+                    <form th:action="@{/products/{id}/delete(id=${product.id})}" method="post" style="display:inline">
 
-                        <button
-                            type="submit"
-                            onclick="return confirm('本当に削除しますか？')">
+                        <button type="submit" onclick="return confirm('本当に削除しますか？')">
                             削除
                         </button>
                     </form>
@@ -90,28 +100,47 @@
 
     <div th:if="${productPage.totalPages > 0}">
 
-    <a th:if="${productPage.hasPrevious()}"
-       th:href="@{/products(
+
+        <div th:if="${productPage.totalPages > 0}">
+
+            <a th:if="${productPage.hasPrevious()}" th:href="@{/products(
             keyword=${keyword},
+            sort=${sort},
             page=${productPage.number - 1}
        )}">
-        前へ
-    </a>
+                前へ
+            </a>
 
-    <span>
-        <span th:text="${productPage.number + 1}"></span>
-        /
-        <span th:text="${productPage.totalPages}"></span>
-    </span>
+            <span th:each="pageNumber :
+                  ${#numbers.sequence(
+                      0,
+                      productPage.totalPages - 1)}">
 
-    <a th:if="${productPage.hasNext()}"
-       th:href="@{/products(
+                <span th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}">
+                </span>
+
+                <a th:unless="${pageNumber == productPage.number}" th:href="@{/products(
+                keyword=${keyword},
+                sort=${sort},
+                page=${pageNumber}
+           )}" th:text="${pageNumber + 1}">
+                </a>
+
+            </span>
+
+            <a th:if="${productPage.hasNext()}" th:href="@{/products(
             keyword=${keyword},
+            sort=${sort},
             page=${productPage.number + 1}
        )}">
-        次へ
-    </a>
+                次へ
+            </a>
 
-</div>
+        </div>
+
+
+
+    </div>
 </body>
+
 </html>
