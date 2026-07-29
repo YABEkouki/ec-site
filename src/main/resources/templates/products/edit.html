@@ -8,60 +8,56 @@
 
 <h1>商品編集</h1>
 
-<form
-    th:action="@{/products/{id}/update(id=${product.id})}"
-    th:object="${product}"
-    method="post">
+<form th:action="@{/products/{id}/update(id=${productId})}"
+      th:object="${productForm}"
+      method="post">
 
-    <p>
-        商品ID：
-        <span th:text="*{id}"></span>
-    </p>
+    <div>
+        <label for="name">商品名</label>
+        <input type="text"
+               id="name"
+               th:field="*{name}">
 
-    <p>
-        <label>
-            商品名：
-            <input type="text" th:field="*{name}">
-        </label>
-    </p>
+        <p th:if="${#fields.hasErrors('name')}"
+           th:errors="*{name}">
+        </p>
+    </div>
 
-    <p>
-        <label>
-            価格：
-            <input type="number" th:field="*{price}">
-        </label>
-    </p>
+    <div>
+        <label for="price">価格</label>
+        <input type="number"
+               id="price"
+               th:field="*{price}">
 
-    <p>
-        <label>
-            在庫：
-            <input type="number" th:field="*{stock}">
-        </label>
-    </p>
+        <p th:if="${#fields.hasErrors('price')}"
+           th:errors="*{price}">
+        </p>
+    </div>
 
-    <p>
-        <label>
-            説明：
-            <textarea th:field="*{description}"></textarea>
-        </label>
-    </p>
+    <div>
+        <label for="stock">在庫数</label>
+        <input type="number"
+               id="stock"
+               th:field="*{stock}">
 
-    <input type="hidden" th:field="*{id}">
+        <p th:if="${#fields.hasErrors('stock')}"
+           th:errors="*{stock}">
+        </p>
+    </div>
+
+    <div>
+        <label for="description">説明</label>
+        <textarea id="description"
+                  th:field="*{description}">
+        </textarea>
+    </div>
 
     <button type="submit">更新</button>
 </form>
 
-<p>
-    <a th:href="@{/products/{id}(id=${product.id})}">
-        商品詳細へ戻る
-    </a>
-</p>
-
-<p>
-    <a th:href="@{/products}">
-        商品一覧へ戻る
-    </a>
-</p>
+<a th:href="@{/products/{id}(id=${productId})}">
+    商品詳細へ戻る
+</a>
 
 </body>
 </html>

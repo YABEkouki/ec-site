@@ -15,6 +15,8 @@ import org.springframework.validation.BindingResult;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.form.ProductForm;
+import com.example.ecsite.mapper.ProductMapper;
 
 @Controller
 public class ProductController {
@@ -47,14 +49,14 @@ public class ProductController {
 
     @GetMapping("/products/new")
     public String showCreateForm(Model model) {
-        model.addAttribute("product", new Product());
+        model.addAttribute("productForm", new ProductForm());
 
         return "products/form";
     }
 
     @PostMapping("/products")
     public String create(
-            @Valid @ModelAttribute("product") Product product,
+            @Valid @ModelAttribute("productForm") ProductForm productForm,
             BindingResult bindingResult,
             RedirectAttributes redirectAttributes) {
 
@@ -62,22 +64,26 @@ public class ProductController {
             return "products/form";
         }
 
-        productService.create(product);
+        productService.create(productForm);
 
         redirectAttributes.addFlashAttribute(
-                "message",
+                "successMessage",
                 "商品を登録しました。");
 
         return "redirect:/products";
     }
 
     @GetMapping("/products/{id}/edit")
-    public String showEditForm(
+    public String edit(
             @PathVariable Long id,
             Model model) {
 
         Product product = productService.findById(id);
-        model.addAttribute("product", product);
+
+        ProductForm productForm = ProductMapper.toForm(product);
+
+        model.addAttribute("productForm", productForm);
+        model.addAttribute("productId", id);
 
         return "products/edit";
     }
@@ -85,15 +91,18 @@ public class ProductController {
     @PostMapping("/products/{id}/update")
     public String update(
             @PathVariable Long id,
-            @Valid @ModelAttribute("product") Product product,
+            @Valid @ModelAttribute("productForm") ProductForm productForm,
             BindingResult bindingResult,
+            Model model,
             RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {
+            model.addAttribute("productId", id);
+
             return "products/edit";
         }
 
-        productService.update(id, product);
+        productService.update(id, productForm);
 
         redirectAttributes.addFlashAttribute(
                 "message",
@@ -115,4 +124,5 @@ public class ProductController {
 
         return "redirect:/products";
     }
+
 }

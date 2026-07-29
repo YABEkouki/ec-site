@@ -3,11 +3,16 @@ package com.example.ecsite.service;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.repository.ProductRepository;
+import com.example.ecsite.exception.ProductNotFoundException;
+import com.example.ecsite.form.ProductForm;
+import com.example.ecsite.mapper.ProductMapper;
 
 @Service
+@Transactional
 public class ProductService {
 
     private final ProductRepository productRepository;
@@ -23,29 +28,26 @@ public class ProductService {
     public Product findById(Long id) {
         return productRepository.findById(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("商品が存在しません。"));
+                        new ProductNotFoundException(id));
     }
 
-    public Product save(Product product) {
+    public Product create(ProductForm productform) {
+
+        Product product = ProductMapper.toEntity(productform);
+
         return productRepository.save(product);
     }
 
-    public Product create(Product product) {
-        return productRepository.save(product);
-    }
+    public Product update(Long id, ProductForm productForm) {
+        Product product = findById(id);
 
-    public Product update(Long id, Product formProduct) {
-        Product existingProduct = findById(id);
-
-        existingProduct.setName(formProduct.getName());
-        existingProduct.setPrice(formProduct.getPrice());
-        existingProduct.setStock(formProduct.getStock());
-        existingProduct.setDescription(formProduct.getDescription());
-
-        return productRepository.save(existingProduct);
+        ProductMapper.copyToEntity(productForm, product);
+     
+        return product;
     }
 
     public void delete(Long id) {
-        productRepository.deleteById(id);
+        Product product = findById(id);
+        productRepository.delete(product);
     }
 }
