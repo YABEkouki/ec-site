@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 
 <head>
     <meta charset="UTF-8">
@@ -49,7 +49,8 @@
     </p>
 
     <p>
-        <a th:href="@{/products/new}">
+        <a th:href="@{/products/new}"
+           sec:authorize="hasRole('ADMIN')">
             新規商品登録
         </a>
     </p>
@@ -83,11 +84,14 @@
                 <td th:text="${product.price}"></td>
                 <td th:text="${product.stock}"></td>
 
-                <td>
-                    <a th:href="@{/products/{id}/edit(id=${product.id})}">
+                <td sec:authorize="hasRole('ADMIN')">
+                    <a th:href="@{/products/{id}/edit(id=${product.id})}" >
                         編集
                     </a>
-                    <form th:action="@{/products/{id}/delete(id=${product.id})}" method="post" style="display:inline">
+                    <form
+                        th:action="@{/products/{id}/delete(id=${product.id})}"
+                        method="post"
+                        style="display:inline">
 
                         <button type="submit" onclick="return confirm('本当に削除しますか？')">
                             削除

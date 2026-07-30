@@ -15,7 +15,12 @@
 
 <ul>
     <li><a th:href="@{/products}">商品一覧</a></li>
-    <li><a th:href="@{/products/new}">商品登録</a></li>
+    <li sec:authorize="hasRole('ADMIN')">
+        <a
+            th:href="@{/products/new}">
+            商品登録
+        </a>
+    </li>
     <form th:action="@{/logout}" method="post">
         <button type="submit">ログアウト</button>
     </form>

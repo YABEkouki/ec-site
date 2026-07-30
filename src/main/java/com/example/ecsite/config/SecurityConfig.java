@@ -18,6 +18,11 @@ public class SecurityConfig {
                 http
                 .authorizeHttpRequests(auth -> auth
 
+                        .requestMatchers(
+                                "/login",
+                                "/signup"
+                        ).permitAll()
+
                         // 商品登録画面・登録処理
                         .requestMatchers(HttpMethod.GET, "/products/new")
                         .hasRole("ADMIN")
@@ -48,6 +53,7 @@ public class SecurityConfig {
                         .permitAll()
                 )
                 .logout(logout -> logout
+                        .logoutSuccessUrl("/login?logout")
                         .permitAll()
                 );
 
