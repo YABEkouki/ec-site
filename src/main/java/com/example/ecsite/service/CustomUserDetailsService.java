@@ -32,7 +32,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 true,
                 true,
                 true,
-                AuthorityUtils.createAuthorityList("ROLE_USER")
+                AuthorityUtils.createAuthorityList(user.getRole())
         );
     }
 }

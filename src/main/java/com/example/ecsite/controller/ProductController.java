@@ -1,7 +1,5 @@
 package com.example.ecsite.controller;
 
-import java.util.List;
-
 import jakarta.validation.Valid;
 
 import org.springframework.stereotype.Controller;
@@ -14,7 +12,9 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.data.domain.Page;
- 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.form.ProductForm;
@@ -29,14 +29,28 @@ public class ProductController {
         this.productService = productService;
     }
 
+    @GetMapping("/")
+    public String index(
+            @AuthenticationPrincipal UserDetails userDetails,
+            Model model) {
+
+        if (userDetails != null) {
+            model.addAttribute("username", userDetails.getUsername());
+        } else {
+            model.addAttribute("username", "ゲスト");
+        }
+
+        return "index";
+    }
+
     @GetMapping("/products")
     public String list(
-        @RequestParam(name = "keyword", required = false) String keyword,
-        @RequestParam(name = "page", defaultValue = "0") int page,
-        @RequestParam(name = "sort", defaultValue = "newest") String sort,
-        Model model) {
+            @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "sort", defaultValue = "newest") String sort,
+            Model model) {
 
-        int size = 10; // Number of products per page   
+        int size = 10; // Number of products per page
 
         Page<Product> productPage = productService.search(keyword, page, size, sort);
 
@@ -136,4 +150,3 @@ public class ProductController {
         return "redirect:/products";
     }
 }
-
