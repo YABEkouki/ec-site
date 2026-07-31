@@ -13,6 +13,11 @@ public class Cart {
 
     public void addItem(CartItem newItem) {
 
+        if (newItem.getQuantity() < 1) {
+            throw new IllegalArgumentException(
+                    "数量は1以上で指定してください。");
+        }
+
         for (CartItem item : items) {
             if (item.getProductId().equals(newItem.getProductId())) {
                 item.setQuantity(
@@ -35,4 +40,29 @@ public class Cart {
                 .mapToInt(CartItem::getQuantity)
                 .sum();
     }
+
+    public void updateQuantity(Long productId, int quantity) {
+
+        if (quantity < 1) {
+            throw new IllegalArgumentException(
+                    "数量は1以上で指定してください。");
+        }
+
+        for (CartItem item : items) {
+            if (item.getProductId().equals(productId)) {
+                item.setQuantity(quantity);
+                return;
+            }
+        }
+    }
+
+    public void removeItem(Long productId) {
+        items.removeIf(
+                item -> item.getProductId().equals(productId));
+    }
+
+    public void clear() {
+        items.clear();
+    }
+
 }

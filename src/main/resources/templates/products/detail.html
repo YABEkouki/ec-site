@@ -1,46 +1,65 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
     <title>商品詳細</title>
 </head>
+
 <body>
 
-<h1>商品詳細</h1>
+    <h1>商品詳細</h1>
 
-<p>
-    ID：
-    <span th:text="${product.id}"></span>
-</p>
+    <p th:if="${errorMessage}" th:text="${errorMessage}" style="color: red;">
+    </p>
 
-<p>
-    商品名：
-    <span th:text="${product.name}"></span>
-</p>
+    <p>
+        ID：
+        <span th:text="${product.id}"></span>
+    </p>
 
-<p>
-    価格：
-    <span th:text="${product.price}"></span>円
-</p>
+    <p>
+        商品名：
+        <span th:text="${product.name}"></span>
+    </p>
 
-<p>
-    在庫：
-    <span th:text="${product.stock}"></span>
-</p>
+    <p>
+        価格：
+        <span th:text="${product.price}"></span>円
+    </p>
 
-<p>
-    説明：
-    <span th:text="${product.description}"></span>
-</p>
+    <p>
+        在庫：
+        <span th:text="${product.stock}"></span>
+    </p>
 
-<p>
-    <a th:href="@{/products/{id}/edit(id=${product.id})}">
-        この商品を編集
-    </a>
-</p>
-<p>
-    <a th:href="@{/products}">商品一覧へ戻る</a>
-</p>
+    <p>
+        説明：
+        <span th:text="${product.description}"></span>
+    </p>
+
+    <form th:action="@{/cart/add}" method="post">
+        <input type="hidden" name="productId" th:value="${product.id}">
+
+        <label>
+            数量：
+            <input type="number" name="quantity" value="1" min="1">
+        </label>
+
+        <button type="submit">
+            カートに追加
+        </button>
+    </form>
+
+    <p>
+        <a th:href="@{/products/{id}/edit(id=${product.id})}">
+            この商品を編集
+        </a>
+    </p>
+    <p>
+        <a th:href="@{/products}">商品一覧へ戻る</a>
+    </p>
 
 </body>
+
 </html>

@@ -8,51 +8,80 @@
 
 <body>
 
-<h1>ショッピングカート</h1>
+    <h1>ショッピングカート</h1>
 
-<div th:if="${#lists.isEmpty(cart.items)}">
-    <p>カートに商品はありません。</p>
-</div>
-
-<table th:unless="${#lists.isEmpty(cart.items)}"
-       border="1">
-
-    <thead>
-    <tr>
-        <th>商品名</th>
-        <th>価格</th>
-        <th>数量</th>
-        <th>小計</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    <tr th:each="item : ${cart.items}">
-        <td th:text="${item.productName}"></td>
-        <td th:text="${item.price}"></td>
-        <td th:text="${item.quantity}"></td>
-        <td th:text="${item.subtotal}"></td>
-    </tr>
-    </tbody>
-
-</table>
-
-<div th:unless="${#lists.isEmpty(cart.items)}">
-    <p>
-        合計数量:
-        <span th:text="${cart.totalQuantity}"></span>
+    <p th:if="${errorMessage}" th:text="${errorMessage}" style="color: red;">
     </p>
 
-    <p>
-        合計金額:
-        <span th:text="${cart.totalAmount}"></span>
-        円
-    </p>
-</div>
+    <div th:if="${#lists.isEmpty(cart.items)}">
+        <p>カートに商品はありません。</p>
+    </div>
 
-<p>
-    <a th:href="@{/products}">商品一覧へ戻る</a>
-</p>
+    <table th:unless="${#lists.isEmpty(cart.items)}" border="1">
+
+        <thead>
+            <tr>
+                <th>商品名</th>
+                <th>価格</th>
+                <th>数量</th>
+                <th>小計</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="item : ${cart.items}">
+                <td th:text="${item.productName}"></td>
+                <td th:text="${item.price}"></td>
+
+                <td>
+                    <form th:action="@{/cart/update}" method="post">
+                        <input type="hidden" name="productId" th:value="${item.productId}">
+
+                        <input type="number" name="quantity" th:value="${item.quantity}" min="1">
+
+                        <button type="submit">更新</button>
+                    </form>
+                </td>
+
+                <td th:text="${item.subtotal}"></td>
+
+                <td>
+                    <form th:action="@{/cart/remove}" method="post">
+                        <input type="hidden" name="productId" th:value="${item.productId}">
+
+                        <button type="submit">削除</button>
+                    </form>
+                </td>
+            </tr>
+        </tbody>
+
+    </table>
+
+    <div th:unless="${#lists.isEmpty(cart.items)}">
+        <p>
+            合計数量:
+            <span th:text="${cart.totalQuantity}"></span>
+        </p>
+
+        <p>
+            合計金額:
+            <span th:text="${cart.totalAmount}"></span>
+            円
+        </p>
+    </div>
+
+    <form th:action="@{/cart/clear}" method="post" th:unless="${#lists.isEmpty(cart.items)}"
+        onsubmit="return confirm('カート内の商品をすべて削除しますか？');">
+
+        <button type="submit">
+            カートを空にする
+        </button>
+    </form>
+
+    <p>
+        <a th:href="@{/products}">商品一覧へ戻る</a>
+    </p>
 
 </body>
+
 </html>
