@@ -8,6 +8,8 @@ import java.util.List;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -28,8 +30,9 @@ public class Order {
     @Column(name = "total_amount", nullable = false)
     private int totalAmount;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private String status = "ORDERED";
+    private OrderStatus status = OrderStatus.ORDERED;
 
     @Column(name = "ordered_at", nullable = false)
     private LocalDateTime orderedAt;
@@ -43,7 +46,7 @@ public class Order {
     public Order(Long userId, int totalAmount) {
         this.userId = userId;
         this.totalAmount = totalAmount;
-        this.status = "ORDERED";
+        this.status = OrderStatus.ORDERED;
         this.orderedAt = LocalDateTime.now();
     }
 
@@ -67,11 +70,11 @@ public class Order {
         this.totalAmount = totalAmount;
     }
 
-    public String getStatus() {
+    public OrderStatus getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(OrderStatus status) {
         this.status = status;
     }
 

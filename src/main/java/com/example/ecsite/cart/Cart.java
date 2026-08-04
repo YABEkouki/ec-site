@@ -1,6 +1,7 @@
 package com.example.ecsite.cart;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class Cart {
@@ -8,7 +9,7 @@ public class Cart {
     private final List<CartItem> items = new ArrayList<>();
 
     public List<CartItem> getItems() {
-        return items;
+        return Collections.unmodifiableList(items);
     }
 
     public void addItem(CartItem newItem) {
@@ -65,4 +66,20 @@ public class Cart {
         items.clear();
     }
 
+    public void refreshPrice(
+            Long productId,
+            int newPrice) {
+
+        if (newPrice < 0) {
+            throw new IllegalArgumentException(
+                    "価格は0以上で指定してください。");
+        }
+
+        for (CartItem item : items) {
+            if (item.getProductId().equals(productId)) {
+                item.setPrice(newPrice);
+                return;
+            }
+        }
+    }
 }

@@ -2,18 +2,18 @@ package com.example.ecsite.service;
 
 import java.util.List;
 
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Product;
-import com.example.ecsite.repository.ProductRepository;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.mapper.ProductMapper;
+import com.example.ecsite.repository.ProductRepository;
 
 @Service
 @Transactional
@@ -26,13 +26,17 @@ public class ProductService {
     }
 
     public List<Product> findAll() {
-        return productRepository.findAll();
+        return productRepository.findByActiveTrue();
     }
 
     public Product findById(Long id) {
-        return productRepository.findById(id)
-                .orElseThrow(() ->
-                        new ProductNotFoundException(id));
+        return productRepository.findByIdAndActiveTrue(id)
+                .orElseThrow(() -> new ProductNotFoundException(id));
+    }
+
+    public Product findByIdForUpdate(Long id) {
+        return productRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ProductNotFoundException(id));
     }
 
     public Product create(ProductForm productform) {
@@ -46,13 +50,13 @@ public class ProductService {
         Product product = findById(id);
 
         ProductMapper.copyToEntity(productForm, product);
-     
+
         return product;
     }
 
     public void delete(Long id) {
         Product product = findById(id);
-        productRepository.delete(product);
+        product.setActive(false);
     }
 
     @Transactional(readOnly = true)
@@ -66,11 +70,11 @@ public class ProductService {
                 sortCondition);
 
         if (keyword == null || keyword.isBlank()) {
-            return productRepository.findAll(pageable);
+            return productRepository.findByActiveTrue(pageable);
         }
 
         return productRepository
-                .findByNameContainingIgnoreCase(keyword.trim(), pageable);
+                .findByNameContainingIgnoreCaseAndActiveTrue(keyword.trim(), pageable);
     }
 
     private Sort createSort(String sort) {

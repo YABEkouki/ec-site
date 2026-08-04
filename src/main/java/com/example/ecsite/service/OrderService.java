@@ -1,5 +1,6 @@
 package com.example.ecsite.service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -9,6 +10,8 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.exception.OrderValidationException;
+import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
 
 @Service
@@ -29,7 +32,7 @@ public class OrderService {
         public Order createOrder(Long userId, Cart cart) {
 
                 if (cart.getItems().isEmpty()) {
-                        throw new IllegalStateException(
+                        throw new OrderValidationException(
                                         "カートに商品がありません。");
                 }
 
@@ -38,11 +41,40 @@ public class OrderService {
 
                 for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
 
-                        Product product = productService.findById(
-                                        cartItem.getProductId());
+                        Product product;
+
+                        try {
+                                product = productService.findByIdForUpdate(
+                                                cartItem.getProductId());
+
+                        } catch (ProductNotFoundException e) {
+                                throw new OrderValidationException(
+                                                cartItem.getProductName()
+                                                                + "は現在購入できません。",
+                                                e);
+                        }
+
+                        if (product.getPrice() != cartItem.getPrice()) {
+
+                                int oldPrice = cartItem.getPrice();
+                                int newPrice = product.getPrice();
+
+                                cart.refreshPrice(
+                                                cartItem.getProductId(),
+                                                newPrice);
+
+                                throw new OrderValidationException(
+                                                product.getName()
+                                                                + "の価格が"
+                                                                + oldPrice
+                                                                + "円から"
+                                                                + newPrice
+                                                                + "円に変更されました。"
+                                                                + "カートを確認してください。");
+                        }
 
                         if (product.getStock() < cartItem.getQuantity()) {
-                                throw new IllegalStateException(
+                                throw new OrderValidationException(
                                                 product.getName()
                                                                 + "の在庫が不足しています。");
                         }
@@ -72,4 +104,62 @@ public class OrderService {
                 return orderRepository
                                 .findByUserIdOrderByOrderedAtDesc(userId);
         }
+
+        @Transactional(readOnly = true)
+        public void validateCart(Cart cart) {
+
+                if (cart.getItems().isEmpty()) {
+                        throw new OrderValidationException(
+                                        "カートに商品がありません。");
+                }
+
+                List<String> messages = new ArrayList<>();
+
+                for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
+
+                        Product product;
+
+                        try {
+                                product = productService.findById(
+                                                cartItem.getProductId());
+
+                        } catch (ProductNotFoundException e) {
+                                messages.add(
+                                                cartItem.getProductName()
+                                                                + "は現在購入できません。");
+                                continue;
+                        }
+
+                        if (product.getPrice() != cartItem.getPrice()) {
+
+                                int oldPrice = cartItem.getPrice();
+                                int newPrice = product.getPrice();
+
+                                cart.refreshPrice(
+                                                cartItem.getProductId(),
+                                                newPrice);
+
+                                messages.add(
+                                                product.getName()
+                                                                + "の価格が"
+                                                                + oldPrice
+                                                                + "円から"
+                                                                + newPrice
+                                                                + "円に変更されました。");
+                        }
+
+                        if (product.getStock() < cartItem.getQuantity()) {
+
+                                messages.add(
+                                                product.getName()
+                                                                + "の在庫が不足しています。");
+                        }
+                }
+
+                if (!messages.isEmpty()) {
+                        throw new OrderValidationException(
+                                        String.join(" ", messages));
+                }
+        }
+
 }

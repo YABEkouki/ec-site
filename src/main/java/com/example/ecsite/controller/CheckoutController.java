@@ -11,6 +11,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 
@@ -34,10 +35,13 @@ public class CheckoutController {
             @ModelAttribute("cart") Cart cart,
             RedirectAttributes redirectAttributes) {
 
-        if (cart.getItems().isEmpty()) {
+        try {
+            orderService.validateCart(cart);
+
+        } catch (OrderValidationException e) {
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "カートに商品がありません。");
+                    e.getMessage());
 
             return "redirect:/cart";
         }
@@ -64,12 +68,12 @@ public class CheckoutController {
 
             return "redirect:/checkout/complete";
 
-        } catch (IllegalStateException e) {
+        } catch (OrderValidationException e) {
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
                     e.getMessage());
 
-            return "redirect:/checkout/confirm";
+            return "redirect:/cart";
         }
     }
 

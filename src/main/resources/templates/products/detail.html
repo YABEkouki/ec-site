@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 
 <head>
     <meta charset="UTF-8">
@@ -51,11 +51,13 @@
         </button>
     </form>
 
-    <p>
-        <a th:href="@{/products/{id}/edit(id=${product.id})}">
-            この商品を編集
-        </a>
-    </p>
+    <div sec:authorize="hasRole('ADMIN')">
+        <p>
+            <a th:href="@{/products/{id}/edit(id=${product.id})}">
+                この商品を編集
+            </a>
+        </p>
+    </div>
     <p>
         <a th:href="@{/products}">商品一覧へ戻る</a>
     </p>
