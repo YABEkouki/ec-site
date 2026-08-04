@@ -48,11 +48,21 @@
     <p th:if="${message}" th:text="${message}" style="color:green">
     </p>
 
-    <p>
-        <a th:href="@{/products/new}" sec:authorize="hasRole('ADMIN')">
-            新規商品登録
-        </a>
-    </p>
+    <div sec:authorize="hasRole('ADMIN')">
+
+        <p>
+            <a th:href="@{/products/new}">
+                新規商品登録
+            </a>
+        </p>
+
+        <p>
+            <a th:href="@{/products/inactive}">
+                販売終了商品一覧
+            </a>
+        </p>
+
+    </div>
 
     <p th:if="${#lists.isEmpty(products)}">
         該当する商品はありません。

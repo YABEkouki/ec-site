@@ -31,8 +31,12 @@ public interface ProductRepository
 
         Optional<Product> findByIdAndActiveTrue(Long id);
 
+        Optional<Product> findByIdAndActiveFalse(Long id);
+
         Page<Product> findByActiveTrue(Pageable pageable);
 
+        Page<Product> findByActiveFalse(Pageable pageable);
+        
         Page<Product> findByNameContainingIgnoreCaseAndActiveTrue(
                         String keyword,
                         Pageable pageable);

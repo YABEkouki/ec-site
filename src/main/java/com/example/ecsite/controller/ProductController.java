@@ -1,24 +1,24 @@
 package com.example.ecsite.controller;
 
-import jakarta.validation.Valid;
-
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.data.domain.Page;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Product;
-import com.example.ecsite.service.ProductService;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.mapper.ProductMapper;
+import com.example.ecsite.service.ProductService;
+
+import jakarta.validation.Valid;
 
 @Controller
 public class ProductController {
@@ -148,5 +148,40 @@ public class ProductController {
                 "商品を削除しました。");
 
         return "redirect:/products";
+    }
+
+    @GetMapping("/products/inactive")
+    public String inactiveProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Model model) {
+
+        Page<Product> productPage = productService.findInactiveProducts(
+                page,
+                size);
+
+        model.addAttribute(
+                "products",
+                productPage.getContent());
+
+        model.addAttribute(
+                "productPage",
+                productPage);
+
+        return "products/inactive";
+    }
+
+    @PostMapping("/products/{id}/restore")
+    public String restore(
+            @PathVariable Long id,
+            RedirectAttributes redirectAttributes) {
+
+        productService.restore(id);
+
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "商品を販売中に戻しました。");
+
+        return "redirect:/products/inactive";
     }
 }

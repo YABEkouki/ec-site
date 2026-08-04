@@ -39,6 +39,19 @@ public class ProductService {
                 .orElseThrow(() -> new ProductNotFoundException(id));
     }
 
+    @Transactional(readOnly = true)
+    public Page<Product> findInactiveProducts(
+            int page,
+            int size) {
+
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by("id").descending());
+
+        return productRepository.findByActiveFalse(pageable);
+    }
+
     public Product create(ProductForm productform) {
 
         Product product = ProductMapper.toEntity(productform);
@@ -86,5 +99,14 @@ public class ProductService {
             case "newest" -> Sort.by("id").descending();
             default -> Sort.by("id").descending(); // Default sort order
         };
+    }
+
+    public void restore(Long id) {
+
+        Product product = productRepository
+                .findByIdAndActiveFalse(id)
+                .orElseThrow(() -> new ProductNotFoundException(id));
+
+        product.setActive(true);
     }
 }
