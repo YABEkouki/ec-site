@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>注文履歴</title>
+</head>
+
+<body>
+
+<h1>注文履歴</h1>
+
+<p th:if="${#lists.isEmpty(orders)}">
+    注文履歴はありません。
+</p>
+
+<div th:each="order : ${orders}">
+
+    <hr>
+
+    <p>
+        注文番号：
+        <span th:text="${order.id}"></span>
+    </p>
+
+    <p>
+        注文日時：
+        <span th:text="${#temporals.format(
+                order.orderedAt,
+                'yyyy/MM/dd HH:mm')}">
+        </span>
+    </p>
+
+    <p>
+        状態：
+        <span th:text="${order.status}"></span>
+    </p>
+
+    <table border="1">
+        <thead>
+        <tr>
+            <th>商品名</th>
+            <th>価格</th>
+            <th>数量</th>
+            <th>小計</th>
+        </tr>
+        </thead>
+
+        <tbody>
+        <tr th:each="item : ${order.items}">
+            <td th:text="${item.productName}"></td>
+
+            <td>
+                <span th:text="${#numbers.formatInteger(
+                        item.price, 1, 'COMMA')}"></span>
+                円
+            </td>
+
+            <td th:text="${item.quantity}"></td>
+
+            <td>
+                <span th:text="${#numbers.formatInteger(
+                        item.subtotal, 1, 'COMMA')}"></span>
+                円
+            </td>
+        </tr>
+        </tbody>
+    </table>
+
+    <p>
+        合計金額：
+        <span th:text="${#numbers.formatInteger(
+                order.totalAmount, 1, 'COMMA')}"></span>
+        円
+    </p>
+
+</div>
+
+<p>
+    <a th:href="@{/}">トップページへ戻る</a>
+</p>
+
+</body>
+</html>

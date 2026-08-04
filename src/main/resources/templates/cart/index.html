@@ -68,6 +68,12 @@
             <span th:text="${cart.totalAmount}"></span>
             円
         </p>
+
+        <p th:unless="${#lists.isEmpty(cart.items)}">
+            <a th:href="@{/checkout/confirm}">
+                注文手続きへ
+            </a>
+        </p>
     </div>
 
     <form th:action="@{/cart/clear}" method="post" th:unless="${#lists.isEmpty(cart.items)}"

@@ -1,29 +1,34 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <title>EC Site</title>
 </head>
+
 <body>
     <h1>ECサイト</h1>
 
     <p>
-    こんにちは、
-    <span th:text="${username}">ユーザー</span>
-    さん
-</p>
+        こんにちは、
+        <span th:text="${username}">ユーザー</span>
+        さん
+    </p>
 
-<ul>
-    <li><a th:href="@{/products}">商品一覧</a></li>
-    <li sec:authorize="hasRole('ADMIN')">
-        <a
-            th:href="@{/products/new}">
-            商品登録
-        </a>
-    </li>
-    <form th:action="@{/logout}" method="post">
-        <button type="submit">ログアウト</button>
-    </form>
-</ul>
+    <ul>
+        <li><a th:href="@{/products}">商品一覧</a></li>
+        <li sec:authorize="hasRole('ADMIN')">
+            <a th:href="@{/products/new}">
+                商品登録
+            </a>
+        </li>
+        <li>
+            <a th:href="@{/orders}">注文履歴</a>
+        </li>
+        <form th:action="@{/logout}" method="post">
+            <button type="submit">ログアウト</button>
+        </form>
+    </ul>
 </body>
+
 </html>

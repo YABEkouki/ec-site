@@ -10,18 +10,16 @@ import org.springframework.web.bind.annotation.SessionAttributes;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.cart.Cart;
-import com.example.ecsite.cart.CartItem;
-import com.example.ecsite.entity.Product;
-import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.CartService;
 
 @Controller
 @SessionAttributes("cart")
 public class CartController {
 
-    private final ProductService productService;
+    private final CartService  CartService;
 
-    public CartController(ProductService productService) {
-        this.productService = productService;
+    public CartController(CartService cartService) {
+        this.CartService = cartService;
     }
 
     @ModelAttribute("cart")
@@ -46,16 +44,8 @@ public class CartController {
             @ModelAttribute("cart") Cart cart,
             RedirectAttributes redirectAttributes) {
 
-        Product product = productService.findById(productId);
-
-        CartItem item = new CartItem(
-                product.getId(),
-                product.getName(),
-                product.getPrice(),
-                quantity);
-
         try {
-            cart.addItem(item);
+            CartService.addItem(cart, productId, quantity);
         } catch (IllegalArgumentException e) {
             redirectAttributes.addFlashAttribute(
                     "errorMessage",

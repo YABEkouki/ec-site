@@ -1,12 +1,14 @@
 package com.example.ecsite.service;
 
-import com.example.ecsite.entity.User;
-import com.example.ecsite.repository.UserRepository;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+
+import com.example.ecsite.entity.User;
+import com.example.ecsite.repository.UserRepository;
+import com.example.ecsite.security.CustomUserDetails;
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
@@ -22,17 +24,13 @@ public class CustomUserDetailsService implements UserDetailsService {
             throws UsernameNotFoundException {
 
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new UsernameNotFoundException(username));
+                .orElseThrow(() -> new UsernameNotFoundException(username));
 
-        return new org.springframework.security.core.userdetails.User(
+        return new CustomUserDetails(
+                user.getId(),
                 user.getUsername(),
                 user.getPassword(),
                 user.isEnabled(),
-                true,
-                true,
-                true,
-                AuthorityUtils.createAuthorityList(user.getRole())
-        );
+                AuthorityUtils.createAuthorityList(user.getRole()));
     }
 }
