@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>配送先入力</title>
+</head>
+
+<body>
+
+<h1>配送先入力</h1>
+
+<form th:action="@{/checkout/confirm}"
+      th:object="${checkoutForm}"
+      method="post">
+
+    <p>
+        <label for="shippingName">受取人氏名</label><br>
+        <input id="shippingName"
+               type="text"
+               th:field="*{shippingName}">
+
+        <span th:if="${#fields.hasErrors('shippingName')}"
+              th:errors="*{shippingName}"
+              style="color: red;">
+        </span>
+    </p>
+
+    <p>
+        <label for="shippingPostalCode">郵便番号</label><br>
+        <input id="shippingPostalCode"
+               type="text"
+               th:field="*{shippingPostalCode}"
+               placeholder="123-4567">
+
+        <span th:if="${#fields.hasErrors('shippingPostalCode')}"
+              th:errors="*{shippingPostalCode}"
+              style="color: red;">
+        </span>
+    </p>
+
+    <p>
+        <label for="shippingPrefecture">都道府県</label><br>
+        <input id="shippingPrefecture"
+               type="text"
+               th:field="*{shippingPrefecture}">
+
+        <span th:if="${#fields.hasErrors('shippingPrefecture')}"
+              th:errors="*{shippingPrefecture}"
+              style="color: red;">
+        </span>
+    </p>
+
+    <p>
+        <label for="shippingCity">市区町村</label><br>
+        <input id="shippingCity"
+               type="text"
+               th:field="*{shippingCity}">
+
+        <span th:if="${#fields.hasErrors('shippingCity')}"
+              th:errors="*{shippingCity}"
+              style="color: red;">
+        </span>
+    </p>
+
+    <p>
+        <label for="shippingAddressLine">
+            番地・建物名
+        </label><br>
+
+        <input id="shippingAddressLine"
+               type="text"
+               th:field="*{shippingAddressLine}">
+
+        <span th:if="${#fields.hasErrors('shippingAddressLine')}"
+              th:errors="*{shippingAddressLine}"
+              style="color: red;">
+        </span>
+    </p>
+
+    <p>
+        <label for="shippingPhone">電話番号</label><br>
+        <input id="shippingPhone"
+               type="text"
+               th:field="*{shippingPhone}"
+               placeholder="090-1234-5678">
+
+        <span th:if="${#fields.hasErrors('shippingPhone')}"
+              th:errors="*{shippingPhone}"
+              style="color: red;">
+        </span>
+    </p>
+
+    <button type="submit">注文内容を確認する</button>
+
+</form>
+
+<p>
+    <a th:href="@{/cart}">カートへ戻る</a>
+</p>
+
+</body>
+</html>

@@ -27,7 +27,7 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.GET, "/products/new")
                                                 .hasRole("ADMIN")
 
-                                                .requestMatchers(HttpMethod.GET, "/products")
+                                                .requestMatchers(HttpMethod.POST, "/products")
                                                 .hasRole("ADMIN")
 
                                                 // 販売終了商品一覧

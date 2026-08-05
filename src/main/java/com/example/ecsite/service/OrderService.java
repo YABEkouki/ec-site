@@ -12,6 +12,7 @@ import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
+import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
 
 @Service
@@ -29,7 +30,7 @@ public class OrderService {
         }
 
         @Transactional
-        public Order createOrder(Long userId, Cart cart) {
+        public Order createOrder(Long userId, Cart cart, CheckoutForm checkoutForm) {
 
                 if (cart.getItems().isEmpty()) {
                         throw new OrderValidationException(
@@ -37,6 +38,15 @@ public class OrderService {
                 }
 
                 Order order = new Order(userId, 0);
+
+                order.setShippingAddress(
+                                checkoutForm.getShippingName().trim(),
+                                checkoutForm.getShippingPostalCode().trim(),
+                                checkoutForm.getShippingPrefecture().trim(),
+                                checkoutForm.getShippingCity().trim(),
+                                checkoutForm.getShippingAddressLine().trim(),
+                                checkoutForm.getShippingPhone().trim());
+
                 int totalAmount = 0;
 
                 for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {

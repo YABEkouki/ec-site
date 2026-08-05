@@ -37,6 +37,24 @@ public class Order {
     @Column(name = "ordered_at", nullable = false)
     private LocalDateTime orderedAt;
 
+    @Column(name = "shipping_name", length = 100)
+    private String shippingName;
+
+    @Column(name = "shipping_postal_code", length = 8)
+    private String shippingPostalCode;
+
+    @Column(name = "shipping_prefecture", length = 20)
+    private String shippingPrefecture;
+
+    @Column(name = "shipping_city", length = 100)
+    private String shippingCity;
+
+    @Column(name = "shipping_address_line", length = 200)
+    private String shippingAddressLine;
+
+    @Column(name = "shipping_phone", length = 20)
+    private String shippingPhone;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
 
@@ -93,5 +111,45 @@ public class Order {
 
     public List<OrderItem> getItems() {
         return Collections.unmodifiableList(items);
+    }
+
+    public void setShippingAddress(
+            String shippingName,
+            String shippingPostalCode,
+            String shippingPrefecture,
+            String shippingCity,
+            String shippingAddressLine,
+            String shippingPhone) {
+
+        this.shippingName = shippingName;
+        this.shippingPostalCode = shippingPostalCode;
+        this.shippingPrefecture = shippingPrefecture;
+        this.shippingCity = shippingCity;
+        this.shippingAddressLine = shippingAddressLine;
+        this.shippingPhone = shippingPhone;
+    }
+
+    public String getShippingName() {
+        return shippingName;
+    }
+
+    public String getShippingPostalCode() {
+        return shippingPostalCode;
+    }
+
+    public String getShippingPrefecture() {
+        return shippingPrefecture;
+    }
+
+    public String getShippingCity() {
+        return shippingCity;
+    }
+
+    public String getShippingAddressLine() {
+        return shippingAddressLine;
+    }
+
+    public String getShippingPhone() {
+        return shippingPhone;
     }
 }

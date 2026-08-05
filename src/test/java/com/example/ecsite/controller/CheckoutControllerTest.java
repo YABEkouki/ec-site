@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 
@@ -20,102 +22,129 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.OrderValidationException;
+import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 
 @ExtendWith(MockitoExtension.class)
 class CheckoutControllerTest {
 
-    @Mock
-    private OrderService orderService;
+        @Mock
+        private OrderService orderService;
 
-    private CheckoutController controller;
-    private CustomUserDetails loginUser;
+        private CheckoutController controller;
+        private CustomUserDetails loginUser;
 
-    @BeforeEach
-    void setUp() {
+        @BeforeEach
+        void setUp() {
 
-        controller = new CheckoutController(orderService);
+                controller = new CheckoutController(orderService);
 
-        loginUser = new CustomUserDetails(
-                10L,
-                "user1",
-                "password",
-                true,
-                List.of());
-    }
+                loginUser = new CustomUserDetails(
+                                10L,
+                                "user1",
+                                "password",
+                                true,
+                                List.of());
+        }
 
-    @Test
-    void placeOrderClearsCartAfterSuccess() {
+        @Test
+        void placeOrderClearsCartAfterSuccess() {
 
-        Cart cart = createCart();
-        Order order = new Order(10L, 1000);
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+                Order order = new Order(10L, 1000);
 
-        when(orderService.createOrder(10L, cart))
-                .thenReturn(order);
+                when(orderService.createOrder(10L, cart, checkoutForm)) 
+                                .thenReturn(order);
 
-        RedirectAttributes redirectAttributes =
-                new RedirectAttributesModelMap();
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
 
-        String view = controller.placeOrder(
-                cart,
-                loginUser,
-                redirectAttributes);
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        assertEquals(
-                "redirect:/checkout/complete",
-                view);
+                String view = controller.placeOrder(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes);
 
-        assertTrue(cart.getItems().isEmpty());
+                assertEquals(
+                                "redirect:/checkout/complete",
+                                view);
 
-        assertTrue(
-                redirectAttributes
-                        .getFlashAttributes()
-                        .containsKey("orderId"));
+                assertTrue(cart.getItems().isEmpty());
 
-        verify(orderService).createOrder(10L, cart);
-    }
+                assertTrue(
+                                redirectAttributes
+                                                .getFlashAttributes()
+                                                .containsKey("orderId"));
 
-    @Test
-    void placeOrderKeepsCartAfterValidationError() {
+                verify(orderService).createOrder(10L, cart, checkoutForm);
+        }
 
-        Cart cart = createCart();
+        @Test
+        void placeOrderKeepsCartAfterValidationError() {
 
-        doThrow(new OrderValidationException(
-                "在庫が不足しています。"))
-                .when(orderService)
-                .createOrder(10L, cart);
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
 
-        RedirectAttributes redirectAttributes =
-                new RedirectAttributesModelMap();
+                doThrow(new OrderValidationException(
+                                "在庫が不足しています。"))
+                                .when(orderService)
+                                .createOrder(10L, cart, checkoutForm);
 
-        String view = controller.placeOrder(
-                cart,
-                loginUser,
-                redirectAttributes);
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
 
-        assertEquals("redirect:/cart", view);
-        assertEquals(1, cart.getItems().size());
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        assertEquals(
-                "在庫が不足しています。",
-                redirectAttributes
-                        .getFlashAttributes()
-                        .get("errorMessage"));
+                String view = controller.placeOrder(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes);
 
-        verify(orderService).createOrder(10L, cart);
-    }
+                assertEquals("redirect:/cart", view);
+                assertEquals(1, cart.getItems().size());
 
-    private Cart createCart() {
+                assertEquals(
+                                "在庫が不足しています。",
+                                redirectAttributes
+                                                .getFlashAttributes()
+                                                .get("errorMessage"));
 
-        Cart cart = new Cart();
+                verify(orderService).createOrder(10L, cart, checkoutForm);
+        }
 
-        cart.addItem(new CartItem(
-                1L,
-                "テスト商品",
-                1000,
-                1));
+        private Cart createCart() {
 
-        return cart;
-    }
+                Cart cart = new Cart();
+
+                cart.addItem(new CartItem(
+                                1L,
+                                "テスト商品",
+                                1000,
+                                1));
+
+                return cart;
+        }
+
+        private CheckoutForm createCheckoutForm() {
+
+                CheckoutForm form = new CheckoutForm();
+
+                form.setShippingName("山田 太郎");
+                form.setShippingPostalCode("123-4567");
+                form.setShippingPrefecture("東京都");
+                form.setShippingCity("千代田区");
+                form.setShippingAddressLine("1-2-3");
+                form.setShippingPhone("090-1234-5678");
+
+                return form;
+        }
 }

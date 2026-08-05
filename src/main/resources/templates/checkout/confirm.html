@@ -8,51 +8,87 @@
 
 <body>
 
-<h1>注文確認</h1>
+    <h1>注文確認</h1>
 
-<table border="1">
-    <thead>
-    <tr>
-        <th>商品名</th>
-        <th>価格</th>
-        <th>数量</th>
-        <th>小計</th>
-    </tr>
-    </thead>
+    <table border="1">
 
-    <tbody>
-    <tr th:each="item : ${cart.items}">
-        <td th:text="${item.productName}"></td>
-        <td th:text="${item.price}"></td>
-        <td th:text="${item.quantity}"></td>
-        <td th:text="${item.subtotal}"></td>
-    </tr>
-    </tbody>
-</table>
+        <h2>配送先</h2>
 
-<p>
-    合計数量：
-    <span th:text="${cart.totalQuantity}"></span>
-</p>
+        <table border="1">
+            <tbody>
+                <tr>
+                    <th>受取人氏名</th>
+                    <td th:text="${checkoutForm.shippingName}"></td>
+                </tr>
 
-<p>
-    合計金額：
-    <span th:text="${cart.totalAmount}"></span>
-    円
-</p>
+                <tr>
+                    <th>郵便番号</th>
+                    <td th:text="${checkoutForm.shippingPostalCode}"></td>
+                </tr>
 
-<p th:if="${errorMessage}"
-   th:text="${errorMessage}"
-   style="color: red;">
-</p>
+                <tr>
+                    <th>住所</th>
+                    <td>
+                        <span th:text="${checkoutForm.shippingPrefecture}">
+                        </span>
 
-<form th:action="@{/checkout/order}" method="post">
-    <button type="submit">注文を確定する</button>
-</form>
+                        <span th:text="${checkoutForm.shippingCity}">
+                        </span>
 
-<p>
-    <a th:href="@{/cart}">カートへ戻る</a>
-</p>
+                        <span th:text="${checkoutForm.shippingAddressLine}">
+                        </span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <th>電話番号</th>
+                    <td th:text="${checkoutForm.shippingPhone}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>注文商品</h2>
+        <thead>
+            <tr>
+                <th>商品名</th>
+                <th>価格</th>
+                <th>数量</th>
+                <th>小計</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="item : ${cart.items}">
+                <td th:text="${item.productName}"></td>
+                <td th:text="${item.price}"></td>
+                <td th:text="${item.quantity}"></td>
+                <td th:text="${item.subtotal}"></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>
+        合計数量：
+        <span th:text="${cart.totalQuantity}"></span>
+    </p>
+
+    <p>
+        合計金額：
+        <span th:text="${cart.totalAmount}"></span>
+        円
+    </p>
+
+    <p th:if="${errorMessage}" th:text="${errorMessage}" style="color: red;">
+    </p>
+
+    <form th:action="@{/checkout/order}" method="post">
+        <button type="submit">注文を確定する</button>
+    </form>
+
+    <a th:href="@{/checkout}">
+        配送先入力へ戻る
+    </a>
 
 </body>
+
 </html>
