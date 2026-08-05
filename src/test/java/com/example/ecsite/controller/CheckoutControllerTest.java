@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -55,7 +56,7 @@ class CheckoutControllerTest {
                 CheckoutForm checkoutForm = createCheckoutForm();
                 Order order = new Order(10L, 1000);
 
-                when(orderService.createOrder(10L, cart, checkoutForm)) 
+                when(orderService.createOrder(10L, cart, checkoutForm))
                                 .thenReturn(order);
 
                 BindingResult bindingResult = new BeanPropertyBindingResult(
@@ -119,6 +120,36 @@ class CheckoutControllerTest {
                                                 .get("errorMessage"));
 
                 verify(orderService).createOrder(10L, cart, checkoutForm);
+        }
+
+        @Test
+        void placeOrderReturnsInputWhenCheckoutFormHasErrors() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                bindingResult.rejectValue(
+                                "shippingPostalCode",
+                                "invalid",
+                                "郵便番号の形式が正しくありません。");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.placeOrder(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes);
+
+                assertEquals("checkout/input", view);
+                assertEquals(1, cart.getItems().size());
+
+                verifyNoInteractions(orderService);
         }
 
         private Cart createCart() {
