@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>管理者メニュー</title>
+</head>
+
+<body>
+
+<h1>管理者メニュー</h1>
+
+<ul>
+    <li>
+        <a th:href="@{/admin/products}">
+            商品一覧
+        </a>
+    </li>
+
+    <li>
+        <a th:href="@{/admin/products/new}">
+            商品登録
+        </a>
+    </li>
+
+    <li>
+        <a th:href="@{/admin/products/inactive}">
+            販売終了商品一覧
+        </a>
+    </li>
+
+    <li>
+        <a th:href="@{/admin/orders}">
+            注文管理
+        </a>
+    </li>
+</ul>
+
+<p>
+    <a th:href="@{/}">
+        ECサイトトップへ戻る
+    </a>
+</p>
+
+<form th:action="@{/logout}" method="post">
+    <button type="submit">ログアウト</button>
+</form>
+
+</body>
+</html>

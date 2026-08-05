@@ -4,6 +4,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
@@ -19,8 +20,7 @@ public class OrderController {
 
     @GetMapping("/orders")
     public String list(
-            @AuthenticationPrincipal
-            CustomUserDetails loginUser,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             Model model) {
 
         model.addAttribute(
@@ -29,5 +29,20 @@ public class OrderController {
                         loginUser.getId()));
 
         return "orders/list";
+    }
+
+    @GetMapping("/orders/{id}")
+    public String detail(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model) {
+
+        model.addAttribute(
+                "order",
+                orderService.findOrderByIdAndUserId(
+                        id,
+                        loginUser.getId()));
+
+        return "orders/detail";
     }
 }

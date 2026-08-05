@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>商品管理</title>
+</head>
+
+<body>
+
+<h1>商品管理</h1>
+
+<p th:if="${successMessage}"
+   th:text="${successMessage}"
+   style="color: green;">
+</p>
+
+<p th:if="${message}"
+   th:text="${message}"
+   style="color: green;">
+</p>
+
+<p>
+    <a th:href="@{/admin/products/new}">
+        新規商品登録
+    </a>
+</p>
+
+<p>
+    <a th:href="@{/admin/products/inactive}">
+        販売終了商品一覧
+    </a>
+</p>
+
+<form th:action="@{/admin/products}"
+      method="get">
+
+    <label for="keyword">商品名</label>
+
+    <input id="keyword"
+           type="text"
+           name="keyword"
+           th:value="${keyword}">
+
+    <label for="sort">並び順</label>
+
+    <select id="sort" name="sort">
+        <option value="newest"
+                th:selected="${sort == 'newest'}">
+            新しい順
+        </option>
+
+        <option value="nameAsc"
+                th:selected="${sort == 'nameAsc'}">
+            商品名順
+        </option>
+
+        <option value="priceAsc"
+                th:selected="${sort == 'priceAsc'}">
+            価格が安い順
+        </option>
+
+        <option value="priceDesc"
+                th:selected="${sort == 'priceDesc'}">
+            価格が高い順
+        </option>
+    </select>
+
+    <button type="submit">検索</button>
+
+</form>
+
+<p>
+    件数：
+    <span th:text="${productPage.totalElements}"></span>
+</p>
+
+<p th:if="${#lists.isEmpty(products)}">
+    該当する商品はありません。
+</p>
+
+<table th:unless="${#lists.isEmpty(products)}"
+       border="1">
+
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>商品名</th>
+        <th>価格</th>
+        <th>在庫</th>
+        <th>更新日時</th>
+        <th>操作</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    <tr th:each="product : ${products}">
+
+        <td th:text="${product.id}"></td>
+
+        <td th:text="${product.name}"></td>
+
+        <td>
+            <span th:text="${#numbers.formatInteger(
+                    product.price,
+                    1,
+                    'COMMA')}">
+            </span>
+            円
+        </td>
+
+        <td th:text="${product.stock}"></td>
+
+        <td th:text="${#temporals.format(
+                product.updatedAt,
+                'yyyy/MM/dd HH:mm')}">
+        </td>
+
+        <td>
+            <a th:href="@{/products/{id}(
+                    id=${product.id})}">
+                表示確認
+            </a>
+
+            <a th:href="@{/admin/products/{id}/edit(
+                    id=${product.id})}">
+                編集
+            </a>
+
+            <form th:action="@{/admin/products/{id}/delete(
+                    id=${product.id})}"
+                  method="post"
+                  style="display: inline;">
+
+                <button type="submit">
+                    販売終了
+                </button>
+            </form>
+        </td>
+
+    </tr>
+    </tbody>
+</table>
+
+<nav th:if="${productPage.totalPages > 1}">
+
+    <a th:if="${productPage.hasPrevious()}"
+       th:href="@{/admin/products(
+           keyword=${keyword},
+           sort=${sort},
+           page=${productPage.number - 1})}">
+        前へ
+    </a>
+
+    <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                productPage.totalPages - 1)}">
+
+        <strong th:if="${pageNumber == productPage.number}"
+                th:text="${pageNumber + 1}">
+        </strong>
+
+        <a th:unless="${pageNumber == productPage.number}"
+           th:href="@{/admin/products(
+               keyword=${keyword},
+               sort=${sort},
+               page=${pageNumber})}"
+           th:text="${pageNumber + 1}">
+        </a>
+
+    </span>
+
+    <a th:if="${productPage.hasNext()}"
+       th:href="@{/admin/products(
+           keyword=${keyword},
+           sort=${sort},
+           page=${productPage.number + 1})}">
+        次へ
+    </a>
+
+</nav>
+
+<p>
+    <a th:href="@{/admin}">
+        管理者メニューへ戻る
+    </a>
+</p>
+
+</body>
+</html>

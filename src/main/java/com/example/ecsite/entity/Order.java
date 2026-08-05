@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.example.ecsite.exception.InvalidOrderStatusException;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -152,4 +154,38 @@ public class Order {
     public String getShippingPhone() {
         return shippingPhone;
     }
+
+    public void markAsPaid() {
+
+        if (status != OrderStatus.ORDERED) {
+            throw new InvalidOrderStatusException(
+                    "注文受付中の注文だけを"
+                            + "支払済みに変更できます。");
+        }
+
+        status = OrderStatus.PAID;
+    }
+
+    public void markAsShipped() {
+
+        if (status != OrderStatus.PAID) {
+            throw new InvalidOrderStatusException(
+                    "支払済みの注文だけを"
+                            + "発送済みに変更できます。");
+        }
+
+        status = OrderStatus.SHIPPED;
+    }
+
+    public void cancel() {
+
+        if (status != OrderStatus.ORDERED) {
+            throw new InvalidOrderStatusException(
+                    "注文受付中の注文だけを"
+                            + "キャンセルできます。");
+        }
+
+        status = OrderStatus.CANCELLED;
+    }
+
 }

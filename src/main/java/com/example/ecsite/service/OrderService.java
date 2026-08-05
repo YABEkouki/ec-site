@@ -3,6 +3,10 @@ package com.example.ecsite.service;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -10,6 +14,7 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.CheckoutForm;
@@ -172,4 +177,62 @@ public class OrderService {
                 }
         }
 
+        @Transactional(readOnly = true)
+        public Page<Order> findAllOrders(
+                        int page,
+                        int size) {
+
+                Pageable pageable = PageRequest.of(
+                                page,
+                                size,
+                                Sort.by("orderedAt").descending());
+
+                return orderRepository.findAll(pageable);
+        }
+
+        @Transactional(readOnly = true)
+        public Order findOrderWithItems(Long id) {
+
+                return orderRepository.findByIdWithItems(id)
+                                .orElseThrow(() -> new OrderNotFoundException(id));
+        }
+
+        @Transactional
+        public void markAsPaid(Long id) {
+
+                Order order = findOrderForUpdate(id);
+                order.markAsPaid();
+        }
+
+        @Transactional
+        public void markAsShipped(Long id) {
+
+                Order order = findOrderForUpdate(id);
+                order.markAsShipped();
+        }
+
+        @Transactional
+        public void cancelOrder(Long id) {
+
+                Order order = findOrderForUpdate(id);
+                order.cancel();
+        }
+
+        private Order findOrderForUpdate(Long id) {
+
+                return orderRepository.findById(id)
+                                .orElseThrow(() -> new OrderNotFoundException(id));
+        }
+
+        @Transactional(readOnly = true)
+        public Order findOrderByIdAndUserId(
+                        Long orderId,
+                        Long userId) {
+
+                return orderRepository
+                                .findByIdAndUserIdWithItems(
+                                                orderId,
+                                                userId)
+                                .orElseThrow(() -> new OrderNotFoundException(orderId));
+        }
 }

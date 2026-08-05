@@ -8,7 +8,7 @@
 
 <h1>商品編集</h1>
 
-<form th:action="@{/products/{id}/update(id=${productId})}"
+<form th:action="@{/admin/products/{id}/update(id=${productId})}"
       th:object="${productForm}"
       method="post">
 

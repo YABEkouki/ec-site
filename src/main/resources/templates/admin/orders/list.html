@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>注文管理</title>
+</head>
+
+<body>
+
+    <h1>注文管理</h1>
+
+    <p th:if="${#lists.isEmpty(orders)}">
+        注文はありません。
+    </p>
+
+    <table th:unless="${#lists.isEmpty(orders)}" border="1">
+
+        <thead>
+            <tr>
+                <th>注文番号</th>
+                <th>ユーザーID</th>
+                <th>注文日時</th>
+                <th>受取人</th>
+                <th>合計金額</th>
+                <th>状態</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="order : ${orders}">
+
+                <td th:text="${order.id}"></td>
+
+                <td th:text="${order.userId}"></td>
+
+                <td th:text="${#temporals.format(
+                order.orderedAt,
+                'yyyy/MM/dd HH:mm')}">
+                </td>
+
+                <td>
+                    <span th:if="${order.shippingName != null}" th:text="${order.shippingName}">
+                    </span>
+
+                    <span th:unless="${order.shippingName != null}">
+                        未登録
+                    </span>
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                    order.totalAmount,
+                    1,
+                    'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td>
+                    <span th:text="${order.status.displayName}"></span>
+                </td>
+                
+                <td>
+                    <a th:href="@{/admin/orders/{id}(
+                    id=${order.id})}">
+                        詳細
+                    </a>
+                </td>
+
+            </tr>
+        </tbody>
+    </table>
+
+    <nav th:if="${orderPage.totalPages > 1}">
+
+        <a th:if="${orderPage.hasPrevious()}" th:href="@{/admin/orders(
+           page=${orderPage.number - 1},
+           size=${orderPage.size})}">
+            前へ
+        </a>
+
+        <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                orderPage.totalPages - 1)}">
+
+            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}">
+            </strong>
+
+            <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders(
+               page=${pageNumber},
+               size=${orderPage.size})}" th:text="${pageNumber + 1}">
+            </a>
+
+        </span>
+
+        <a th:if="${orderPage.hasNext()}" th:href="@{/admin/orders(
+           page=${orderPage.number + 1},
+           size=${orderPage.size})}">
+            次へ
+        </a>
+
+    </nav>
+
+    <p>
+        <a th:href="@{/products}">
+            商品一覧へ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>

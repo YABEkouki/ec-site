@@ -51,13 +51,13 @@
     <div sec:authorize="hasRole('ADMIN')">
 
         <p>
-            <a th:href="@{/products/new}">
+            <a th:href="@{/admin/products/new}">
                 新規商品登録
             </a>
         </p>
 
         <p>
-            <a th:href="@{/products/inactive}">
+            <a th:href="@{/admin/products/inactive}">
                 販売終了商品一覧
             </a>
         </p>
@@ -94,10 +94,10 @@
                 <td th:text="${product.stock}"></td>
 
                 <td sec:authorize="hasRole('ADMIN')">
-                    <a th:href="@{/products/{id}/edit(id=${product.id})}">
+                    <a th:href="@{/admin/products/{id}/edit(id=${product.id})}">
                         編集
                     </a>
-                    <form th:action="@{/products/{id}/delete(id=${product.id})}" method="post" style="display:inline">
+                    <form th:action="@{/admin/products/{id}/delete(id=${product.id})}" method="post" style="display:inline">
 
                         <button type="submit" onclick="return confirm('本当に削除しますか？')">
                             削除

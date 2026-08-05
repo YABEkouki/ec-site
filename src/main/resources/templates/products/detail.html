@@ -53,11 +53,20 @@
 
     <div sec:authorize="hasRole('ADMIN')">
         <p>
-            <a th:href="@{/products/{id}/edit(id=${product.id})}">
-                この商品を編集
+            <a th:href="@{/admin/products/{id}/edit(id=${product.id})}">
+                編集
             </a>
         </p>
+
+        <form th:action="@{/admin/products/{id}/delete(
+        id=${product.id})}" method="post">
+
+            <button type="submit">
+                販売終了
+            </button>
+        </form>
     </div>
+
     <p>
         <a th:href="@{/products}">商品一覧へ戻る</a>
     </p>

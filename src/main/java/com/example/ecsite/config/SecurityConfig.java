@@ -20,32 +20,12 @@ public class SecurityConfig {
 
                                                 .requestMatchers(
                                                                 "/login",
-                                                                "/signup")
+                                                                "/signup",
+                                                                "/403")
                                                 .permitAll()
 
-                                                // 商品登録画面・登録処理
-                                                .requestMatchers(HttpMethod.GET, "/products/new")
-                                                .hasRole("ADMIN")
-
-                                                .requestMatchers(HttpMethod.POST, "/products")
-                                                .hasRole("ADMIN")
-
-                                                // 販売終了商品一覧
-                                                .requestMatchers(HttpMethod.GET, "/products/inactive")
-                                                .hasRole("ADMIN")
-
-                                                // 商品復元
-                                                .requestMatchers(HttpMethod.POST, "/products/*/restore")
-                                                .hasRole("ADMIN")
-
-                                                // 商品編集画面・更新処理・削除処理
-                                                .requestMatchers(HttpMethod.GET, "/products/*/edit")
-                                                .hasRole("ADMIN")
-
-                                                .requestMatchers(HttpMethod.POST, "/products/*/update")
-                                                .hasRole("ADMIN")
-
-                                                .requestMatchers(HttpMethod.POST, "/products/*/delete")
+                                                // 管理画面
+                                                .requestMatchers("/admin", "/admin/**")
                                                 .hasRole("ADMIN")
 
                                                 // 商品一覧・詳細
@@ -58,6 +38,8 @@ public class SecurityConfig {
                                                 .loginPage("/login")
                                                 .defaultSuccessUrl("/", true)
                                                 .permitAll())
+                                .exceptionHandling(exception -> exception
+                                                .accessDeniedPage("/403"))
                                 .logout(logout -> logout
                                                 .logoutSuccessUrl("/login?logout")
                                                 .permitAll());

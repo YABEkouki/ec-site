@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>注文詳細</title>
+</head>
+
+<body>
+
+<h1>注文詳細</h1>
+
+<h2>注文情報</h2>
+
+<table border="1">
+    <tbody>
+    <tr>
+        <th>注文番号</th>
+        <td th:text="${order.id}"></td>
+    </tr>
+
+    <tr>
+        <th>注文日時</th>
+        <td th:text="${#temporals.format(
+                order.orderedAt,
+                'yyyy/MM/dd HH:mm')}">
+        </td>
+    </tr>
+
+    <tr>
+        <th>注文状態</th>
+        <td th:text="${order.status.displayName}"></td>
+    </tr>
+
+    <tr>
+        <th>合計金額</th>
+        <td>
+            <span th:text="${#numbers.formatInteger(
+                    order.totalAmount,
+                    1,
+                    'COMMA')}">
+            </span>
+            円
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+<h2>配送先</h2>
+
+<div th:if="${order.shippingName != null}">
+
+    <p>
+        受取人：
+        <span th:text="${order.shippingName}"></span>
+    </p>
+
+    <p>
+        〒
+        <span th:text="${order.shippingPostalCode}"></span>
+    </p>
+
+    <p>
+        <span th:text="${order.shippingPrefecture}"></span>
+        <span th:text="${order.shippingCity}"></span>
+        <span th:text="${order.shippingAddressLine}"></span>
+    </p>
+
+    <p>
+        電話番号：
+        <span th:text="${order.shippingPhone}"></span>
+    </p>
+
+</div>
+
+<p th:unless="${order.shippingName != null}">
+    配送先情報は登録されていません。
+</p>
+
+<h2>注文明細</h2>
+
+<table border="1">
+    <thead>
+    <tr>
+        <th>商品名</th>
+        <th>購入時価格</th>
+        <th>数量</th>
+        <th>小計</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    <tr th:each="item : ${order.items}">
+
+        <td th:text="${item.productName}"></td>
+
+        <td>
+            <span th:text="${#numbers.formatInteger(
+                    item.price,
+                    1,
+                    'COMMA')}">
+            </span>
+            円
+        </td>
+
+        <td th:text="${item.quantity}"></td>
+
+        <td>
+            <span th:text="${#numbers.formatInteger(
+                    item.subtotal,
+                    1,
+                    'COMMA')}">
+            </span>
+            円
+        </td>
+
+    </tr>
+    </tbody>
+</table>
+
+<p>
+    <a th:href="@{/orders}">
+        注文履歴へ戻る
+    </a>
+</p>
+
+<p>
+    <a th:href="@{/}">
+        トップページへ戻る
+    </a>
+</p>
+
+</body>
+</html>

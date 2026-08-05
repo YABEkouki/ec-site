@@ -5,20 +5,12 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Product;
-import com.example.ecsite.form.ProductForm;
-import com.example.ecsite.mapper.ProductMapper;
 import com.example.ecsite.service.ProductService;
-
-import jakarta.validation.Valid;
 
 @Controller
 public class ProductController {
@@ -72,116 +64,4 @@ public class ProductController {
         return "products/detail";
     }
 
-    @GetMapping("/products/new")
-    public String showCreateForm(Model model) {
-        model.addAttribute("productForm", new ProductForm());
-
-        return "products/form";
-    }
-
-    @PostMapping("/products")
-    public String create(
-            @Valid @ModelAttribute("productForm") ProductForm productForm,
-            BindingResult bindingResult,
-            RedirectAttributes redirectAttributes) {
-
-        if (bindingResult.hasErrors()) {
-            return "products/form";
-        }
-
-        productService.create(productForm);
-
-        redirectAttributes.addFlashAttribute(
-                "successMessage",
-                "商品を登録しました。");
-
-        return "redirect:/products";
-    }
-
-    @GetMapping("/products/{id}/edit")
-    public String edit(
-            @PathVariable Long id,
-            Model model) {
-
-        Product product = productService.findById(id);
-
-        ProductForm productForm = ProductMapper.toForm(product);
-
-        model.addAttribute("productForm", productForm);
-        model.addAttribute("productId", id);
-
-        return "products/edit";
-    }
-
-    @PostMapping("/products/{id}/update")
-    public String update(
-            @PathVariable Long id,
-            @Valid @ModelAttribute("productForm") ProductForm productForm,
-            BindingResult bindingResult,
-            Model model,
-            RedirectAttributes redirectAttributes) {
-
-        if (bindingResult.hasErrors()) {
-            model.addAttribute("productId", id);
-
-            return "products/edit";
-        }
-
-        productService.update(id, productForm);
-
-        redirectAttributes.addFlashAttribute(
-                "message",
-                "商品を更新しました。");
-
-        return "redirect:/products";
-    }
-
-    @PostMapping("/products/{id}/delete")
-    public String delete(
-            @PathVariable Long id,
-            RedirectAttributes redirectAttributes) {
-
-        productService.delete(id);
-
-        redirectAttributes.addFlashAttribute(
-                "message",
-                "商品を削除しました。");
-
-        return "redirect:/products";
-    }
-
-    @GetMapping("/products/inactive")
-    public String inactiveProducts(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            Model model) {
-
-        Page<Product> productPage = productService.findInactiveProducts(
-                page,
-                size);
-
-        model.addAttribute(
-                "products",
-                productPage.getContent());
-
-        model.addAttribute(
-                "productPage",
-                productPage);
-
-        return "products/inactive";
-    }
-
-    @PostMapping("/products/{id}/restore")
-    public String restore(
-            @PathVariable Long id,
-            RedirectAttributes redirectAttributes) {
-
-        productService.restore(id);
-
-        redirectAttributes.addFlashAttribute(
-                "successMessage",
-                "商品を販売中に戻しました。");
-
-        return "redirect:/products/inactive";
-    }
 }
