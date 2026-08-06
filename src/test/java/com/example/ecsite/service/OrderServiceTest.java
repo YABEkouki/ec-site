@@ -1,17 +1,24 @@
 package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
@@ -207,4 +214,47 @@ class OrderServiceTest {
 
                 return form;
         }
+
+        @Test
+    void findOrdersByUserIdUsesSpecifiedPagingConditions() {
+
+        Long userId = 10L;
+        int page = 1;
+        int size = 2;
+
+        Pageable expectedPageable =
+                PageRequest.of(page, size);
+
+        Page<Order> expectedPage =
+                new PageImpl<>(
+                        List.of(
+                                new Order(userId, 1000),
+                                new Order(userId, 2000)),
+                        expectedPageable,
+                        5);
+
+        when(orderRepository
+                .findByUserIdOrderByOrderedAtDesc(
+                        userId,
+                        expectedPageable))
+                .thenReturn(expectedPage);
+
+        OrderService orderService =
+                new OrderService(
+                        orderRepository,
+                        productService);
+
+        Page<Order> actualPage =
+                orderService.findOrdersByUserId(
+                        userId,
+                        page,
+                        size);
+
+        assertSame(expectedPage, actualPage);
+
+        verify(orderRepository)
+                .findByUserIdOrderByOrderedAtDesc(
+                        userId,
+                        expectedPageable);
+    }
 }

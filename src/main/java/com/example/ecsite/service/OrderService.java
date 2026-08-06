@@ -115,9 +115,11 @@ public class OrderService {
         }
 
         @Transactional(readOnly = true)
-        public List<Order> findOrdersByUserId(Long userId) {
-                return orderRepository
-                                .findByUserIdOrderByOrderedAtDesc(userId);
+        public Page<Order> findOrdersByUserId(Long userId, int page, int size) {
+
+                Pageable pageable = PageRequest.of(page, size);
+
+                return orderRepository.findByUserIdOrderByOrderedAtDesc(userId, pageable);
         }
 
         @Transactional(readOnly = true)

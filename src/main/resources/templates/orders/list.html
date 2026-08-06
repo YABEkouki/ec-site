@@ -8,62 +8,97 @@
 
 <body>
 
-<h1>注文履歴</h1>
+    <h1>注文履歴</h1>
 
-<p th:if="${#lists.isEmpty(orders)}">
-    注文履歴はありません。
-</p>
+    <p th:if="${#lists.isEmpty(orders)}">
+        注文履歴はありません。
+    </p>
 
-<table th:unless="${#lists.isEmpty(orders)}"
-       border="1">
+    <table th:unless="${#lists.isEmpty(orders)}" border="1">
 
-    <thead>
-    <tr>
-        <th>注文番号</th>
-        <th>注文日時</th>
-        <th>合計金額</th>
-        <th>状態</th>
-        <th>操作</th>
-    </tr>
-    </thead>
+        <thead>
+            <tr>
+                <th>注文番号</th>
+                <th>注文日時</th>
+                <th>合計金額</th>
+                <th>状態</th>
+                <th>操作</th>
+            </tr>
+        </thead>
 
-    <tbody>
-    <tr th:each="order : ${orders}">
+        <tbody>
+            <tr th:each="order : ${orders}">
 
-        <td th:text="${order.id}"></td>
+                <td th:text="${order.id}"></td>
 
-        <td th:text="${#temporals.format(
+                <td th:text="${#temporals.format(
                 order.orderedAt,
                 'yyyy/MM/dd HH:mm')}">
-        </td>
+                </td>
 
-        <td>
-            <span th:text="${#numbers.formatInteger(
+                <td>
+                    <span th:text="${#numbers.formatInteger(
                     order.totalAmount,
                     1,
                     'COMMA')}">
-            </span>
-            円
-        </td>
+                    </span>
+                    円
+                </td>
 
-        <td th:text="${order.status.displayName}"></td>
+                <td th:text="${order.status.displayName}"></td>
 
-        <td>
-            <a th:href="@{/orders/{id}(
+                <td>
+                    <a th:href="@{/orders/{id}(
                     id=${order.id})}">
-                詳細
+                        詳細
+                    </a>
+                </td>
+
+            </tr>
+        </tbody>
+    </table>
+
+    <nav th:if="${orderPage.totalPages > 1}">
+
+        <a th:if="${orderPage.hasPrevious()}" th:href="@{/orders(
+           page=${orderPage.number - 1},
+           size=${orderPage.size})}">
+            前へ
+        </a>
+
+        <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                orderPage.totalPages - 1)}">
+
+            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}">
+            </strong>
+
+            <a th:unless="${pageNumber == orderPage.number}" th:href="@{/orders(
+               page=${pageNumber},
+               size=${orderPage.size})}" th:text="${pageNumber + 1}">
             </a>
-        </td>
 
-    </tr>
-    </tbody>
-</table>
+        </span>
 
-<p>
-    <a th:href="@{/}">
-        トップページへ戻る
-    </a>
-</p>
+        <a th:if="${orderPage.hasNext()}" th:href="@{/orders(
+           page=${orderPage.number + 1},
+           size=${orderPage.size})}">
+            次へ
+        </a>
+
+    </nav>
+    <p>
+        注文件数：
+        <span th:text="${orderPage.totalElements}"></span>
+    </p>
+
+    <p>
+        <a th:href="@{/}">
+            トップページへ戻る
+        </a>
+    </p>
 
 </body>
+
 </html>

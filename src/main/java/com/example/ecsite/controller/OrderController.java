@@ -1,11 +1,14 @@
 package com.example.ecsite.controller;
 
+import org.springframework.data.domain.Page;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 
+import com.example.ecsite.entity.Order;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 
@@ -21,12 +24,20 @@ public class OrderController {
     @GetMapping("/orders")
     public String list(
             @AuthenticationPrincipal CustomUserDetails loginUser,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
             Model model) {
 
+        Page<Order> orderPage = orderService.findOrdersByUserId(
+                loginUser.getId(),
+                page,
+                size);
+
         model.addAttribute(
-                "orders",
-                orderService.findOrdersByUserId(
-                        loginUser.getId()));
+                "orders", orderPage.getContent());
+
+        model.addAttribute(
+                "orderPage", orderPage);
 
         return "orders/list";
     }
