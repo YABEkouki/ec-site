@@ -342,4 +342,264 @@ class OrderServiceTest {
 
                 verifyNoInteractions(productService);
         }
+
+        @Test
+        void createOrderCalculatesTotalAndReducesStock() {
+
+                Long userId = 10L;
+                Long productId = 20L;
+
+                Cart cart = mock(Cart.class);
+                CartItem cartItem = mock(CartItem.class);
+                Product product = mock(Product.class);
+                CheckoutForm checkoutForm = createValidCheckoutForm();
+
+                when(cart.getItems())
+                                .thenReturn(List.of(cartItem));
+
+                when(cartItem.getProductId())
+                                .thenReturn(productId);
+
+                when(cartItem.getPrice())
+                                .thenReturn(1000);
+
+                when(cartItem.getQuantity())
+                                .thenReturn(3);
+
+                when(productService.findByIdForUpdate(productId))
+                                .thenReturn(product);
+
+                when(product.getId())
+                                .thenReturn(productId);
+
+                when(product.getName())
+                                .thenReturn("テスト商品");
+
+                when(product.getPrice())
+                                .thenReturn(1000);
+
+                when(product.getStock())
+                                .thenReturn(10);
+
+                when(orderRepository.save(any(Order.class)))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                Order result = orderService.createOrder(
+                                userId,
+                                cart,
+                                checkoutForm);
+
+                assertEquals(3000, result.getTotalAmount());
+                assertEquals(1, result.getItems().size());
+                assertEquals(3, result.getItems().get(0).getQuantity());
+
+                verify(product).setStock(7);
+                verify(orderRepository).save(result);
+        }
+
+        @Test
+        void createOrderRejectsEmptyCart() {
+
+                Cart cart = mock(Cart.class);
+                CheckoutForm checkoutForm = mock(CheckoutForm.class);
+
+                when(cart.getItems())
+                                .thenReturn(List.of());
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                OrderValidationException exception = assertThrows(
+                                OrderValidationException.class,
+                                () -> orderService.createOrder(
+                                                10L,
+                                                cart,
+                                                checkoutForm));
+
+                assertEquals(
+                                "カートに商品がありません。",
+                                exception.getMessage());
+
+                verifyNoInteractions(productService);
+                verifyNoInteractions(orderRepository);
+        }
+
+        private CheckoutForm createValidCheckoutForm() {
+
+                CheckoutForm checkoutForm = mock(CheckoutForm.class);
+
+                when(checkoutForm.getShippingName())
+                                .thenReturn("山田 太郎");
+
+                when(checkoutForm.getShippingPostalCode())
+                                .thenReturn("100-0001");
+
+                when(checkoutForm.getShippingPrefecture())
+                                .thenReturn("東京都");
+
+                when(checkoutForm.getShippingCity())
+                                .thenReturn("千代田区");
+
+                when(checkoutForm.getShippingAddressLine())
+                                .thenReturn("千代田1-1");
+
+                when(checkoutForm.getShippingPhone())
+                                .thenReturn("090-1234-5678");
+
+                return checkoutForm;
+        }
+
+        @Test
+        void createOrderRejectsChangedProductPrice() {
+
+                Long userId = 10L;
+                Long productId = 20L;
+
+                Cart cart = mock(Cart.class);
+                CartItem cartItem = mock(CartItem.class);
+                Product product = mock(Product.class);
+
+                CheckoutForm checkoutForm = createValidCheckoutForm();
+
+                when(cart.getItems())
+                                .thenReturn(List.of(cartItem));
+
+                when(cartItem.getProductId())
+                                .thenReturn(productId);
+
+                when(cartItem.getPrice())
+                                .thenReturn(1000);
+
+                when(productService.findByIdForUpdate(productId))
+                                .thenReturn(product);
+
+                when(product.getName())
+                                .thenReturn("テスト商品");
+
+                when(product.getPrice())
+                                .thenReturn(1200);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                OrderValidationException exception = assertThrows(
+                                OrderValidationException.class,
+                                () -> orderService.createOrder(
+                                                userId,
+                                                cart,
+                                                checkoutForm));
+
+                assertEquals(
+                                "テスト商品の価格が1000円から1200円に変更されました。"
+                                                + "カートを確認してください。",
+                                exception.getMessage());
+
+                verify(cart).refreshPrice(
+                                productId,
+                                1200);
+
+                verifyNoInteractions(orderRepository);
+        }
+
+        @Test
+        void createOrderRejectsInsufficientStockSecond() {
+
+                Long userId = 10L;
+                Long productId = 20L;
+
+                Cart cart = mock(Cart.class);
+                CartItem cartItem = mock(CartItem.class);
+                Product product = mock(Product.class);
+
+                CheckoutForm checkoutForm = createValidCheckoutForm();
+
+                when(cart.getItems())
+                                .thenReturn(List.of(cartItem));
+
+                when(cartItem.getProductId())
+                                .thenReturn(productId);
+
+                when(cartItem.getPrice())
+                                .thenReturn(1000);
+
+                when(cartItem.getQuantity())
+                                .thenReturn(3);
+
+                when(productService.findByIdForUpdate(productId))
+                                .thenReturn(product);
+
+                when(product.getName())
+                                .thenReturn("テスト商品");
+
+                when(product.getPrice())
+                                .thenReturn(1000);
+
+                when(product.getStock())
+                                .thenReturn(2);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                OrderValidationException exception = assertThrows(
+                                OrderValidationException.class,
+                                () -> orderService.createOrder(
+                                                userId,
+                                                cart,
+                                                checkoutForm));
+
+                assertEquals(
+                                "テスト商品の在庫が不足しています。",
+                                exception.getMessage());
+
+                verifyNoInteractions(orderRepository);
+        }
+
+        @Test
+        void createOrderRejectsUnavailableProductSecond() {
+
+                Long userId = 10L;
+                Long productId = 20L;
+
+                Cart cart = mock(Cart.class);
+                CartItem cartItem = mock(CartItem.class);
+
+                CheckoutForm checkoutForm = createValidCheckoutForm();
+
+                when(cart.getItems())
+                                .thenReturn(List.of(cartItem));
+
+                when(cartItem.getProductId())
+                                .thenReturn(productId);
+
+                when(cartItem.getProductName())
+                                .thenReturn("販売終了商品");
+
+                when(productService.findByIdForUpdate(productId))
+                                .thenThrow(
+                                                new ProductNotFoundException(productId));
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                OrderValidationException exception = assertThrows(
+                                OrderValidationException.class,
+                                () -> orderService.createOrder(
+                                                userId,
+                                                cart,
+                                                checkoutForm));
+
+                assertEquals(
+                                "販売終了商品は現在購入できません。",
+                                exception.getMessage());
+
+                verifyNoInteractions(orderRepository);
+        }
 }
