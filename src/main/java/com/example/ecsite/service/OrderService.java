@@ -218,6 +218,16 @@ public class OrderService {
 
                 Order order = findOrderForUpdate(id);
                 order.cancel();
+
+                for (OrderItem item : order.getItems()) {
+
+                        Product product = productService.findByIdForUpdate(
+                                        item.getProductId());
+
+                        product.setStock(
+                                        product.getStock()
+                                                        + item.getQuantity());
+                }
         }
 
         private Order findOrderForUpdate(Long id) {

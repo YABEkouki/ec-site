@@ -28,10 +28,13 @@ public class OrderController {
             @RequestParam(defaultValue = "10") int size,
             Model model) {
 
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.clamp(size, 1, 100);
+
         Page<Order> orderPage = orderService.findOrdersByUserId(
                 loginUser.getId(),
-                page,
-                size);
+                safePage,
+                safeSize);
 
         model.addAttribute(
                 "orders", orderPage.getContent());

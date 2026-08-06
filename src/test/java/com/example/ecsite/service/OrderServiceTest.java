@@ -4,11 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +26,10 @@ import org.springframework.data.domain.Pageable;
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.CheckoutForm;
@@ -103,7 +109,7 @@ class OrderServiceTest {
                                 OrderValidationException.class,
                                 () -> orderService.createOrder(
                                                 10L,
-                                                cart, 
+                                                cart,
                                                 createCheckoutForm()));
 
                 assertEquals(
@@ -216,45 +222,124 @@ class OrderServiceTest {
         }
 
         @Test
-    void findOrdersByUserIdUsesSpecifiedPagingConditions() {
+        void findOrdersByUserIdUsesSpecifiedPagingConditions() {
 
-        Long userId = 10L;
-        int page = 1;
-        int size = 2;
+                Long userId = 10L;
+                int page = 1;
+                int size = 2;
 
-        Pageable expectedPageable =
-                PageRequest.of(page, size);
+                Pageable expectedPageable = PageRequest.of(page, size);
 
-        Page<Order> expectedPage =
-                new PageImpl<>(
-                        List.of(
-                                new Order(userId, 1000),
-                                new Order(userId, 2000)),
-                        expectedPageable,
-                        5);
+                Page<Order> expectedPage = new PageImpl<>(
+                                List.of(
+                                                new Order(userId, 1000),
+                                                new Order(userId, 2000)),
+                                expectedPageable,
+                                5);
 
-        when(orderRepository
-                .findByUserIdOrderByOrderedAtDesc(
-                        userId,
-                        expectedPageable))
-                .thenReturn(expectedPage);
+                when(orderRepository
+                                .findByUserIdOrderByOrderedAtDesc(
+                                                userId,
+                                                expectedPageable))
+                                .thenReturn(expectedPage);
 
-        OrderService orderService =
-                new OrderService(
-                        orderRepository,
-                        productService);
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
 
-        Page<Order> actualPage =
-                orderService.findOrdersByUserId(
-                        userId,
-                        page,
-                        size);
+                Page<Order> actualPage = orderService.findOrdersByUserId(
+                                userId,
+                                page,
+                                size);
 
-        assertSame(expectedPage, actualPage);
+                assertSame(expectedPage, actualPage);
 
-        verify(orderRepository)
-                .findByUserIdOrderByOrderedAtDesc(
-                        userId,
-                        expectedPageable);
-    }
+                verify(orderRepository)
+                                .findByUserIdOrderByOrderedAtDesc(
+                                                userId,
+                                                expectedPageable);
+        }
+
+        @Test
+        void cancelOrderRestoresProductStock() {
+
+                Long orderId = 1L;
+                Long productId = 10L;
+
+                Order order = mock(Order.class);
+                OrderItem orderItem = mock(OrderItem.class);
+                Product product = mock(Product.class);
+
+                when(orderRepository.findById(orderId))
+                                .thenReturn(Optional.of(order));
+
+                when(order.getItems())
+                                .thenReturn(List.of(orderItem));
+
+                when(orderItem.getProductId())
+                                .thenReturn(productId);
+
+                when(orderItem.getQuantity())
+                                .thenReturn(3);
+
+                when(productService.findByIdForUpdate(productId))
+                                .thenReturn(product);
+
+                when(product.getStock())
+                                .thenReturn(7);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                orderService.cancelOrder(orderId);
+
+                verify(order).cancel();
+
+                verify(productService)
+                                .findByIdForUpdate(productId);
+
+                verify(product).setStock(10);
+        }
+
+        @Test
+        void cancelOrderThrowsExceptionWhenOrderDoesNotExist() {
+
+                Long orderId = 999L;
+
+                when(orderRepository.findById(orderId))
+                                .thenReturn(Optional.empty());
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                assertThrows(
+                                OrderNotFoundException.class,
+                                () -> orderService.cancelOrder(orderId));
+
+                verifyNoInteractions(productService);
+        }
+
+        @Test
+        void paidOrderCannotBeCancelledAndStockIsNotChanged() {
+
+                Long orderId = 1L;
+
+                Order order = new Order(10L, 1000);
+                order.markAsPaid();
+
+                when(orderRepository.findById(orderId))
+                                .thenReturn(Optional.of(order));
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                assertThrows(
+                                InvalidOrderStatusException.class,
+                                () -> orderService.cancelOrder(orderId));
+
+                verifyNoInteractions(productService);
+        }
 }
