@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.service.OrderService;
 
@@ -28,6 +29,7 @@ public class AdminOrderController {
 
     @GetMapping
     public String list(
+            @RequestParam(required = false) OrderStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             Model model) {
@@ -36,6 +38,7 @@ public class AdminOrderController {
         int safeSize = Math.clamp(size, 1, 100);
 
         Page<Order> orderPage = orderService.findAllOrders(
+                status,
                 safePage,
                 safeSize);
 
@@ -46,6 +49,14 @@ public class AdminOrderController {
         model.addAttribute(
                 "orderPage",
                 orderPage);
+
+        model.addAttribute(
+                "statuses",
+                OrderStatus.values());
+
+        model.addAttribute(
+                "selectedStatus",
+                status);
 
         return "admin/orders/list";
     }

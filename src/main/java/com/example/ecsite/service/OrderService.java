@@ -6,13 +6,13 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderItem;
+import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
@@ -181,15 +181,19 @@ public class OrderService {
 
         @Transactional(readOnly = true)
         public Page<Order> findAllOrders(
+                        OrderStatus status,
                         int page,
                         int size) {
 
                 Pageable pageable = PageRequest.of(
                                 page,
-                                size,
-                                Sort.by("orderedAt").descending());
+                                size);
 
-                return orderRepository.findAll(pageable);
+                if (status == null) {
+                        return orderRepository.findAllByOrderByOrderedAtDesc(pageable);
+                }
+
+                return orderRepository.findByStatusOrderByOrderedAtDesc(status, pageable);
         }
 
         @Transactional(readOnly = true)

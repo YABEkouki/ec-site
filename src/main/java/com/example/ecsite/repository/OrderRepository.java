@@ -9,36 +9,41 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderStatus;
 
 public interface OrderRepository
-    extends JpaRepository<Order, Long> {
+        extends JpaRepository<Order, Long> {
 
-  Page<Order> findByUserIdOrderByOrderedAtDesc(
-      Long userId,
-      Pageable pageable);
+    Page<Order> findByUserIdOrderByOrderedAtDesc(
+            Long userId,
+            Pageable pageable);
 
-  Page<Order> findAllByOrderByOrderedAtDesc(
-      Pageable pageable);
+    Page<Order> findAllByOrderByOrderedAtDesc(
+            Pageable pageable);
 
-  @Query("""
-      SELECT DISTINCT o
-      FROM Order o
-      LEFT JOIN FETCH o.items
-      WHERE o.id = :id
-      """)
+    Page<Order> findByStatusOrderByOrderedAtDesc(
+            OrderStatus status,
+            Pageable pageable);
 
-  Optional<Order> findByIdWithItems(
-      @Param("id") Long id);
+    @Query("""
+            SELECT DISTINCT o
+            FROM Order o
+            LEFT JOIN FETCH o.items
+            WHERE o.id = :id
+            """)
 
-  @Query("""
-      SELECT DISTINCT o
-      FROM Order o
-      LEFT JOIN FETCH o.items
-      WHERE o.id = :id
-        AND o.userId = :userId
-      """)
-  Optional<Order> findByIdAndUserIdWithItems(
-      @Param("id") Long id,
-      @Param("userId") Long userId);
+    Optional<Order> findByIdWithItems(
+            @Param("id") Long id);
+
+    @Query("""
+            SELECT DISTINCT o
+            FROM Order o
+            LEFT JOIN FETCH o.items
+            WHERE o.id = :id
+              AND o.userId = :userId
+            """)
+    Optional<Order> findByIdAndUserIdWithItems(
+            @Param("id") Long id,
+            @Param("userId") Long userId);
 
 }

@@ -27,6 +27,7 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderItem;
+import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
@@ -602,4 +603,76 @@ class OrderServiceTest {
 
                 verifyNoInteractions(orderRepository);
         }
+
+        @Test
+        void findAllOrdersFiltersByStatus() {
+
+                OrderStatus status = OrderStatus.ORDERED;
+                int page = 1;
+                int size = 10;
+
+                Pageable pageable = PageRequest.of(page, size);
+
+                Page<Order> expectedPage = new PageImpl<>(
+                                List.of(),
+                                pageable,
+                                0);
+
+                when(orderRepository
+                                .findByStatusOrderByOrderedAtDesc(
+                                                status,
+                                                pageable))
+                                .thenReturn(expectedPage);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                Page<Order> actualPage = orderService.findAllOrders(
+                                status,
+                                page,
+                                size);
+
+                assertSame(expectedPage, actualPage);
+
+                verify(orderRepository)
+                                .findByStatusOrderByOrderedAtDesc(
+                                                status,
+                                                pageable);
+        }
+
+        @Test
+        void findAllOrdersReturnsAllOrdersWhenStatusIsNull() {
+
+                int page = 0;
+                int size = 10;
+
+                Pageable pageable = PageRequest.of(page, size);
+
+                Page<Order> expectedPage = new PageImpl<>(
+                                List.of(),
+                                pageable,
+                                0);
+
+                when(orderRepository
+                                .findAllByOrderByOrderedAtDesc(
+                                                pageable))
+                                .thenReturn(expectedPage);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                Page<Order> actualPage = orderService.findAllOrders(
+                                null,
+                                page,
+                                size);
+
+                assertSame(expectedPage, actualPage);
+
+                verify(orderRepository)
+                                .findAllByOrderByOrderedAtDesc(
+                                                pageable);
+        }
+
 }
