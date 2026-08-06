@@ -282,7 +282,7 @@ class OrderServiceTest {
                 when(orderItem.getQuantity())
                                 .thenReturn(3);
 
-                when(productService.findByIdForUpdate(productId))
+                when(productService.findByIdForUpdateIncludingInactive(productId))
                                 .thenReturn(product);
 
                 when(product.getStock())
@@ -297,7 +297,7 @@ class OrderServiceTest {
                 verify(order).cancel();
 
                 verify(productService)
-                                .findByIdForUpdate(productId);
+                                .findByIdForUpdateIncludingInactive(productId);
 
                 verify(product).setStock(10);
         }

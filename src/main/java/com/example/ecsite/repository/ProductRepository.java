@@ -27,6 +27,15 @@ public interface ProductRepository
         Optional<Product> findByIdForUpdate(
                         @Param("id") Long id);
 
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("""
+                        SELECT p
+                        FROM Product p
+                        WHERE p.id = :id
+                        """)
+        Optional<Product> findByIdForUpdateIncludingInactive(
+                        @Param("id") Long id);
+
         List<Product> findByActiveTrue();
 
         Optional<Product> findByIdAndActiveTrue(Long id);
@@ -36,7 +45,7 @@ public interface ProductRepository
         Page<Product> findByActiveTrue(Pageable pageable);
 
         Page<Product> findByActiveFalse(Pageable pageable);
-        
+
         Page<Product> findByNameContainingIgnoreCaseAndActiveTrue(
                         String keyword,
                         Pageable pageable);

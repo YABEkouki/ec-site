@@ -22,6 +22,7 @@ public class ProductService {
     private final ProductRepository productRepository;
 
     public ProductService(ProductRepository productRepository) {
+        
         this.productRepository = productRepository;
     }
 
@@ -30,12 +31,21 @@ public class ProductService {
     }
 
     public Product findById(Long id) {
+
         return productRepository.findByIdAndActiveTrue(id)
                 .orElseThrow(() -> new ProductNotFoundException(id));
     }
 
     public Product findByIdForUpdate(Long id) {
+
         return productRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ProductNotFoundException(id));
+    }
+
+    public Product findByIdForUpdateIncludingInactive(Long id) {
+
+        return productRepository
+                .findByIdForUpdateIncludingInactive(id)
                 .orElseThrow(() -> new ProductNotFoundException(id));
     }
 

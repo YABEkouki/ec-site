@@ -221,7 +221,7 @@ public class OrderService {
 
                 for (OrderItem item : order.getItems()) {
 
-                        Product product = productService.findByIdForUpdate(
+                        Product product = productService.findByIdForUpdateIncludingInactive(
                                         item.getProductId());
 
                         product.setStock(
