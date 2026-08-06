@@ -5,11 +5,14 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
+
+import jakarta.persistence.LockModeType;
 
 public interface OrderRepository
         extends JpaRepository<Order, Long> {
@@ -46,4 +49,23 @@ public interface OrderRepository
             @Param("id") Long id,
             @Param("userId") Long userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT o
+            FROM Order o
+            WHERE o.id = :id
+            """)
+    Optional<Order> findByIdForUpdate(
+            @Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT o
+            FROM Order o
+            WHERE o.id = :id
+              AND o.userId = :userId
+            """)
+    Optional<Order> findByIdAndUserIdForUpdate(
+            @Param("id") Long id,
+            @Param("userId") Long userId);
 }

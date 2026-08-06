@@ -221,12 +221,20 @@ public class OrderService {
         public void cancelOrder(Long id) {
 
                 Order order = findOrderForUpdate(id);
+
+                cancelAndRestoreStock(order);
+        }
+
+        private void cancelAndRestoreStock(Order order) {
+
+                // 不正な状態なら、在庫を変更する前に例外になる
                 order.cancel();
 
                 for (OrderItem item : order.getItems()) {
 
-                        Product product = productService.findByIdForUpdateIncludingInactive(
-                                        item.getProductId());
+                        Product product = productService
+                                        .findByIdForUpdateIncludingInactive(
+                                                        item.getProductId());
 
                         product.setStock(
                                         product.getStock()
@@ -236,7 +244,7 @@ public class OrderService {
 
         private Order findOrderForUpdate(Long id) {
 
-                return orderRepository.findById(id)
+                return orderRepository.findByIdForUpdate(id)
                                 .orElseThrow(() -> new OrderNotFoundException(id));
         }
 
@@ -250,5 +258,20 @@ public class OrderService {
                                                 orderId,
                                                 userId)
                                 .orElseThrow(() -> new OrderNotFoundException(orderId));
+        }
+
+        @Transactional
+        public void cancelOrderForUser(
+                        Long orderId,
+                        Long userId) {
+
+                Order order = orderRepository
+                                .findByIdAndUserIdForUpdate(
+                                                orderId,
+                                                userId)
+                                .orElseThrow(() -> new OrderNotFoundException(
+                                                orderId));
+
+                cancelAndRestoreStock(order);
         }
 }

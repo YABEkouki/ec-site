@@ -271,7 +271,7 @@ class OrderServiceTest {
                 OrderItem orderItem = mock(OrderItem.class);
                 Product product = mock(Product.class);
 
-                when(orderRepository.findById(orderId))
+                when(orderRepository.findByIdForUpdate(orderId))
                                 .thenReturn(Optional.of(order));
 
                 when(order.getItems())
@@ -308,7 +308,7 @@ class OrderServiceTest {
 
                 Long orderId = 999L;
 
-                when(orderRepository.findById(orderId))
+                when(orderRepository.findByIdForUpdate(orderId))
                                 .thenReturn(Optional.empty());
 
                 OrderService orderService = new OrderService(
@@ -330,7 +330,7 @@ class OrderServiceTest {
                 Order order = new Order(10L, 1000);
                 order.markAsPaid();
 
-                when(orderRepository.findById(orderId))
+                when(orderRepository.findByIdForUpdate(orderId))
                                 .thenReturn(Optional.of(order));
 
                 OrderService orderService = new OrderService(
@@ -673,6 +673,108 @@ class OrderServiceTest {
                 verify(orderRepository)
                                 .findAllByOrderByOrderedAtDesc(
                                                 pageable);
+        }
+
+        @Test
+        void cancelOrderForUserRestoresStockForOwnedOrder() {
+
+                Long orderId = 1L;
+                Long userId = 10L;
+                Long productId = 20L;
+
+                Order order = mock(Order.class);
+                OrderItem orderItem = mock(OrderItem.class);
+                Product product = mock(Product.class);
+
+                when(orderRepository
+                                .findByIdAndUserIdForUpdate(
+                                                orderId,
+                                                userId))
+                                .thenReturn(Optional.of(order));
+
+                when(order.getItems())
+                                .thenReturn(List.of(orderItem));
+
+                when(orderItem.getProductId())
+                                .thenReturn(productId);
+
+                when(orderItem.getQuantity())
+                                .thenReturn(3);
+
+                when(productService
+                                .findByIdForUpdateIncludingInactive(
+                                                productId))
+                                .thenReturn(product);
+
+                when(product.getStock())
+                                .thenReturn(7);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                orderService.cancelOrderForUser(
+                                orderId,
+                                userId);
+
+                verify(order).cancel();
+
+                verify(productService)
+                                .findByIdForUpdateIncludingInactive(
+                                                productId);
+
+                verify(product).setStock(10);
+        }
+
+        @Test
+        void cancelOrderForUserRestoresStockForOwnedOrderSecond() {
+
+                Long orderId = 1L;
+                Long userId = 10L;
+                Long productId = 20L;
+
+                Order order = mock(Order.class);
+                OrderItem orderItem = mock(OrderItem.class);
+                Product product = mock(Product.class);
+
+                when(orderRepository
+                                .findByIdAndUserIdForUpdate(
+                                                orderId,
+                                                userId))
+                                .thenReturn(Optional.of(order));
+
+                when(order.getItems())
+                                .thenReturn(List.of(orderItem));
+
+                when(orderItem.getProductId())
+                                .thenReturn(productId);
+
+                when(orderItem.getQuantity())
+                                .thenReturn(3);
+
+                when(productService
+                                .findByIdForUpdateIncludingInactive(
+                                                productId))
+                                .thenReturn(product);
+
+                when(product.getStock())
+                                .thenReturn(7);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                orderService.cancelOrderForUser(
+                                orderId,
+                                userId);
+
+                verify(order).cancel();
+
+                verify(productService)
+                                .findByIdForUpdateIncludingInactive(
+                                                productId);
+
+                verify(product).setStock(10);
         }
 
 }
