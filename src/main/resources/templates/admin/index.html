@@ -8,43 +8,106 @@
 
 <body>
 
-<h1>管理者メニュー</h1>
+    <h1>管理者メニュー</h1>
 
-<ul>
-    <li>
-        <a th:href="@{/admin/products}">
-            商品一覧
+    <section>
+
+        <h2>注文状況</h2>
+
+        <table border="1">
+            <thead>
+                <tr>
+                    <th>状態</th>
+                    <th>件数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr>
+                    <td>注文受付</td>
+                    <td th:text="${orderedCount}"></td>
+                    <td>
+                        <a th:href="@{/admin/orders(
+                        status='ORDERED')}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>支払済み</td>
+                    <td th:text="${paidCount}"></td>
+                    <td>
+                        <a th:href="@{/admin/orders(
+                        status='PAID')}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>発送済み</td>
+                    <td th:text="${shippedCount}"></td>
+                    <td>
+                        <a th:href="@{/admin/orders(
+                        status='SHIPPED')}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>キャンセル</td>
+                    <td th:text="${cancelledCount}"></td>
+                    <td>
+                        <a th:href="@{/admin/orders(
+                        status='CANCELLED')}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+    </section>
+
+    <ul>
+        <li>
+            <a th:href="@{/admin/products}">
+                商品一覧
+            </a>
+        </li>
+
+        <li>
+            <a th:href="@{/admin/products/new}">
+                商品登録
+            </a>
+        </li>
+
+        <li>
+            <a th:href="@{/admin/products/inactive}">
+                販売終了商品一覧
+            </a>
+        </li>
+
+        <li>
+            <a th:href="@{/admin/orders}">
+                注文管理
+            </a>
+        </li>
+    </ul>
+
+    <p>
+        <a th:href="@{/}">
+            ECサイトトップへ戻る
         </a>
-    </li>
+    </p>
 
-    <li>
-        <a th:href="@{/admin/products/new}">
-            商品登録
-        </a>
-    </li>
-
-    <li>
-        <a th:href="@{/admin/products/inactive}">
-            販売終了商品一覧
-        </a>
-    </li>
-
-    <li>
-        <a th:href="@{/admin/orders}">
-            注文管理
-        </a>
-    </li>
-</ul>
-
-<p>
-    <a th:href="@{/}">
-        ECサイトトップへ戻る
-    </a>
-</p>
-
-<form th:action="@{/logout}" method="post">
-    <button type="submit">ログアウト</button>
-</form>
+    <form th:action="@{/logout}" method="post">
+        <button type="submit">ログアウト</button>
+    </form>
 
 </body>
+
 </html>

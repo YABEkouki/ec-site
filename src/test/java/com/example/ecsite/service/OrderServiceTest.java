@@ -777,4 +777,24 @@ class OrderServiceTest {
                 verify(product).setStock(10);
         }
 
+        @Test
+        void countOrdersByStatusReturnsRepositoryCount() {
+
+                OrderStatus status = OrderStatus.ORDERED;
+
+                when(orderRepository.countByStatus(status))
+                                .thenReturn(5L);
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService);
+
+                long actualCount = orderService.countOrdersByStatus(status);
+
+                assertEquals(5L, actualCount);
+
+                verify(orderRepository)
+                                .countByStatus(status);
+        }
+
 }

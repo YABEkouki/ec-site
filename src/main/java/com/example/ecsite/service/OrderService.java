@@ -274,4 +274,11 @@ public class OrderService {
 
                 cancelAndRestoreStock(order);
         }
+
+        @Transactional(readOnly = true)
+        public long countOrdersByStatus(
+                        OrderStatus status) {
+
+                return orderRepository.countByStatus(status);
+        }
 }

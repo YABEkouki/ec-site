@@ -15,57 +15,59 @@ import com.example.ecsite.entity.OrderStatus;
 import jakarta.persistence.LockModeType;
 
 public interface OrderRepository
-        extends JpaRepository<Order, Long> {
+                extends JpaRepository<Order, Long> {
 
-    Page<Order> findByUserIdOrderByOrderedAtDesc(
-            Long userId,
-            Pageable pageable);
+        Page<Order> findByUserIdOrderByOrderedAtDesc(
+                        Long userId,
+                        Pageable pageable);
 
-    Page<Order> findAllByOrderByOrderedAtDesc(
-            Pageable pageable);
+        Page<Order> findAllByOrderByOrderedAtDesc(
+                        Pageable pageable);
 
-    Page<Order> findByStatusOrderByOrderedAtDesc(
-            OrderStatus status,
-            Pageable pageable);
+        Page<Order> findByStatusOrderByOrderedAtDesc(
+                        OrderStatus status,
+                        Pageable pageable);
 
-    @Query("""
-            SELECT DISTINCT o
-            FROM Order o
-            LEFT JOIN FETCH o.items
-            WHERE o.id = :id
-            """)
+        @Query("""
+                        SELECT DISTINCT o
+                        FROM Order o
+                        LEFT JOIN FETCH o.items
+                        WHERE o.id = :id
+                        """)
 
-    Optional<Order> findByIdWithItems(
-            @Param("id") Long id);
+        Optional<Order> findByIdWithItems(
+                        @Param("id") Long id);
 
-    @Query("""
-            SELECT DISTINCT o
-            FROM Order o
-            LEFT JOIN FETCH o.items
-            WHERE o.id = :id
-              AND o.userId = :userId
-            """)
-    Optional<Order> findByIdAndUserIdWithItems(
-            @Param("id") Long id,
-            @Param("userId") Long userId);
+        @Query("""
+                        SELECT DISTINCT o
+                        FROM Order o
+                        LEFT JOIN FETCH o.items
+                        WHERE o.id = :id
+                          AND o.userId = :userId
+                        """)
+        Optional<Order> findByIdAndUserIdWithItems(
+                        @Param("id") Long id,
+                        @Param("userId") Long userId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-            SELECT o
-            FROM Order o
-            WHERE o.id = :id
-            """)
-    Optional<Order> findByIdForUpdate(
-            @Param("id") Long id);
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("""
+                        SELECT o
+                        FROM Order o
+                        WHERE o.id = :id
+                        """)
+        Optional<Order> findByIdForUpdate(
+                        @Param("id") Long id);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-            SELECT o
-            FROM Order o
-            WHERE o.id = :id
-              AND o.userId = :userId
-            """)
-    Optional<Order> findByIdAndUserIdForUpdate(
-            @Param("id") Long id,
-            @Param("userId") Long userId);
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("""
+                        SELECT o
+                        FROM Order o
+                        WHERE o.id = :id
+                          AND o.userId = :userId
+                        """)
+        Optional<Order> findByIdAndUserIdForUpdate(
+                        @Param("id") Long id,
+                        @Param("userId") Long userId);
+
+        long countByStatus(OrderStatus status);
 }
