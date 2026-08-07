@@ -70,6 +70,56 @@
             </tbody>
         </table>
 
+        <section>
+
+            <h2>在庫警告</h2>
+
+            <p>
+                在庫
+                <span th:text="${lowStockThreshold}"></span>
+                個以下の公開商品を表示しています。
+            </p>
+
+            <p th:if="${#lists.isEmpty(lowStockProducts)}">
+                在庫が少ない商品はありません。
+            </p>
+
+            <table th:unless="${#lists.isEmpty(lowStockProducts)}" border="1">
+
+                <thead>
+                    <tr>
+                        <th>商品ID</th>
+                        <th>商品名</th>
+                        <th>在庫数</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr th:each="product : ${lowStockProducts}">
+
+                        <td th:text="${product.id}"></td>
+
+                        <td th:text="${product.name}"></td>
+
+                        <td th:text="${product.stock}" th:style="${product.stock == 0}
+                    ? 'color: red; font-weight: bold;'
+                    : 'color: darkorange; font-weight: bold;'">
+                        </td>
+
+                        <td>
+                            <a th:href="@{/admin/products/{id}/edit(
+                        id=${product.id})}">
+                                商品を編集
+                            </a>
+                        </td>
+
+                    </tr>
+                </tbody>
+            </table>
+
+        </section>
+
     </section>
 
     <ul>

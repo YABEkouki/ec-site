@@ -22,7 +22,7 @@ public class ProductService {
     private final ProductRepository productRepository;
 
     public ProductService(ProductRepository productRepository) {
-        
+
         this.productRepository = productRepository;
     }
 
@@ -118,5 +118,14 @@ public class ProductService {
                 .orElseThrow(() -> new ProductNotFoundException(id));
 
         product.setActive(true);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Product> findLowStockProducts(
+            int threshold) {
+
+        return productRepository
+                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
+                        threshold);
     }
 }

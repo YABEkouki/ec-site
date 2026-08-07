@@ -50,4 +50,6 @@ public interface ProductRepository
                         String keyword,
                         Pageable pageable);
 
+        List<Product> findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
+                        int stock);
 }
