@@ -72,4 +72,26 @@ class ProductServiceTest {
                 verify(product)
                                 .setActive(false);
         }
+
+        @Test
+        void restoreUsesLockedInactiveProductAndMakesItActive() {
+
+                Long productId = 1L;
+
+                Product product = mock(Product.class);
+
+                when(productRepository
+                                .findInactiveByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                ProductService productService = new ProductService(productRepository);
+
+                productService.restore(productId);
+
+                verify(productRepository)
+                                .findInactiveByIdForUpdate(productId);
+
+                verify(product)
+                                .setActive(true);
+        }
 }

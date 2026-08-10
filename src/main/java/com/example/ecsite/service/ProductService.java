@@ -117,7 +117,7 @@ public class ProductService {
     public void restore(Long id) {
 
         Product product = productRepository
-                .findByIdAndActiveFalse(id)
+                .findInactiveByIdForUpdate(id)
                 .orElseThrow(() -> new ProductNotFoundException(id));
 
         product.setActive(true);

@@ -52,4 +52,14 @@ public interface ProductRepository
 
         List<Product> findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
                         int stock);
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("""
+                        SELECT p
+                        FROM Product p
+                        WHERE p.id = :id
+                          AND p.active = false
+                        """)
+        Optional<Product> findInactiveByIdForUpdate(
+                        @Param("id") Long id);
 }
