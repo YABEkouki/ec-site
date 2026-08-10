@@ -8,21 +8,27 @@ public class Cart {
 
     private final List<CartItem> items = new ArrayList<>();
 
+    private static final int MAX_QUANTITY = 99;
+
     public List<CartItem> getItems() {
         return Collections.unmodifiableList(items);
     }
 
     public void addItem(CartItem newItem) {
 
-        if (newItem.getQuantity() < 1) {
-            throw new IllegalArgumentException(
-                    "数量は1以上で指定してください。");
-        }
+        validateQuantity(newItem.getQuantity());
 
         for (CartItem item : items) {
-            if (item.getProductId().equals(newItem.getProductId())) {
-                item.setQuantity(
-                        item.getQuantity() + newItem.getQuantity());
+
+            if (item.getProductId()
+                    .equals(newItem.getProductId())) {
+
+                int newQuantity = item.getQuantity()
+                        + newItem.getQuantity();
+
+                validateQuantity(newQuantity);
+
+                item.setQuantity(newQuantity);
                 return;
             }
         }
@@ -42,15 +48,17 @@ public class Cart {
                 .sum();
     }
 
-    public void updateQuantity(Long productId, int quantity) {
+    public void updateQuantity(
+            Long productId,
+            int quantity) {
 
-        if (quantity < 1) {
-            throw new IllegalArgumentException(
-                    "数量は1以上で指定してください。");
-        }
+        validateQuantity(quantity);
 
         for (CartItem item : items) {
-            if (item.getProductId().equals(productId)) {
+
+            if (item.getProductId()
+                    .equals(productId)) {
+
                 item.setQuantity(quantity);
                 return;
             }
@@ -80,6 +88,16 @@ public class Cart {
                 item.setPrice(newPrice);
                 return;
             }
+        }
+    }
+
+    private void validateQuantity(int quantity) {
+
+        if (quantity < 1
+                || quantity > MAX_QUANTITY) {
+
+            throw new IllegalArgumentException(
+                    "数量は1以上99以下で指定してください。");
         }
     }
 }

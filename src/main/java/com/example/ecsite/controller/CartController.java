@@ -16,10 +16,10 @@ import com.example.ecsite.service.CartService;
 @SessionAttributes("cart")
 public class CartController {
 
-    private final CartService  CartService;
+    private final CartService  cartService;
 
     public CartController(CartService cartService) {
-        this.CartService = cartService;
+        this.cartService = cartService;
     }
 
     @ModelAttribute("cart")
@@ -45,7 +45,7 @@ public class CartController {
             RedirectAttributes redirectAttributes) {
 
         try {
-            CartService.addItem(cart, productId, quantity);
+            cartService.addItem(cart, productId, quantity);
         } catch (IllegalArgumentException e) {
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
