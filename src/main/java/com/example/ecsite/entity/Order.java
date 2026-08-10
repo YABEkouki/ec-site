@@ -106,6 +106,27 @@ public class Order {
         this.orderedAt = orderedAt;
     }
 
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    @Column(name = "shipped_at")
+    private LocalDateTime shippedAt;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    public LocalDateTime getPaidAt() {
+        return paidAt;
+    }
+
+    public LocalDateTime getShippedAt() {
+        return shippedAt;
+    }
+
+    public LocalDateTime getCancelledAt() {
+        return cancelledAt;
+    }
+
     public void addItem(OrderItem item) {
         items.add(item);
         item.setOrder(this);
@@ -164,6 +185,7 @@ public class Order {
         }
 
         status = OrderStatus.PAID;
+        paidAt = LocalDateTime.now();
     }
 
     public void markAsShipped() {
@@ -175,6 +197,7 @@ public class Order {
         }
 
         status = OrderStatus.SHIPPED;
+        shippedAt = LocalDateTime.now();
     }
 
     public void cancel() {
@@ -186,6 +209,7 @@ public class Order {
         }
 
         status = OrderStatus.CANCELLED;
+        cancelledAt = LocalDateTime.now();
     }
 
 }

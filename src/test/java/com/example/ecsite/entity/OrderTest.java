@@ -1,6 +1,8 @@
 package com.example.ecsite.entity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
@@ -9,72 +11,116 @@ import com.example.ecsite.exception.InvalidOrderStatusException;
 
 class OrderTest {
 
-    @Test
-    void newOrderStartsWithOrderedStatus() {
+        @Test
+        void newOrderStartsWithOrderedStatus() {
 
-        Order order = new Order(1L, 1000);
+                Order order = new Order(1L, 1000);
 
-        assertEquals(
-                OrderStatus.ORDERED,
-                order.getStatus());
-    }
+                assertEquals(
+                                OrderStatus.ORDERED,
+                                order.getStatus());
+        }
 
-    @Test
-    void orderCanMoveFromOrderedToPaidToShipped() {
+        @Test
+        void orderCanMoveFromOrderedToPaidToShipped() {
 
-        Order order = new Order(1L, 1000);
+                Order order = new Order(1L, 1000);
 
-        order.markAsPaid();
+                order.markAsPaid();
 
-        assertEquals(
-                OrderStatus.PAID,
-                order.getStatus());
+                assertEquals(
+                                OrderStatus.PAID,
+                                order.getStatus());
 
-        order.markAsShipped();
+                order.markAsShipped();
 
-        assertEquals(
-                OrderStatus.SHIPPED,
-                order.getStatus());
-    }
+                assertEquals(
+                                OrderStatus.SHIPPED,
+                                order.getStatus());
+        }
 
-    @Test
-    void orderedOrderCannotBeShippedDirectly() {
+        @Test
+        void orderedOrderCannotBeShippedDirectly() {
 
-        Order order = new Order(1L, 1000);
+                Order order = new Order(1L, 1000);
 
-        assertThrows(
-                InvalidOrderStatusException.class,
-                order::markAsShipped);
+                assertThrows(
+                                InvalidOrderStatusException.class,
+                                order::markAsShipped);
 
-        assertEquals(
-                OrderStatus.ORDERED,
-                order.getStatus());
-    }
+                assertEquals(
+                                OrderStatus.ORDERED,
+                                order.getStatus());
+        }
 
-    @Test
-    void orderedOrderCanBeCancelled() {
+        @Test
+        void orderedOrderCanBeCancelled() {
 
-        Order order = new Order(1L, 1000);
+                Order order = new Order(1L, 1000);
 
-        order.cancel();
+                order.cancel();
 
-        assertEquals(
-                OrderStatus.CANCELLED,
-                order.getStatus());
-    }
+                assertEquals(
+                                OrderStatus.CANCELLED,
+                                order.getStatus());
+        }
 
-    @Test
-    void paidOrderCannotBeCancelled() {
+        @Test
+        void paidOrderCannotBeCancelled() {
 
-        Order order = new Order(1L, 1000);
-        order.markAsPaid();
+                Order order = new Order(1L, 1000);
+                order.markAsPaid();
 
-        assertThrows(
-                InvalidOrderStatusException.class,
-                order::cancel);
+                assertThrows(
+                                InvalidOrderStatusException.class,
+                                order::cancel);
 
-        assertEquals(
-                OrderStatus.PAID,
-                order.getStatus());
-    }
+                assertEquals(
+                                OrderStatus.PAID,
+                                order.getStatus());
+        }
+
+        @Test
+        void paidAndShippedTimestampsAreRecorded() {
+
+                Order order = new Order(1L, 1000);
+
+                assertNull(order.getPaidAt());
+                assertNull(order.getShippedAt());
+
+                order.markAsPaid();
+
+                assertNotNull(order.getPaidAt());
+                assertNull(order.getShippedAt());
+
+                order.markAsShipped();
+
+                assertNotNull(order.getPaidAt());
+                assertNotNull(order.getShippedAt());
+        }
+
+        @Test
+        void cancelledTimestampIsRecorded() {
+
+                Order order = new Order(1L, 1000);
+
+                assertNull(order.getCancelledAt());
+
+                order.cancel();
+
+                assertNotNull(order.getCancelledAt());
+        }
+
+        @Test
+        void invalidShippingDoesNotRecordTimestamp() {
+
+                Order order = new Order(1L, 1000);
+
+                assertThrows(
+                                InvalidOrderStatusException.class,
+                                order::markAsShipped);
+
+                assertNull(order.getShippedAt());
+        }
+
 }

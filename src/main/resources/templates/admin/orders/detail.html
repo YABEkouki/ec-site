@@ -44,7 +44,30 @@
                     <span th:text="${order.status.displayName}"></span>
                 </td>
             </tr>
+            <tr th:if="${order.paidAt != null}">
+                <th>支払日時</th>
+                <td th:text="${#temporals.format(
+            order.paidAt,
+            'yyyy/MM/dd HH:mm')}">
+                </td>
+            </tr>
 
+            <tr th:if="${order.shippedAt != null}">
+                <th>発送日時</th>
+                <td th:text="${#temporals.format(
+            order.shippedAt,
+            'yyyy/MM/dd HH:mm')}">
+                </td>
+            </tr>
+
+            <tr th:if="${order.cancelledAt != null}">
+                <th>キャンセル日時</th>
+                <td th:text="${#temporals.format(
+            order.cancelledAt,
+            'yyyy/MM/dd HH:mm')}">
+                </td>
+            </tr>
+            
             <tr>
                 <th>合計金額</th>
                 <td>
