@@ -70,7 +70,8 @@ public class ProductService {
     }
 
     public Product update(Long id, ProductForm productForm) {
-        Product product = findById(id);
+
+        Product product = findByIdForUpdate(id);
 
         ProductMapper.copyToEntity(productForm, product);
 
@@ -78,7 +79,9 @@ public class ProductService {
     }
 
     public void delete(Long id) {
-        Product product = findById(id);
+
+        Product product = findByIdForUpdate(id);
+
         product.setActive(false);
     }
 

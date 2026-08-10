@@ -1,10 +1,12 @@
 package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,38 +19,57 @@ import com.example.ecsite.repository.ProductRepository;
 @ExtendWith(MockitoExtension.class)
 class ProductServiceTest {
 
-    @Mock
-    private ProductRepository productRepository;
+        @Mock
+        private ProductRepository productRepository;
 
-    @Test
-    void findLowStockProductsUsesSpecifiedThreshold() {
+        @Test
+        void findLowStockProductsUsesSpecifiedThreshold() {
 
-        int threshold = 5;
+                int threshold = 5;
 
-        Product product1 = new Product();
-        Product product2 = new Product();
+                Product product1 = new Product();
+                Product product2 = new Product();
 
-        List<Product> expectedProducts =
-                List.of(product1, product2);
+                List<Product> expectedProducts = List.of(product1, product2);
 
-        when(productRepository
-                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
-                        threshold))
-                .thenReturn(expectedProducts);
+                when(productRepository
+                                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
+                                                threshold))
+                                .thenReturn(expectedProducts);
 
-        ProductService productService =
-                new ProductService(productRepository);
+                ProductService productService = new ProductService(productRepository);
 
-        List<Product> actualProducts =
-                productService.findLowStockProducts(
-                        threshold);
+                List<Product> actualProducts = productService.findLowStockProducts(
+                                threshold);
 
-        assertSame(
-                expectedProducts,
-                actualProducts);
+                assertSame(
+                                expectedProducts,
+                                actualProducts);
 
-        verify(productRepository)
-                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
-                        threshold);
-    }
+                verify(productRepository)
+                                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
+                                                threshold);
+        }
+
+        @Test
+        void deleteUsesLockedProductAndMakesItInactive() {
+
+                Long productId = 1L;
+
+                Product product = mock(Product.class);
+
+                when(productRepository
+                                .findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                ProductService productService = new ProductService(productRepository);
+
+                productService.delete(productId);
+
+                verify(productRepository)
+                                .findByIdForUpdate(productId);
+
+                verify(product)
+                                .setActive(false);
+        }
 }
