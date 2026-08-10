@@ -94,10 +94,6 @@ public class Order {
         return status;
     }
 
-    public void setStatus(OrderStatus status) {
-        this.status = status;
-    }
-
     public LocalDateTime getOrderedAt() {
         return orderedAt;
     }
