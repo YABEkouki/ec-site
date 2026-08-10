@@ -22,6 +22,18 @@ public class CartService {
 
         Product product = productService.findById(productId);
 
+        long quantityAfterAddition = (long) cart.getQuantity(productId)
+                + quantity;
+
+        if (quantityAfterAddition > product.getStock()) {
+
+            throw new IllegalArgumentException(
+                    product.getName()
+                            + "の在庫は"
+                            + product.getStock()
+                            + "個です。");
+        }
+
         CartItem item = new CartItem(
                 product.getId(),
                 product.getName(),
@@ -29,5 +41,26 @@ public class CartService {
                 quantity);
 
         cart.addItem(item);
+    }
+
+    public void updateQuantity(
+            Cart cart,
+            Long productId,
+            int quantity) {
+
+        Product product = productService.findById(productId);
+
+        if (quantity > product.getStock()) {
+
+            throw new IllegalArgumentException(
+                    product.getName()
+                            + "の在庫は"
+                            + product.getStock()
+                            + "個です。");
+        }
+
+        cart.updateQuantity(
+                productId,
+                quantity);
     }
 }

@@ -100,4 +100,16 @@ public class Cart {
                     "数量は1以上99以下で指定してください。");
         }
     }
+
+    public int getQuantity(Long productId) {
+
+        for (CartItem item : items) {
+
+            if (item.getProductId().equals(productId)) {
+                return item.getQuantity();
+            }
+        }
+
+        return 0;
+    }
 }
