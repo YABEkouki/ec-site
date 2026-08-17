@@ -13,44 +13,47 @@
 
     <h1>注文確認</h1>
 
+    <h2>配送先</h2>
+
     <table>
+        <tbody>
+            <tr>
+                <th>受取人氏名</th>
+                <td th:text="${checkoutForm.shippingName}"></td>
+            </tr>
 
-        <h2>配送先</h2>
+            <tr>
+                <th>郵便番号</th>
+                <td>
+                    〒
+                    <span th:text="${checkoutForm.shippingPostalCode}">
+                    </span>
+                </td>
+            </tr>
 
-        <table>
-            <tbody>
-                <tr>
-                    <th>受取人氏名</th>
-                    <td th:text="${checkoutForm.shippingName}"></td>
-                </tr>
+            <tr>
+                <th>住所</th>
+                <td>
+                    <span th:text="${checkoutForm.shippingPrefecture}">
+                    </span>
+                    <span th:text="${checkoutForm.shippingCity}">
+                    </span>
+                    <span th:text="${checkoutForm.shippingAddressLine}">
+                    </span>
+                </td>
+            </tr>
 
-                <tr>
-                    <th>郵便番号</th>
-                    <td th:text="${checkoutForm.shippingPostalCode}"></td>
-                </tr>
+            <tr>
+                <th>電話番号</th>
+                <td th:text="${checkoutForm.shippingPhone}"></td>
+            </tr>
+        </tbody>
+    </table>
 
-                <tr>
-                    <th>住所</th>
-                    <td>
-                        <span th:text="${checkoutForm.shippingPrefecture}">
-                        </span>
 
-                        <span th:text="${checkoutForm.shippingCity}">
-                        </span>
+    <h2>注文商品</h2>
 
-                        <span th:text="${checkoutForm.shippingAddressLine}">
-                        </span>
-                    </td>
-                </tr>
-
-                <tr>
-                    <th>電話番号</th>
-                    <td th:text="${checkoutForm.shippingPhone}"></td>
-                </tr>
-            </tbody>
-        </table>
-
-        <h2>注文商品</h2>
+    <table>
         <thead>
             <tr>
                 <th>商品名</th>
@@ -62,36 +65,79 @@
 
         <tbody>
             <tr th:each="item : ${cart.items}">
+
                 <td th:text="${item.productName}"></td>
-                <td th:text="${item.price}"></td>
-                <td th:text="${item.quantity}"></td>
-                <td th:text="${item.subtotal}"></td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        item.price,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td>
+                    <span th:text="${item.quantity}"></span>
+                    個
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        item.subtotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
             </tr>
         </tbody>
     </table>
 
-    <p>
-        合計数量：
-        <span th:text="${cart.totalQuantity}"></span>
-    </p>
 
-    <p>
-        合計金額：
-        <span th:text="${cart.totalAmount}"></span>
-        円
-    </p>
+    <div class="order-total">
+
+        <p>
+            合計数量：
+            <strong th:text="${cart.totalQuantity}"></strong>
+            個
+        </p>
+
+        <p>
+            合計金額：
+            <strong th:text="${#numbers.formatInteger(
+                cart.totalAmount,
+                1,
+                'COMMA')}">
+            </strong>
+            円
+        </p>
+
+    </div>
+
 
     <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
-    <form th:action="@{/checkout/order}" method="post">
-        <button type="submit" class="button-primary">注文を確定する</button>
-    </form>
 
-    <a th:href="@{/checkout}" class="button button-secondary">
-        配送先入力へ戻る
-    </a>
+    <div class="actions">
 
+        <form th:action="@{/checkout/order}" method="post">
+
+            <input type="hidden" name="checkoutToken" th:value="${checkoutToken}">
+            
+            <button type="submit" class="button-primary">
+                注文を確定する
+            </button>
+
+        </form>
+
+        <a th:href="@{/checkout}" class="button button-secondary">
+            配送先入力へ戻る
+        </a>
+
+    </div>
 </body>
 
 </html>

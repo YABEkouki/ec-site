@@ -232,3 +232,80 @@ nav strong {
 .admin-header .site-title {
     color: #62317f;
 }
+
+.form-card {
+    max-width: 650px;
+    padding: 24px;
+    background-color: #fff;
+    border: 1px solid #d4dbe1;
+    border-radius: 6px;
+}
+
+.form-group {
+    margin-bottom: 18px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: bold;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+}
+
+.form-group textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.required {
+    margin-left: 4px;
+    color: #b3261e;
+    font-size: 0.85rem;
+}
+
+.field-error {
+    display: block;
+    margin-top: 5px;
+    color: #b3261e;
+    font-size: 0.9rem;
+}
+
+.order-total {
+    margin: 20px 0;
+    padding: 14px 18px;
+    background-color: #fff;
+    border: 2px solid #1769aa;
+    border-radius: 6px;
+    text-align: right;
+}
+
+.order-total p {
+    margin: 6px 0;
+}
+
+.order-total strong {
+    font-size: 1.2rem;
+}
+
+.completion-card {
+    max-width: 650px;
+    margin: 24px 0;
+    padding: 24px;
+    background-color: #eef8f0;
+    border: 2px solid #58a56a;
+    border-radius: 8px;
+}
+
+.completion-card h2 {
+    margin-top: 0;
+    color: #176b2c;
+}
+
+.completion-card strong {
+    font-size: 1.2rem;
+}

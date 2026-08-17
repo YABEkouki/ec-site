@@ -37,6 +37,9 @@ public class CheckoutForm implements Serializable {
     private String shippingAddressLine;
 
     @NotBlank(message = "電話番号を入力してください。")
+    @Size(
+        max = 20,
+        message = "電話番号は20文字以内で入力してください。")
     @Pattern(
             regexp = "^0\\d{1,4}-?\\d{1,4}-?\\d{3,4}$",
             message = "電話番号の形式が正しくありません。")

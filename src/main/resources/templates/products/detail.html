@@ -28,12 +28,14 @@
 
     <p>
         価格：
-        <span th:text="${product.price}"></span>円
+        <span th:text="${#numbers.formatInteger(product.price, 1, 'COMMA')}"></span>
+        円
     </p>
 
-    <p>
+    <p th:classappend="${product.stock == 0 ? 'stock-empty' : (product.stock <= 5 ? 'stock-low' : '')}">
         在庫：
         <span th:text="${product.stock}"></span>
+        個
     </p>
 
     <p>
@@ -41,18 +43,22 @@
         <span th:text="${product.description}"></span>
     </p>
 
-    <form th:action="@{/cart/add}" method="post">
+    <form th:if="${product.stock > 0}" th:action="@{/cart/add}" method="post">
         <input type="hidden" name="productId" th:value="${product.id}">
 
-        <label>
-            数量：
-            <input type="number" name="quantity" value="1" min="1" max="99">
-        </label>
+        <label for="quantity">数量：</label>
+
+        <input type="number" id="quantity" name="quantity" value="1" min="1"
+            th:max="${product.stock < 99 ? product.stock : 99}" required>
 
         <button type="submit" class="button-primary">
             カートに追加
         </button>
     </form>
+
+    <p th:if="${product.stock == 0}" class="message-error">
+        申し訳ありません。この商品は現在在庫切れです。
+    </p>
 
     <p>
         <a th:href="@{/products}" class="button button-secondary">

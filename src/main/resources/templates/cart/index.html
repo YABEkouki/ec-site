@@ -16,6 +16,9 @@
     <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
+    </p>
+
     <div th:if="${#lists.isEmpty(cart.items)}">
         <p>カートに商品はありません。</p>
     </div>

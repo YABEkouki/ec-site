@@ -11,6 +11,8 @@
     <header th:replace="~{fragments/header :: header}">
     </header>
 
+    <h1>商品一覧</h1>
+
     <form th:action="@{/products}" method="get">
 
         <label for="keyword">商品名</label>
@@ -46,7 +48,7 @@
 
     </form>
 
-    <h1>商品一覧</h1>
+
 
     <p th:if="${message}" th:text="${message}" class="message-success">
     </p>
@@ -77,8 +79,19 @@
                     <a th:href="@{/products/{id}(id=${product.id})}" th:text="${product.name}">
                     </a>
                 </td>
-                <td th:text="${product.price}"></td>
-                <td th:text="${product.stock}"></td>
+                <td>
+                    <span th:text="${#numbers.formatInteger(product.price, 1, 'COMMA')}"></span>円
+                </td>
+
+                <td th:classappend="${product.stock == 0} ? 'stock-empty' : (${product.stock <= 5} ? 'stock-low' : '')">
+
+                    <span th:text="${product.stock}"></span>個
+
+                    <span th:if="${product.stock == 0}">
+                        （在庫切れ）
+                    </span>
+
+                </td>
             </tr>
         </tbody>
     </table>

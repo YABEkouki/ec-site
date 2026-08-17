@@ -13,46 +13,77 @@
 
     <h1>商品登録</h1>
 
-    <form th:action="@{/admin/products}" th:object="${productForm}" method="post">
-        <p>
-            <label>
-                商品名：
-                <input type="text" th:field="*{name}">
-            </label>
-            <span th:if="${#fields.hasErrors('name')}" th:errors="*{name}"></span>
-        </p>
+    <form th:action="@{/admin/products}" th:object="${productForm}" method="post" class="form-card">
 
-        <p>
-            <label>
-                価格：
-                <input type="number" id="price" name="price" value="" th:field="*{price}">
-            </label>
-            <span th:if="${#fields.hasErrors('price')}" th:errors="*{price}"></span>
-        </p>
+        <div class="form-group">
 
-        <p>
-            <label>
-                在庫：
-                <input type="number" id="stock" name="stock" value="" th:field="*{stock}">
+            <label for="name">
+                商品名
+                <span class="required">必須</span>
             </label>
-            <span th:if="${#fields.hasErrors('stock')}" th:errors="*{stock}"></span>
-        </p>
 
-        <p>
-            <label>
-                説明：
-                <textarea id="description" name="description" th:field="*{description}"></textarea>
+            <input type="text" th:field="*{name}" maxlength="100" required>
+
+            <span th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="field-error">
+            </span>
+
+        </div>
+
+        <div class="form-group">
+
+            <label for="price">
+                価格
+                <span class="required">必須</span>
             </label>
-        </p>
 
-        <button type="submit" class="button-primary">登録</button>
+            <input type="number" th:field="*{price}" min="0" step="1" required>
+
+            <span th:if="${#fields.hasErrors('price')}" th:errors="*{price}" class="field-error">
+            </span>
+
+        </div>
+
+        <div class="form-group">
+
+            <label for="stock">
+                在庫
+                <span class="required">必須</span>
+            </label>
+
+            <input type="number" th:field="*{stock}" min="0" step="1" required>
+
+            <span th:if="${#fields.hasErrors('stock')}" th:errors="*{stock}" class="field-error">
+            </span>
+
+        </div>
+
+        <div class="form-group">
+
+            <label for="description">
+                説明
+            </label>
+
+            <textarea th:field="*{description}" rows="5">
+        </textarea>
+
+            <span th:if="${#fields.hasErrors('description')}" th:errors="*{description}" class="field-error">
+            </span>
+
+        </div>
+
+        <div class="actions">
+
+            <button type="submit" class="button-primary">
+                登録
+            </button>
+
+            <a th:href="@{/admin/products}" class="button button-secondary">
+                商品一覧へ戻る
+            </a>
+
+        </div>
+
     </form>
-
-    <p>
-        <a th:href="@{/admin/products}" class="button button-secondary">
-            商品一覧へ戻る
-        </a>
-    </p>
 
 </body>
 

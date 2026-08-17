@@ -3,6 +3,7 @@ package com.example.ecsite.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -16,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.support.SessionStatus;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 
@@ -27,6 +29,8 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 
+import jakarta.servlet.http.HttpSession;
+
 @ExtendWith(MockitoExtension.class)
 class CheckoutControllerTest {
 
@@ -35,6 +39,14 @@ class CheckoutControllerTest {
 
         private CheckoutController controller;
         private CustomUserDetails loginUser;
+
+        @Mock
+        private HttpSession session;
+
+        @Mock
+        private SessionStatus sessionStatus;
+
+        private static final String CHECKOUT_TOKEN = "test-checkout-token";
 
         @BeforeEach
         void setUp() {
@@ -50,11 +62,14 @@ class CheckoutControllerTest {
         }
 
         @Test
-        void placeOrderClearsCartAfterSuccess() {
+        void placeOrderClearsSessionAfterSuccess() {
 
                 Cart cart = createCart();
                 CheckoutForm checkoutForm = createCheckoutForm();
                 Order order = new Order(10L, 1000);
+
+                when(session.getAttribute("checkoutToken"))
+                                .thenReturn(CHECKOUT_TOKEN);
 
                 when(orderService.createOrder(10L, cart, checkoutForm))
                                 .thenReturn(order);
@@ -70,20 +85,31 @@ class CheckoutControllerTest {
                                 bindingResult,
                                 cart,
                                 loginUser,
-                                redirectAttributes);
+                                CHECKOUT_TOKEN,
+                                redirectAttributes,
+                                session,
+                                sessionStatus);
 
                 assertEquals(
                                 "redirect:/checkout/complete",
                                 view);
-
-                assertTrue(cart.getItems().isEmpty());
 
                 assertTrue(
                                 redirectAttributes
                                                 .getFlashAttributes()
                                                 .containsKey("orderId"));
 
-                verify(orderService).createOrder(10L, cart, checkoutForm);
+                verify(session)
+                                .removeAttribute("checkoutToken");
+
+                verify(sessionStatus)
+                                .setComplete();
+
+                verify(orderService)
+                                .createOrder(
+                                                10L,
+                                                cart,
+                                                checkoutForm);
         }
 
         @Test
@@ -91,6 +117,9 @@ class CheckoutControllerTest {
 
                 Cart cart = createCart();
                 CheckoutForm checkoutForm = createCheckoutForm();
+
+                when(session.getAttribute("checkoutToken"))
+                                .thenReturn(CHECKOUT_TOKEN);
 
                 doThrow(new OrderValidationException(
                                 "在庫が不足しています。"))
@@ -108,7 +137,10 @@ class CheckoutControllerTest {
                                 bindingResult,
                                 cart,
                                 loginUser,
-                                redirectAttributes);
+                                CHECKOUT_TOKEN,
+                                redirectAttributes,
+                                session,
+                                sessionStatus);
 
                 assertEquals("redirect:/cart", view);
                 assertEquals(1, cart.getItems().size());
@@ -119,6 +151,12 @@ class CheckoutControllerTest {
                                                 .getFlashAttributes()
                                                 .get("errorMessage"));
 
+                verify(session)
+                                .removeAttribute("checkoutToken");
+
+                verify(sessionStatus, never())
+                                .setComplete();
+
                 verify(orderService).createOrder(10L, cart, checkoutForm);
         }
 
@@ -127,6 +165,9 @@ class CheckoutControllerTest {
 
                 Cart cart = createCart();
                 CheckoutForm checkoutForm = createCheckoutForm();
+
+                when(session.getAttribute("checkoutToken"))
+                                .thenReturn(CHECKOUT_TOKEN);
 
                 BindingResult bindingResult = new BeanPropertyBindingResult(
                                 checkoutForm,
@@ -144,10 +185,19 @@ class CheckoutControllerTest {
                                 bindingResult,
                                 cart,
                                 loginUser,
-                                redirectAttributes);
+                                CHECKOUT_TOKEN,
+                                redirectAttributes,
+                                session,
+                                sessionStatus);
 
                 assertEquals("checkout/input", view);
                 assertEquals(1, cart.getItems().size());
+
+                verify(session)
+                                .removeAttribute("checkoutToken");
+
+                verify(sessionStatus, never())
+                                .setComplete();
 
                 verifyNoInteractions(orderService);
         }
@@ -177,5 +227,51 @@ class CheckoutControllerTest {
                 form.setShippingPhone("090-1234-5678");
 
                 return form;
+        }
+
+        @Test
+        void placeOrderRejectsInvalidCheckoutToken() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                when(session.getAttribute("checkoutToken"))
+                                .thenReturn(null);
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.placeOrder(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                CHECKOUT_TOKEN,
+                                redirectAttributes,
+                                session,
+                                sessionStatus);
+
+                assertEquals(
+                                "redirect:/cart",
+                                view);
+
+                assertEquals(
+                                "注文処理が既に実行されたか、"
+                                                + "確認画面の有効期限が切れています。",
+                                redirectAttributes
+                                                .getFlashAttributes()
+                                                .get("errorMessage"));
+
+                assertEquals(
+                                1,
+                                cart.getItems().size());
+
+                verifyNoInteractions(orderService);
+
+                verify(sessionStatus, never())
+                                .setComplete();
         }
 }

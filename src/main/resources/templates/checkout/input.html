@@ -13,71 +13,110 @@
 
     <h1>配送先入力</h1>
 
-    <form th:action="@{/checkout/confirm}" th:object="${checkoutForm}" method="post">
+    <form th:action="@{/checkout/confirm}" th:object="${checkoutForm}" method="post" class="form-card">
 
-        <p>
-            <label for="shippingName">受取人氏名</label><br>
-            <input id="shippingName" type="text" th:field="*{shippingName}">
+        <div class="form-group">
 
-            <span th:if="${#fields.hasErrors('shippingName')}" th:errors="*{shippingName}" class="message-error">
+            <label for="shippingName">
+                受取人氏名
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{shippingName}" maxlength="100" autocomplete="name" required>
+
+            <span th:if="${#fields.hasErrors('shippingName')}" th:errors="*{shippingName}" class="field-error">
             </span>
-        </p>
 
-        <p>
-            <label for="shippingPostalCode">郵便番号</label><br>
-            <input id="shippingPostalCode" type="text" th:field="*{shippingPostalCode}" placeholder="123-4567">
+        </div>
+
+        <div class="form-group">
+
+            <label for="shippingPostalCode">
+                郵便番号
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{shippingPostalCode}" maxlength="8" inputmode="numeric"
+                autocomplete="postal-code" placeholder="123-4567" required>
 
             <span th:if="${#fields.hasErrors('shippingPostalCode')}" th:errors="*{shippingPostalCode}"
-                class="message-error">
+                class="field-error">
             </span>
-        </p>
 
-        <p>
-            <label for="shippingPrefecture">都道府県</label><br>
-            <input id="shippingPrefecture" type="text" th:field="*{shippingPrefecture}">
+        </div>
+
+        <div class="form-group">
+
+            <label for="shippingPrefecture">
+                都道府県
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{shippingPrefecture}" maxlength="20" autocomplete="address-level1" required>
 
             <span th:if="${#fields.hasErrors('shippingPrefecture')}" th:errors="*{shippingPrefecture}"
-                class="message-error">
+                class="field-error">
             </span>
-        </p>
 
-        <p>
-            <label for="shippingCity">市区町村</label><br>
-            <input id="shippingCity" type="text" th:field="*{shippingCity}">
+        </div>
 
-            <span th:if="${#fields.hasErrors('shippingCity')}" th:errors="*{shippingCity}" class="message-error">
+        <div class="form-group">
+
+            <label for="shippingCity">
+                市区町村
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{shippingCity}" maxlength="100" autocomplete="address-level2" required>
+
+            <span th:if="${#fields.hasErrors('shippingCity')}" th:errors="*{shippingCity}" class="field-error">
             </span>
-        </p>
 
-        <p>
+        </div>
+
+        <div class="form-group">
+
             <label for="shippingAddressLine">
                 番地・建物名
-            </label><br>
+                <span class="required">必須</span>
+            </label>
 
-            <input id="shippingAddressLine" type="text" th:field="*{shippingAddressLine}">
+            <input type="text" th:field="*{shippingAddressLine}" maxlength="200" autocomplete="street-address" required>
 
             <span th:if="${#fields.hasErrors('shippingAddressLine')}" th:errors="*{shippingAddressLine}"
-                class="message-error">
+                class="field-error">
             </span>
-        </p>
 
-        <p>
-            <label for="shippingPhone">電話番号</label><br>
-            <input id="shippingPhone" type="text" th:field="*{shippingPhone}" placeholder="090-1234-5678">
+        </div>
 
-            <span th:if="${#fields.hasErrors('shippingPhone')}" th:errors="*{shippingPhone}" class="message-error">
+        <div class="form-group">
+
+            <label for="shippingPhone">
+                電話番号
+                <span class="required">必須</span>
+            </label>
+
+            <input type="tel" th:field="*{shippingPhone}" maxlength="20" inputmode="tel" autocomplete="tel"
+                placeholder="090-1234-5678" required>
+
+            <span th:if="${#fields.hasErrors('shippingPhone')}" th:errors="*{shippingPhone}" class="field-error">
             </span>
-        </p>
 
-        <button type="submit" class="button-primary">注文内容を確認する</button>
+        </div>
+
+        <div class="actions">
+
+            <button type="submit" class="button-primary">
+                注文内容を確認する
+            </button>
+
+            <a th:href="@{/cart}" class="button button-secondary">
+                カートへ戻る
+            </a>
+
+        </div>
 
     </form>
-
-    <p>
-        <a th:href="@{/cart}" class="button button-secondary">
-            カートへ戻る
-        </a>
-    </p>
 
 </body>
 

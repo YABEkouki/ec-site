@@ -1,5 +1,7 @@
 package com.example.ecsite.controller;
 
+import java.util.UUID;
+
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -7,7 +9,9 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.SessionAttributes;
+import org.springframework.web.bind.support.SessionStatus;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.cart.Cart;
@@ -17,6 +21,7 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @Controller
@@ -63,7 +68,9 @@ public class CheckoutController {
             @Valid @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
             BindingResult bindingResult,
             @ModelAttribute("cart") Cart cart,
-            RedirectAttributes redirectAttributes) {
+            RedirectAttributes redirectAttributes,
+            Model model,
+            HttpSession session) {
 
         if (bindingResult.hasErrors()) {
             return "checkout/input";
@@ -80,17 +87,41 @@ public class CheckoutController {
             return "redirect:/cart";
         }
 
+        String checkoutToken = UUID.randomUUID().toString();
+
+        session.setAttribute(
+                "checkoutToken",
+                checkoutToken);
+
+        model.addAttribute(
+                "checkoutToken",
+                checkoutToken);
+
         return "checkout/confirm";
     }
 
     @PostMapping("/checkout/order")
     public String placeOrder(
-            @Valid 
-            @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
+            @Valid @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
             BindingResult bindingResult,
             @ModelAttribute("cart") Cart cart,
             @AuthenticationPrincipal CustomUserDetails loginUser,
-            RedirectAttributes redirectAttributes) {
+            @RequestParam(name = "checkoutToken", required = false) String checkoutToken,
+            RedirectAttributes redirectAttributes,
+            HttpSession session,
+            SessionStatus sessionStatus) {
+
+        if (!consumeCheckoutToken(
+                session,
+                checkoutToken)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "注文処理が既に実行されたか、"
+                            + "確認画面の有効期限が切れています。");
+
+            return "redirect:/cart";
+        }
 
         if (bindingResult.hasErrors()) {
             return "checkout/input";
@@ -102,7 +133,7 @@ public class CheckoutController {
                     cart,
                     checkoutForm);
 
-            cart.clear();
+            sessionStatus.setComplete();
 
             redirectAttributes.addFlashAttribute(
                     "orderId",
@@ -127,6 +158,39 @@ public class CheckoutController {
         }
 
         return "checkout/complete";
+    }
+
+    @GetMapping("/checkout/confirm")
+    public String confirmByGet() {
+
+        return "redirect:/checkout";
+    }
+
+    private boolean consumeCheckoutToken(
+            HttpSession session,
+            String submittedToken) {
+
+        if (submittedToken == null) {
+            return false;
+        }
+
+        synchronized (session) {
+
+            Object sessionToken = session.getAttribute(
+                    "checkoutToken");
+
+            if (!(sessionToken instanceof String)
+                    || !sessionToken.equals(
+                            submittedToken)) {
+
+                return false;
+            }
+
+            session.removeAttribute(
+                    "checkoutToken");
+
+            return true;
+        }
     }
 
 }
