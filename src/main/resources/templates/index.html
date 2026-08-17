@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>EC Site</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
@@ -15,27 +16,19 @@
         さん
     </p>
 
-    <li sec:authorize="hasRole('ADMIN')">
-        <a th:href="@{/admin}">
-            管理者メニュー
-        </a>
-    </li>
 
     <ul>
         <li><a th:href="@{/products}">商品一覧</a></li>
+        <li><a th:href="@{/orders}">注文履歴</a></li>
+        <li><a th:href="@{/cart}">カートを見る</a></li>
         <li sec:authorize="hasRole('ADMIN')">
-            <a th:href="@{/products/new}">
-                商品登録
+            <a th:href="@{/admin}">
+                管理者メニュー
             </a>
         </li>
-        <li>
-            <a th:href="@{/orders}">注文履歴</a>
-        </li>
-                <li>
-            <a th:href="@{/cart}">カートを見る</a>
-        </li>
+
         <form th:action="@{/logout}" method="post">
-            <button type="submit">ログアウト</button>
+            <button type="submit" class="button-secondary">ログアウト</button>
         </form>
     </ul>
 </body>

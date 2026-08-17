@@ -1,63 +1,57 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
     <title>商品編集</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
+
 <body>
 
-<h1>商品編集</h1>
+    <h1>商品編集</h1>
 
-<form th:action="@{/admin/products/{id}/update(id=${productId})}"
-      th:object="${productForm}"
-      method="post">
+    <form th:action="@{/admin/products/{id}/update(id=${productId})}" th:object="${productForm}" method="post">
 
-    <div>
-        <label for="name">商品名</label>
-        <input type="text"
-               id="name"
-               th:field="*{name}">
+        <div>
+            <label for="name">商品名</label>
+            <input type="text" id="name" th:field="*{name}">
 
-        <p th:if="${#fields.hasErrors('name')}"
-           th:errors="*{name}">
-        </p>
-    </div>
+            <p th:if="${#fields.hasErrors('name')}" th:errors="*{name}">
+            </p>
+        </div>
 
-    <div>
-        <label for="price">価格</label>
-        <input type="number"
-               id="price"
-               th:field="*{price}">
+        <div>
+            <label for="price">価格</label>
+            <input type="number" id="price" th:field="*{price}">
 
-        <p th:if="${#fields.hasErrors('price')}"
-           th:errors="*{price}">
-        </p>
-    </div>
+            <p th:if="${#fields.hasErrors('price')}" th:errors="*{price}">
+            </p>
+        </div>
 
-    <div>
-        <label for="stock">在庫数</label>
-        <input type="number"
-               id="stock"
-               th:field="*{stock}">
+        <div>
+            <label for="stock">在庫数</label>
+            <input type="number" id="stock" th:field="*{stock}">
 
-        <p th:if="${#fields.hasErrors('stock')}"
-           th:errors="*{stock}">
-        </p>
-    </div>
+            <p th:if="${#fields.hasErrors('stock')}" th:errors="*{stock}">
+            </p>
+        </div>
 
-    <div>
-        <label for="description">説明</label>
-        <textarea id="description"
-                  th:field="*{description}">
+        <div>
+            <label for="description">説明</label>
+            <textarea id="description" th:field="*{description}">
         </textarea>
-    </div>
+        </div>
 
-    <button type="submit">更新</button>
-</form>
+        <button type="submit" class="button-primary">
+            更新
+        </button>
+    </form>
 
-<a th:href="@{/products/{id}(id=${productId})}">
-    商品詳細へ戻る
-</a>
+    <a th:href="@{/admin/products}" class="button button-secondary">
+        商品一覧へ戻る
+    </a>
 
 </body>
+
 </html>

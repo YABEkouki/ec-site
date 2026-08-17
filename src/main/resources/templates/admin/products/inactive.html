@@ -4,20 +4,21 @@
 <head>
     <meta charset="UTF-8">
     <title>販売終了商品一覧</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
 
     <h1>販売終了商品一覧</h1>
 
-    <p th:if="${successMessage}" th:text="${successMessage}" style="color: green;">
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
     </p>
 
     <p th:if="${#lists.isEmpty(products)}">
         販売終了商品はありません。
     </p>
 
-    <table th:unless="${#lists.isEmpty(products)}" border="1">
+    <table th:unless="${#lists.isEmpty(products)}">
 
         <thead>
             <tr>
@@ -49,7 +50,7 @@
                     <form th:action="@{/admin/products/{id}/restore(
                     id=${product.id})}" method="post">
 
-                        <button type="submit">
+                        <button type="submit" class="button-primary">
                             販売中に戻す
                         </button>
                     </form>
@@ -91,7 +92,7 @@
     </nav>
 
     <p>
-        <a th:href="@{/admin}">
+        <a th:href="@{/admin}" class="button button-secondary">
             管理者メニューへ戻る
         </a>
     </p>

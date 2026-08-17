@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>注文履歴</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
@@ -14,7 +15,7 @@
         注文履歴はありません。
     </p>
 
-    <table th:unless="${#lists.isEmpty(orders)}" border="1">
+    <table th:unless="${#lists.isEmpty(orders)}">
 
         <thead>
             <tr>
@@ -49,7 +50,7 @@
 
                 <td>
                     <a th:href="@{/orders/{id}(
-                    id=${order.id})}">
+                    id=${order.id})}" class="button button-secondary">
                         詳細
                     </a>
                 </td>
@@ -62,7 +63,7 @@
 
         <a th:if="${orderPage.hasPrevious()}" th:href="@{/orders(
            page=${orderPage.number - 1},
-           size=${orderPage.size})}">
+           size=${orderPage.size})}" class="button button-secondary">
             前へ
         </a>
 
@@ -71,19 +72,19 @@
                 0,
                 orderPage.totalPages - 1)}">
 
-            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}">
+            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}" class="button button-secondary">
             </strong>
 
             <a th:unless="${pageNumber == orderPage.number}" th:href="@{/orders(
                page=${pageNumber},
-               size=${orderPage.size})}" th:text="${pageNumber + 1}">
+               size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
 
         </span>
 
         <a th:if="${orderPage.hasNext()}" th:href="@{/orders(
            page=${orderPage.number + 1},
-           size=${orderPage.size})}">
+           size=${orderPage.size})}" class="button button-secondary">
             次へ
         </a>
 
@@ -94,7 +95,7 @@
     </p>
 
     <p>
-        <a th:href="@{/}">
+        <a th:href="@{/}" class="button button-secondary">
             トップページへ戻る
         </a>
     </p>

@@ -4,188 +4,170 @@
 <head>
     <meta charset="UTF-8">
     <title>商品管理</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
 
-<h1>商品管理</h1>
+    <h1>商品管理</h1>
 
-<p th:if="${successMessage}"
-   th:text="${successMessage}"
-   style="color: green;">
-</p>
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
+    </p>
 
-<p th:if="${message}"
-   th:text="${message}"
-   style="color: green;">
-</p>
+    <p th:if="${message}" th:text="${message}" class="message-success">
+    </p>
 
-<p>
-    <a th:href="@{/admin/products/new}">
-        新規商品登録
-    </a>
-</p>
+    <p>
+        <a th:href="@{/admin/products/new}" class="button button-secondary">
+            新規商品登録
+        </a>
+    </p>
 
-<p>
-    <a th:href="@{/admin/products/inactive}">
-        販売終了商品一覧
-    </a>
-</p>
+    <p>
+        <a th:href="@{/admin/products/inactive}" class="button button-secondary">
+            販売終了商品一覧
+        </a>
+    </p>
 
-<form th:action="@{/admin/products}"
-      method="get">
+    <form th:action="@{/admin/products}" method="get">
 
-    <label for="keyword">商品名</label>
+        <label for="keyword">商品名</label>
 
-    <input id="keyword"
-           type="text"
-           name="keyword"
-           th:value="${keyword}">
+        <input id="keyword" type="text" name="keyword" th:value="${keyword}">
 
-    <label for="sort">並び順</label>
+        <label for="sort">並び順</label>
 
-    <select id="sort" name="sort">
-        <option value="newest"
-                th:selected="${sort == 'newest'}">
-            新しい順
-        </option>
+        <select id="sort" name="sort">
+            <option value="newest" th:selected="${sort == 'newest'}">
+                新しい順
+            </option>
 
-        <option value="nameAsc"
-                th:selected="${sort == 'nameAsc'}">
-            商品名順
-        </option>
+            <option value="nameAsc" th:selected="${sort == 'nameAsc'}">
+                商品名順
+            </option>
 
-        <option value="priceAsc"
-                th:selected="${sort == 'priceAsc'}">
-            価格が安い順
-        </option>
+            <option value="priceAsc" th:selected="${sort == 'priceAsc'}">
+                価格が安い順
+            </option>
 
-        <option value="priceDesc"
-                th:selected="${sort == 'priceDesc'}">
-            価格が高い順
-        </option>
-    </select>
+            <option value="priceDesc" th:selected="${sort == 'priceDesc'}">
+                価格が高い順
+            </option>
+        </select>
 
-    <button type="submit">検索</button>
+        <button type="submit" class="button-secondary">検索</button>
 
-</form>
+    </form>
 
-<p>
-    件数：
-    <span th:text="${productPage.totalElements}"></span>
-</p>
+    <p>
+        件数：
+        <span th:text="${productPage.totalElements}"></span>
+    </p>
 
-<p th:if="${#lists.isEmpty(products)}">
-    該当する商品はありません。
-</p>
+    <p th:if="${#lists.isEmpty(products)}">
+        該当する商品はありません。
+    </p>
 
-<table th:unless="${#lists.isEmpty(products)}"
-       border="1">
+    <table th:unless="${#lists.isEmpty(products)}">
 
-    <thead>
-    <tr>
-        <th>ID</th>
-        <th>商品名</th>
-        <th>価格</th>
-        <th>在庫</th>
-        <th>更新日時</th>
-        <th>操作</th>
-    </tr>
-    </thead>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>商品名</th>
+                <th>価格</th>
+                <th>在庫</th>
+                <th>更新日時</th>
+                <th>操作</th>
+            </tr>
+        </thead>
 
-    <tbody>
-    <tr th:each="product : ${products}">
+        <tbody>
+            <tr th:each="product : ${products}">
 
-        <td th:text="${product.id}"></td>
+                <td th:text="${product.id}"></td>
 
-        <td th:text="${product.name}"></td>
+                <td th:text="${product.name}"></td>
 
-        <td>
-            <span th:text="${#numbers.formatInteger(
+                <td>
+                    <span th:text="${#numbers.formatInteger(
                     product.price,
                     1,
                     'COMMA')}">
-            </span>
-            円
-        </td>
+                    </span>
+                    円
+                </td>
 
-        <td th:text="${product.stock}"></td>
+                <td th:text="${product.stock}"></td>
 
-        <td th:text="${#temporals.format(
+                <td th:text="${#temporals.format(
                 product.updatedAt,
                 'yyyy/MM/dd HH:mm')}">
-        </td>
+                </td>
 
-        <td>
-            <a th:href="@{/products/{id}(
-                    id=${product.id})}">
-                表示確認
-            </a>
+                <td>
 
-            <a th:href="@{/admin/products/{id}/edit(
-                    id=${product.id})}">
-                編集
-            </a>
+                    <a th:href="@{/admin/products/{id}/edit(
+                    id=${product.id})}" class="button button-secondary">
+                        編集
+                    </a>
 
-            <form th:action="@{/admin/products/{id}/delete(
-                    id=${product.id})}"
-                  method="post"
-                  style="display: inline;">
+                    <a th:href="@{/products/{id}(id=${product.id})}" target="_blank" rel="noopener" class="button button-secondary">
+                        公開画面を確認
+                    </a>
 
-                <button type="submit">
-                    販売終了
-                </button>
-            </form>
-        </td>
+                    <form th:action="@{/admin/products/{id}/delete(
+                    id=${product.id})}" method="post" style="display: inline;">
 
-    </tr>
-    </tbody>
-</table>
+                        <button type="submit" class="button-primary">
+                            販売終了
+                        </button>
+                    </form>
+                </td>
 
-<nav th:if="${productPage.totalPages > 1}">
+            </tr>
+        </tbody>
+    </table>
 
-    <a th:if="${productPage.hasPrevious()}"
-       th:href="@{/admin/products(
+    <nav th:if="${productPage.totalPages > 1}">
+
+        <a th:if="${productPage.hasPrevious()}" th:href="@{/admin/products(
            keyword=${keyword},
            sort=${sort},
-           page=${productPage.number - 1})}">
-        前へ
-    </a>
+           page=${productPage.number - 1})}" class="button button-secondary">
+            前へ
+        </a>
 
-    <span th:each="pageNumber :
+        <span th:each="pageNumber :
             ${#numbers.sequence(
                 0,
                 productPage.totalPages - 1)}">
 
-        <strong th:if="${pageNumber == productPage.number}"
-                th:text="${pageNumber + 1}">
-        </strong>
+            <strong th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}" class="button button-secondary">
+            </strong>
 
-        <a th:unless="${pageNumber == productPage.number}"
-           th:href="@{/admin/products(
+            <a th:unless="${pageNumber == productPage.number}" th:href="@{/admin/products(
                keyword=${keyword},
                sort=${sort},
-               page=${pageNumber})}"
-           th:text="${pageNumber + 1}">
-        </a>
+               page=${pageNumber})}" th:text="${pageNumber + 1}" class="button button-secondary">
+            </a>
 
-    </span>
+        </span>
 
-    <a th:if="${productPage.hasNext()}"
-       th:href="@{/admin/products(
+        <a th:if="${productPage.hasNext()}" th:href="@{/admin/products(
            keyword=${keyword},
            sort=${sort},
-           page=${productPage.number + 1})}">
-        次へ
-    </a>
+           page=${productPage.number + 1})}" class="button button-secondary">
+            次へ
+        </a>
 
-</nav>
+    </nav>
 
-<p>
-    <a th:href="@{/admin}">
-        管理者メニューへ戻る
-    </a>
-</p>
+    <p>
+        <a th:href="@{/admin}" class="button button-secondary">
+            管理者メニューへ戻る
+        </a>
+    </p>
 
 </body>
+
 </html>

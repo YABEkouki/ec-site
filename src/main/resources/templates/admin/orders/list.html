@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>注文管理</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
@@ -28,12 +29,12 @@
 
         <input type="hidden" name="size" th:value="${orderPage.size}">
 
-        <button type="submit">
+        <button type="submit" class="button-secondary">
             絞り込む
         </button>
 
         <a th:href="@{/admin/orders(
-            size=${orderPage.size})}">
+            size=${orderPage.size})}" class="button button-secondary">
             条件をクリア
         </a>
 
@@ -137,7 +138,7 @@
     </nav>
 
     <p>
-        <a th:href="@{/products}">
+        <a th:href="@{/admin/products}">
             商品一覧へ戻る
         </a>
     </p>

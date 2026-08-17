@@ -1,38 +1,38 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
     <title>ログイン</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
+
 <body>
 
-<h1>ログイン</h1>
+    <h1>ログイン</h1>
 
-<p th:if="${param.logout}">
-    ログアウトしました。
-</p>
+    <p th:if="${param.logout}">
+        ログアウトしました。
+    </p>
 
-<form th:action="@{/login}" method="post">
+    <form th:action="@{/login}" method="post">
 
-    <div>
-        <label>ユーザー名</label>
-        <input
-            type="text"
-            name="username">
-    </div>
+        <div>
+            <label>ユーザー名</label>
+            <input type="text" name="username">
+        </div>
 
-    <div>
-        <label>パスワード</label>
-        <input
-            type="password"
-            name="password">
-    </div>
+        <div>
+            <label>パスワード</label>
+            <input type="password" name="password">
+        </div>
 
-    <button type="submit">
-        ログイン
-    </button>
+        <button type="submit" class="button-secondary">
+            ログイン
+        </button>
 
-</form>
+    </form>
 
 </body>
+
 </html>

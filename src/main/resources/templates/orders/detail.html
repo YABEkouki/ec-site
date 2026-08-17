@@ -4,21 +4,22 @@
 <head>
     <meta charset="UTF-8">
     <title>注文詳細</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
 
     <h1>注文詳細</h1>
 
-    <p th:if="${successMessage}" th:text="${successMessage}" style="color: green;">
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
     </p>
 
-    <p th:if="${errorMessage}" th:text="${errorMessage}" style="color: red;">
+    <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
     <h2>注文情報</h2>
 
-    <table border="1">
+    <table>
         <tbody>
             <tr>
                 <th>注文番号</th>
@@ -58,7 +59,7 @@
         <form th:if="${order.status.name() == 'ORDERED'}" th:action="@{/orders/{id}/cancel(
               id=${order.id})}" method="post">
 
-            <button type="submit" onclick="return confirm(
+            <button type="submit" class="button-danger" onclick="return confirm(
                     'この注文をキャンセルしますか？');">
                 注文をキャンセルする
             </button>
@@ -111,7 +112,7 @@
 
     <h2>注文明細</h2>
 
-    <table border="1">
+    <table>
         <thead>
             <tr>
                 <th>商品名</th>

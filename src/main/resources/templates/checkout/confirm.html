@@ -4,17 +4,18 @@
 <head>
     <meta charset="UTF-8">
     <title>注文確認</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
 
     <h1>注文確認</h1>
 
-    <table border="1">
+    <table>
 
         <h2>配送先</h2>
 
-        <table border="1">
+        <table>
             <tbody>
                 <tr>
                     <th>受取人氏名</th>
@@ -78,14 +79,14 @@
         円
     </p>
 
-    <p th:if="${errorMessage}" th:text="${errorMessage}" style="color: red;">
+    <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
     <form th:action="@{/checkout/order}" method="post">
-        <button type="submit">注文を確定する</button>
+        <button type="submit" class="button-primary">注文を確定する</button>
     </form>
 
-    <a th:href="@{/checkout}">
+    <a th:href="@{/checkout}" class="button button-secondary">
         配送先入力へ戻る
     </a>
 

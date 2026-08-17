@@ -4,16 +4,17 @@
 <head>
     <meta charset="UTF-8">
     <title>注文詳細</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
 
     <h1>注文詳細</h1>
 
-    <p th:if="${successMessage}" th:text="${successMessage}" style="color: green;">
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
     </p>
 
-    <p th:if="${errorMessage}" th:text="${errorMessage}" style="color: red;">
+    <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
     <h2>注文情報</h2>
@@ -67,7 +68,7 @@
             'yyyy/MM/dd HH:mm')}">
                 </td>
             </tr>
-            
+
             <tr>
                 <th>合計金額</th>
                 <td>
@@ -89,7 +90,7 @@
         <form th:action="@{/admin/orders/{id}/pay(
             id=${order.id})}" method="post" style="display: inline;">
 
-            <button type="submit" onclick="return confirm(
+            <button type="submit" class="button-primary" onclick="return confirm(
                     'この注文を支払済みにしますか？');">
                 支払済みにする
             </button>
@@ -98,7 +99,7 @@
         <form th:action="@{/admin/orders/{id}/cancel(
             id=${order.id})}" method="post" style="display: inline;">
 
-            <button type="submit" onclick="return confirm(
+            <button type="submit" class="button-danger" onclick="return confirm(
                     'この注文をキャンセルしますか？');">
                 キャンセル
             </button>
@@ -111,7 +112,7 @@
         <form th:action="@{/admin/orders/{id}/ship(
             id=${order.id})}" method="post">
 
-            <button type="submit" onclick="return confirm(
+            <button type="submit" class="button-primary" onclick="return confirm(
                     'この注文を発送済みにしますか？');">
                 発送済みにする
             </button>
@@ -201,13 +202,13 @@
     </table>
 
     <p>
-        <a th:href="@{/admin/orders}">
+        <a th:href="@{/admin/orders}" class="button button-secondary">
             注文一覧へ戻る
         </a>
     </p>
 
     <p>
-        <a th:href="@{/admin}">
+        <a th:href="@{/admin}" class="button button-secondary">
             管理者メニューへ戻る
         </a>
     </p>

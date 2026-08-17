@@ -4,20 +4,21 @@
 <head>
     <meta charset="UTF-8">
     <title>ショッピングカート</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
 
     <h1>ショッピングカート</h1>
 
-    <p th:if="${errorMessage}" th:text="${errorMessage}" style="color: red;">
+    <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
     <div th:if="${#lists.isEmpty(cart.items)}">
         <p>カートに商品はありません。</p>
     </div>
 
-    <table th:unless="${#lists.isEmpty(cart.items)}" border="1">
+    <table th:unless="${#lists.isEmpty(cart.items)}">
 
         <thead>
             <tr>
@@ -25,6 +26,7 @@
                 <th>価格</th>
                 <th>数量</th>
                 <th>小計</th>
+                <th>操作</th>
             </tr>
         </thead>
 
@@ -39,7 +41,7 @@
 
                         <input type="number" name="quantity" th:value="${item.quantity}" min="1" max="99">
 
-                        <button type="submit">更新</button>
+                        <button type="submit" class="button-secondary">更新</button>
                     </form>
                 </td>
 
@@ -49,7 +51,7 @@
                     <form th:action="@{/cart/remove}" method="post">
                         <input type="hidden" name="productId" th:value="${item.productId}">
 
-                        <button type="submit">削除</button>
+                        <button type="submit" class="button-danger">削除</button>
                     </form>
                 </td>
             </tr>
@@ -70,7 +72,7 @@
         </p>
 
         <p th:unless="${#lists.isEmpty(cart.items)}">
-            <a th:href="@{/checkout}">
+            <a th:href="@{/checkout}" class="button button-secondary">
                 注文手続きへ
             </a>
         </p>
@@ -79,13 +81,13 @@
     <form th:action="@{/cart/clear}" method="post" th:unless="${#lists.isEmpty(cart.items)}"
         onsubmit="return confirm('カート内の商品をすべて削除しますか？');">
 
-        <button type="submit">
+        <button type="submit" class="button-danger">
             カートを空にする
         </button>
     </form>
 
     <p>
-        <a th:href="@{/products}">商品一覧へ戻る</a>
+        <a th:href="@{/products}" class="button button-secondary">商品一覧へ戻る</a>
     </p>
 
 </body>

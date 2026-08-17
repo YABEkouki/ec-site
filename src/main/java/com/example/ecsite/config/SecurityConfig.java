@@ -21,7 +21,8 @@ public class SecurityConfig {
                                                 .requestMatchers(
                                                                 "/login",
                                                                 "/signup",
-                                                                "/403")
+                                                                "/403",
+                                                                "/css/**")
                                                 .permitAll()
 
                                                 // 管理画面

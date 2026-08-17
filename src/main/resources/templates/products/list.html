@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>商品一覧</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
@@ -35,9 +36,9 @@
 
         </select>
 
-        <button type="submit">検索</button>
+        <button type="submit" class="button-secondary">検索</button>
 
-        <a th:href="@{/products}">
+        <a th:href="@{/products}" class="button button-secondary">
             クリア
         </a>
 
@@ -48,22 +49,6 @@
     <p th:if="${message}" th:text="${message}" style="color:green">
     </p>
 
-    <div sec:authorize="hasRole('ADMIN')">
-
-        <p>
-            <a th:href="@{/admin/products/new}">
-                新規商品登録
-            </a>
-        </p>
-
-        <p>
-            <a th:href="@{/admin/products/inactive}">
-                販売終了商品一覧
-            </a>
-        </p>
-
-    </div>
-
     <p th:if="${#lists.isEmpty(products)}">
         該当する商品はありません。
     </p>
@@ -73,7 +58,7 @@
         <span th:text="${products.size()}"></span>
     </p>
 
-    <table th:unless="${#lists.isEmpty(products)}" border="1">
+    <table th:unless="${#lists.isEmpty(products)}">
         <thead>
             <tr>
                 <th>ID</th>
@@ -92,18 +77,6 @@
                 </td>
                 <td th:text="${product.price}"></td>
                 <td th:text="${product.stock}"></td>
-
-                <td sec:authorize="hasRole('ADMIN')">
-                    <a th:href="@{/admin/products/{id}/edit(id=${product.id})}">
-                        編集
-                    </a>
-                    <form th:action="@{/admin/products/{id}/delete(id=${product.id})}" method="post" style="display:inline">
-
-                        <button type="submit" onclick="return confirm('本当に削除しますか？')">
-                            削除
-                        </button>
-                    </form>
-                </td>
             </tr>
         </tbody>
     </table>
@@ -117,7 +90,7 @@
             keyword=${keyword},
             sort=${sort},
             page=${productPage.number - 1}
-       )}">
+       )}" class="button button-secondary">
                 前へ
             </a>
 
@@ -126,14 +99,14 @@
                       0,
                       productPage.totalPages - 1)}">
 
-                <span th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}">
+                <span th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}" class="button button-secondary">
                 </span>
 
                 <a th:unless="${pageNumber == productPage.number}" th:href="@{/products(
                 keyword=${keyword},
                 sort=${sort},
                 page=${pageNumber}
-           )}" th:text="${pageNumber + 1}">
+           )}" th:text="${pageNumber + 1}" class="button button-secondary">
                 </a>
 
             </span>
@@ -142,7 +115,7 @@
             keyword=${keyword},
             sort=${sort},
             page=${productPage.number + 1}
-       )}">
+       )}" class="button button-secondary">
                 次へ
             </a>
 
@@ -150,7 +123,9 @@
     </div>
 
     <p>
-        <a th:href="@{/}">トップページへ戻る</a>
+        <a th:href="@{/}" class="button button-secondary">
+            トップページへ戻る
+        </a>
     </p>
 
 </body>
