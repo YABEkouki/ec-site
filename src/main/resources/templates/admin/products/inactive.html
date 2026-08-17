@@ -8,7 +8,9 @@
 </head>
 
 <body>
-
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+    
     <h1>販売終了商品一覧</h1>
 
     <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">

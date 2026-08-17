@@ -8,6 +8,8 @@
 </head>
 
 <body>
+    <header th:replace="~{fragments/header :: header}">
+    </header>
 
     <h1>注文履歴</h1>
 
@@ -72,7 +74,8 @@
                 0,
                 orderPage.totalPages - 1)}">
 
-            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}" class="button button-secondary">
+            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
             </strong>
 
             <a th:unless="${pageNumber == orderPage.number}" th:href="@{/orders(

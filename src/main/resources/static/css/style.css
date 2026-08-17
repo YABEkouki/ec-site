@@ -157,6 +157,15 @@ nav strong {
     .button {
         margin-bottom: 6px;
     }
+
+    .site-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .site-nav {
+        align-items: flex-start;
+    }
 }
 
 .actions {
@@ -183,4 +192,43 @@ nav strong {
 .stock-low {
     color: #c05a00;
     font-weight: bold;
+}
+
+.site-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding: 14px 18px;
+    background-color: #fff;
+    border-bottom: 3px solid #1769aa;
+}
+
+.site-title {
+    color: #243447;
+    font-size: 1.3rem;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.site-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin: 0;
+}
+
+.login-user {
+    color: #555;
+}
+
+.admin-header {
+    border-bottom-color: #7b3fa1;
+}
+
+.admin-header .site-title {
+    color: #62317f;
 }

@@ -8,46 +8,8 @@
 </head>
 
 <body>
-
-    <h1>管理者メニュー</h1>
-
-    <section>
-
-        <h2>管理メニュー</h2>
-
-        <ul>
-            <li>
-                <a th:href="@{/admin/products}">
-                    商品管理
-                </a>
-            </li>
-
-            <li>
-                <a th:href="@{/admin/products/new}">
-                    商品登録
-                </a>
-            </li>
-
-            <li>
-                <a th:href="@{/admin/products/inactive}">
-                    非公開商品
-                </a>
-            </li>
-
-            <li>
-                <a th:href="@{/admin/orders}">
-                    注文管理
-                </a>
-            </li>
-
-        </ul>
-        <p>
-            <a th:href="@{/}" class="button button-secondary">
-                一般TOPへ戻る
-            </a>
-        </p>
-
-    </section>
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
 
     <section>
 
@@ -141,8 +103,7 @@
 
                         <td th:text="${product.name}"></td>
 
-                        <td th:text="${product.stock}" 
-                            th:class="${product.stock == 0}
+                        <td th:text="${product.stock}" th:class="${product.stock == 0}
                                 ? 'stock-empty'
                                 : 'stock-low'">
                         </td>
@@ -161,13 +122,6 @@
         </section>
 
     </section>
-
-
-
-
-    <form th:action="@{/logout}" method="post">
-        <button type="submit" class="button-secondary">ログアウト</button>
-    </form>
 
 </body>
 
