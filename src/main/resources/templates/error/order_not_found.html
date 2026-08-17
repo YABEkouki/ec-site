@@ -4,27 +4,29 @@
 <head>
     <meta charset="UTF-8">
     <title>注文が見つかりません</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
 <body>
 
-<h1>404 注文が見つかりません</h1>
+    <h1>404 注文が見つかりません</h1>
 
-<p th:text="${message}">
-    指定された注文は存在しません。
-</p>
+    <p th:text="${message}">
+        指定された注文は存在しません。
+    </p>
 
-<p>
-    <a th:href="@{/orders}">
-        注文履歴へ戻る
-    </a>
-</p>
+    <p>
+        <a th:href="@{/orders}">
+            注文履歴へ戻る
+        </a>
+    </p>
 
-<p>
-    <a th:href="@{/}">
-        トップページへ戻る
-    </a>
-</p>
+    <p>
+        <a th:href="@{/}">
+            トップページへ戻る
+        </a>
+    </p>
 
 </body>
+
 </html>

@@ -19,7 +19,7 @@
 
     <h2>注文情報</h2>
 
-    <table border="1">
+    <table>
         <tbody>
             <tr>
                 <th>注文番号</th>
@@ -88,7 +88,7 @@
     <div th:if="${order.status.name() == 'ORDERED'}">
 
         <form th:action="@{/admin/orders/{id}/pay(
-            id=${order.id})}" method="post" style="display: inline;">
+            id=${order.id})}" method="post" class="inline-form">
 
             <button type="submit" class="button-primary" onclick="return confirm(
                     'この注文を支払済みにしますか？');">
@@ -97,7 +97,7 @@
         </form>
 
         <form th:action="@{/admin/orders/{id}/cancel(
-            id=${order.id})}" method="post" style="display: inline;">
+            id=${order.id})}" method="post" class="inline-form">
 
             <button type="submit" class="button-danger" onclick="return confirm(
                     'この注文をキャンセルしますか？');">
@@ -161,7 +161,7 @@
 
     <h2>注文明細</h2>
 
-    <table border="1">
+    <table>
         <thead>
             <tr>
                 <th>商品ID</th>

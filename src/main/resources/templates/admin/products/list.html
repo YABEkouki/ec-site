@@ -105,23 +105,25 @@
                 </td>
 
                 <td>
-
-                    <a th:href="@{/admin/products/{id}/edit(
+                    <div class="actions">
+                        <a th:href="@{/admin/products/{id}/edit(
                     id=${product.id})}" class="button button-secondary">
-                        編集
-                    </a>
+                            編集
+                        </a>
 
-                    <a th:href="@{/products/{id}(id=${product.id})}" target="_blank" rel="noopener" class="button button-secondary">
-                        公開画面を確認
-                    </a>
+                        <a th:href="@{/products/{id}(id=${product.id})}" target="_blank" rel="noopener"
+                            class="button button-secondary">
+                            公開画面を確認
+                        </a>
 
-                    <form th:action="@{/admin/products/{id}/delete(
-                    id=${product.id})}" method="post" style="display: inline;">
+                        <form th:action="@{/admin/products/{id}/delete(
+                    id=${product.id})}" method="post" class="inline-form">
 
-                        <button type="submit" class="button-primary">
-                            販売終了
-                        </button>
-                    </form>
+                            <button type="submit" class="button-primary">
+                                販売終了
+                            </button>
+                        </form>
+                    </div>
                 </td>
 
             </tr>
@@ -142,7 +144,8 @@
                 0,
                 productPage.totalPages - 1)}">
 
-            <strong th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}" class="button button-secondary">
+            <strong th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
             </strong>
 
             <a th:unless="${pageNumber == productPage.number}" th:href="@{/admin/products(

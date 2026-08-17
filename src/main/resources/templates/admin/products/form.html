@@ -1,58 +1,57 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
     <title>商品登録</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
+
 <body>
 
-<h1>商品登録</h1>
+    <h1>商品登録</h1>
 
-<form th:action="@{/admin/products}"
-      th:object="${productForm}"
-      method="post">
+    <form th:action="@{/admin/products}" th:object="${productForm}" method="post">
+        <p>
+            <label>
+                商品名：
+                <input type="text" th:field="*{name}">
+            </label>
+            <span th:if="${#fields.hasErrors('name')}" th:errors="*{name}"></span>
+        </p>
+
+        <p>
+            <label>
+                価格：
+                <input type="number" id="price" name="price" value="" th:field="*{price}">
+            </label>
+            <span th:if="${#fields.hasErrors('price')}" th:errors="*{price}"></span>
+        </p>
+
+        <p>
+            <label>
+                在庫：
+                <input type="number" id="stock" name="stock" value="" th:field="*{stock}">
+            </label>
+            <span th:if="${#fields.hasErrors('stock')}" th:errors="*{stock}"></span>
+        </p>
+
+        <p>
+            <label>
+                説明：
+                <textarea id="description" name="description" th:field="*{description}"></textarea>
+            </label>
+        </p>
+
+        <button type="submit" class="button-primary">登録</button>
+    </form>
+
     <p>
-        <label>
-            商品名：
-            <input type="text" th:field="*{name}">
-        </label>
-        <span th:if="${#fields.hasErrors('name')}"
-              th:errors="*{name}"></span>
+        <a th:href="@{/admin/products}" class="button button-secondary">
+            商品一覧へ戻る
+        </a>
     </p>
-
-    <p>
-        <label>
-            価格：
-            <input type="number" id="price" name="price" value="" th:field="*{price}">
-        </label>
-        <span th:if="${#fields.hasErrors('price')}"
-              th:errors="*{price}"></span>
-    </p>
-
-    <p>
-        <label>
-            在庫：
-            <input type="number" id="stock" name="stock" value="" th:field="*{stock}">
-        </label>
-        <span th:if="${#fields.hasErrors('stock')}"
-              th:errors="*{stock}"></span>
-    </p>
-
-    <p>
-        <label>
-            説明：
-            <textarea id="description" name="description" th:field="*{description}"></textarea>
-        </label>
-    </p>
-
-    <button type="submit" class="button-primary">登録</button>
-</form>
-
-<p>
-    <a th:href="@{/admin/products}" class="button button-secondary">
-        商品一覧へ戻る
-    </a>
-</p>
 
 </body>
+
 </html>

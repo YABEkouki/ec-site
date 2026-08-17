@@ -141,9 +141,10 @@
 
                         <td th:text="${product.name}"></td>
 
-                        <td th:text="${product.stock}" th:style="${product.stock == 0}
-                    ? 'color: red; font-weight: bold;'
-                    : 'color: darkorange; font-weight: bold;'">
+                        <td th:text="${product.stock}" 
+                            th:class="${product.stock == 0}
+                                ? 'stock-empty'
+                                : 'stock-low'">
                         </td>
 
                         <td>

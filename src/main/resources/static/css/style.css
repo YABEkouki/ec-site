@@ -126,3 +126,61 @@ nav strong {
     padding: 6px 9px;
     text-align: center;
 }
+
+@media (max-width: 768px) {
+
+    body {
+        padding: 12px;
+    }
+
+    h1 {
+        font-size: 1.6rem;
+    }
+
+    h2 {
+        font-size: 1.3rem;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    input,
+    select,
+    textarea {
+        max-width: 100%;
+    }
+
+    button,
+    .button {
+        margin-bottom: 6px;
+    }
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.actions form {
+    margin: 0;
+}
+
+.inline-form {
+    display: inline-block;
+    margin: 0;
+}
+
+.stock-empty {
+    color: #b3261e;
+    font-weight: bold;
+}
+
+.stock-low {
+    color: #c05a00;
+    font-weight: bold;
+}

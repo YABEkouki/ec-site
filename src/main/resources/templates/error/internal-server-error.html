@@ -1,20 +1,24 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
+
 <head>
     <meta charset="UTF-8">
     <title>システムエラー</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
+
 <body>
 
-<h1>500 システムエラー</h1>
+    <h1>500 システムエラー</h1>
 
-<p th:text="${message}"></p>
+    <p th:text="${message}"></p>
 
-<p>
-    <a th:href="@{/products}">
-        商品一覧へ戻る
-    </a>
-</p>
+    <p>
+        <a th:href="@{/products}">
+            商品一覧へ戻る
+        </a>
+    </p>
 
 </body>
+
 </html>
