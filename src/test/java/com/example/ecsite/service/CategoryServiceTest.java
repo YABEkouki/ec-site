@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -133,5 +135,137 @@ class CategoryServiceTest {
 
                 verify(categoryRepository)
                                 .saveAndFlush(any());
+        }
+
+        @Test
+        void updateTrimsNameAndSavesCategory() {
+
+                Category category = new Category("旧カテゴリ名");
+
+                CategoryForm form = new CategoryForm();
+
+                form.setName("  新カテゴリ名  ");
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                when(categoryRepository
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                "新カテゴリ名",
+                                                1L))
+                                .thenReturn(false);
+
+                when(categoryRepository
+                                .saveAndFlush(category))
+                                .thenReturn(category);
+
+                Category result = categoryService.update(
+                                1L,
+                                form);
+
+                assertSame(category, result);
+
+                assertEquals(
+                                "新カテゴリ名",
+                                result.getName());
+
+                verify(categoryRepository)
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                "新カテゴリ名",
+                                                1L);
+
+                verify(categoryRepository)
+                                .saveAndFlush(category);
+        }
+
+        @Test
+        void updateRejectsDuplicateName() {
+
+                Category category = new Category("旧カテゴリ名");
+
+                CategoryForm form = new CategoryForm();
+
+                form.setName("  食品  ");
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                when(categoryRepository
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                "食品",
+                                                1L))
+                                .thenReturn(true);
+
+                assertThrows(
+                                CategoryAlreadyExistsException.class,
+                                () -> categoryService.update(
+                                                1L,
+                                                form));
+
+                assertEquals(
+                                "旧カテゴリ名",
+                                category.getName());
+
+                verify(categoryRepository, never())
+                                .saveAndFlush(any());
+        }
+
+        @Test
+        void updateThrowsWhenCategoryNotFound() {
+
+                CategoryForm form = new CategoryForm();
+
+                form.setName("食品");
+
+                when(categoryRepository.findById(99L))
+                                .thenReturn(Optional.empty());
+
+                assertThrows(
+                                CategoryNotFoundException.class,
+                                () -> categoryService.update(
+                                                99L,
+                                                form));
+
+                verify(categoryRepository, never())
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                anyString(),
+                                                anyLong());
+
+                verify(categoryRepository, never())
+                                .saveAndFlush(any());
+        }
+
+        @Test
+        void updateConvertsDatabaseDuplicateError() {
+
+                Category category = new Category("旧カテゴリ名");
+
+                CategoryForm form = new CategoryForm();
+
+                form.setName("食品");
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                when(categoryRepository
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                "食品",
+                                                1L))
+                                .thenReturn(false);
+
+                when(categoryRepository
+                                .saveAndFlush(category))
+                                .thenThrow(
+                                                new DataIntegrityViolationException(
+                                                                "duplicate category"));
+
+                assertThrows(
+                                CategoryAlreadyExistsException.class,
+                                () -> categoryService.update(
+                                                1L,
+                                                form));
+
+                verify(categoryRepository)
+                                .saveAndFlush(category);
         }
 }

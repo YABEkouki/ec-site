@@ -64,6 +64,45 @@ public class CategoryService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public Category findById(Long id) {
+
+        return categoryRepository
+                .findById(id)
+                .orElseThrow(() -> new CategoryNotFoundException(id));
+    }
+
+    public Category update(
+            Long id,
+            CategoryForm categoryForm) {
+
+        Category category = findById(id);
+
+        String name = normalizeName(categoryForm.getName());
+
+        if (categoryRepository
+                .existsByNameIgnoreCaseAndIdNot(
+                        name,
+                        id)) {
+
+            throw new CategoryAlreadyExistsException(
+                    name);
+        }
+
+        category.setName(name);
+
+        try {
+            return categoryRepository
+                    .saveAndFlush(category);
+
+        } catch (DataIntegrityViolationException e) {
+
+            throw new CategoryAlreadyExistsException(
+                    name,
+                    e);
+        }
+    }
+
     private String normalizeName(String name) {
         return name.trim();
     }

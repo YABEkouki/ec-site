@@ -51,6 +51,7 @@
             <tr>
                 <th>ID</th>
                 <th>カテゴリ名</th>
+                <th>操作</th>
             </tr>
         </thead>
 
@@ -58,6 +59,11 @@
             <tr th:each="category : ${categories}">
                 <td th:text="${category.id}"></td>
                 <td th:text="${category.name}"></td>
+                <td>
+                    <a th:href="@{/admin/categories/{id}/edit(id=${category.id})}" class="button button-secondary">
+                        編集
+                    </a>
+                </td>
             </tr>
         </tbody>
 

@@ -15,4 +15,6 @@ public interface CategoryRepository
     Optional<Category> findByIdAndActiveTrue(Long id);
 
     boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }
