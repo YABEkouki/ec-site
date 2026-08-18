@@ -20,10 +20,12 @@ import com.example.ecsite.repository.ProductRepository;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final CategoryService categoryService;
 
-    public ProductService(ProductRepository productRepository) {
+    public ProductService(ProductRepository productRepository, CategoryService categoryService) {
 
         this.productRepository = productRepository;
+        this.categoryService = categoryService;
     }
 
     public List<Product> findAll() {
@@ -50,21 +52,18 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Product> findInactiveProducts(
-            int page,
-            int size) {
+    public Page<Product> findInactiveProducts(int page, int size) {
 
-        Pageable pageable = PageRequest.of(
-                page,
-                size,
-                Sort.by(Product::getId).descending());
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Product::getId).descending());
 
         return productRepository.findByActiveFalse(pageable);
     }
 
-    public Product create(ProductForm productform) {
+    public Product create(ProductForm productForm) {
 
-        Product product = ProductMapper.toEntity(productform);
+        Product product = ProductMapper.toEntity(productForm);
+
+        product.setCategory(categoryService.findActiveById(productForm.getCategoryId()));
 
         return productRepository.save(product);
     }
@@ -74,6 +73,8 @@ public class ProductService {
         Product product = findByIdForUpdate(id);
 
         ProductMapper.copyToEntity(productForm, product);
+
+        product.setCategory(categoryService.findActiveById(productForm.getCategoryId()));
 
         return product;
     }
@@ -86,14 +87,15 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Product> search(String keyword, int page, int size, String sort) {
+    public Page<Product> search(
+            String keyword,
+            int page,
+            int size,
+            String sort) {
 
         Sort sortCondition = createSort(sort);
 
-        Pageable pageable = PageRequest.of(
-                page,
-                size,
-                sortCondition);
+        Pageable pageable = PageRequest.of(page, size, sortCondition);
 
         if (keyword == null || keyword.isBlank()) {
             return productRepository.findByActiveTrue(pageable);
@@ -103,28 +105,67 @@ public class ProductService {
                 .findByNameContainingIgnoreCaseAndActiveTrue(keyword.trim(), pageable);
     }
 
+    @Transactional(readOnly = true)
+    public Page<Product> search(
+            String keyword,
+            Long categoryId,
+            int page,
+            int size,
+            String sort) {
+
+        Sort sortCondition = createSort(sort);
+
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                sortCondition);
+
+        boolean hasKeyword = keyword != null
+                && !keyword.isBlank();
+
+        boolean hasCategory = categoryId != null;
+
+        if (hasKeyword && hasCategory) {
+
+            return productRepository
+                    .findByNameContainingIgnoreCaseAndCategory_IdAndActiveTrue(
+                            keyword.trim(),
+                            categoryId,
+                            pageable);
+        }
+
+        if (hasKeyword) {
+
+            return productRepository
+                    .findByNameContainingIgnoreCaseAndActiveTrue(
+                            keyword.trim(),
+                            pageable);
+        }
+
+        if (hasCategory) {
+
+            return productRepository
+                    .findByCategory_IdAndActiveTrue(
+                            categoryId,
+                            pageable);
+        }
+
+        return productRepository
+                .findByActiveTrue(pageable);
+    }
+
     private Sort createSort(String sort) {
 
         return switch (sort) {
-            case "nameAsc" ->
-                Sort.by(Product::getName)
-                        .ascending();
+            case "nameAsc" -> Sort.by(Product::getName).ascending();
 
-            case "priceAsc" ->
-                Sort.by(Product::getPrice)
-                        .ascending();
+            case "priceAsc" -> Sort.by(Product::getPrice).ascending();
 
-            case "priceDesc" ->
-                Sort.by(Product::getPrice)
-                        .descending();
+            case "priceDesc" -> Sort.by(Product::getPrice).descending();
 
-            case "newest" ->
-                Sort.by(Product::getId)
-                        .descending();
+            case "newest" -> Sort.by(Product::getId).descending();
 
-            default ->
-                Sort.by(Product::getId)
-                        .descending();
+            default -> Sort.by(Product::getId).descending();
         };
     }
 
@@ -138,8 +179,7 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public List<Product> findLowStockProducts(
-            int threshold) {
+    public List<Product> findLowStockProducts(int threshold) {
 
         return productRepository
                 .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(

@@ -1,66 +1,61 @@
 <!DOCTYPE html>
-<html lang="ja"
-      xmlns:th="http://www.thymeleaf.org"
-      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<html lang="ja" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 
 <body>
 
-<header th:fragment="header"
-        class="site-header admin-header">
+    <header th:fragment="header" class="site-header admin-header">
 
-    <a th:href="@{/admin}"
-       class="site-title">
-        ECサイト管理
-    </a>
-
-    <nav class="site-nav">
-
-        <a th:href="@{/admin}">
-            管理TOP
+        <a th:href="@{/admin}" class="site-title">
+            ECサイト管理
         </a>
 
-        <a th:href="@{/admin/products}">
-            商品管理
-        </a>
+        <nav class="site-nav">
 
-        <a th:href="@{/admin/products/new}">
-            商品登録
-        </a>
+            <a th:href="@{/admin}">
+                管理TOP
+            </a>
 
-        <a th:href="@{/admin/products/inactive}">
-            非公開商品
-        </a>
+            <a th:href="@{/admin/products}">
+                商品管理
+            </a>
 
-        <a th:href="@{/admin/orders}">
-            注文管理
-        </a>
+            <a th:href="@{/admin/categories}">
+                カテゴリ管理
+            </a>
 
-        <a th:href="@{/}"
-           target="_blank"
-           rel="noopener">
-            一般画面を確認
-        </a>
+            <a th:href="@{/admin/products/new}">
+                商品登録
+            </a>
 
-        <span sec:authorize="isAuthenticated()"
-              class="login-user">
-            <span sec:authentication="name"></span>
-            さん
-        </span>
+            <a th:href="@{/admin/products/inactive}">
+                非公開商品
+            </a>
 
-        <form th:action="@{/logout}"
-              method="post"
-              class="inline-form">
+            <a th:href="@{/admin/orders}">
+                注文管理
+            </a>
 
-            <button type="submit"
-                    class="button-secondary">
-                ログアウト
-            </button>
+            <a th:href="@{/}" target="_blank" rel="noopener">
+                一般画面を確認
+            </a>
 
-        </form>
+            <span sec:authorize="isAuthenticated()" class="login-user">
+                <span sec:authentication="name"></span>
+                さん
+            </span>
 
-    </nav>
+            <form th:action="@{/logout}" method="post" class="inline-form">
 
-</header>
+                <button type="submit" class="button-secondary">
+                    ログアウト
+                </button>
+
+            </form>
+
+        </nav>
+
+    </header>
 
 </body>
+
 </html>

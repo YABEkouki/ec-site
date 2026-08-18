@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -36,20 +37,27 @@ public interface ProductRepository
         Optional<Product> findByIdForUpdateIncludingInactive(
                         @Param("id") Long id);
 
+        @EntityGraph(attributePaths = "category")
         List<Product> findByActiveTrue();
 
+        @EntityGraph(attributePaths = "category")
         Optional<Product> findByIdAndActiveTrue(Long id);
 
+        @EntityGraph(attributePaths = "category")
         Optional<Product> findByIdAndActiveFalse(Long id);
 
+        @EntityGraph(attributePaths = "category")
         Page<Product> findByActiveTrue(Pageable pageable);
 
+        @EntityGraph(attributePaths = "category")
         Page<Product> findByActiveFalse(Pageable pageable);
 
+        @EntityGraph(attributePaths = "category")
         Page<Product> findByNameContainingIgnoreCaseAndActiveTrue(
                         String keyword,
                         Pageable pageable);
 
+        @EntityGraph(attributePaths = "category")
         List<Product> findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
                         int stock);
 
@@ -62,4 +70,16 @@ public interface ProductRepository
                         """)
         Optional<Product> findInactiveByIdForUpdate(
                         @Param("id") Long id);
+
+        @EntityGraph(attributePaths = "category")
+        Page<Product> findByCategory_IdAndActiveTrue(
+                        Long categoryId,
+                        Pageable pageable);
+
+        @EntityGraph(attributePaths = "category")
+        Page<Product> findByNameContainingIgnoreCaseAndCategory_IdAndActiveTrue(
+                        String keyword,
+                        Long categoryId,
+                        Pageable pageable);
+
 }

@@ -21,6 +21,9 @@ public class ProductForm {
 
     private String description;
 
+    @NotNull(message = "カテゴリを選択してください。")
+    private Long categoryId;
+
     public String getName() {
         return name;
     }
@@ -51,5 +54,13 @@ public class ProductForm {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Long categoryId) {
+        this.categoryId = categoryId;
     }
 }

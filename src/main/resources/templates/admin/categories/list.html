@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>カテゴリ管理</title>
+
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>カテゴリ管理</h1>
+
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
+    </p>
+
+    <h2>カテゴリ登録</h2>
+
+    <form th:action="@{/admin/categories}" th:object="${categoryForm}" method="post">
+
+        <div>
+            <label for="name">
+                カテゴリ名
+            </label>
+
+            <input type="text" id="name" th:field="*{name}" maxlength="100" required>
+
+            <p th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="field-error">
+            </p>
+        </div>
+
+        <button type="submit" class="button-primary">
+            登録
+        </button>
+
+    </form>
+
+    <h2>カテゴリ一覧</h2>
+
+    <p th:if="${#lists.isEmpty(categories)}">
+        登録されているカテゴリはありません。
+    </p>
+
+    <table th:unless="${#lists.isEmpty(categories)}">
+
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>カテゴリ名</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="category : ${categories}">
+                <td th:text="${category.id}"></td>
+                <td th:text="${category.name}"></td>
+            </tr>
+        </tbody>
+
+    </table>
+
+    <p>
+        <a th:href="@{/admin}" class="button button-secondary">
+            管理者メニューへ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>

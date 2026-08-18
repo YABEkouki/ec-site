@@ -34,11 +34,19 @@
     <form th:action="@{/admin/products}" method="get">
 
         <label for="keyword">商品名</label>
-
         <input id="keyword" type="text" name="keyword" th:value="${keyword}">
 
-        <label for="sort">並び順</label>
+        <label for="categoryId">カテゴリ</label>
+        <select id="categoryId" name="categoryId">
+            <option value="" th:selected="${categoryId == null}">
+                すべて
+            </option>
+            <option th:each="category : ${categories}" th:value="${category.id}" th:text="${category.name}"
+                th:selected="${category.id == categoryId}">
+            </option>
+        </select>
 
+        <label for="sort">並び順</label>
         <select id="sort" name="sort">
             <option value="newest" th:selected="${sort == 'newest'}">
                 新しい順
@@ -59,6 +67,10 @@
 
         <button type="submit" class="button-secondary">検索</button>
 
+        <a th:href="@{/admin/products}" class="button button-secondary">
+            クリア
+        </a>
+
     </form>
 
     <p>
@@ -76,6 +88,7 @@
             <tr>
                 <th>ID</th>
                 <th>商品名</th>
+                <th>カテゴリ</th>
                 <th>価格</th>
                 <th>在庫</th>
                 <th>更新日時</th>
@@ -89,6 +102,9 @@
                 <td th:text="${product.id}"></td>
 
                 <td th:text="${product.name}"></td>
+
+                <td th:text="${product.category.name}">
+                </td>
 
                 <td>
                     <span th:text="${#numbers.formatInteger(
@@ -136,6 +152,7 @@
 
         <a th:if="${productPage.hasPrevious()}" th:href="@{/admin/products(
            keyword=${keyword},
+           categoryId=${categoryId},
            sort=${sort},
            page=${productPage.number - 1})}" class="button button-secondary">
             前へ
@@ -152,6 +169,7 @@
 
             <a th:unless="${pageNumber == productPage.number}" th:href="@{/admin/products(
                keyword=${keyword},
+               categoryId=${categoryId},
                sort=${sort},
                page=${pageNumber})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
@@ -160,6 +178,7 @@
 
         <a th:if="${productPage.hasNext()}" th:href="@{/admin/products(
            keyword=${keyword},
+           categoryId=${categoryId},
            sort=${sort},
            page=${productPage.number + 1})}" class="button button-secondary">
             次へ

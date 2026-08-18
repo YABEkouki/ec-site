@@ -10,7 +10,7 @@
 <body>
     <header th:replace="~{fragments/admin-header :: header}">
     </header>
-    
+
     <h1>販売終了商品一覧</h1>
 
     <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
@@ -26,6 +26,7 @@
             <tr>
                 <th>ID</th>
                 <th>商品名</th>
+                <th>カテゴリ</th>
                 <th>価格</th>
                 <th>在庫</th>
                 <th>操作</th>
@@ -38,6 +39,9 @@
                 <td th:text="${product.id}"></td>
 
                 <td th:text="${product.name}"></td>
+
+                <td th:text="${product.category.name}">
+                </td>
 
                 <td>
                     <span th:text="${#numbers.formatInteger(
