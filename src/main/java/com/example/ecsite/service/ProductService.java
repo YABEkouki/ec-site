@@ -57,7 +57,7 @@ public class ProductService {
         Pageable pageable = PageRequest.of(
                 page,
                 size,
-                Sort.by("id").descending());
+                Sort.by(Product::getId).descending());
 
         return productRepository.findByActiveFalse(pageable);
     }

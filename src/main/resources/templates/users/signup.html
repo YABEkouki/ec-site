@@ -29,10 +29,12 @@
                     <span class="required">必須</span>
                 </label>
 
-                <input type="text" th:field="*{username}" maxlength="100" autocomplete="username" autofocus required>
+                <input type="text" th:field="*{username}" maxlength="100" autocomplete="username" autofocus required
+                    oninput="document.getElementById('username-error')?.remove()">
 
-                <span th:if="${#fields.hasErrors('username')}" th:errors="*{username}" class="field-error">
-                </span>
+                <div id="username-error" th:if="${#fields.hasErrors('username')}" th:errors="*{username}"
+                    class="field-error">
+                </div>
 
             </div>
 
@@ -58,8 +60,8 @@
                     <span class="required">必須</span>
                 </label>
 
-                <input type="password" th:field="*{confirmPassword}" minlength="8" maxlength="100" ,autocomplete="new-password"
-                    required>
+                <input type="password" th:field="*{confirmPassword}" minlength="8" maxlength="100"
+                    ,autocomplete="new-password" required>
 
                 <span th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}"
                     class="field-error">
