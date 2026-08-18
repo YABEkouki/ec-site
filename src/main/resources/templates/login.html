@@ -7,31 +7,60 @@
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
-<body>
+<body class="auth-page">
 
-    <h1>ログイン</h1>
+    <main class="auth-container">
 
-    <p th:if="${param.logout}">
-        ログアウトしました。
-    </p>
+        <h1>ECサイト ログイン</h1>
 
-    <form th:action="@{/login}" method="post">
+        <p th:if="${param.error}" class="message-error">
+            ユーザー名またはパスワードが正しくありません。
+        </p>
 
-        <div>
-            <label>ユーザー名</label>
-            <input type="text" name="username">
-        </div>
+        <p th:if="${param.logout}" class="message-success">
+            ログアウトしました。
+        </p>
 
-        <div>
-            <label>パスワード</label>
-            <input type="password" name="password">
-        </div>
+        <p th:if="${param.registered}" class="message-success">
+            ユーザー登録が完了しました。ログインしてください。
+        </p>
 
-        <button type="submit" class="button-secondary">
-            ログイン
-        </button>
+        <form th:action="@{/login}" method="post" class="form-card">
 
-    </form>
+            <div class="form-group">
+
+                <label for="username">
+                    ユーザー名
+                </label>
+
+                <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+
+            </div>
+
+            <div class="form-group">
+
+                <label for="password">
+                    パスワード
+                </label>
+
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+            </div>
+
+            <button type="submit" class="button-primary">
+                ログイン
+            </button>
+
+        </form>
+
+        <p class="auth-links">
+            アカウントをお持ちでない方は
+            <a th:href="@{/signup}">
+                新規登録
+            </a>
+        </p>
+
+    </main>
 
 </body>
 

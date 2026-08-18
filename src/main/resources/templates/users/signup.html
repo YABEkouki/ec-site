@@ -7,37 +7,80 @@
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
-<body>
+<body class="auth-page">
 
-    <h1>会員登録</h1>
+    <main class="auth-container">
 
-    <form th:action="@{/signup}" th:object="${userForm}" method="post">
+        <h1>会員登録</h1>
 
-        <div>
-            <label>ユーザー名</label>
-            <input type="text" th:field="*{username}">
+        <form th:action="@{/signup}" th:object="${userForm}" method="post" class="form-card">
 
-            <div th:if="${#fields.hasErrors('username')}" th:errors="*{username}">
+            <div th:if="${#fields.hasGlobalErrors()}" class="message-error">
+
+                <p th:each="error : ${#fields.globalErrors()}" th:text="${error}">
+                </p>
+
             </div>
-        </div>
 
-        <div>
-            <label>パスワード</label>
-            <input type="password" th:field="*{password}">
-        </div>
+            <div class="form-group">
 
-        <div>
-            <label>確認用パスワード</label>
-            <input type="password" th:field="*{confirmPassword}">
-            <div th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}">
+                <label for="username">
+                    ユーザー名
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="text" th:field="*{username}" maxlength="100" autocomplete="username" autofocus required>
+
+                <span th:if="${#fields.hasErrors('username')}" th:errors="*{username}" class="field-error">
+                </span>
+
             </div>
-        </div>
 
-        <button type="submit" class="button-primary">
-            登録
-        </button>
+            <div class="form-group">
 
-    </form>
+                <label for="password">
+                    パスワード
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="password" th:field="*{password}" minlength="8" maxlength="100" ,autocomplete="new-password"
+                    required>
+
+                <span th:if="${#fields.hasErrors('password')}" th:errors="*{password}" class="field-error">
+                </span>
+
+            </div>
+
+            <div class="form-group">
+
+                <label for="confirmPassword">
+                    確認用パスワード
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="password" th:field="*{confirmPassword}" minlength="8" maxlength="100" ,autocomplete="new-password"
+                    required>
+
+                <span th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}"
+                    class="field-error">
+                </span>
+
+            </div>
+
+            <button type="submit" class="button-primary">
+                登録
+            </button>
+
+        </form>
+
+        <p class="auth-links">
+            既にアカウントをお持ちの方は
+            <a th:href="@{/login}">
+                ログイン
+            </a>
+        </p>
+
+    </main>
 
 </body>
 

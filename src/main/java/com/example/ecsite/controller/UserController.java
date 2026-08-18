@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 
+import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.service.UserService;
 
@@ -31,9 +32,8 @@ public class UserController {
 
     @PostMapping("/signup")
     public String signup(
-            @Valid @ModelAttribute UserForm userForm,
-            BindingResult bindingResult,
-            Model model) {
+            @Valid @ModelAttribute("userForm") UserForm userForm,
+            BindingResult bindingResult) {
 
         if (bindingResult.hasErrors()) {
             return "users/signup";
@@ -59,9 +59,20 @@ public class UserController {
             return "users/signup";
         }
 
-        userService.register(userForm);
+        try {
+            userService.register(userForm);
 
-        return "redirect:/login";
+        } catch (UsernameAlreadyExistsException e) {
+
+            bindingResult.rejectValue(
+                    "username",
+                    "username.duplicate",
+                    "このユーザー名は既に使用されています。");
+
+            return "users/signup";
+        }
+
+        return "redirect:/login?registered";
     }
 
 }

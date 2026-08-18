@@ -1,9 +1,11 @@
 package com.example.ecsite.service;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.example.ecsite.entity.User;
+import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.repository.UserRepository;
 
@@ -21,14 +23,22 @@ public class UserService {
 
     public void register(UserForm userForm) {
 
-        User user = new User();
+        String username = normalizeUsername(userForm.getUsername());
 
-        user.setUsername(userForm.getUsername());
+        User user = new User();
+        
+        user.setUsername(username);
         user.setPassword(passwordEncoder.encode(userForm.getPassword()));
         user.setEnabled(true);
         user.setRole("ROLE_USER");
 
-        userRepository.save(user);
+        try {
+            userRepository.saveAndFlush(user);
+
+        } catch (DataIntegrityViolationException e) {
+
+            throw new UsernameAlreadyExistsException(username, e);
+        }
     }
 
     public boolean passwordsMatch(UserForm userForm) {
@@ -37,7 +47,11 @@ public class UserService {
     }
 
     public boolean usernameExists(String username) {
-        return userRepository.existsByUsername(username);
+        return userRepository.existsByUsername(normalizeUsername(username));
     }
 
+    private String normalizeUsername(String username) {
+
+        return username.trim();
+    }
 }
