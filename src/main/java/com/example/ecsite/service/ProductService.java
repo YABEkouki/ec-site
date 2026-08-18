@@ -106,11 +106,25 @@ public class ProductService {
     private Sort createSort(String sort) {
 
         return switch (sort) {
-            case "nameAsc" -> Sort.by("name").ascending();
-            case "priceAsc" -> Sort.by("price").ascending();
-            case "priceDesc" -> Sort.by("price").descending();
-            case "newest" -> Sort.by("id").descending();
-            default -> Sort.by("id").descending(); // Default sort order
+            case "nameAsc" ->
+                Sort.by(Product::getName)
+                        .ascending();
+
+            case "priceAsc" ->
+                Sort.by(Product::getPrice)
+                        .ascending();
+
+            case "priceDesc" ->
+                Sort.by(Product::getPrice)
+                        .descending();
+
+            case "newest" ->
+                Sort.by(Product::getId)
+                        .descending();
+
+            default ->
+                Sort.by(Product::getId)
+                        .descending();
         };
     }
 
