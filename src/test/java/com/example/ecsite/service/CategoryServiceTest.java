@@ -73,6 +73,107 @@ class CategoryServiceTest {
         }
 
         @Test
+        void createSetsDisplayOrder() {
+
+                CategoryForm form = new CategoryForm();
+                form.setName("食品");
+                form.setDisplayOrder(10);
+
+                when(categoryRepository
+                                .existsByNameIgnoreCase("食品"))
+                                .thenReturn(false);
+
+                when(categoryRepository
+                                .saveAndFlush(any()))
+                                .thenAnswer(invocation -> invocation.getArgument(0));
+
+                Category result = categoryService.create(form);
+
+                assertEquals(
+                                10,
+                                result.getDisplayOrder());
+
+                verify(categoryRepository)
+                                .saveAndFlush(any());
+        }
+
+        @Test
+        void updateSetsDisplayOrder() {
+
+                Category category = new Category("食品");
+                category.setDisplayOrder(1000);
+
+                CategoryForm form = new CategoryForm();
+                form.setName("食品");
+                form.setDisplayOrder(20);
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                when(categoryRepository
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                "食品",
+                                                1L))
+                                .thenReturn(false);
+
+                when(categoryRepository
+                                .saveAndFlush(category))
+                                .thenReturn(category);
+
+                Category result = categoryService.update(
+                                1L,
+                                form);
+
+                assertEquals(
+                                20,
+                                result.getDisplayOrder());
+
+                verify(categoryRepository)
+                                .saveAndFlush(category);
+        }
+
+        @Test
+        void updateKeepsSystemCategoryDisplayOrderAt9999() {
+
+                Category category = new Category("未分類");
+
+                ReflectionTestUtils.setField(
+                                category,
+                                "systemCategory",
+                                true);
+
+                category.setDisplayOrder(9999);
+
+                CategoryForm form = new CategoryForm();
+                form.setName("未分類");
+                form.setDisplayOrder(10);
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                when(categoryRepository
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                "未分類",
+                                                1L))
+                                .thenReturn(false);
+
+                when(categoryRepository
+                                .saveAndFlush(category))
+                                .thenReturn(category);
+
+                Category result = categoryService.update(
+                                1L,
+                                form);
+
+                assertEquals(
+                                9999,
+                                result.getDisplayOrder());
+
+                verify(categoryRepository)
+                                .saveAndFlush(category);
+        }
+
+        @Test
         void createRejectsDuplicateName() {
 
                 CategoryForm form = new CategoryForm();

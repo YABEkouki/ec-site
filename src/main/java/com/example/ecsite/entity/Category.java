@@ -28,6 +28,9 @@ public class Category {
     @Column(name = "system_category", nullable = false)
     private boolean systemCategory;
 
+    @Column(name = "display_order", nullable = false)
+    private int displayOrder = 1000;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -73,6 +76,14 @@ public class Category {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public int getDisplayOrder() {
+        return displayOrder;
+    }
+
+    public void setDisplayOrder(int displayOrder) {
+        this.displayOrder = displayOrder;
     }
 
     public boolean isSystemCategory() {

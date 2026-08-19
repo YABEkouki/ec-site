@@ -29,7 +29,7 @@ public class CategoryService {
     public List<Category> findActiveCategories() {
 
         return categoryRepository
-                .findByActiveTrueOrderByNameAsc();
+                .findByActiveTrueOrderByDisplayOrderAscNameAsc();
     }
 
     @Transactional(readOnly = true)
@@ -37,7 +37,7 @@ public class CategoryService {
             Long currentCategoryId) {
 
         return categoryRepository
-                .findByActiveTrueOrIdOrderByNameAsc(
+                .findByActiveTrueOrIdOrderByDisplayOrderAscNameAsc(
                         currentCategoryId);
     }
 
@@ -45,7 +45,15 @@ public class CategoryService {
     public List<Category> findAllCategories() {
 
         return categoryRepository
-                .findAllByOrderByActiveDescNameAsc();
+                .findAllByOrderByDisplayOrderAscNameAsc();
+    }
+
+    @Transactional(readOnly = true)
+    public Category findById(Long id) {
+
+        return categoryRepository
+                .findById(id)
+                .orElseThrow(() -> new CategoryNotFoundException(id));
     }
 
     @Transactional(readOnly = true)
@@ -68,6 +76,8 @@ public class CategoryService {
         }
 
         Category category = new Category(name);
+        category.setDisplayOrder(
+                categoryForm.getDisplayOrder());
 
         try {
             return categoryRepository
@@ -79,14 +89,6 @@ public class CategoryService {
                     name,
                     e);
         }
-    }
-
-    @Transactional(readOnly = true)
-    public Category findById(Long id) {
-
-        return categoryRepository
-                .findById(id)
-                .orElseThrow(() -> new CategoryNotFoundException(id));
     }
 
     public Category update(
@@ -113,6 +115,16 @@ public class CategoryService {
         }
 
         category.setName(name);
+
+        if (category.isSystemCategory()) {
+
+            category.setDisplayOrder(9999);
+
+        } else {
+
+            category.setDisplayOrder(
+                    categoryForm.getDisplayOrder());
+        }
 
         try {
             return categoryRepository

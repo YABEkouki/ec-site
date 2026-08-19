@@ -55,8 +55,9 @@ public class AdminCategoryController {
 
                 CategoryForm categoryForm = new CategoryForm();
 
-                categoryForm.setName(
-                                category.getName());
+                categoryForm.setName(category.getName());
+
+                categoryForm.setDisplayOrder(category.getDisplayOrder());
 
                 model.addAttribute(
                                 "category",

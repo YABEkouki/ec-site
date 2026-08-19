@@ -25,20 +25,16 @@
 
     <form th:action="@{/admin/categories}" th:object="${categoryForm}" method="post">
 
-        <div>
-            <label for="name">
-                カテゴリ名
-            </label>
+        <label for="name"> カテゴリ名 </label>
+        <input type="text" id="name" th:field="*{name}" maxlength="100" required>
 
-            <input type="text" id="name" th:field="*{name}" maxlength="100" required>
+        <p th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="field-error"> </p>
+        <label for="displayOrder"> 表示順 </label>
 
-            <p th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="field-error">
-            </p>
-        </div>
+        <input type="number" id="displayOrder" th:field="*{displayOrder}" min="0" required>
+        <p th:if="${#fields.hasErrors('displayOrder')}" th:errors="*{displayOrder}" class="field-error"> </p>
 
-        <button type="submit" class="button-primary">
-            登録
-        </button>
+        <button type="submit" class="button-primary"> 登録 </button>
 
     </form>
 
@@ -54,6 +50,7 @@
             <tr>
                 <th>ID</th>
                 <th>カテゴリ名</th>
+                <th>表示順</th>
                 <th>状態</th>
                 <th>操作</th>
             </tr>
@@ -63,6 +60,7 @@
             <tr th:each="category : ${categories}">
                 <td th:text="${category.id}"></td>
                 <td th:text="${category.name}"></td>
+                <td th:text="${category.displayOrder}"></td>
                 <td th:text="${category.active ? '有効' : '無効'}"></td>
                 <td>
                     <a th:if="${!category.systemCategory}" th:href="@{/admin/categories/{id}/edit(id=${category.id})}"
