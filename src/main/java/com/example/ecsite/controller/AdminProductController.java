@@ -68,7 +68,7 @@ public class AdminProductController {
                                 categoryId);
                 model.addAttribute(
                                 "categories",
-                                categoryService.findActiveCategories());
+                                categoryService.findAllCategories());
                 model.addAttribute(
                                 "sort",
                                 sort);
