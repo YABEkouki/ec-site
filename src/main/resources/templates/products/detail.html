@@ -27,6 +27,11 @@
     </p>
 
     <p>
+        カテゴリ：
+        <span th:text="${product.category.name}"></span>
+    </p>
+
+    <p>
         価格：
         <span th:text="${#numbers.formatInteger(product.price, 1, 'COMMA')}"></span>
         円

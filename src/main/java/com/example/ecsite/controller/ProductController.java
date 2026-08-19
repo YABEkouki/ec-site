@@ -10,15 +10,21 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
 
 @Controller
 public class ProductController {
 
     private final ProductService productService;
+    private final CategoryService categoryService;
 
-    public ProductController(ProductService productService) {
+    public ProductController(
+            ProductService productService,
+            CategoryService categoryService) {
+
         this.productService = productService;
+        this.categoryService = categoryService;
     }
 
     @GetMapping("/")
@@ -38,17 +44,22 @@ public class ProductController {
     @GetMapping("/products")
     public String list(
             @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "categoryId", required = false) Long categoryId,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "sort", defaultValue = "newest") String sort,
             Model model) {
 
         int size = 10; // Number of products per page
 
-        Page<Product> productPage = productService.search(keyword, page, size, sort);
+        Page<Product> productPage = productService.search(keyword, categoryId, page, size, sort);
 
         model.addAttribute("products", productPage.getContent());
         model.addAttribute("productPage", productPage);
         model.addAttribute("keyword", keyword);
+        model.addAttribute("categoryId", categoryId);
+        model.addAttribute(
+                "categories",
+                categoryService.findActiveCategories());
         model.addAttribute("sort", sort);
 
         return "products/list";

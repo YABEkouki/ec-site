@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>カテゴリ編集</title>
+
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>カテゴリ編集</h1>
+
+    <p>
+        カテゴリID：
+        <span th:text="${category.id}"></span>
+    </p>
+
+    <form
+        th:action="@{/admin/categories/{id}/update(id=${category.id})}"
+        th:object="${categoryForm}"
+        method="post">
+
+        <div>
+            <label for="name">
+                カテゴリ名
+            </label>
+
+            <input
+                type="text"
+                id="name"
+                th:field="*{name}"
+                maxlength="100"
+                required>
+
+            <p
+                th:if="${#fields.hasErrors('name')}"
+                th:errors="*{name}"
+                class="field-error">
+            </p>
+        </div>
+
+        <button type="submit" class="button-primary">
+            更新
+        </button>
+
+        <a
+            th:href="@{/admin/categories}"
+            class="button button-secondary">
+            キャンセル
+        </a>
+
+    </form>
+
+</body>
+
+</html>

@@ -16,6 +16,7 @@ public class ProductMapper {
         form.setPrice(product.getPrice());
         form.setStock(product.getStock());
         form.setDescription(product.getDescription());
+        form.setCategoryId(product.getCategory().getId());
 
         return form;
     }
@@ -35,13 +36,11 @@ public class ProductMapper {
         return product;
     }
 
-    public static void copyToEntity(
-        ProductForm form,
-        Product product) {
+    public static void copyToEntity(ProductForm form, Product product) {
 
-    product.setName(form.getName());
-    product.setPrice(form.getPrice());
-    product.setStock(form.getStock());
-    product.setDescription(form.getDescription());
-}
+        product.setName(form.getName());
+        product.setPrice(form.getPrice());
+        product.setStock(form.getStock());
+        product.setDescription(form.getDescription());
+    }
 }
