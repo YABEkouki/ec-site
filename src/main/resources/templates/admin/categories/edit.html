@@ -20,27 +20,27 @@
         <span th:text="${category.id}"></span>
     </p>
 
-    <form
-        th:action="@{/admin/categories/{id}/update(id=${category.id})}"
-        th:object="${categoryForm}"
-        method="post">
+    <form th:action="@{/admin/categories/{id}/update(id=${category.id})}" th:object="${categoryForm}" method="post">
 
         <div>
             <label for="name">
                 カテゴリ名
             </label>
 
-            <input
-                type="text"
-                id="name"
-                th:field="*{name}"
-                maxlength="100"
-                required>
+            <input type="text" id="name" th:field="*{name}" maxlength="100" required>
 
-            <p
-                th:if="${#fields.hasErrors('name')}"
-                th:errors="*{name}"
-                class="field-error">
+            <p th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="field-error">
+            </p>
+        </div>
+
+        <div>
+            <label for="displayOrder">
+                表示順
+            </label>
+
+            <input type="number" id="displayOrder" th:field="*{displayOrder}" min="0" required>
+
+            <p th:if="${#fields.hasErrors('displayOrder')}" th:errors="*{displayOrder}" class="field-error">
             </p>
         </div>
 
@@ -48,9 +48,7 @@
             更新
         </button>
 
-        <a
-            th:href="@{/admin/categories}"
-            class="button button-secondary">
+        <a th:href="@{/admin/categories}" class="button button-secondary">
             キャンセル
         </a>
 

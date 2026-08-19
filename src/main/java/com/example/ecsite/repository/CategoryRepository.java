@@ -10,13 +10,13 @@ import com.example.ecsite.entity.Category;
 public interface CategoryRepository
         extends JpaRepository<Category, Long> {
 
-    List<Category> findByActiveTrueOrderByNameAsc();
+    List<Category> findByActiveTrueOrderByDisplayOrderAscNameAsc();
 
-    List<Category> findAllByOrderByActiveDescNameAsc();
+    List<Category> findAllByOrderByDisplayOrderAscNameAsc();
 
     Optional<Category> findByIdAndActiveTrue(Long id);
 
-    List<Category> findByActiveTrueOrIdOrderByNameAsc(Long id);
+    List<Category> findByActiveTrueOrIdOrderByDisplayOrderAscNameAsc(Long id);
 
     boolean existsByNameIgnoreCase(String name);
 
