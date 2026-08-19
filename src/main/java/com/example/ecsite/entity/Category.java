@@ -19,24 +19,19 @@ public class Category {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(
-            nullable = false,
-            unique = true,
-            length = 100)
+    @Column(nullable = false, unique = true, length = 100)
     private String name;
 
     @Column(nullable = false)
     private boolean active = true;
 
-    @Column(
-            name = "created_at",
-            nullable = false,
-            updatable = false)
+    @Column(name = "system_category", nullable = false)
+    private boolean systemCategory;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(
-            name = "updated_at",
-            nullable = false)
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     public Category() {
@@ -78,6 +73,10 @@ public class Category {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public boolean isSystemCategory() {
+        return systemCategory;
     }
 
     public LocalDateTime getCreatedAt() {

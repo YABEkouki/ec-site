@@ -1,9 +1,11 @@
 package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,7 +20,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
+import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.exception.CategoryNotFoundException;
+import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.repository.ProductRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -222,4 +227,162 @@ class ProductServiceTest {
                                                 any(Pageable.class));
         }
 
+        @Test
+        void updateAllowsKeepingCurrentInactiveCategory() {
+
+                Long productId = 1L;
+                Long categoryId = 2L;
+
+                Product product = mock(Product.class);
+                Category currentCategory = mock(Category.class);
+
+                ProductForm form = new ProductForm();
+                form.setName("更新商品");
+                form.setPrice(1000);
+                form.setStock(5);
+                form.setDescription("更新後の説明");
+                form.setCategoryId(categoryId);
+
+                when(productRepository
+                                .findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                when(product.getCategory())
+                                .thenReturn(currentCategory);
+
+                when(currentCategory.getId())
+                                .thenReturn(categoryId);
+
+                when(categoryService.findById(categoryId))
+                                .thenReturn(currentCategory);
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService);
+
+                Product result = productService.update(
+                                productId,
+                                form);
+
+                assertSame(product, result);
+
+                verify(categoryService)
+                                .findById(categoryId);
+
+                verify(categoryService, never())
+                                .findActiveById(categoryId);
+
+                verify(product)
+                                .setCategory(currentCategory);
+        }
+
+        @Test
+        void updateAllowsChangingToActiveCategory() {
+
+                Long productId = 1L;
+                Long currentCategoryId = 2L;
+                Long requestedCategoryId = 3L;
+
+                Product product = mock(Product.class);
+                Category currentCategory = mock(Category.class);
+                Category requestedCategory = mock(Category.class);
+
+                ProductForm form = new ProductForm();
+                form.setName("更新商品");
+                form.setPrice(1000);
+                form.setStock(5);
+                form.setDescription("更新後の説明");
+                form.setCategoryId(requestedCategoryId);
+
+                when(productRepository
+                                .findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                when(product.getCategory())
+                                .thenReturn(currentCategory);
+
+                when(currentCategory.getId())
+                                .thenReturn(currentCategoryId);
+
+                when(categoryService
+                                .findActiveById(requestedCategoryId))
+                                .thenReturn(requestedCategory);
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService);
+
+                Product result = productService.update(
+                                productId,
+                                form);
+
+                assertSame(product, result);
+
+                verify(categoryService)
+                                .findActiveById(
+                                                requestedCategoryId);
+
+                verify(categoryService, never())
+                                .findById(requestedCategoryId);
+
+                verify(product)
+                                .setCategory(requestedCategory);
+        }
+
+        @Test
+        void updateRejectsChangingToInactiveCategory() {
+
+                Long productId = 1L;
+                Long currentCategoryId = 2L;
+                Long requestedCategoryId = 3L;
+
+                Product product = mock(Product.class);
+                Category currentCategory = mock(Category.class);
+
+                ProductForm form = new ProductForm();
+                form.setName("更新商品");
+                form.setPrice(1000);
+                form.setStock(5);
+                form.setDescription("更新後の説明");
+                form.setCategoryId(requestedCategoryId);
+
+                when(productRepository
+                                .findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                when(product.getCategory())
+                                .thenReturn(currentCategory);
+
+                when(currentCategory.getId())
+                                .thenReturn(currentCategoryId);
+
+                when(categoryService
+                                .findActiveById(requestedCategoryId))
+                                .thenThrow(
+                                                new CategoryNotFoundException(
+                                                                requestedCategoryId));
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService);
+
+                assertThrows(
+                                CategoryNotFoundException.class,
+                                () -> productService.update(
+                                                productId,
+                                                form));
+
+                verify(categoryService)
+                                .findActiveById(
+                                                requestedCategoryId);
+
+                verify(categoryService, never())
+                                .findById(requestedCategoryId);
+
+                verify(product, never())
+                                .setName(any());
+
+                verify(product, never())
+                                .setCategory(any());
+        }
 }

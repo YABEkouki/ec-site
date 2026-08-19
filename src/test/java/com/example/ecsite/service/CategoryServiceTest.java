@@ -3,6 +3,7 @@ package com.example.ecsite.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -19,10 +20,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.exception.CategoryAlreadyExistsException;
 import com.example.ecsite.exception.CategoryNotFoundException;
+import com.example.ecsite.exception.ProtectedCategoryException;
 import com.example.ecsite.form.CategoryForm;
 import com.example.ecsite.repository.CategoryRepository;
 
@@ -264,6 +267,113 @@ class CategoryServiceTest {
                                 () -> categoryService.update(
                                                 1L,
                                                 form));
+
+                verify(categoryRepository)
+                                .saveAndFlush(category);
+        }
+
+        @Test
+        void updateRejectsRenamingSystemCategory() {
+
+                Category category = new Category("未分類");
+
+                ReflectionTestUtils.setField(
+                                category,
+                                "systemCategory",
+                                true);
+
+                CategoryForm form = new CategoryForm();
+
+                form.setName("その他");
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                assertThrows(
+                                ProtectedCategoryException.class,
+                                () -> categoryService.update(
+                                                1L,
+                                                form));
+
+                assertEquals(
+                                "未分類",
+                                category.getName());
+
+                verify(categoryRepository, never())
+                                .existsByNameIgnoreCaseAndIdNot(
+                                                anyString(),
+                                                anyLong());
+
+                verify(categoryRepository, never())
+                                .saveAndFlush(any());
+        }
+
+        @Test
+        void deactivateSetsCategoryInactive() {
+
+                Category category = new Category("食品");
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                when(categoryRepository
+                                .saveAndFlush(category))
+                                .thenReturn(category);
+
+                Category result = categoryService.deactivate(1L);
+
+                assertSame(category, result);
+
+                assertEquals(
+                                false,
+                                result.isActive());
+
+                verify(categoryRepository)
+                                .saveAndFlush(category);
+        }
+
+        @Test
+        void deactivateRejectsSystemCategory() {
+
+                Category category = new Category("未分類");
+
+                ReflectionTestUtils.setField(
+                                category,
+                                "systemCategory",
+                                true);
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                assertThrows(
+                                ProtectedCategoryException.class,
+                                () -> categoryService.deactivate(1L));
+
+                assertTrue(category.isActive());
+
+                verify(categoryRepository, never())
+                                .saveAndFlush(any());
+        }
+
+        @Test
+        void activateSetsCategoryActive() {
+
+                Category category = new Category("食品");
+
+                category.setActive(false);
+
+                when(categoryRepository.findById(1L))
+                                .thenReturn(Optional.of(category));
+
+                when(categoryRepository
+                                .saveAndFlush(category))
+                                .thenReturn(category);
+
+                Category result = categoryService.activate(1L);
+
+                assertSame(category, result);
+
+                assertTrue(result.isActive());
 
                 verify(categoryRepository)
                                 .saveAndFlush(category);

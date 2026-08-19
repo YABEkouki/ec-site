@@ -126,7 +126,11 @@ public class AdminProductController {
                                 "productId",
                                 id);
 
-                addCategories(model);
+                model.addAttribute(
+                                "categories",
+                                categoryService
+                                                .findCategoriesForProductEdit(
+                                                                product.getCategory().getId()));
 
                 return "admin/products/edit";
         }
@@ -140,9 +144,16 @@ public class AdminProductController {
                         RedirectAttributes redirectAttributes) {
 
                 if (bindingResult.hasErrors()) {
+
+                        Product product = productService.findById(id);
+
                         model.addAttribute("productId", id);
 
-                        addCategories(model);
+                        model.addAttribute(
+                                        "categories",
+                                        categoryService
+                                                        .findCategoriesForProductEdit(
+                                                                        product.getCategory().getId()));
 
                         return "admin/products/edit";
                 }

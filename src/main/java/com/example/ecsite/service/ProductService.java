@@ -9,6 +9,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ProductForm;
@@ -72,9 +73,28 @@ public class ProductService {
 
         Product product = findByIdForUpdate(id);
 
+        Long currentCategoryId = product.getCategory().getId();
+
+        Long requestedCategoryId = productForm.getCategoryId();
+
+        Category category;
+
+        if (currentCategoryId.equals(
+                requestedCategoryId)) {
+
+            category = categoryService
+                    .findById(requestedCategoryId);
+
+        } else {
+
+            category = categoryService
+                    .findActiveById(
+                            requestedCategoryId);
+        }
+
         ProductMapper.copyToEntity(productForm, product);
 
-        product.setCategory(categoryService.findActiveById(productForm.getCategoryId()));
+        product.setCategory(category);
 
         return product;
     }

@@ -12,7 +12,11 @@ public interface CategoryRepository
 
     List<Category> findByActiveTrueOrderByNameAsc();
 
+    List<Category> findAllByOrderByActiveDescNameAsc();
+
     Optional<Category> findByIdAndActiveTrue(Long id);
+
+    List<Category> findByActiveTrueOrIdOrderByNameAsc(Long id);
 
     boolean existsByNameIgnoreCase(String name);
 

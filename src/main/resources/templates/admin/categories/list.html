@@ -18,6 +18,9 @@
     <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
     </p>
 
+    <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
+    </p>
+
     <h2>カテゴリ登録</h2>
 
     <form th:action="@{/admin/categories}" th:object="${categoryForm}" method="post">
@@ -51,6 +54,7 @@
             <tr>
                 <th>ID</th>
                 <th>カテゴリ名</th>
+                <th>状態</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -59,10 +63,34 @@
             <tr th:each="category : ${categories}">
                 <td th:text="${category.id}"></td>
                 <td th:text="${category.name}"></td>
+                <td th:text="${category.active ? '有効' : '無効'}"></td>
                 <td>
-                    <a th:href="@{/admin/categories/{id}/edit(id=${category.id})}" class="button button-secondary">
+                    <a th:if="${!category.systemCategory}" th:href="@{/admin/categories/{id}/edit(id=${category.id})}"
+                        class="button button-secondary">
                         編集
                     </a>
+
+                    <form th:if="${!category.systemCategory and category.active}"
+                        th:action="@{/admin/categories/{id}/deactivate(id=${category.id})}" method="post"
+                        style="display: inline;" onsubmit="return confirm('このカテゴリを無効化しますか？');">
+
+                        <button type="submit" class="button-danger">
+                            無効化
+                        </button>
+                    </form>
+
+                    <form th:if="${!category.systemCategory and !category.active}"
+                        th:action="@{/admin/categories/{id}/activate(id=${category.id})}" method="post"
+                        style="display: inline;">
+
+                        <button type="submit" class="button-primary">
+                            有効化
+                        </button>
+                    </form>
+
+                    <span th:if="${category.systemCategory}">
+                        変更不可
+                    </span>
                 </td>
             </tr>
         </tbody>

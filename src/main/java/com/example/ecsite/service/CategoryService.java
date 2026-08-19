@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.exception.CategoryAlreadyExistsException;
 import com.example.ecsite.exception.CategoryNotFoundException;
+import com.example.ecsite.exception.ProtectedCategoryException;
 import com.example.ecsite.form.CategoryForm;
 import com.example.ecsite.repository.CategoryRepository;
 
@@ -29,6 +30,22 @@ public class CategoryService {
 
         return categoryRepository
                 .findByActiveTrueOrderByNameAsc();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Category> findCategoriesForProductEdit(
+            Long currentCategoryId) {
+
+        return categoryRepository
+                .findByActiveTrueOrIdOrderByNameAsc(
+                        currentCategoryId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Category> findAllCategories() {
+
+        return categoryRepository
+                .findAllByOrderByActiveDescNameAsc();
     }
 
     @Transactional(readOnly = true)
@@ -80,6 +97,12 @@ public class CategoryService {
 
         String name = normalizeName(categoryForm.getName());
 
+        if (category.isSystemCategory()
+                && !category.getName().equals(name)) {
+
+            throw new ProtectedCategoryException(id);
+        }
+
         if (categoryRepository
                 .existsByNameIgnoreCaseAndIdNot(
                         name,
@@ -101,6 +124,31 @@ public class CategoryService {
                     name,
                     e);
         }
+    }
+
+    public Category deactivate(Long id) {
+
+        Category category = findById(id);
+
+        if (category.isSystemCategory()) {
+
+            throw new ProtectedCategoryException(id);
+        }
+
+        category.setActive(false);
+
+        return categoryRepository
+                .saveAndFlush(category);
+    }
+
+    public Category activate(Long id) {
+
+        Category category = findById(id);
+
+        category.setActive(true);
+
+        return categoryRepository
+                .saveAndFlush(category);
     }
 
     private String normalizeName(String name) {
