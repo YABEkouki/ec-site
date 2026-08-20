@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>アップロードエラー</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <h1>アップロードエラー</h1>
+
+    <p class="message-error">
+        商品画像は5MB以内でアップロードしてください。
+    </p>
+
+    <p>
+        <a th:href="@{/admin/products/new}"
+           class="button button-secondary">
+            商品登録画面へ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>

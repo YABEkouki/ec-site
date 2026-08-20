@@ -1,5 +1,7 @@
 package com.example.ecsite.form;
 
+import org.springframework.web.multipart.MultipartFile;
+
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -23,6 +25,8 @@ public class ProductForm {
 
     @NotNull(message = "カテゴリを選択してください。")
     private Long categoryId;
+
+    private MultipartFile imageFile;
 
     public String getName() {
         return name;
@@ -62,5 +66,13 @@ public class ProductForm {
 
     public void setCategoryId(Long categoryId) {
         this.categoryId = categoryId;
+    }
+
+    public MultipartFile getImageFile() {
+        return imageFile;
+    }
+
+    public void setImageFile(MultipartFile imageFile) {
+        this.imageFile = imageFile;
     }
 }

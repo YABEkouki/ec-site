@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.exception.InvalidProductImageException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.mapper.ProductMapper;
 import com.example.ecsite.service.CategoryService;
@@ -100,7 +101,19 @@ public class AdminProductController {
                         return "admin/products/form";
                 }
 
-                productService.create(productForm);
+                try {
+                        productService.create(productForm);
+                } catch (InvalidProductImageException e) {
+
+                        bindingResult.rejectValue(
+                                        "imageFile",
+                                        "invalid",
+                                        e.getMessage());
+
+                        addCategories(model);
+
+                        return "admin/products/form";
+                }
 
                 redirectAttributes.addFlashAttribute(
                                 "successMessage",
@@ -132,6 +145,8 @@ public class AdminProductController {
                                                 .findCategoriesForProductEdit(
                                                                 product.getCategory().getId()));
 
+                model.addAttribute("product", product);
+
                 return "admin/products/edit";
         }
 
@@ -158,8 +173,28 @@ public class AdminProductController {
                         return "admin/products/edit";
                 }
 
-                productService.update(id, productForm);
+                try {
+                        productService.update(id, productForm);
+                } catch (InvalidProductImageException e) {
 
+                        bindingResult.rejectValue(
+                                        "imageFile",
+                                        "invalid",
+                                        e.getMessage());
+
+                        Product product = productService.findById(id);
+
+                        model.addAttribute("productId", id);
+                        model.addAttribute("product", product);
+
+                        model.addAttribute(
+                                        "categories",
+                                        categoryService.findCategoriesForProductEdit(
+                                                        product.getCategory().getId()));
+
+                        return "admin/products/edit";
+                }
+                
                 redirectAttributes.addFlashAttribute(
                                 "message",
                                 "商品を更新しました。");

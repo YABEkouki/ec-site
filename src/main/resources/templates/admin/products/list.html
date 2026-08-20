@@ -41,8 +41,7 @@
             <option value="" th:selected="${categoryId == null}">
                 すべて
             </option>
-            <option th:each="category : ${categories}"
-                th:value="${category.id}"
+            <option th:each="category : ${categories}" th:value="${category.id}"
                 th:text="${category.active ? category.name : category.name + '（無効）'}"
                 th:selected="${category.id == categoryId}">
             </option>
@@ -89,6 +88,7 @@
         <thead>
             <tr>
                 <th>ID</th>
+                <th>画像</th>
                 <th>商品名</th>
                 <th>カテゴリ</th>
                 <th>価格</th>
@@ -102,6 +102,16 @@
             <tr th:each="product : ${products}">
 
                 <td th:text="${product.id}"></td>
+
+                <td>
+                    <img th:if="${product.imagePath != null}"
+                        th:src="@{/product-images/{path}(path=${product.imagePath})}" th:alt="${product.name}"
+                        style="max-width: 80px; height: auto;">
+
+                    <span th:if="${product.imagePath == null}">
+                        画像なし
+                    </span>
+                </td>
 
                 <td th:text="${product.name}"></td>
 
