@@ -79,6 +79,7 @@
         <thead>
             <tr>
                 <th>ID</th>
+                <th>画像</th>
                 <th>商品名</th>
                 <th>カテゴリ</th>
                 <th>価格</th>
@@ -89,6 +90,15 @@
         <tbody>
             <tr th:each="product : ${products}">
                 <td th:text="${product.id}"></td>
+                <td>
+                    <img th:if="${product.imagePath != null}"
+                        th:src="@{/product-images/{path}(path=${product.imagePath})}" th:alt="${product.name}"
+                        style="max-width: 80px; height: auto;">
+
+                    <span th:if="${product.imagePath == null}">
+                        画像なし
+                    </span>
+                </td>
                 <td>
                     <a th:href="@{/products/{id}(id=${product.id})}" th:text="${product.name}">
                     </a>

@@ -22,7 +22,8 @@ public class SecurityConfig {
                                                                 "/login",
                                                                 "/signup",
                                                                 "/403",
-                                                                "/css/**")
+                                                                "/css/**",
+                                                                "/product-images/**")
                                                 .permitAll()
 
                                                 // 管理画面

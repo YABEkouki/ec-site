@@ -22,11 +22,16 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryService categoryService;
+    private final ProductImageService productImageService;
 
-    public ProductService(ProductRepository productRepository, CategoryService categoryService) {
+    public ProductService(
+            ProductRepository productRepository,
+            CategoryService categoryService,
+            ProductImageService productImageService) {
 
         this.productRepository = productRepository;
         this.categoryService = categoryService;
+        this.productImageService = productImageService;
     }
 
     public List<Product> findAll() {
@@ -66,10 +71,20 @@ public class ProductService {
 
         product.setCategory(categoryService.findActiveById(productForm.getCategoryId()));
 
-        return productRepository.save(product);
+        product = productRepository.save(product);
+
+        String imagePath = productImageService.saveImage(
+                product.getId(),
+                productForm.getImageFile());
+
+        product.setImagePath(imagePath);
+
+        return product;
     }
 
-    public Product update(Long id, ProductForm productForm) {
+    public Product update(
+            Long id,
+            ProductForm productForm) {
 
         Product product = findByIdForUpdate(id);
 
@@ -79,8 +94,7 @@ public class ProductService {
 
         Category category;
 
-        if (currentCategoryId.equals(
-                requestedCategoryId)) {
+        if (currentCategoryId.equals(requestedCategoryId)) {
 
             category = categoryService
                     .findById(requestedCategoryId);
@@ -88,14 +102,26 @@ public class ProductService {
         } else {
 
             category = categoryService
-                    .findActiveById(
-                            requestedCategoryId);
+                    .findActiveById(requestedCategoryId);
         }
 
         ProductMapper.copyToEntity(productForm, product);
 
         product.setCategory(category);
 
+        if (productForm.getImageFile() != null
+                && !productForm.getImageFile().isEmpty()) {
+
+            String oldImagePath = product.getImagePath();
+
+            String newImagePath = productImageService.saveImage(
+                    product.getId(),
+                    productForm.getImageFile());
+
+            product.setImagePath(newImagePath);
+
+            productImageService.deleteImage(oldImagePath);
+        }
         return product;
     }
 

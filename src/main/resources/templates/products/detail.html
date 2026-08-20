@@ -21,6 +21,15 @@
         <span th:text="${product.id}"></span>
     </p>
 
+    <div th:if="${product.imagePath != null}">
+        <img th:src="@{/product-images/{path}(path=${product.imagePath})}" th:alt="${product.name}"
+            style="max-width: 500px; height: auto;">
+    </div>
+
+    <div th:if="${product.imagePath == null}">
+        <p>画像は登録されていません。</p>
+    </div>
+
     <p>
         商品名：
         <span th:text="${product.name}"></span>

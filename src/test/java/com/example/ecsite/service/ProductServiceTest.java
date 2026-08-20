@@ -1,5 +1,6 @@
 package com.example.ecsite.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -19,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.mock.web.MockMultipartFile;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
@@ -35,6 +37,9 @@ class ProductServiceTest {
         @Mock
         private CategoryService categoryService;
 
+        @Mock
+        private ProductImageService productImageService;
+
         @Test
         void findLowStockProductsUsesSpecifiedThreshold() {
 
@@ -50,7 +55,8 @@ class ProductServiceTest {
                                                 threshold))
                                 .thenReturn(expectedProducts);
 
-                ProductService productService = new ProductService(productRepository, categoryService);
+                ProductService productService = new ProductService(productRepository, categoryService,
+                                productImageService);
 
                 List<Product> actualProducts = productService.findLowStockProducts(
                                 threshold);
@@ -75,7 +81,8 @@ class ProductServiceTest {
                                 .findByIdForUpdate(productId))
                                 .thenReturn(Optional.of(product));
 
-                ProductService productService = new ProductService(productRepository, categoryService);
+                ProductService productService = new ProductService(productRepository, categoryService,
+                                productImageService);
 
                 productService.delete(productId);
 
@@ -97,7 +104,8 @@ class ProductServiceTest {
                                 .findInactiveByIdForUpdate(productId))
                                 .thenReturn(Optional.of(product));
 
-                ProductService productService = new ProductService(productRepository, categoryService);
+                ProductService productService = new ProductService(productRepository, categoryService,
+                                productImageService);
 
                 productService.restore(productId);
 
@@ -119,7 +127,8 @@ class ProductServiceTest {
 
                 ProductService productService = new ProductService(
                                 productRepository,
-                                categoryService);
+                                categoryService,
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 null,
@@ -148,7 +157,8 @@ class ProductServiceTest {
 
                 ProductService productService = new ProductService(
                                 productRepository,
-                                categoryService);
+                                categoryService,
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 "  商品  ",
@@ -178,7 +188,8 @@ class ProductServiceTest {
 
                 ProductService productService = new ProductService(
                                 productRepository,
-                                categoryService);
+                                categoryService,
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 null,
@@ -209,7 +220,8 @@ class ProductServiceTest {
 
                 ProductService productService = new ProductService(
                                 productRepository,
-                                categoryService);
+                                categoryService,
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 "  商品  ",
@@ -258,7 +270,8 @@ class ProductServiceTest {
 
                 ProductService productService = new ProductService(
                                 productRepository,
-                                categoryService);
+                                categoryService,
+                                productImageService);
 
                 Product result = productService.update(
                                 productId,
@@ -310,7 +323,8 @@ class ProductServiceTest {
 
                 ProductService productService = new ProductService(
                                 productRepository,
-                                categoryService);
+                                categoryService,
+                                productImageService);
 
                 Product result = productService.update(
                                 productId,
@@ -364,7 +378,8 @@ class ProductServiceTest {
 
                 ProductService productService = new ProductService(
                                 productRepository,
-                                categoryService);
+                                categoryService,
+                                productImageService);
 
                 assertThrows(
                                 CategoryNotFoundException.class,
@@ -384,5 +399,173 @@ class ProductServiceTest {
 
                 verify(product, never())
                                 .setCategory(any());
+        }
+
+        @Test
+        void createSavesProductImageAndSetsImagePath() {
+
+                Long productId = 1L;
+                Long categoryId = 2L;
+
+                Category category = new Category();
+
+                ProductForm form = new ProductForm();
+                form.setName("テスト商品");
+                form.setPrice(1000);
+                form.setStock(5);
+                form.setDescription("説明");
+                form.setCategoryId(categoryId);
+
+                MockMultipartFile imageFile = new MockMultipartFile(
+                                "imageFile",
+                                "product.jpg",
+                                "image/jpeg",
+                                "test image".getBytes());
+
+                form.setImageFile(imageFile);
+
+                when(categoryService.findActiveById(categoryId))
+                                .thenReturn(category);
+
+                when(productRepository.save(any(Product.class)))
+                                .thenAnswer(invocation -> {
+                                        Product product = invocation.getArgument(0);
+                                        product.setId(productId);
+                                        return product;
+                                });
+
+                when(productImageService.saveImage(productId, imageFile))
+                                .thenReturn("1/test.jpg");
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService,
+                                productImageService);
+
+                Product result = productService.create(form);
+
+                verify(productImageService)
+                                .saveImage(productId, imageFile);
+
+                verify(productRepository)
+                                .save(any(Product.class));
+
+                assertSame(category, result.getCategory());
+                assertEquals("1/test.jpg", result.getImagePath());
+        }
+
+        @Test
+        void updateReplacesProductImage() {
+
+                Long productId = 1L;
+                Long categoryId = 2L;
+
+                Product product = mock(Product.class);
+                Category category = mock(Category.class);
+
+                ProductForm form = new ProductForm();
+                form.setName("更新商品");
+                form.setPrice(1000);
+                form.setStock(5);
+                form.setDescription("更新後の説明");
+                form.setCategoryId(categoryId);
+
+                MockMultipartFile imageFile = new MockMultipartFile(
+                                "imageFile",
+                                "new-image.jpg",
+                                "image/jpeg",
+                                "new image".getBytes());
+
+                form.setImageFile(imageFile);
+
+                when(productRepository.findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                when(product.getId())
+                                .thenReturn(productId);
+
+                when(product.getCategory())
+                                .thenReturn(category);
+
+                when(category.getId())
+                                .thenReturn(categoryId);
+
+                when(categoryService.findById(categoryId))
+                                .thenReturn(category);
+
+                when(product.getImagePath())
+                                .thenReturn("1/old-image.jpg");
+
+                when(productImageService.saveImage(productId, imageFile))
+                                .thenReturn("1/new-image.jpg");
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService,
+                                productImageService);
+
+                Product result = productService.update(
+                                productId,
+                                form);
+
+                assertSame(product, result);
+
+                verify(productImageService)
+                                .saveImage(productId, imageFile);
+
+                verify(product)
+                                .setImagePath("1/new-image.jpg");
+
+                verify(productImageService)
+                                .deleteImage("1/old-image.jpg");
+        }
+
+        @Test
+        void updateKeepsExistingImageWhenNewImageIsNotSelected() {
+
+                Long productId = 1L;
+                Long categoryId = 2L;
+
+                Product product = mock(Product.class);
+                Category category = mock(Category.class);
+
+                ProductForm form = new ProductForm();
+                form.setName("更新商品");
+                form.setPrice(1000);
+                form.setStock(5);
+                form.setDescription("更新後の説明");
+                form.setCategoryId(categoryId);
+
+                when(productRepository.findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                when(product.getCategory())
+                                .thenReturn(category);
+
+                when(category.getId())
+                                .thenReturn(categoryId);
+
+                when(categoryService.findById(categoryId))
+                                .thenReturn(category);
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService,
+                                productImageService);
+
+                Product result = productService.update(
+                                productId,
+                                form);
+
+                assertSame(product, result);
+
+                verify(productImageService, never())
+                                .saveImage(any(), any());
+
+                verify(product, never())
+                                .setImagePath(any());
+
+                verify(productImageService, never())
+                                .deleteImage(any());
         }
 }
