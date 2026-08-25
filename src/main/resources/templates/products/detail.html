@@ -13,6 +13,9 @@
 
     <h1>商品詳細</h1>
 
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
+    </p>
+
     <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
@@ -56,6 +59,22 @@
         説明：
         <span th:text="${product.description}"></span>
     </p>
+    
+    <div>
+        <form th:if="${!isFavorite}" th:action="@{/products/{id}/favorites(id=${product.id})}" method="post">
+
+            <button type="submit" class="button-secondary">
+                お気に入りに追加
+            </button>
+        </form>
+
+        <form th:if="${isFavorite}" th:action="@{/products/{id}/favorites/delete(id=${product.id})}" method="post">
+
+            <button type="submit" class="button-secondary">
+                お気に入りから解除
+            </button>
+        </form>
+    </div>
 
     <form th:if="${product.stock > 0}" th:action="@{/cart/add}" method="post">
         <input type="hidden" name="productId" th:value="${product.id}">

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja"
+      xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お気に入り</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>お気に入り</h1>
+
+    <p th:if="${favorites.isEmpty()}">
+        お気に入りの商品はありません。
+    </p>
+
+    <div th:unless="${favorites.isEmpty()}">
+
+        <div th:each="favorite : ${favorites}">
+
+            <div th:if="${favorite.product.imagePath != null}">
+                <img th:src="@{/product-images/{path}(path=${favorite.product.imagePath})}"
+                     th:alt="${favorite.product.name}"
+                     style="max-width: 200px; height: auto;">
+            </div>
+
+            <p>
+                商品名：
+                <a th:href="@{/products/{id}(id=${favorite.product.id})}"
+                   th:text="${favorite.product.name}">
+                </a>
+            </p>
+
+            <p>
+                カテゴリ：
+                <span th:text="${favorite.product.category.name}">
+                </span>
+            </p>
+
+            <p>
+                価格：
+                <span th:text="${#numbers.formatInteger(
+                    favorite.product.price, 1, 'COMMA')}">
+                </span>
+                円
+            </p>
+
+            <p>
+                <a th:href="@{/products/{id}(id=${favorite.product.id})}"
+                   class="button button-primary">
+                    商品詳細を見る
+                </a>
+            </p>
+
+            <hr>
+
+        </div>
+
+    </div>
+
+</body>
+</html>

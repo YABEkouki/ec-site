@@ -17,6 +17,7 @@ import com.example.ecsite.entity.Review;
 import com.example.ecsite.form.ReviewForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
+import com.example.ecsite.service.FavoriteService;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.service.ReviewService;
 
@@ -26,15 +27,18 @@ public class ProductController {
     private final ProductService productService;
     private final CategoryService categoryService;
     private final ReviewService reviewService;
+    private final FavoriteService favoriteService;
 
     public ProductController(
             ProductService productService,
             CategoryService categoryService,
-            ReviewService reviewService) {
+            ReviewService reviewService,
+            FavoriteService favoriteService) {
 
         this.productService = productService;
         this.categoryService = categoryService;
         this.reviewService = reviewService;
+        this.favoriteService = favoriteService;
     }
 
     @GetMapping("/")
@@ -107,6 +111,14 @@ public class ProductController {
             editReviewForm.setComment(review.getComment());
         }
 
+        boolean isFavorite = false;
+
+        if (userDetails != null) {
+            isFavorite = favoriteService.isFavorite(
+                    id,
+                    userDetails.getId());
+        }
+
         model.addAttribute("product", product);
         model.addAttribute("reviews", reviews);
         model.addAttribute("reviewCount", reviewCount);
@@ -114,6 +126,7 @@ public class ProductController {
         model.addAttribute("myReview", myReview);
         model.addAttribute("reviewForm", new ReviewForm());
         model.addAttribute("editReviewForm", editReviewForm);
+        model.addAttribute("isFavorite", isFavorite);
 
         return "products/detail";
     }
