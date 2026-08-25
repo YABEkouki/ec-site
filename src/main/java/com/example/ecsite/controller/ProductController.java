@@ -1,5 +1,8 @@
 package com.example.ecsite.controller;
 
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.domain.Page;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -10,21 +13,28 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.Review;
+import com.example.ecsite.form.ReviewForm;
+import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.ReviewService;
 
 @Controller
 public class ProductController {
 
     private final ProductService productService;
     private final CategoryService categoryService;
+    private final ReviewService reviewService;
 
     public ProductController(
             ProductService productService,
-            CategoryService categoryService) {
+            CategoryService categoryService,
+            ReviewService reviewService) {
 
         this.productService = productService;
         this.categoryService = categoryService;
+        this.reviewService = reviewService;
     }
 
     @GetMapping("/")
@@ -66,11 +76,44 @@ public class ProductController {
     }
 
     @GetMapping("/products/{id}")
-    public String detail(@PathVariable Long id, Model model) {
+    public String detail(@PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            Model model) {
 
         Product product = productService.findById(id);
 
+        List<Review> reviews = reviewService.findByProductId(id);
+
+        long reviewCount = reviewService.countByProductId(id);
+
+        double averageRating = reviewService.getAverageRating(id);
+
+        Optional<Review> myReview = Optional.empty();
+
+        if (userDetails != null) {
+            myReview = reviewService.findByProductIdAndUserId(
+                    id,
+                    userDetails.getId());
+        }
+
+        ReviewForm editReviewForm = null;
+
+        if (myReview.isPresent()) {
+
+            Review review = myReview.get();
+
+            editReviewForm = new ReviewForm();
+            editReviewForm.setRating(review.getRating());
+            editReviewForm.setComment(review.getComment());
+        }
+
         model.addAttribute("product", product);
+        model.addAttribute("reviews", reviews);
+        model.addAttribute("reviewCount", reviewCount);
+        model.addAttribute("averageRating", averageRating);
+        model.addAttribute("myReview", myReview);
+        model.addAttribute("reviewForm", new ReviewForm());
+        model.addAttribute("editReviewForm", editReviewForm);
 
         return "products/detail";
     }
