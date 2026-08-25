@@ -166,16 +166,16 @@ public class ProductService {
                 size,
                 sortCondition);
 
-        boolean hasKeyword = keyword != null
-                && !keyword.isBlank();
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
 
+        boolean hasKeyword = !normalizedKeyword.isBlank();
         boolean hasCategory = categoryId != null;
 
         if (hasKeyword && hasCategory) {
 
             return productRepository
                     .findByNameContainingIgnoreCaseAndCategory_IdAndActiveTrue(
-                            keyword.trim(),
+                            normalizedKeyword,
                             categoryId,
                             pageable);
         }
@@ -184,7 +184,7 @@ public class ProductService {
 
             return productRepository
                     .findByNameContainingIgnoreCaseAndActiveTrue(
-                            keyword.trim(),
+                            normalizedKeyword,
                             pageable);
         }
 
