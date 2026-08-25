@@ -74,6 +74,151 @@
         申し訳ありません。この商品は現在在庫切れです。
     </p>
 
+    <hr>
+
+    <section>
+        <h2>商品レビュー</h2>
+
+        <p>
+            平均評価：
+            <span th:if="${reviewCount > 0}">
+                <span th:text="${#numbers.formatDecimal(averageRating, 1, 1)}"></span>
+                / 5
+            </span>
+            <span th:if="${reviewCount == 0}">
+                まだ評価はありません
+            </span>
+        </p>
+
+        <p>
+            レビュー件数：
+            <span th:text="${reviewCount}"></span>
+            件
+        </p>
+
+        <div th:if="${reviewCount == 0}">
+            <p>まだレビューは投稿されていません。</p>
+        </div>
+
+        <div th:if="${reviewCount > 0}">
+            <h3>レビュー一覧</h3>
+
+            <div th:each="review : ${reviews}">
+                <p>
+                    投稿者：
+                    <span th:text="${review.user.username}"></span>
+                </p>
+
+                <p>
+                    評価：
+                    <span th:text="${review.rating}"></span>
+                    / 5
+                </p>
+
+                <p th:text="${review.comment}"></p>
+
+                <p>
+                    投稿日：
+                    <span th:text="${#temporals.format(review.createdAt, 'yyyy/MM/dd HH:mm')}"></span>
+                </p>
+
+                <hr>
+
+            </div>
+
+        </div>
+
+        <!-- まだレビューを投稿していない -->
+        <div th:if="${myReview.isEmpty()}">
+
+            <h3>レビューを投稿する</h3>
+
+            <form th:action="@{/products/{id}/reviews(id=${product.id})}" th:object="${reviewForm}" method="post">
+
+                <p>
+                    <label for="rating">評価：</label>
+
+                    <select id="rating" th:field="*{rating}">
+                        <option value="">選択してください</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                    </select>
+                </p>
+
+                <p th:if="${#fields.hasErrors('rating')}" th:errors="*{rating}" class="message-error">
+                </p>
+
+                <p>
+                    <label for="comment">コメント：</label><br>
+
+                    <textarea id="comment" th:field="*{comment}" rows="5" cols="50"></textarea>
+                </p>
+
+                <p th:if="${#fields.hasErrors('comment')}" th:errors="*{comment}" class="message-error">
+                </p>
+
+                <button type="submit" class="button-primary">
+                    レビューを投稿
+                </button>
+
+            </form>
+
+        </div>
+
+        <!-- すでにレビューを投稿している -->
+        <div th:if="${myReview.isPresent()}">
+            <h3>あなたのレビュー</h3>
+
+            <form th:action="@{/products/{productId}/reviews/{reviewId}/edit(
+                productId=${product.id},
+                reviewId=${myReview.get().id})}" th:object="${editReviewForm}" method="post">
+
+                <p>
+                    <label for="editRating">評価：</label>
+
+                    <select id="editRating" th:field="*{rating}">
+                        <option value="">選択してください</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                    </select>
+                </p>
+
+                <p th:if="${#fields.hasErrors('rating')}" th:errors="*{rating}" class="message-error">
+                </p>
+
+                <p>
+                    <label for="editComment">コメント：</label><br>
+
+                    <textarea id="editComment" th:field="*{comment}" rows="5" cols="50"></textarea>
+                </p>
+
+                <p th:if="${#fields.hasErrors('comment')}" th:errors="*{comment}" class="message-error">
+                </p>
+
+                <button type="submit" class="button-primary">
+                    レビューを更新
+                </button>
+
+            </form>
+
+            <form th:action="@{/products/{productId}/reviews/{reviewId}/delete(
+            productId=${product.id},
+            reviewId=${myReview.get().id})}" method="post" onsubmit="return confirm('このレビューを削除しますか？');">
+
+                <button type="submit" class="button-secondary">
+                    レビューを削除
+                </button>
+            </form>
+        </div>
+
+    </section>
+
     <p>
         <a th:href="@{/products}" class="button button-secondary">
             商品一覧へ戻る

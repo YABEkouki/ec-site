@@ -26,7 +26,7 @@ public class UserService {
         String username = normalizeUsername(userForm.getUsername());
 
         User user = new User();
-        
+
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(userForm.getPassword()));
         user.setEnabled(true);
@@ -53,5 +53,11 @@ public class UserService {
     private String normalizeUsername(String username) {
 
         return username.trim();
+    }
+
+    public User findById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "ユーザーが見つかりません: " + id));
     }
 }
