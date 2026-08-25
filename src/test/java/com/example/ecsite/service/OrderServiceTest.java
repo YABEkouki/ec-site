@@ -778,6 +778,32 @@ class OrderServiceTest {
         }
 
         @Test
+        void findOrderByIdAndUserIdReturnsOwnedOrder() {
+
+                Long orderId = 1L;
+                Long userId = 10L;
+
+                Order expectedOrder = new Order(userId, 2000);
+
+                when(orderRepository
+                                .findByIdAndUserIdWithItems(
+                                                orderId,
+                                                userId))
+                                .thenReturn(Optional.of(expectedOrder));
+
+                Order actualOrder = orderService.findOrderByIdAndUserId(
+                                orderId,
+                                userId);
+
+                assertSame(expectedOrder, actualOrder);
+
+                verify(orderRepository)
+                                .findByIdAndUserIdWithItems(
+                                                orderId,
+                                                userId);
+        }
+
+        @Test
         void countOrdersByStatusReturnsRepositoryCount() {
 
                 OrderStatus status = OrderStatus.ORDERED;
@@ -797,4 +823,27 @@ class OrderServiceTest {
                                 .countByStatus(status);
         }
 
+        @Test
+        void findOrderByIdAndUserIdThrowsExceptionWhenOrderIsNotFound() {
+
+                Long orderId = 1L;
+                Long userId = 10L;
+
+                when(orderRepository
+                                .findByIdAndUserIdWithItems(
+                                                orderId,
+                                                userId))
+                                .thenReturn(Optional.empty());
+
+                assertThrows(
+                                OrderNotFoundException.class,
+                                () -> orderService.findOrderByIdAndUserId(
+                                                orderId,
+                                                userId));
+
+                verify(orderRepository)
+                                .findByIdAndUserIdWithItems(
+                                                orderId,
+                                                userId);
+        }
 }
