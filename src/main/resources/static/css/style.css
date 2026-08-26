@@ -251,7 +251,7 @@ nav strong {
     font-weight: bold;
 }
 
-.form-group input,
+.form-group input:not([type="checkbox"]),
 .form-group select,
 .form-group textarea {
     width: 100%;

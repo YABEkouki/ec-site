@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title th:text="${addressId == null ? '配送先登録' : '配送先編集'}">
+        配送先
+    </title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1 th:text="${addressId == null ? '配送先登録' : '配送先編集'}">
+        配送先
+    </h1>
+
+    <form th:action="${addressId == null
+            ? '/mypage/addresses'
+            : '/mypage/addresses/' + addressId}" th:object="${shippingAddressForm}" method="post" class="form-card">
+
+        <div class="form-group">
+            <label for="name">
+                配送先名
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{name}" maxlength="100" placeholder="自宅" required>
+
+            <span th:if="${#fields.hasErrors('name')}" th:errors="*{name}" class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="recipientName">
+                受取人氏名
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{recipientName}" maxlength="100" autocomplete="name" required>
+
+            <span th:if="${#fields.hasErrors('recipientName')}" th:errors="*{recipientName}" class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="postalCode">
+                郵便番号
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{postalCode}" maxlength="8" inputmode="numeric" autocomplete="postal-code"
+                placeholder="123-4567" required>
+
+            <span th:if="${#fields.hasErrors('postalCode')}" th:errors="*{postalCode}" class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="prefecture">
+                都道府県
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{prefecture}" maxlength="20" autocomplete="address-level1" required>
+
+            <span th:if="${#fields.hasErrors('prefecture')}" th:errors="*{prefecture}" class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="city">
+                市区町村
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{city}" maxlength="100" autocomplete="address-level2" required>
+
+            <span th:if="${#fields.hasErrors('city')}" th:errors="*{city}" class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="addressLine">
+                番地・建物名
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{addressLine}" maxlength="200" autocomplete="street-address" required>
+
+            <span th:if="${#fields.hasErrors('addressLine')}" th:errors="*{addressLine}" class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="phone">
+                電話番号
+                <span class="required">必須</span>
+            </label>
+
+            <input type="tel" th:field="*{phone}" maxlength="20" inputmode="tel" autocomplete="tel"
+                placeholder="090-1234-5678" required>
+
+            <span th:if="${#fields.hasErrors('phone')}" th:errors="*{phone}" class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+
+            <!-- 初回登録 -->
+            <p th:if="${addressId == null and hasAddress == false}">
+                最初に登録する配送先は、自動的にデフォルト配送先になります。
+            </p>
+
+            <!-- 2件目以降の新規登録 -->
+            <label th:if="${addressId == null and hasAddress == true}">
+                <input type="checkbox" th:field="*{defaultAddress}">
+                デフォルト配送先にする
+            </label>
+
+            <!-- デフォルト配送先の編集 -->
+            <p th:if="${addressId != null and shippingAddressForm.defaultAddress}">
+                この配送先は現在のデフォルト配送先です。
+            </p>
+
+            <!-- 非デフォルト配送先の編集 -->
+            <label th:if="${addressId != null and !shippingAddressForm.defaultAddress}">
+                <input type="checkbox" th:field="*{defaultAddress}">
+                デフォルト配送先にする
+            </label>
+
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="button-primary">
+                保存
+            </button>
+
+            <a th:href="@{/mypage}" class="button button-secondary">
+                戻る
+            </a>
+        </div>
+
+    </form>
+
+</body>
+
+</html>
