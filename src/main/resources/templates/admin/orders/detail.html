@@ -44,9 +44,13 @@
             <tr>
                 <th>注文状態</th>
                 <td>
-                    <span th:text="${order.status.displayName}"></span>
+                    <span class="status-badge"
+                        th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
+                        th:text="${order.status.displayName}">
+                    </span>
                 </td>
             </tr>
+
             <tr th:if="${order.paidAt != null}">
                 <th>支払日時</th>
                 <td th:text="${#temporals.format(
@@ -87,9 +91,9 @@
 
     <h2>注文操作</h2>
 
-    <div th:if="${order.status.name() == 'ORDERED'}">
+    <div th:if="${order.canMarkAsPaid() or order.canCancel()}">
 
-        <form th:action="@{/admin/orders/{id}/pay(
+        <form th:if="${order.canMarkAsPaid()}" th:action="@{/admin/orders/{id}/pay(
             id=${order.id})}" method="post" class="inline-form">
 
             <button type="submit" class="button-primary" onclick="return confirm(
@@ -98,7 +102,7 @@
             </button>
         </form>
 
-        <form th:action="@{/admin/orders/{id}/cancel(
+        <form th:if="${order.canCancel()}" th:action="@{/admin/orders/{id}/cancel(
             id=${order.id})}" method="post" class="inline-form">
 
             <button type="submit" class="button-danger" onclick="return confirm(
@@ -109,8 +113,7 @@
 
     </div>
 
-    <div th:if="${order.status.name() == 'PAID'}">
-
+    <div th:if="${order.canMarkAsShipped()}">
         <form th:action="@{/admin/orders/{id}/ship(
             id=${order.id})}" method="post">
 
@@ -122,11 +125,11 @@
 
     </div>
 
-    <p th:if="${order.status.name() == 'SHIPPED'}">
+    <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).SHIPPED}">
         この注文は発送済みです。
     </p>
 
-    <p th:if="${order.status.name() == 'CANCELLED'}">
+    <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).CANCELLED}">
         この注文はキャンセルされています。
     </p>
 

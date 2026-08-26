@@ -1,9 +1,11 @@
 package com.example.ecsite.entity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -121,6 +123,57 @@ class OrderTest {
                                 order::markAsShipped);
 
                 assertNull(order.getShippedAt());
+        }
+
+        @Test
+        void orderedOrderCanBeCancelledAccordingToStatus() {
+
+                Order order = new Order(1L, 1000);
+
+                assertTrue(order.canCancel());
+        }
+
+        @Test
+        void paidOrderCannotBeCancelledAccordingToStatus() {
+
+                Order order = new Order(1L, 1000);
+                order.markAsPaid();
+
+                assertFalse(order.canCancel());
+        }
+
+        @Test
+        void orderedOrderCanBeMarkedAsPaid() {
+
+                Order order = new Order(1L, 1000);
+
+                assertTrue(order.canMarkAsPaid());
+        }
+
+        @Test
+        void paidOrderCannotBeMarkedAsPaidAgain() {
+
+                Order order = new Order(1L, 1000);
+                order.markAsPaid();
+
+                assertFalse(order.canMarkAsPaid());
+        }
+
+        @Test
+        void paidOrderCanBeMarkedAsShipped() {
+
+                Order order = new Order(1L, 1000);
+                order.markAsPaid();
+
+                assertTrue(order.canMarkAsShipped());
+        }
+
+        @Test
+        void orderedOrderCannotBeMarkedAsShipped() {
+
+                Order order = new Order(1L, 1000);
+
+                assertFalse(order.canMarkAsShipped());
         }
 
 }

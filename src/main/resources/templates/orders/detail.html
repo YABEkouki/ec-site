@@ -38,16 +38,36 @@
 
             <tr>
                 <th>注文状態</th>
-                <td th:text="${order.status.displayName}"></td>
+                <td>
+                    <span class="status-badge"
+                        th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
+                        th:text="${order.status.displayName}">
+                    </span>
+                </td>
+            </tr>
+
+            <tr th:if="${order.paidAt != null}">
+                <th>支払日時</th>
+                <td th:text="${#temporals.format( order.paidAt, 'yyyy/MM/dd HH:mm')}">
+                </td>
+            </tr>
+
+            <tr th:if="${order.shippedAt != null}">
+                <th>発送日時</th>
+                <td th:text="${#temporals.format(order.shippedAt, 'yyyy/MM/dd HH:mm')}">
+                </td>
+            </tr>
+
+            <tr th:if="${order.cancelledAt != null}">
+                <th>キャンセル日時</th>
+                <td th:text="${#temporals.format(order.cancelledAt, 'yyyy/MM/dd HH:mm')}">
+                </td>
             </tr>
 
             <tr>
                 <th>合計金額</th>
                 <td>
-                    <span th:text="${#numbers.formatInteger(
-                    order.totalAmount,
-                    1,
-                    'COMMA')}">
+                    <span th:text="${#numbers.formatInteger(order.totalAmount, 1, 'COMMA')}">
                     </span>
                     円
                 </td>
@@ -58,7 +78,7 @@
     <section>
         <h2>注文操作</h2>
 
-        <form th:if="${order.status.name() == 'ORDERED'}" th:action="@{/orders/{id}/cancel(
+        <form th:if="${order.canCancel()}" th:action="@{/orders/{id}/cancel(
               id=${order.id})}" method="post">
 
             <button type="submit" class="button-danger" onclick="return confirm(
@@ -68,17 +88,18 @@
 
         </form>
 
-        <p th:if="${order.status.name() == 'PAID'}">
+        <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).PAID}">
             支払済みのため、画面からキャンセルできません。
         </p>
 
-        <p th:if="${order.status.name() == 'SHIPPED'}">
+        <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).SHIPPED}">
             この注文は発送済みです。
         </p>
 
-        <p th:if="${order.status.name() == 'CANCELLED'}">
+        <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).CANCELLED}">
             この注文はキャンセルされています。
         </p>
+
     </section>
 
     <h2>配送先</h2>

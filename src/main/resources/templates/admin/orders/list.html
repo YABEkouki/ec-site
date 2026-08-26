@@ -91,7 +91,10 @@
                 </td>
 
                 <td>
-                    <span th:text="${order.status.displayName}"></span>
+                    <span class="status-badge"
+                        th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
+                        th:text="${order.status.displayName}">
+                    </span>
                 </td>
 
                 <td>
@@ -119,7 +122,8 @@
                 0,
                 orderPage.totalPages - 1)}">
 
-            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}" class="button button-secondary">
+            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
             </strong>
 
             <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders(
