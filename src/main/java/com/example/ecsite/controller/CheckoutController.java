@@ -6,6 +6,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.validation.Validator;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,13 +33,16 @@ public class CheckoutController {
 
     private final OrderService orderService;
     private final ShippingAddressService shippingAddressService;
+    private final Validator validator;
 
     public CheckoutController(
             OrderService orderService,
-            ShippingAddressService shippingAddressService) {
+            ShippingAddressService shippingAddressService,
+            Validator validator) {
 
         this.orderService = orderService;
         this.shippingAddressService = shippingAddressService;
+        this.validator = validator;
     }
 
     @ModelAttribute("cart")
@@ -56,6 +60,8 @@ public class CheckoutController {
             @ModelAttribute("cart") Cart cart,
             @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
             @AuthenticationPrincipal CustomUserDetails loginUser,
+            @RequestParam(defaultValue = "false") boolean back,
+            Model model,
             RedirectAttributes redirectAttributes) {
 
         try {
@@ -70,28 +76,87 @@ public class CheckoutController {
             return "redirect:/cart";
         }
 
-        if (isCheckoutFormEmpty(checkoutForm)) {
+        model.addAttribute(
+                "shippingAddresses",
+                shippingAddressService.findAllByUserId(
+                        loginUser.getId()));
+
+        if (!back) {
+
+            clearCheckoutShipping(checkoutForm);
 
             shippingAddressService.findDefaultAddress(
                     loginUser.getId())
-                    .ifPresent(address -> copyShippingAddressToCheckoutForm(
+                    .ifPresent(address -> selectShippingAddress(
+                            address,
+                            checkoutForm));
+
+        } else if (isCheckoutFormEmpty(checkoutForm)) {
+
+            shippingAddressService.findDefaultAddress(
+                    loginUser.getId())
+                    .ifPresent(address -> selectShippingAddress(
                             address,
                             checkoutForm));
         }
-
+        
         return "checkout/input";
     }
 
     @PostMapping("/checkout/confirm")
     public String confirm(
-            @Valid @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
+            @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
             BindingResult bindingResult,
             @ModelAttribute("cart") Cart cart,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes,
             Model model,
             HttpSession session) {
 
+        if (CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED
+                .equals(checkoutForm.getShippingAddressMode())) {
+
+            if (checkoutForm.getShippingAddressId() == null) {
+
+                bindingResult.rejectValue(
+                        "shippingAddressId",
+                        "required",
+                        "配送先を選択してください。");
+
+            } else {
+
+                ShippingAddress address = shippingAddressService.findByIdAndUserId(
+                        checkoutForm.getShippingAddressId(),
+                        loginUser.getId());
+
+                copyShippingAddressToCheckoutForm(
+                        address,
+                        checkoutForm);
+            }
+        } else if (CheckoutForm.SHIPPING_ADDRESS_MODE_DIRECT
+                .equals(checkoutForm.getShippingAddressMode())) {
+
+            checkoutForm.setShippingAddressId(null);
+
+        } else {
+
+            bindingResult.rejectValue(
+                    "shippingAddressMode",
+                    "invalid",
+                    "配送先の指定が正しくありません。");
+        }
+
+        validator.validate(
+                checkoutForm,
+                bindingResult);
+
         if (bindingResult.hasErrors()) {
+
+            model.addAttribute(
+                    "shippingAddresses",
+                    shippingAddressService.findAllByUserId(
+                            loginUser.getId()));
+
             return "checkout/input";
         }
 
@@ -205,6 +270,12 @@ public class CheckoutController {
             ShippingAddress address,
             CheckoutForm checkoutForm) {
 
+        checkoutForm.setShippingAddressId(
+                address.getId());
+
+        checkoutForm.setShippingAddressMode(
+                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
         checkoutForm.setShippingName(
                 address.getRecipientName());
 
@@ -249,6 +320,38 @@ public class CheckoutController {
 
             return true;
         }
+    }
+
+    private void selectShippingAddress(
+            ShippingAddress address,
+            CheckoutForm checkoutForm) {
+
+        checkoutForm.setShippingAddressMode(
+                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+        checkoutForm.setShippingAddressId(
+                address.getId());
+
+        checkoutForm.setShippingName(null);
+        checkoutForm.setShippingPostalCode(null);
+        checkoutForm.setShippingPrefecture(null);
+        checkoutForm.setShippingCity(null);
+        checkoutForm.setShippingAddressLine(null);
+        checkoutForm.setShippingPhone(null);
+    }
+
+    private void clearCheckoutShipping(
+            CheckoutForm checkoutForm) {
+
+        checkoutForm.setShippingAddressMode(null);
+        checkoutForm.setShippingAddressId(null);
+
+        checkoutForm.setShippingName(null);
+        checkoutForm.setShippingPostalCode(null);
+        checkoutForm.setShippingPrefecture(null);
+        checkoutForm.setShippingCity(null);
+        checkoutForm.setShippingAddressLine(null);
+        checkoutForm.setShippingPhone(null);
     }
 
 }

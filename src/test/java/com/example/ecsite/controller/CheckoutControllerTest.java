@@ -1,8 +1,13 @@
 package com.example.ecsite.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -16,8 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ui.ConcurrentModel;
+import org.springframework.ui.Model;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
+import org.springframework.validation.Validator;
 import org.springframework.web.bind.support.SessionStatus;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
@@ -27,6 +35,7 @@ import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.OrderValidationException;
+import com.example.ecsite.exception.ShippingAddressNotFoundException;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
@@ -52,6 +61,9 @@ class CheckoutControllerTest {
         @Mock
         private SessionStatus sessionStatus;
 
+        @Mock
+        private Validator validator;
+
         private static final String CHECKOUT_TOKEN = "test-checkout-token";
 
         @BeforeEach
@@ -59,7 +71,8 @@ class CheckoutControllerTest {
 
                 controller = new CheckoutController(
                                 orderService,
-                                shippingAddressService);
+                                shippingAddressService,
+                                validator);
 
                 loginUser = new CustomUserDetails(
                                 10L,
@@ -284,21 +297,20 @@ class CheckoutControllerTest {
         }
 
         @Test
-        void inputPrefillsCheckoutFormFromDefaultAddress() {
+        void inputSelectsDefaultAddressWithoutCopyingAddressValues() {
 
                 Cart cart = createCart();
                 CheckoutForm checkoutForm = new CheckoutForm();
 
-                ShippingAddress address = new ShippingAddress();
-                address.setRecipientName("山田 太郎");
-                address.setPostalCode("123-4567");
-                address.setPrefecture("東京都");
-                address.setCity("新宿区");
-                address.setAddressLine("西新宿1-1-1");
-                address.setPhone("090-1234-5678");
+                ShippingAddress address = mock(ShippingAddress.class);
+
+                when(address.getId())
+                                .thenReturn(25L);
 
                 when(shippingAddressService.findDefaultAddress(10L))
                                 .thenReturn(Optional.of(address));
+
+                Model model = new ConcurrentModel();
 
                 RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
@@ -306,33 +318,28 @@ class CheckoutControllerTest {
                                 cart,
                                 checkoutForm,
                                 loginUser,
+                                false,
+                                model,
                                 redirectAttributes);
 
-                assertEquals("checkout/input", view);
+                assertEquals(
+                                "checkout/input",
+                                view);
 
                 assertEquals(
-                                "山田 太郎",
-                                checkoutForm.getShippingName());
+                                25L,
+                                checkoutForm.getShippingAddressId());
 
                 assertEquals(
-                                "123-4567",
-                                checkoutForm.getShippingPostalCode());
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED,
+                                checkoutForm.getShippingAddressMode());
 
-                assertEquals(
-                                "東京都",
-                                checkoutForm.getShippingPrefecture());
-
-                assertEquals(
-                                "新宿区",
-                                checkoutForm.getShippingCity());
-
-                assertEquals(
-                                "西新宿1-1-1",
-                                checkoutForm.getShippingAddressLine());
-
-                assertEquals(
-                                "090-1234-5678",
-                                checkoutForm.getShippingPhone());
+                assertNull(checkoutForm.getShippingName());
+                assertNull(checkoutForm.getShippingPostalCode());
+                assertNull(checkoutForm.getShippingPrefecture());
+                assertNull(checkoutForm.getShippingCity());
+                assertNull(checkoutForm.getShippingAddressLine());
+                assertNull(checkoutForm.getShippingPhone());
 
                 verify(shippingAddressService)
                                 .findDefaultAddress(10L);
@@ -349,10 +356,14 @@ class CheckoutControllerTest {
 
                 RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
+                Model model = new ConcurrentModel();
+
                 String view = controller.input(
                                 cart,
                                 checkoutForm,
                                 loginUser,
+                                false,
+                                model,
                                 redirectAttributes);
 
                 assertEquals("checkout/input", view);
@@ -363,7 +374,7 @@ class CheckoutControllerTest {
         }
 
         @Test
-        void inputDoesNotOverwriteExistingCheckoutForm() {
+        void inputDoesNotOverwriteExistingCheckoutFormWhenReturningFromConfirm() {
 
                 Cart cart = createCart();
 
@@ -375,10 +386,14 @@ class CheckoutControllerTest {
 
                 RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
+                Model model = new ConcurrentModel();
+
                 String view = controller.input(
                                 cart,
                                 checkoutForm,
                                 loginUser,
+                                true,
+                                model,
                                 redirectAttributes);
 
                 assertEquals("checkout/input", view);
@@ -391,6 +406,524 @@ class CheckoutControllerTest {
                                 "123-4567",
                                 checkoutForm.getShippingPostalCode());
 
-                verifyNoInteractions(shippingAddressService);
+                verify(shippingAddressService, never())
+                                .findDefaultAddress(10L);
+        }
+
+        @Test
+        void inputAddsUsersShippingAddressesToModel() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                ShippingAddress home = new ShippingAddress();
+                home.setName("自宅");
+
+                ShippingAddress office = new ShippingAddress();
+                office.setName("勤務先");
+
+                List<ShippingAddress> addresses = List.of(home, office);
+
+                when(shippingAddressService.findAllByUserId(10L))
+                                .thenReturn(addresses);
+
+                Model model = new ConcurrentModel();
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.input(
+                                cart,
+                                checkoutForm,
+                                loginUser,
+                                false,
+                                model,
+                                redirectAttributes);
+
+                assertEquals(
+                                "checkout/input",
+                                view);
+
+                assertSame(
+                                addresses,
+                                model.getAttribute("shippingAddresses"));
+
+                verify(shippingAddressService)
+                                .findAllByUserId(10L);
+        }
+
+        @Test
+        void confirmCopiesSelectedShippingAddressToCheckoutForm() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                checkoutForm.setShippingAddressMode(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+                checkoutForm.setShippingAddressId(25L);
+
+                ShippingAddress address = new ShippingAddress();
+
+                address.setRecipientName("鈴木 花子");
+                address.setPostalCode("987-6543");
+                address.setPrefecture("神奈川県");
+                address.setCity("横浜市");
+                address.setAddressLine("中区1-2-3");
+                address.setPhone("080-1111-2222");
+
+                when(shippingAddressService.findByIdAndUserId(
+                                25L,
+                                10L))
+                                .thenReturn(address);
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                Model model = new ConcurrentModel();
+
+                String view = controller.confirm(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes,
+                                model,
+                                session);
+
+                assertEquals(
+                                "checkout/confirm",
+                                view);
+
+                assertEquals(
+                                "鈴木 花子",
+                                checkoutForm.getShippingName());
+
+                assertEquals(
+                                "987-6543",
+                                checkoutForm.getShippingPostalCode());
+
+                assertEquals(
+                                "神奈川県",
+                                checkoutForm.getShippingPrefecture());
+
+                assertEquals(
+                                "横浜市",
+                                checkoutForm.getShippingCity());
+
+                assertEquals(
+                                "中区1-2-3",
+                                checkoutForm.getShippingAddressLine());
+
+                assertEquals(
+                                "080-1111-2222",
+                                checkoutForm.getShippingPhone());
+
+                verify(shippingAddressService)
+                                .findByIdAndUserId(
+                                                25L,
+                                                10L);
+        }
+
+        @Test
+        void confirmUsesRegisteredAddressBeforeValidation() {
+
+                Cart cart = createCart();
+
+                CheckoutForm checkoutForm = new CheckoutForm();
+
+                checkoutForm.setShippingAddressMode(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+                checkoutForm.setShippingAddressId(25L);
+
+                ShippingAddress address = new ShippingAddress();
+
+                address.setRecipientName("鈴木 花子");
+                address.setPostalCode("987-6543");
+                address.setPrefecture("神奈川県");
+                address.setCity("横浜市");
+                address.setAddressLine("中区1-2-3");
+                address.setPhone("080-1111-2222");
+
+                when(shippingAddressService.findByIdAndUserId(
+                                25L,
+                                10L))
+                                .thenReturn(address);
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                doAnswer(invocation -> {
+
+                        CheckoutForm validatedForm = invocation.getArgument(0);
+
+                        assertEquals(
+                                        "鈴木 花子",
+                                        validatedForm.getShippingName());
+
+                        assertEquals(
+                                        "987-6543",
+                                        validatedForm.getShippingPostalCode());
+
+                        return null;
+
+                }).when(validator)
+                                .validate(
+                                                org.mockito.ArgumentMatchers.eq(checkoutForm),
+                                                org.mockito.ArgumentMatchers.eq(bindingResult));
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                Model model = new ConcurrentModel();
+
+                String view = controller.confirm(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes,
+                                model,
+                                session);
+
+                assertEquals(
+                                "checkout/confirm",
+                                view);
+
+                assertEquals(
+                                "鈴木 花子",
+                                checkoutForm.getShippingName());
+
+                verify(orderService)
+                                .validateCart(cart);
+
+                verify(validator)
+                                .validate(
+                                                checkoutForm,
+                                                bindingResult);
+        }
+
+        @Test
+        void confirmUsesDirectInputWithoutLoadingRegisteredAddress() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                checkoutForm.setShippingAddressMode(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_DIRECT);
+
+                // 不正・不要なIDが送信されてもDIRECTでは使用しない
+                checkoutForm.setShippingAddressId(999L);
+
+                checkoutForm.setShippingName("佐藤 次郎");
+                checkoutForm.setShippingPostalCode("111-2222");
+                checkoutForm.setShippingPrefecture("埼玉県");
+                checkoutForm.setShippingCity("さいたま市");
+                checkoutForm.setShippingAddressLine("大宮区1-2-3");
+                checkoutForm.setShippingPhone("070-1111-2222");
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                Model model = new ConcurrentModel();
+
+                String view = controller.confirm(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes,
+                                model,
+                                session);
+
+                assertEquals(
+                                "checkout/confirm",
+                                view);
+
+                assertNull(
+                                checkoutForm.getShippingAddressId());
+
+                assertEquals(
+                                "佐藤 次郎",
+                                checkoutForm.getShippingName());
+
+                assertEquals(
+                                "111-2222",
+                                checkoutForm.getShippingPostalCode());
+
+                verify(shippingAddressService, never())
+                                .findByIdAndUserId(
+                                                org.mockito.ArgumentMatchers.anyLong(),
+                                                org.mockito.ArgumentMatchers.anyLong());
+
+                verify(validator)
+                                .validate(
+                                                checkoutForm,
+                                                bindingResult);
+
+                verify(orderService)
+                                .validateCart(cart);
+        }
+
+        @Test
+        void confirmReturnsInputWhenRegisteredAddressIdIsMissing() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                checkoutForm.setShippingAddressMode(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+                checkoutForm.setShippingAddressId(null);
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                Model model = new ConcurrentModel();
+
+                when(shippingAddressService.findAllByUserId(10L))
+                                .thenReturn(List.of());
+
+                String view = controller.confirm(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes,
+                                model,
+                                session);
+
+                assertEquals(
+                                "checkout/input",
+                                view);
+
+                assertTrue(
+                                bindingResult.hasFieldErrors(
+                                                "shippingAddressId"));
+
+                verify(shippingAddressService, never())
+                                .findByIdAndUserId(
+                                                org.mockito.ArgumentMatchers.anyLong(),
+                                                org.mockito.ArgumentMatchers.anyLong());
+
+                verify(orderService, never())
+                                .validateCart(cart);
+
+                verify(shippingAddressService)
+                                .findAllByUserId(10L);
+        }
+
+        @Test
+        void confirmRejectsShippingAddressOwnedByAnotherUser() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                checkoutForm.setShippingAddressMode(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+                checkoutForm.setShippingAddressId(99L);
+
+                when(shippingAddressService.findByIdAndUserId(
+                                99L,
+                                10L))
+                                .thenThrow(
+                                                new ShippingAddressNotFoundException(
+                                                                99L));
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                Model model = new ConcurrentModel();
+
+                assertThrows(
+                                ShippingAddressNotFoundException.class,
+                                () -> controller.confirm(
+                                                checkoutForm,
+                                                bindingResult,
+                                                cart,
+                                                loginUser,
+                                                redirectAttributes,
+                                                model,
+                                                session));
+
+                verify(shippingAddressService)
+                                .findByIdAndUserId(
+                                                99L,
+                                                10L);
+
+                verify(orderService, never())
+                                .validateCart(cart);
+
+                verify(validator, never())
+                                .validate(
+                                                checkoutForm,
+                                                bindingResult);
+        }
+
+        @Test
+        void confirmReturnsInputWhenShippingAddressModeIsInvalid() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                checkoutForm.setShippingAddressMode("INVALID");
+                checkoutForm.setShippingAddressId(25L);
+
+                BindingResult bindingResult = new BeanPropertyBindingResult(
+                                checkoutForm,
+                                "checkoutForm");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                Model model = new ConcurrentModel();
+
+                when(shippingAddressService.findAllByUserId(10L))
+                                .thenReturn(List.of());
+
+                String view = controller.confirm(
+                                checkoutForm,
+                                bindingResult,
+                                cart,
+                                loginUser,
+                                redirectAttributes,
+                                model,
+                                session);
+
+                assertEquals(
+                                "checkout/input",
+                                view);
+
+                assertTrue(
+                                bindingResult.hasFieldErrors(
+                                                "shippingAddressMode"));
+
+                verify(shippingAddressService, never())
+                                .findByIdAndUserId(
+                                                org.mockito.ArgumentMatchers.anyLong(),
+                                                org.mockito.ArgumentMatchers.anyLong());
+
+                verify(orderService, never())
+                                .validateCart(cart);
+
+                verify(shippingAddressService)
+                                .findAllByUserId(10L);
+        }
+
+        @Test
+        void inputRefreshesDefaultAddressSelectionWhenStartingCheckoutAgain() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                checkoutForm.setShippingAddressMode(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+                // 前回CheckoutではID=25を使用していた
+                checkoutForm.setShippingAddressId(25L);
+
+                ShippingAddress currentDefault = mock(ShippingAddress.class);
+
+                // マイページ操作などにより現在のデフォルトはID=30
+                when(currentDefault.getId())
+                                .thenReturn(30L);
+
+                when(shippingAddressService.findDefaultAddress(10L))
+                                .thenReturn(Optional.of(currentDefault));
+
+                Model model = new ConcurrentModel();
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.input(
+                                cart,
+                                checkoutForm,
+                                loginUser,
+                                false,
+                                model,
+                                redirectAttributes);
+
+                assertEquals(
+                                "checkout/input",
+                                view);
+
+                assertEquals(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED,
+                                checkoutForm.getShippingAddressMode());
+
+                assertEquals(
+                                30L,
+                                checkoutForm.getShippingAddressId());
+
+                verify(shippingAddressService)
+                                .findDefaultAddress(10L);
+        }
+
+        @Test
+        void inputClearsOldShippingStateWhenStartingCheckoutWithoutDefaultAddress() {
+
+                Cart cart = createCart();
+
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                checkoutForm.setShippingAddressMode(
+                                CheckoutForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+                checkoutForm.setShippingAddressId(25L);
+
+                when(shippingAddressService.findDefaultAddress(10L))
+                                .thenReturn(Optional.empty());
+
+                Model model = new ConcurrentModel();
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.input(
+                                cart,
+                                checkoutForm,
+                                loginUser,
+                                false,
+                                model,
+                                redirectAttributes);
+
+                assertEquals(
+                                "checkout/input",
+                                view);
+
+                assertNull(
+                                checkoutForm.getShippingAddressMode());
+
+                assertNull(
+                                checkoutForm.getShippingAddressId());
+
+                assertNull(
+                                checkoutForm.getShippingName());
+
+                assertNull(
+                                checkoutForm.getShippingPostalCode());
+
+                assertNull(
+                                checkoutForm.getShippingPrefecture());
+
+                assertNull(
+                                checkoutForm.getShippingCity());
+
+                assertNull(
+                                checkoutForm.getShippingAddressLine());
+
+                assertNull(
+                                checkoutForm.getShippingPhone());
         }
 }

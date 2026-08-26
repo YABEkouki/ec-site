@@ -10,39 +10,36 @@ public class CheckoutForm implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    public static final String SHIPPING_ADDRESS_MODE_REGISTERED = "REGISTERED";
+    public static final String SHIPPING_ADDRESS_MODE_DIRECT = "DIRECT";
+
+    private Long shippingAddressId;
+
+    private String shippingAddressMode;
+
     @NotBlank(message = "受取人氏名を入力してください。")
-    @Size(max = 100,
-            message = "受取人氏名は100文字以内で入力してください。")
+    @Size(max = 100, message = "受取人氏名は100文字以内で入力してください。")
     private String shippingName;
 
     @NotBlank(message = "郵便番号を入力してください。")
-    @Pattern(
-            regexp = "^\\d{3}-?\\d{4}$",
-            message = "郵便番号は123-4567の形式で入力してください。")
+    @Pattern(regexp = "^\\d{3}-?\\d{4}$", message = "郵便番号は123-4567の形式で入力してください。")
     private String shippingPostalCode;
 
     @NotBlank(message = "都道府県を入力してください。")
-    @Size(max = 20,
-            message = "都道府県は20文字以内で入力してください。")
+    @Size(max = 20, message = "都道府県は20文字以内で入力してください。")
     private String shippingPrefecture;
 
     @NotBlank(message = "市区町村を入力してください。")
-    @Size(max = 100,
-            message = "市区町村は100文字以内で入力してください。")
+    @Size(max = 100, message = "市区町村は100文字以内で入力してください。")
     private String shippingCity;
 
     @NotBlank(message = "番地・建物名を入力してください。")
-    @Size(max = 200,
-            message = "番地・建物名は200文字以内で入力してください。")
+    @Size(max = 200, message = "番地・建物名は200文字以内で入力してください。")
     private String shippingAddressLine;
 
     @NotBlank(message = "電話番号を入力してください。")
-    @Size(
-        max = 20,
-        message = "電話番号は20文字以内で入力してください。")
-    @Pattern(
-            regexp = "^0\\d{1,4}-?\\d{1,4}-?\\d{3,4}$",
-            message = "電話番号の形式が正しくありません。")
+    @Size(max = 20, message = "電話番号は20文字以内で入力してください。")
+    @Pattern(regexp = "^0\\d{1,4}-?\\d{1,4}-?\\d{3,4}$", message = "電話番号の形式が正しくありません。")
     private String shippingPhone;
 
     public String getShippingName() {
@@ -97,5 +94,25 @@ public class CheckoutForm implements Serializable {
 
     public void setShippingPhone(String shippingPhone) {
         this.shippingPhone = shippingPhone;
+    }
+
+    public Long getShippingAddressId() {
+        return shippingAddressId;
+    }
+
+    public void setShippingAddressId(
+            Long shippingAddressId) {
+
+        this.shippingAddressId = shippingAddressId;
+    }
+
+    public String getShippingAddressMode() {
+        return shippingAddressMode;
+    }
+
+    public void setShippingAddressMode(
+            String shippingAddressMode) {
+
+        this.shippingAddressMode = shippingAddressMode;
     }
 }

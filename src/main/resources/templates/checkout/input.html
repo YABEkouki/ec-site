@@ -13,94 +13,177 @@
 
     <h1>配送先入力</h1>
 
-    <form th:action="@{/checkout/confirm}" th:object="${checkoutForm}" method="post" class="form-card">
+    <form th:action="@{/checkout/confirm}" th:object="${checkoutForm}" method="post">
 
-        <div class="form-group">
+        <h2>配送先を選択</h2>
 
-            <label for="shippingName">
-                受取人氏名
-                <span class="required">必須</span>
+        <div th:if="${!#lists.isEmpty(shippingAddresses)}">
+
+            <label class="shipping-address-card" th:each="address : ${shippingAddresses}">
+
+                <input type="radio" name="shippingAddressSelection" th:value="${address.id}" th:checked="${checkoutForm.shippingAddressMode == 'REGISTERED'
+                       and checkoutForm.shippingAddressId == address.id}">
+
+                <span class="shipping-address-content">
+
+                    <span class="shipping-address-title">
+                        <strong th:text="${address.name}">
+                            自宅
+                        </strong>
+
+                        <span th:if="${address.defaultAddress}" class="shipping-address-default">
+                            デフォルト
+                        </span>
+                    </span>
+
+                    <span th:text="${address.recipientName}">
+                        山田 太郎
+                    </span>
+
+                    <span>
+                        〒<span th:text="${address.postalCode}">
+                            123-4567
+                        </span>
+                    </span>
+
+                    <span>
+                        <span th:text="${address.prefecture}">
+                            東京都
+                        </span>
+                        <span th:text="${address.city}">
+                            新宿区
+                        </span>
+                        <span th:text="${address.addressLine}">
+                            西新宿1-1-1
+                        </span>
+                    </span>
+
+                    <span th:text="${address.phone}">
+                        090-1234-5678
+                    </span>
+
+                </span>
+
             </label>
-
-            <input type="text" th:field="*{shippingName}" maxlength="100" autocomplete="name" required>
-
-            <span th:if="${#fields.hasErrors('shippingName')}" th:errors="*{shippingName}" class="field-error">
-            </span>
 
         </div>
 
-        <div class="form-group">
+        <label class="shipping-address-card">
 
-            <label for="shippingPostalCode">
-                郵便番号
-                <span class="required">必須</span>
-            </label>
+            <input type="radio" name="shippingAddressSelection" value="DIRECT"
+                th:checked="${checkoutForm.shippingAddressMode == 'DIRECT'}">
 
-            <input type="text" th:field="*{shippingPostalCode}" maxlength="8" inputmode="numeric"
-                autocomplete="postal-code" placeholder="123-4567" required>
-
-            <span th:if="${#fields.hasErrors('shippingPostalCode')}" th:errors="*{shippingPostalCode}"
-                class="field-error">
+            <span class="shipping-address-content">
+                <strong>登録済み配送先以外を入力する</strong>
             </span>
 
-        </div>
+        </label>
 
-        <div class="form-group">
+        <input type="hidden" th:field="*{shippingAddressMode}">
 
-            <label for="shippingPrefecture">
-                都道府県
-                <span class="required">必須</span>
-            </label>
+        <input type="hidden" th:field="*{shippingAddressId}">
 
-            <input type="text" th:field="*{shippingPrefecture}" maxlength="20" autocomplete="address-level1" required>
+        <span class="field-error" th:if="${#fields.hasErrors('shippingAddressMode')}"
+            th:errors="*{shippingAddressMode}">
+        </span>
 
-            <span th:if="${#fields.hasErrors('shippingPrefecture')}" th:errors="*{shippingPrefecture}"
-                class="field-error">
-            </span>
+        <span class="field-error" th:if="${#fields.hasErrors('shippingAddressId')}" th:errors="*{shippingAddressId}">
+        </span>
 
-        </div>
+        <h2>配送先情報</h2>
 
-        <div class="form-group">
+        <div id="direct-address-form" th:style="${checkoutForm.shippingAddressMode == 'DIRECT'}
+         ? 'display: block;'
+         : 'display: none;'">
 
-            <label for="shippingCity">
-                市区町村
-                <span class="required">必須</span>
-            </label>
+            <div class="form-group">
 
-            <input type="text" th:field="*{shippingCity}" maxlength="100" autocomplete="address-level2" required>
+                <label for="shippingName">
+                    受取人氏名
+                    <span class="required">必須</span>
+                </label>
 
-            <span th:if="${#fields.hasErrors('shippingCity')}" th:errors="*{shippingCity}" class="field-error">
-            </span>
+                <input type="text" th:field="*{shippingName}" maxlength="100" autocomplete="name">
 
-        </div>
+                <span th:if="${#fields.hasErrors('shippingName')}" th:errors="*{shippingName}" class="field-error">
+                </span>
 
-        <div class="form-group">
+            </div>
 
-            <label for="shippingAddressLine">
-                番地・建物名
-                <span class="required">必須</span>
-            </label>
+            <div class="form-group">
 
-            <input type="text" th:field="*{shippingAddressLine}" maxlength="200" autocomplete="street-address" required>
+                <label for="shippingPostalCode">
+                    郵便番号
+                    <span class="required">必須</span>
+                </label>
 
-            <span th:if="${#fields.hasErrors('shippingAddressLine')}" th:errors="*{shippingAddressLine}"
-                class="field-error">
-            </span>
+                <input type="text" th:field="*{shippingPostalCode}" maxlength="8" inputmode="numeric"
+                    autocomplete="postal-code" placeholder="123-4567">
 
-        </div>
+                <span th:if="${#fields.hasErrors('shippingPostalCode')}" th:errors="*{shippingPostalCode}"
+                    class="field-error">
+                </span>
 
-        <div class="form-group">
+            </div>
 
-            <label for="shippingPhone">
-                電話番号
-                <span class="required">必須</span>
-            </label>
+            <div class="form-group">
 
-            <input type="tel" th:field="*{shippingPhone}" maxlength="20" inputmode="tel" autocomplete="tel"
-                placeholder="090-1234-5678" required>
+                <label for="shippingPrefecture">
+                    都道府県
+                    <span class="required">必須</span>
+                </label>
 
-            <span th:if="${#fields.hasErrors('shippingPhone')}" th:errors="*{shippingPhone}" class="field-error">
-            </span>
+                <input type="text" th:field="*{shippingPrefecture}" maxlength="20" autocomplete="address-level1">
+
+                <span th:if="${#fields.hasErrors('shippingPrefecture')}" th:errors="*{shippingPrefecture}"
+                    class="field-error">
+                </span>
+
+            </div>
+
+            <div class="form-group">
+
+                <label for="shippingCity">
+                    市区町村
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="text" th:field="*{shippingCity}" maxlength="100" autocomplete="address-level2">
+
+                <span th:if="${#fields.hasErrors('shippingCity')}" th:errors="*{shippingCity}" class="field-error">
+                </span>
+
+            </div>
+
+            <div class="form-group">
+
+                <label for="shippingAddressLine">
+                    番地・建物名
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="text" th:field="*{shippingAddressLine}" maxlength="200" autocomplete="street-address">
+
+                <span th:if="${#fields.hasErrors('shippingAddressLine')}" th:errors="*{shippingAddressLine}"
+                    class="field-error">
+                </span>
+
+            </div>
+
+            <div class="form-group">
+
+                <label for="shippingPhone">
+                    電話番号
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="tel" th:field="*{shippingPhone}" maxlength="20" inputmode="tel" autocomplete="tel"
+                    placeholder="090-1234-5678">
+
+                <span th:if="${#fields.hasErrors('shippingPhone')}" th:errors="*{shippingPhone}" class="field-error">
+                </span>
+
+            </div>
 
         </div>
 
@@ -117,6 +200,162 @@
         </div>
 
     </form>
+
+    <script>
+        const selectionRadios =
+            document.querySelectorAll(
+                'input[name="shippingAddressSelection"]'
+            );
+
+        const modeInput =
+            document.querySelector(
+                'input[name="shippingAddressMode"]'
+            );
+
+        const addressIdInput =
+            document.querySelector(
+                'input[name="shippingAddressId"]'
+            );
+
+        const directAddressForm =
+            document.getElementById(
+                'direct-address-form'
+            );
+
+        const shippingNameInput =
+            document.querySelector(
+                'input[name="shippingName"]'
+            );
+
+        const shippingPostalCodeInput =
+            document.querySelector(
+                'input[name="shippingPostalCode"]'
+            );
+
+        const shippingPrefectureInput =
+            document.querySelector(
+                'input[name="shippingPrefecture"]'
+            );
+
+        const shippingCityInput =
+            document.querySelector(
+                'input[name="shippingCity"]'
+            );
+
+        const shippingAddressLineInput =
+            document.querySelector(
+                'input[name="shippingAddressLine"]'
+            );
+
+        const shippingPhoneInput =
+            document.querySelector(
+                'input[name="shippingPhone"]'
+            );
+
+        let directDraft = null;
+
+        /*
+         * ページ初期表示がDIRECTの場合だけ、
+         * CheckoutFormに保持されている住所をDIRECT入力として保存する。
+         *
+         * DIRECT → confirm → 戻る
+         * の入力内容維持に使用する。
+         */
+        if (modeInput.value === 'DIRECT') {
+
+            directDraft = {
+                shippingName: shippingNameInput.value,
+                shippingPostalCode: shippingPostalCodeInput.value,
+                shippingPrefecture: shippingPrefectureInput.value,
+                shippingCity: shippingCityInput.value,
+                shippingAddressLine: shippingAddressLineInput.value,
+                shippingPhone: shippingPhoneInput.value
+            };
+        }
+
+        function saveDirectDraft() {
+
+            directDraft = {
+                shippingName: shippingNameInput.value,
+                shippingPostalCode: shippingPostalCodeInput.value,
+                shippingPrefecture: shippingPrefectureInput.value,
+                shippingCity: shippingCityInput.value,
+                shippingAddressLine: shippingAddressLineInput.value,
+                shippingPhone: shippingPhoneInput.value
+            };
+        }
+
+        function restoreDirectDraft() {
+
+            if (directDraft === null) {
+
+                shippingNameInput.value = '';
+                shippingPostalCodeInput.value = '';
+                shippingPrefectureInput.value = '';
+                shippingCityInput.value = '';
+                shippingAddressLineInput.value = '';
+                shippingPhoneInput.value = '';
+
+                return;
+            }
+
+            shippingNameInput.value =
+                directDraft.shippingName;
+
+            shippingPostalCodeInput.value =
+                directDraft.shippingPostalCode;
+
+            shippingPrefectureInput.value =
+                directDraft.shippingPrefecture;
+
+            shippingCityInput.value =
+                directDraft.shippingCity;
+
+            shippingAddressLineInput.value =
+                directDraft.shippingAddressLine;
+
+            shippingPhoneInput.value =
+                directDraft.shippingPhone;
+        }
+
+        selectionRadios.forEach(function (radio) {
+
+            radio.addEventListener(
+                'change',
+                function () {
+
+                    /*
+                     * DIRECTからREGISTEREDへ切り替える場合、
+                     * 入力中の住所を退避する。
+                     */
+                    if (modeInput.value === 'DIRECT'
+                        && this.value !== 'DIRECT') {
+
+                        saveDirectDraft();
+                    }
+
+                    if (this.value === 'DIRECT') {
+
+                        modeInput.value = 'DIRECT';
+                        addressIdInput.value = '';
+
+                        restoreDirectDraft();
+
+                        directAddressForm.style.display =
+                            'block';
+
+                    } else {
+
+                        modeInput.value = 'REGISTERED';
+                        addressIdInput.value = this.value;
+
+                        directAddressForm.style.display =
+                            'none';
+                    }
+                }
+            );
+        });
+    </script>
 
 </body>
 
