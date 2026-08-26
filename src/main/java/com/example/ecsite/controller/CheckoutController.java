@@ -16,10 +16,12 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.ShippingAddressService;
 
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -29,9 +31,14 @@ import jakarta.validation.Valid;
 public class CheckoutController {
 
     private final OrderService orderService;
+    private final ShippingAddressService shippingAddressService;
 
-    public CheckoutController(OrderService orderService) {
+    public CheckoutController(
+            OrderService orderService,
+            ShippingAddressService shippingAddressService) {
+
         this.orderService = orderService;
+        this.shippingAddressService = shippingAddressService;
     }
 
     @ModelAttribute("cart")
@@ -47,17 +54,29 @@ public class CheckoutController {
     @GetMapping("/checkout")
     public String input(
             @ModelAttribute("cart") Cart cart,
+            @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         try {
             orderService.validateCart(cart);
 
         } catch (OrderValidationException e) {
+
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
                     e.getMessage());
 
             return "redirect:/cart";
+        }
+
+        if (isCheckoutFormEmpty(checkoutForm)) {
+
+            shippingAddressService.findDefaultAddress(
+                    loginUser.getId())
+                    .ifPresent(address -> copyShippingAddressToCheckoutForm(
+                            address,
+                            checkoutForm));
         }
 
         return "checkout/input";
@@ -164,6 +183,45 @@ public class CheckoutController {
     public String confirmByGet() {
 
         return "redirect:/checkout";
+    }
+
+    private boolean isCheckoutFormEmpty(
+            CheckoutForm checkoutForm) {
+
+        return isBlank(checkoutForm.getShippingName())
+                && isBlank(checkoutForm.getShippingPostalCode())
+                && isBlank(checkoutForm.getShippingPrefecture())
+                && isBlank(checkoutForm.getShippingCity())
+                && isBlank(checkoutForm.getShippingAddressLine())
+                && isBlank(checkoutForm.getShippingPhone());
+    }
+
+    private boolean isBlank(String value) {
+
+        return value == null || value.isBlank();
+    }
+
+    private void copyShippingAddressToCheckoutForm(
+            ShippingAddress address,
+            CheckoutForm checkoutForm) {
+
+        checkoutForm.setShippingName(
+                address.getRecipientName());
+
+        checkoutForm.setShippingPostalCode(
+                address.getPostalCode());
+
+        checkoutForm.setShippingPrefecture(
+                address.getPrefecture());
+
+        checkoutForm.setShippingCity(
+                address.getCity());
+
+        checkoutForm.setShippingAddressLine(
+                address.getAddressLine());
+
+        checkoutForm.setShippingPhone(
+                address.getPhone());
     }
 
     private boolean consumeCheckoutToken(

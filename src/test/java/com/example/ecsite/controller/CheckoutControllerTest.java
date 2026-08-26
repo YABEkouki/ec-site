@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,10 +25,12 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.ShippingAddressService;
 
 import jakarta.servlet.http.HttpSession;
 
@@ -36,6 +39,9 @@ class CheckoutControllerTest {
 
         @Mock
         private OrderService orderService;
+
+        @Mock
+        private ShippingAddressService shippingAddressService;
 
         private CheckoutController controller;
         private CustomUserDetails loginUser;
@@ -51,7 +57,9 @@ class CheckoutControllerTest {
         @BeforeEach
         void setUp() {
 
-                controller = new CheckoutController(orderService);
+                controller = new CheckoutController(
+                                orderService,
+                                shippingAddressService);
 
                 loginUser = new CustomUserDetails(
                                 10L,
@@ -273,5 +281,116 @@ class CheckoutControllerTest {
 
                 verify(sessionStatus, never())
                                 .setComplete();
+        }
+
+        @Test
+        void inputPrefillsCheckoutFormFromDefaultAddress() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = new CheckoutForm();
+
+                ShippingAddress address = new ShippingAddress();
+                address.setRecipientName("山田 太郎");
+                address.setPostalCode("123-4567");
+                address.setPrefecture("東京都");
+                address.setCity("新宿区");
+                address.setAddressLine("西新宿1-1-1");
+                address.setPhone("090-1234-5678");
+
+                when(shippingAddressService.findDefaultAddress(10L))
+                                .thenReturn(Optional.of(address));
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.input(
+                                cart,
+                                checkoutForm,
+                                loginUser,
+                                redirectAttributes);
+
+                assertEquals("checkout/input", view);
+
+                assertEquals(
+                                "山田 太郎",
+                                checkoutForm.getShippingName());
+
+                assertEquals(
+                                "123-4567",
+                                checkoutForm.getShippingPostalCode());
+
+                assertEquals(
+                                "東京都",
+                                checkoutForm.getShippingPrefecture());
+
+                assertEquals(
+                                "新宿区",
+                                checkoutForm.getShippingCity());
+
+                assertEquals(
+                                "西新宿1-1-1",
+                                checkoutForm.getShippingAddressLine());
+
+                assertEquals(
+                                "090-1234-5678",
+                                checkoutForm.getShippingPhone());
+
+                verify(shippingAddressService)
+                                .findDefaultAddress(10L);
+        }
+
+        @Test
+        void inputLeavesCheckoutFormEmptyWhenDefaultAddressDoesNotExist() {
+
+                Cart cart = createCart();
+                CheckoutForm checkoutForm = new CheckoutForm();
+
+                when(shippingAddressService.findDefaultAddress(10L))
+                                .thenReturn(Optional.empty());
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.input(
+                                cart,
+                                checkoutForm,
+                                loginUser,
+                                redirectAttributes);
+
+                assertEquals("checkout/input", view);
+
+                assertEquals(
+                                null,
+                                checkoutForm.getShippingName());
+        }
+
+        @Test
+        void inputDoesNotOverwriteExistingCheckoutForm() {
+
+                Cart cart = createCart();
+
+                CheckoutForm checkoutForm = createCheckoutForm();
+
+                ShippingAddress address = new ShippingAddress();
+                address.setRecipientName("別の氏名");
+                address.setPostalCode("999-9999");
+
+                RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+                String view = controller.input(
+                                cart,
+                                checkoutForm,
+                                loginUser,
+                                redirectAttributes);
+
+                assertEquals("checkout/input", view);
+
+                assertEquals(
+                                "山田 太郎",
+                                checkoutForm.getShippingName());
+
+                assertEquals(
+                                "123-4567",
+                                checkoutForm.getShippingPostalCode());
+
+                verifyNoInteractions(shippingAddressService);
         }
 }

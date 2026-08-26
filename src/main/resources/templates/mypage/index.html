@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>マイページ</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>マイページ</h1>
+
+    <p th:if="${successMessage}"
+       th:text="${successMessage}"
+       class="message-success">
+    </p>
+
+    <section>
+        <h2>会員情報</h2>
+
+        <div th:if="${profile != null}">
+            <table>
+                <tbody>
+                    <tr>
+                        <th>氏名</th>
+                        <td th:text="${profile.name}"></td>
+                    </tr>
+
+                    <tr>
+                        <th>郵便番号</th>
+                        <td th:text="${profile.postalCode}"></td>
+                    </tr>
+
+                    <tr>
+                        <th>住所</th>
+                        <td>
+                            <span th:text="${profile.prefecture}"></span>
+                            <span th:text="${profile.city}"></span>
+                            <span th:text="${profile.addressLine}"></span>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>電話番号</th>
+                        <td th:text="${profile.phone}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p th:if="${profile == null}">
+            会員情報はまだ登録されていません。
+        </p>
+
+        <div class="actions">
+            <a th:href="@{/mypage/profile/edit}"
+               class="button button-primary">
+                会員情報を編集
+            </a>
+        </div>
+    </section>
+
+    <section>
+        <h2>配送先</h2>
+
+        <p th:if="${#lists.isEmpty(addresses)}">
+            配送先はまだ登録されていません。
+        </p>
+
+        <table th:unless="${#lists.isEmpty(addresses)}">
+            <thead>
+                <tr>
+                    <th>配送先名</th>
+                    <th>受取人</th>
+                    <th>住所</th>
+                    <th>電話番号</th>
+                    <th>設定</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr th:each="address : ${addresses}">
+                    <td th:text="${address.name}"></td>
+
+                    <td th:text="${address.recipientName}"></td>
+
+                    <td>
+                        <div th:text="${address.postalCode}"></div>
+
+                        <div>
+                            <span th:text="${address.prefecture}"></span>
+                            <span th:text="${address.city}"></span>
+                            <span th:text="${address.addressLine}"></span>
+                        </div>
+                    </td>
+
+                    <td th:text="${address.phone}"></td>
+
+                    <td>
+                        <strong th:if="${address.defaultAddress}">
+                            デフォルト
+                        </strong>
+
+                        <span th:unless="${address.defaultAddress}">
+                            -
+                        </span>
+                    </td>
+
+                    <td>
+                        <a th:href="@{/mypage/addresses/{id}/edit(id=${address.id})}"
+                           class="button button-secondary">
+                            編集
+                        </a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="actions">
+            <a th:href="@{/mypage/addresses/new}"
+               class="button button-primary">
+                配送先を追加
+            </a>
+        </div>
+    </section>
+
+    <section>
+        <h2>その他</h2>
+
+        <div class="actions">
+            <a th:href="@{/orders}"
+               class="button button-secondary">
+                注文履歴
+            </a>
+
+            <a th:href="@{/favorites}"
+               class="button button-secondary">
+                お気に入り
+            </a>
+        </div>
+    </section>
+
+</body>
+
+</html>

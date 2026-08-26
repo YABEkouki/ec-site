@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>会員情報編集</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>会員情報編集</h1>
+
+    <form th:action="@{/mypage/profile}"
+          th:object="${userProfileForm}"
+          method="post"
+          class="form-card">
+
+        <div class="form-group">
+            <label for="name">
+                氏名
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text"
+                   th:field="*{name}"
+                   maxlength="100"
+                   autocomplete="name"
+                   required>
+
+            <span th:if="${#fields.hasErrors('name')}"
+                  th:errors="*{name}"
+                  class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="postalCode">
+                郵便番号
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text"
+                   th:field="*{postalCode}"
+                   maxlength="8"
+                   inputmode="numeric"
+                   autocomplete="postal-code"
+                   placeholder="123-4567"
+                   required>
+
+            <span th:if="${#fields.hasErrors('postalCode')}"
+                  th:errors="*{postalCode}"
+                  class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="prefecture">
+                都道府県
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text"
+                   th:field="*{prefecture}"
+                   maxlength="20"
+                   autocomplete="address-level1"
+                   required>
+
+            <span th:if="${#fields.hasErrors('prefecture')}"
+                  th:errors="*{prefecture}"
+                  class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="city">
+                市区町村
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text"
+                   th:field="*{city}"
+                   maxlength="100"
+                   autocomplete="address-level2"
+                   required>
+
+            <span th:if="${#fields.hasErrors('city')}"
+                  th:errors="*{city}"
+                  class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="addressLine">
+                番地・建物名
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text"
+                   th:field="*{addressLine}"
+                   maxlength="200"
+                   autocomplete="street-address"
+                   required>
+
+            <span th:if="${#fields.hasErrors('addressLine')}"
+                  th:errors="*{addressLine}"
+                  class="field-error">
+            </span>
+        </div>
+
+        <div class="form-group">
+            <label for="phone">
+                電話番号
+                <span class="required">必須</span>
+            </label>
+
+            <input type="tel"
+                   th:field="*{phone}"
+                   maxlength="20"
+                   inputmode="tel"
+                   autocomplete="tel"
+                   placeholder="090-1234-5678"
+                   required>
+
+            <span th:if="${#fields.hasErrors('phone')}"
+                  th:errors="*{phone}"
+                  class="field-error">
+            </span>
+        </div>
+
+        <div class="actions">
+            <button type="submit"
+                    class="button-primary">
+                保存
+            </button>
+
+            <a th:href="@{/mypage}"
+               class="button button-secondary">
+                戻る
+            </a>
+        </div>
+
+    </form>
+
+</body>
+
+</html>
