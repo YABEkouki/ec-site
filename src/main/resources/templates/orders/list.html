@@ -48,8 +48,12 @@
                     円
                 </td>
 
-                <td th:text="${order.status.displayName}"></td>
-
+                <td>
+                    <span class="status-badge"
+                        th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
+                        th:text="${order.status.displayName}">
+                    </span>
+                </td>
                 <td>
                     <a th:href="@{/orders/{id}(
                     id=${order.id})}" class="button button-secondary">

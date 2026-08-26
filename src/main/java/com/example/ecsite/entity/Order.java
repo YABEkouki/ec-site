@@ -174,7 +174,7 @@ public class Order {
 
     public void markAsPaid() {
 
-        if (status != OrderStatus.ORDERED) {
+        if (!canMarkAsPaid()) {
             throw new InvalidOrderStatusException(
                     "注文受付中の注文だけを"
                             + "支払済みに変更できます。");
@@ -186,7 +186,7 @@ public class Order {
 
     public void markAsShipped() {
 
-        if (status != OrderStatus.PAID) {
+        if (!canMarkAsShipped()) {
             throw new InvalidOrderStatusException(
                     "支払済みの注文だけを"
                             + "発送済みに変更できます。");
@@ -198,7 +198,7 @@ public class Order {
 
     public void cancel() {
 
-        if (status != OrderStatus.ORDERED) {
+        if (!canCancel()) {
             throw new InvalidOrderStatusException(
                     "注文受付中の注文だけを"
                             + "キャンセルできます。");
@@ -206,6 +206,18 @@ public class Order {
 
         status = OrderStatus.CANCELLED;
         cancelledAt = LocalDateTime.now();
+    }
+
+    public boolean canCancel() {
+        return status == OrderStatus.ORDERED;
+    }
+
+    public boolean canMarkAsPaid() {
+        return status == OrderStatus.ORDERED;
+    }
+
+    public boolean canMarkAsShipped() {
+        return status == OrderStatus.PAID;
     }
 
 }
