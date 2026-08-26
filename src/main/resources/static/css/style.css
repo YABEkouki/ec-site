@@ -335,3 +335,44 @@ nav strong {
     margin-top: 18px;
     text-align: center;
 }
+
+.shipping-address-card {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    padding: 16px;
+    background-color: #fff;
+    border: 1px solid #d4dbe1;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.shipping-address-card:hover {
+    border-color: #1769aa;
+}
+
+.shipping-address-card input[type="radio"] {
+    margin-top: 5px;
+}
+
+.shipping-address-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.shipping-address-title {
+    margin-bottom: 3px;
+}
+
+.shipping-address-default {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    color: #176b2c;
+    background-color: #e8f5e9;
+    border: 1px solid #9ccc9c;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
