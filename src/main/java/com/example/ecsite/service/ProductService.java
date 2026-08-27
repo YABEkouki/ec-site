@@ -11,10 +11,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.StockMovement;
+import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.mapper.ProductMapper;
 import com.example.ecsite.repository.ProductRepository;
+import com.example.ecsite.repository.StockMovementRepository;
 
 @Service
 @Transactional
@@ -23,15 +26,18 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryService categoryService;
     private final ProductImageService productImageService;
+    private final StockMovementRepository stockMovementRepository;
 
     public ProductService(
             ProductRepository productRepository,
             CategoryService categoryService,
-            ProductImageService productImageService) {
+            ProductImageService productImageService,
+            StockMovementRepository stockMovementRepository) {
 
         this.productRepository = productRepository;
         this.categoryService = categoryService;
         this.productImageService = productImageService;
+        this.stockMovementRepository = stockMovementRepository;
     }
 
     public List<Product> findAll() {
@@ -234,10 +240,27 @@ public class ProductService {
 
     public void adjustStock(
             Long productId,
-            int quantity) {
+            int quantity,
+            User changedByUser,
+            String reason) {
 
         Product product = findByIdForUpdate(productId);
 
+        int stockBefore = product.getStock();
+
         product.adjustStock(quantity);
+
+        int stockAfter = product.getStock();
+
+        StockMovement movement = StockMovement.createAdminAdjustment(
+                product,
+                stockBefore,
+                stockAfter,
+                quantity,
+                changedByUser,
+                reason);
+
+        stockMovementRepository.save(movement);
     }
+
 }

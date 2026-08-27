@@ -56,11 +56,33 @@
 
             </div>
 
+            <div class="form-group">
+
+                <label for="reason">
+                    調整理由
+                    <span>任意</span>
+                </label>
+
+                <textarea id="reason" th:field="*{reason}" rows="3" maxlength="500"></textarea>
+
+                <small>
+                    棚卸し差異、入荷、破損など、必要に応じて入力してください。
+                </small>
+
+                <span th:if="${#fields.hasErrors('reason')}" th:errors="*{reason}" class="field-error">
+                </span>
+
+            </div>
+
             <div class="actions">
 
                 <button type="submit" class="button-primary">
                     在庫を調整
                 </button>
+
+                <a th:href="@{/admin/products/{id}/stock/history(id=${product.id})}" class="button button-secondary">
+                    在庫変更履歴を見る
+                </a>
 
                 <a th:if="${returnTo == 'edit'}" th:href="@{/admin/products/{id}/edit(id=${product.id})}"
                     class="button button-secondary">
@@ -73,7 +95,7 @@
             </div>
 
             <input th:if="${returnTo != null}" type="hidden" name="returnTo" th:value="${returnTo}">
-            
+
         </form>
 
     </div>
