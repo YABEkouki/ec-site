@@ -136,9 +136,12 @@
 
                 <td>
                     <div class="actions">
-                        <a th:href="@{/admin/products/{id}/edit(
-                    id=${product.id})}" class="button button-secondary">
+                        <a th:href="@{/admin/products/{id}/edit(id=${product.id})}" class="button button-secondary">
                             編集
+                        </a>
+
+                        <a th:href="@{/admin/products/{id}/stock(id=${product.id})}" class="button button-secondary">
+                            在庫調整
                         </a>
 
                         <a th:href="@{/products/{id}(id=${product.id})}" target="_blank" rel="noopener"
@@ -146,8 +149,8 @@
                             公開画面を確認
                         </a>
 
-                        <form th:action="@{/admin/products/{id}/delete(
-                    id=${product.id})}" method="post" class="inline-form">
+                        <form th:action="@{/admin/products/{id}/delete(id=${product.id})}" method="post"
+                            class="inline-form">
 
                             <button type="submit" class="button-primary">
                                 販売終了

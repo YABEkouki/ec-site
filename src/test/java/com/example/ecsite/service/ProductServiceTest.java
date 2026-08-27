@@ -568,4 +568,73 @@ class ProductServiceTest {
                 verify(productImageService, never())
                                 .deleteImage(any());
         }
+
+        @Test
+        void adjustStockUsesLockedProductAndAdjustsStock() {
+
+                Long productId = 1L;
+
+                Product product = mock(Product.class);
+
+                when(productRepository
+                                .findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService,
+                                productImageService);
+
+                productService.adjustStock(
+                                productId,
+                                -3);
+
+                verify(productRepository)
+                                .findByIdForUpdate(productId);
+
+                verify(product)
+                                .adjustStock(-3);
+        }
+
+        @Test
+        void updateDoesNotOverwriteStock() {
+
+                Long productId = 1L;
+                Long categoryId = 2L;
+
+                Product product = mock(Product.class);
+                Category category = mock(Category.class);
+
+                ProductForm form = new ProductForm();
+                form.setName("更新商品");
+                form.setPrice(1000);
+                form.setStock(999);
+                form.setDescription("更新後の説明");
+                form.setCategoryId(categoryId);
+
+                when(productRepository
+                                .findByIdForUpdate(productId))
+                                .thenReturn(Optional.of(product));
+
+                when(product.getCategory())
+                                .thenReturn(category);
+
+                when(category.getId())
+                                .thenReturn(categoryId);
+
+                when(categoryService.findById(categoryId))
+                                .thenReturn(category);
+
+                ProductService productService = new ProductService(
+                                productRepository,
+                                categoryService,
+                                productImageService);
+
+                productService.update(
+                                productId,
+                                form);
+
+                verify(product, never())
+                                .setStock(any());
+        }
 }

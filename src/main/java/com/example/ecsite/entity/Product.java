@@ -2,6 +2,8 @@ package com.example.ecsite.entity;
 
 import java.time.LocalDateTime;
 
+import com.example.ecsite.exception.InvalidStockAdjustmentException;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -95,6 +97,23 @@ public class Product {
 
     public void setStock(Integer stock) {
         this.stock = stock;
+    }
+
+    public void adjustStock(int quantity) {
+
+        if (quantity == 0) {
+            throw new InvalidStockAdjustmentException(
+                    "調整数は0以外を指定してください。");
+        }
+
+        int adjustedStock = stock + quantity;
+
+        if (adjustedStock < 0) {
+            throw new InvalidStockAdjustmentException(
+                    "在庫数を0未満にはできません。");
+        }
+
+        stock = adjustedStock;
     }
 
     public String getDescription() {

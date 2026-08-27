@@ -231,4 +231,13 @@ public class ProductService {
                 .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
                         threshold);
     }
+
+    public void adjustStock(
+            Long productId,
+            int quantity) {
+
+        Product product = findByIdForUpdate(productId);
+
+        product.adjustStock(quantity);
+    }
 }

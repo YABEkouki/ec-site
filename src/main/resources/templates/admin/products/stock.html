@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>在庫調整</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>在庫調整</h1>
+
+    <div class="form-card">
+
+        <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
+        </p>
+
+        <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
+        </p>
+
+        <div class="form-group">
+            <label>商品名</label>
+            <p th:text="${product.name}"></p>
+        </div>
+
+        <div class="form-group">
+            <label>現在在庫</label>
+            <p>
+                <strong th:text="${product.stock}"></strong>
+                個
+            </p>
+        </div>
+
+        <form th:action="@{/admin/products/{id}/stock(id=${product.id})}" th:object="${stockAdjustmentForm}"
+            method="post">
+
+            <div class="form-group">
+
+                <label for="quantity">
+                    調整数
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="number" id="quantity" th:field="*{quantity}" step="1" required>
+
+                <small>
+                    正数で在庫を追加、負数で在庫を減らします。
+                    例：10個追加する場合は「10」、3個減らす場合は「-3」
+                </small>
+
+                <span th:if="${#fields.hasErrors('quantity')}" th:errors="*{quantity}" class="field-error">
+                </span>
+
+            </div>
+
+            <div class="actions">
+
+                <button type="submit" class="button-primary">
+                    在庫を調整
+                </button>
+
+                <a th:if="${returnTo == 'edit'}" th:href="@{/admin/products/{id}/edit(id=${product.id})}"
+                    class="button button-secondary">
+                    商品編集へ戻る
+                </a>
+
+                <a th:unless="${returnTo == 'edit'}" th:href="@{/admin/products}" class="button button-secondary">
+                    商品一覧へ戻る
+                </a>
+            </div>
+
+            <input th:if="${returnTo != null}" type="hidden" name="returnTo" th:value="${returnTo}">
+            
+        </form>
+
+    </div>
+
+</body>
+
+</html>
