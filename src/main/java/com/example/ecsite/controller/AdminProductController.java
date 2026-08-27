@@ -14,7 +14,9 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.InvalidProductImageException;
+import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
+import com.example.ecsite.form.StockAdjustmentForm;
 import com.example.ecsite.mapper.ProductMapper;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
@@ -164,6 +166,8 @@ public class AdminProductController {
 
                         model.addAttribute("productId", id);
 
+                        model.addAttribute("product", product);
+
                         model.addAttribute(
                                         "categories",
                                         categoryService
@@ -194,7 +198,7 @@ public class AdminProductController {
 
                         return "admin/products/edit";
                 }
-                
+
                 redirectAttributes.addFlashAttribute(
                                 "message",
                                 "商品を更新しました。");
@@ -249,6 +253,88 @@ public class AdminProductController {
                                 "商品を販売中に戻しました。");
 
                 return "redirect:/admin/products/inactive";
+        }
+
+        @GetMapping("/{id}/stock")
+        public String stock(
+                        @PathVariable Long id,
+                        @RequestParam(required = false) String returnTo,
+                        Model model) {
+
+                Product product = productService.findById(id);
+
+                model.addAttribute(
+                                "product",
+                                product);
+
+                model.addAttribute(
+                                "stockAdjustmentForm",
+                                new StockAdjustmentForm());
+
+                model.addAttribute(
+                                "returnTo",
+                                returnTo);
+
+                return "admin/products/stock";
+        }
+
+        @PostMapping("/{id}/stock")
+        public String adjustStock(
+                        @PathVariable Long id,
+                        @Valid @ModelAttribute("stockAdjustmentForm") StockAdjustmentForm stockAdjustmentForm,
+                        BindingResult bindingResult,
+                        Model model,
+                        RedirectAttributes redirectAttributes,
+                        @RequestParam(required = false) String returnTo) {
+
+                if (bindingResult.hasErrors()) {
+
+                        Product product = productService.findById(id);
+
+                        model.addAttribute(
+                                        "product",
+                                        product);
+                        model.addAttribute(
+                                        "returnTo",
+                                        returnTo);
+
+                        return "admin/products/stock";
+                }
+
+                try {
+
+                        productService.adjustStock(
+                                        id,
+                                        stockAdjustmentForm.getQuantity());
+
+                } catch (InvalidStockAdjustmentException e) {
+
+                        Product product = productService.findById(id);
+
+                        model.addAttribute(
+                                        "product",
+                                        product);
+
+                        model.addAttribute(
+                                        "errorMessage",
+                                        e.getMessage());
+
+                        model.addAttribute(
+                                        "returnTo",
+                                        returnTo);
+
+                        return "admin/products/stock";
+                }
+
+                redirectAttributes.addFlashAttribute(
+                                "successMessage",
+                                "在庫を調整しました。");
+
+                if ("edit".equals(returnTo)) {
+                        return "redirect:/admin/products/" + id + "/stock?returnTo=edit";
+                }
+
+                return "redirect:/admin/products/" + id + "/stock";
         }
 
         private void addCategories(Model model) {

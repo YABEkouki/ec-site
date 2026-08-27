@@ -40,7 +40,6 @@ public class ProductMapper {
 
         product.setName(form.getName());
         product.setPrice(form.getPrice());
-        product.setStock(form.getStock());
         product.setDescription(form.getDescription());
     }
 }
