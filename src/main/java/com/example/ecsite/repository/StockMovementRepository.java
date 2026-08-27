@@ -32,5 +32,5 @@ Page<StockMovement> searchByProduct(
         @Param("from") LocalDateTime from,
         @Param("to") LocalDateTime to,
         @Param("username") String username,
-        Pageable pageable);            
+        Pageable pageable);
 }

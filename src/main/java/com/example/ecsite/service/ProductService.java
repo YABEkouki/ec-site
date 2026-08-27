@@ -262,5 +262,5 @@ public class ProductService {
 
         stockMovementRepository.save(movement);
     }
-    
+
 }
