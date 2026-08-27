@@ -1,6 +1,10 @@
 package com.example.ecsite.controller;
 
+import java.time.LocalDate;
+
 import org.springframework.data.domain.Page;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -13,13 +17,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.StockMovement;
+import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.InvalidProductImageException;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.form.StockAdjustmentForm;
 import com.example.ecsite.mapper.ProductMapper;
+import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.StockMovementService;
+import com.example.ecsite.service.UserService;
 
 import jakarta.validation.Valid;
 
@@ -29,13 +38,19 @@ public class AdminProductController {
 
         private final ProductService productService;
         private final CategoryService categoryService;
+        private final UserService userService;
+        private final StockMovementService stockMovementService;
 
         public AdminProductController(
                         ProductService productService,
-                        CategoryService categoryService) {
+                        CategoryService categoryService,
+                        UserService userService,
+                        StockMovementService stockMovementService) {
 
                 this.productService = productService;
                 this.categoryService = categoryService;
+                this.userService = userService;
+                this.stockMovementService = stockMovementService;
         }
 
         @GetMapping
@@ -285,6 +300,7 @@ public class AdminProductController {
                         BindingResult bindingResult,
                         Model model,
                         RedirectAttributes redirectAttributes,
+                        @AuthenticationPrincipal CustomUserDetails userDetails,
                         @RequestParam(required = false) String returnTo) {
 
                 if (bindingResult.hasErrors()) {
@@ -302,10 +318,13 @@ public class AdminProductController {
                 }
 
                 try {
+                        User changedByUser = userService.findById(userDetails.getId());
 
                         productService.adjustStock(
                                         id,
-                                        stockAdjustmentForm.getQuantity());
+                                        stockAdjustmentForm.getQuantity(),
+                                        changedByUser,
+                                        stockAdjustmentForm.getReason());
 
                 } catch (InvalidStockAdjustmentException e) {
 
@@ -335,6 +354,54 @@ public class AdminProductController {
                 }
 
                 return "redirect:/admin/products/" + id + "/stock";
+        }
+
+        @GetMapping("/{id}/stock/history")
+        public String stockHistory(
+                        @PathVariable Long id,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                        @RequestParam(required = false) String username,
+                        @RequestParam(defaultValue = "0") int page,
+                        Model model) {
+
+                int size = 20;
+
+                Product product = productService.findById(id);
+
+                Page<StockMovement> movementPage = stockMovementService.search(
+                                id,
+                                from,
+                                to,
+                                username,
+                                page,
+                                size);
+
+                model.addAttribute(
+                                "product",
+                                product);
+
+                model.addAttribute(
+                                "movementPage",
+                                movementPage);
+
+                model.addAttribute(
+                                "movements",
+                                movementPage.getContent());
+
+                model.addAttribute(
+                                "from",
+                                from);
+
+                model.addAttribute(
+                                "to",
+                                to);
+
+                model.addAttribute(
+                                "username",
+                                username);
+
+                return "admin/products/stock-history";
         }
 
         private void addCategories(Model model) {
