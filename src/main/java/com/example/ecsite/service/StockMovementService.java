@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.StockMovement;
+import com.example.ecsite.entity.StockMovementType;
 import com.example.ecsite.repository.StockMovementRepository;
 
 @Service
@@ -38,6 +39,7 @@ public class StockMovementService {
             LocalDate from,
             LocalDate to,
             String username,
+            StockMovementType movementType,
             int page,
             int size) {
 
@@ -64,6 +66,7 @@ public class StockMovementService {
                 searchFrom,
                 searchTo,
                 normalizedUsername,
+                movementType,
                 pageable);
     }
 }

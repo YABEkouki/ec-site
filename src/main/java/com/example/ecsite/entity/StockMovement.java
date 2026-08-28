@@ -42,12 +42,18 @@ public class StockMovement {
     @Column(name = "stock_after", nullable = false)
     private Integer stockAfter;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "changed_by_user_id", nullable = false)
-    private User changedByUser;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "changed_by_type", nullable = false, length = 20)
+    private StockMovementActorType changedByType;
+
+    @Column(name = "changed_by_account_id")
+    private Long changedByAccountId;
 
     @Column(name = "changed_by_username", nullable = false, length = 100)
     private String changedByUsername;
+
+    @Column(name = "order_id")
+    private Long orderId;
 
     @Column(length = 500)
     private String reason;
@@ -67,14 +73,14 @@ public class StockMovement {
             int stockBefore,
             int stockAfter,
             int quantity,
-            User changedByUser,
+            Long changedByAccountId,
+            String changedByUsername,
             String reason) {
 
         StockMovement movement = new StockMovement();
 
         movement.product = product;
         movement.productName = product.getName();
-
         movement.movementType =
                 StockMovementType.ADMIN_ADJUSTMENT;
 
@@ -82,11 +88,71 @@ public class StockMovement {
         movement.stockBefore = stockBefore;
         movement.stockAfter = stockAfter;
 
-        movement.changedByUser = changedByUser;
-        movement.changedByUsername =
-                changedByUser.getUsername();
+        movement.changedByType =
+                StockMovementActorType.ADMIN;
+        movement.changedByAccountId = changedByAccountId;
+        movement.changedByUsername = changedByUsername;
 
+        movement.orderId = null;
         movement.reason = reason;
+
+        return movement;
+    }
+
+    public static StockMovement createOrderPlacement(
+            Product product,
+            int stockBefore,
+            int stockAfter,
+            int quantity,
+            Long orderId) {
+
+        StockMovement movement = new StockMovement();
+
+        movement.product = product;
+        movement.productName = product.getName();
+        movement.movementType =
+                StockMovementType.ORDER_PLACEMENT;
+
+        movement.quantity = quantity;
+        movement.stockBefore = stockBefore;
+        movement.stockAfter = stockAfter;
+
+        movement.changedByType =
+                StockMovementActorType.SYSTEM;
+        movement.changedByAccountId = null;
+        movement.changedByUsername = "SYSTEM";
+
+        movement.orderId = orderId;
+        movement.reason = null;
+
+        return movement;
+    }
+
+    public static StockMovement createOrderCancellation(
+            Product product,
+            int stockBefore,
+            int stockAfter,
+            int quantity,
+            Long orderId) {
+
+        StockMovement movement = new StockMovement();
+
+        movement.product = product;
+        movement.productName = product.getName();
+        movement.movementType =
+                StockMovementType.ORDER_CANCELLATION;
+
+        movement.quantity = quantity;
+        movement.stockBefore = stockBefore;
+        movement.stockAfter = stockAfter;
+
+        movement.changedByType =
+                StockMovementActorType.SYSTEM;
+        movement.changedByAccountId = null;
+        movement.changedByUsername = "SYSTEM";
+
+        movement.orderId = orderId;
+        movement.reason = null;
 
         return movement;
     }
@@ -119,12 +185,20 @@ public class StockMovement {
         return stockAfter;
     }
 
-    public User getChangedByUser() {
-        return changedByUser;
+    public StockMovementActorType getChangedByType() {
+        return changedByType;
+    }
+
+    public Long getChangedByAccountId() {
+        return changedByAccountId;
     }
 
     public String getChangedByUsername() {
         return changedByUsername;
+    }
+
+    public Long getOrderId() {
+        return orderId;
     }
 
     public String getReason() {

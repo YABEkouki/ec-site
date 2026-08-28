@@ -31,9 +31,7 @@
 
     </div>
 
-    <form th:action="@{/admin/products/{id}/stock/history(id=${product.id})}"
-          method="get"
-          class="form-card">
+    <form th:action="@{/admin/products/{id}/stock/history(id=${product.id})}" method="get" class="form-card">
 
         <div class="form-group">
 
@@ -41,10 +39,7 @@
                 変更日（開始）
             </label>
 
-            <input type="date"
-                   id="from"
-                   name="from"
-                   th:value="${from}">
+            <input type="date" id="from" name="from" th:value="${from}">
         </div>
 
         <div class="form-group">
@@ -53,10 +48,7 @@
                 変更日（終了）
             </label>
 
-            <input type="date"
-                   id="to"
-                   name="to"
-                   th:value="${to}">
+            <input type="date" id="to" name="to" th:value="${to}">
         </div>
 
         <div class="form-group">
@@ -65,22 +57,47 @@
                 操作者
             </label>
 
-            <input type="text"
-                   id="username"
-                   name="username"
-                   maxlength="100"
-                   th:value="${username}">
+            <input type="text" id="username" name="username" maxlength="100" th:value="${username}">
+        </div>
+
+        <div class="form-group">
+
+            <label for="movementType">
+                変更種別
+            </label>
+
+            <select id="movementType" name="movementType">
+
+                <option value="">
+                    すべて
+                </option>
+
+                <option value="ADMIN_ADJUSTMENT" th:selected="${movementType != null
+                    && movementType.name() == 'ADMIN_ADJUSTMENT'}">
+                    管理者調整
+                </option>
+
+                <option value="ORDER_PLACEMENT" th:selected="${movementType != null
+                    && movementType.name() == 'ORDER_PLACEMENT'}">
+                    注文
+                </option>
+
+                <option value="ORDER_CANCELLATION" th:selected="${movementType != null
+                    && movementType.name() == 'ORDER_CANCELLATION'}">
+                    注文キャンセル
+                </option>
+
+            </select>
+
         </div>
 
         <div class="actions">
 
-            <button type="submit"
-                    class="button-primary">
+            <button type="submit" class="button-primary">
                 検索
             </button>
 
-            <a th:href="@{/admin/products/{id}/stock/history(id=${product.id})}"
-               class="button button-secondary">
+            <a th:href="@{/admin/products/{id}/stock/history(id=${product.id})}" class="button button-secondary">
                 クリア
             </a>
 
@@ -102,6 +119,8 @@
         <thead>
             <tr>
                 <th>変更日時</th>
+                <th>変更種別</th>
+                <th>注文番号</th>
                 <th>変更数</th>
                 <th>変更前</th>
                 <th>変更後</th>
@@ -118,7 +137,33 @@
                     movement.changedAt,
                     'yyyy/MM/dd HH:mm:ss')}">
                 </td>
+                <td>
+                    <span th:switch="${movement.movementType.name()}">
 
+                        <span th:case="'ADMIN_ADJUSTMENT'">
+                            管理者調整
+                        </span>
+
+                        <span th:case="'ORDER_PLACEMENT'">
+                            注文
+                        </span>
+
+                        <span th:case="'ORDER_CANCELLATION'">
+                            注文キャンセル
+                        </span>
+
+                    </span>
+                </td>
+
+                <td>
+                    <a th:if="${movement.orderId != null}" th:href="@{/admin/orders/{id}(id=${movement.orderId})}"
+                        th:text="${movement.orderId}">
+                    </a>
+
+                    <span th:unless="${movement.orderId != null}">
+                        -
+                    </span>
+                </td>
                 <td th:text="${movement.quantity > 0
                     ? '+' + movement.quantity
                     : movement.quantity}">
@@ -147,14 +192,13 @@
 
     <nav th:if="${movementPage.totalPages > 1}">
 
-        <a th:if="${movementPage.hasPrevious()}"
-           th:href="@{/admin/products/{id}/stock/history(
+        <a th:if="${movementPage.hasPrevious()}" th:href="@{/admin/products/{id}/stock/history(
                 id=${product.id},
                 from=${from},
                 to=${to},
                 username=${username},
-                page=${movementPage.number - 1})}"
-           class="button button-secondary">
+                movementType=${movementType},
+                page=${movementPage.number - 1})}" class="button button-secondary">
             前へ
         </a>
 
@@ -163,32 +207,28 @@
                 0,
                 movementPage.totalPages - 1)}">
 
-            <strong th:if="${pageNumber == movementPage.number}"
-                    th:text="${pageNumber + 1}"
-                    class="button button-secondary">
+            <strong th:if="${pageNumber == movementPage.number}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
             </strong>
 
-            <a th:unless="${pageNumber == movementPage.number}"
-               th:href="@{/admin/products/{id}/stock/history(
+            <a th:unless="${pageNumber == movementPage.number}" th:href="@{/admin/products/{id}/stock/history(
                     id=${product.id},
                     from=${from},
                     to=${to},
                     username=${username},
-                    page=${pageNumber})}"
-               th:text="${pageNumber + 1}"
-               class="button button-secondary">
+                    movementType=${movementType},
+                    page=${pageNumber})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
 
         </span>
 
-        <a th:if="${movementPage.hasNext()}"
-           th:href="@{/admin/products/{id}/stock/history(
+        <a th:if="${movementPage.hasNext()}" th:href="@{/admin/products/{id}/stock/history(
                 id=${product.id},
                 from=${from},
                 to=${to},
                 username=${username},
-                page=${movementPage.number + 1})}"
-           class="button button-secondary">
+                movementType=${movementType},
+                page=${movementPage.number + 1})}" class="button button-secondary">
             次へ
         </a>
 
@@ -196,13 +236,11 @@
 
     <div class="actions">
 
-        <a th:href="@{/admin/products/{id}/stock(id=${product.id})}"
-           class="button button-secondary">
+        <a th:href="@{/admin/products/{id}/stock(id=${product.id})}" class="button button-secondary">
             在庫調整へ戻る
         </a>
 
-        <a th:href="@{/admin/products}"
-           class="button button-secondary">
+        <a th:href="@{/admin/products}" class="button button-secondary">
             商品一覧へ戻る
         </a>
 

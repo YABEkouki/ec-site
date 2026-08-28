@@ -18,7 +18,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
-import com.example.ecsite.entity.User;
+import com.example.ecsite.entity.StockMovementType;
 import com.example.ecsite.exception.InvalidProductImageException;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
@@ -26,9 +26,9 @@ import com.example.ecsite.form.StockAdjustmentForm;
 import com.example.ecsite.mapper.ProductMapper;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
+import com.example.ecsite.service.InventoryService;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.service.StockMovementService;
-import com.example.ecsite.service.UserService;
 
 import jakarta.validation.Valid;
 
@@ -38,18 +38,18 @@ public class AdminProductController {
 
         private final ProductService productService;
         private final CategoryService categoryService;
-        private final UserService userService;
+        private final InventoryService inventoryService;
         private final StockMovementService stockMovementService;
 
         public AdminProductController(
                         ProductService productService,
                         CategoryService categoryService,
-                        UserService userService,
+                        InventoryService inventoryService,
                         StockMovementService stockMovementService) {
 
                 this.productService = productService;
                 this.categoryService = categoryService;
-                this.userService = userService;
+                this.inventoryService = inventoryService;
                 this.stockMovementService = stockMovementService;
         }
 
@@ -318,14 +318,12 @@ public class AdminProductController {
                 }
 
                 try {
-                        User changedByUser = userService.findById(userDetails.getId());
-
-                        productService.adjustStock(
+                        inventoryService.adjustByAdmin(
                                         id,
                                         stockAdjustmentForm.getQuantity(),
-                                        changedByUser,
+                                        userDetails.getId(),
+                                        userDetails.getUsername(),
                                         stockAdjustmentForm.getReason());
-
                 } catch (InvalidStockAdjustmentException e) {
 
                         Product product = productService.findById(id);
@@ -362,6 +360,7 @@ public class AdminProductController {
                         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                         @RequestParam(required = false) String username,
+                        @RequestParam(required = false) StockMovementType movementType,
                         @RequestParam(defaultValue = "0") int page,
                         Model model) {
 
@@ -374,32 +373,17 @@ public class AdminProductController {
                                 from,
                                 to,
                                 username,
+                                movementType,
                                 page,
                                 size);
 
-                model.addAttribute(
-                                "product",
-                                product);
-
-                model.addAttribute(
-                                "movementPage",
-                                movementPage);
-
-                model.addAttribute(
-                                "movements",
-                                movementPage.getContent());
-
-                model.addAttribute(
-                                "from",
-                                from);
-
-                model.addAttribute(
-                                "to",
-                                to);
-
-                model.addAttribute(
-                                "username",
-                                username);
+                model.addAttribute("product", product);
+                model.addAttribute("movementPage", movementPage);
+                model.addAttribute("movements", movementPage.getContent());
+                model.addAttribute("from", from);
+                model.addAttribute("to", to);
+                model.addAttribute("username", username);
+                model.addAttribute("movementType", movementType);
 
                 return "admin/products/stock-history";
         }

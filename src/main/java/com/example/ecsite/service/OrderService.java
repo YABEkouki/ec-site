@@ -25,13 +25,16 @@ public class OrderService {
 
         private final OrderRepository orderRepository;
         private final ProductService productService;
+        private final InventoryService inventoryService;
 
         public OrderService(
                         OrderRepository orderRepository,
-                        ProductService productService) {
+                        ProductService productService,
+                        InventoryService inventoryService) {
 
                 this.orderRepository = orderRepository;
                 this.productService = productService;
+                this.inventoryService = inventoryService;
         }
 
         @Transactional
@@ -103,15 +106,21 @@ public class OrderService {
                         order.addItem(orderItem);
 
                         totalAmount += orderItem.getSubtotal();
-
-                        product.setStock(
-                                        product.getStock()
-                                                        - cartItem.getQuantity());
                 }
 
                 order.setTotalAmount(totalAmount);
 
-                return orderRepository.save(order);
+                Order savedOrder = orderRepository.save(order);
+
+                for (OrderItem item : savedOrder.getItems()) {
+
+                        inventoryService.decreaseForOrder(
+                                        item.getProductId(),
+                                        item.getQuantity(),
+                                        savedOrder.getId());
+                }
+
+                return savedOrder;
         }
 
         @Transactional(readOnly = true)
@@ -232,13 +241,10 @@ public class OrderService {
 
                 for (OrderItem item : order.getItems()) {
 
-                        Product product = productService
-                                        .findByIdForUpdateIncludingInactive(
-                                                        item.getProductId());
-
-                        product.setStock(
-                                        product.getStock()
-                                                        + item.getQuantity());
+                        inventoryService.restoreForOrderCancellation(
+                                        item.getProductId(),
+                                        item.getQuantity(),
+                                        order.getId());
                 }
         }
 

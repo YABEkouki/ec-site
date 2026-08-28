@@ -45,13 +45,17 @@ class OrderServiceTest {
         @Mock
         private ProductService productService;
 
+        @Mock
+        private InventoryService inventoryService;
+
         private OrderService orderService;
 
         @BeforeEach
         void setUp() {
                 orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
         }
 
         @Test
@@ -73,8 +77,17 @@ class OrderServiceTest {
                 when(productService.findByIdForUpdate(1L))
                                 .thenReturn(product);
 
+                Long orderId = 100L;
+
                 when(orderRepository.save(any(Order.class)))
-                                .thenAnswer(invocation -> invocation.getArgument(0));
+                                .thenAnswer(invocation -> {
+                                        Order order = invocation.getArgument(0);
+
+                                        org.springframework.test.util.ReflectionTestUtils
+                                                        .setField(order, "id", orderId);
+
+                                        return order;
+                                });
 
                 Order order = orderService.createOrder(
                                 10L,
@@ -82,7 +95,11 @@ class OrderServiceTest {
 
                 assertEquals(2000, order.getTotalAmount());
                 assertEquals(1, order.getItems().size());
-                assertEquals(3, product.getStock());
+                verify(inventoryService)
+                                .decreaseForOrder(
+                                                1L,
+                                                2,
+                                                orderId);
 
                 verify(orderRepository).save(order);
         }
@@ -246,7 +263,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 Page<Order> actualPage = orderService.findOrdersByUserId(
                                 userId,
@@ -266,10 +284,13 @@ class OrderServiceTest {
 
                 Long orderId = 1L;
                 Long productId = 10L;
+                int quantity = 3;
 
                 Order order = mock(Order.class);
                 OrderItem orderItem = mock(OrderItem.class);
-                Product product = mock(Product.class);
+
+                when(order.getId())
+                                .thenReturn(orderId);
 
                 when(orderRepository.findByIdForUpdate(orderId))
                                 .thenReturn(Optional.of(order));
@@ -281,26 +302,22 @@ class OrderServiceTest {
                                 .thenReturn(productId);
 
                 when(orderItem.getQuantity())
-                                .thenReturn(3);
-
-                when(productService.findByIdForUpdateIncludingInactive(productId))
-                                .thenReturn(product);
-
-                when(product.getStock())
-                                .thenReturn(7);
+                                .thenReturn(quantity);
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 orderService.cancelOrder(orderId);
 
                 verify(order).cancel();
 
-                verify(productService)
-                                .findByIdForUpdateIncludingInactive(productId);
-
-                verify(product).setStock(10);
+                verify(inventoryService)
+                                .restoreForOrderCancellation(
+                                                productId,
+                                                quantity,
+                                                orderId);
         }
 
         @Test
@@ -313,7 +330,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 assertThrows(
                                 OrderNotFoundException.class,
@@ -335,7 +353,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 assertThrows(
                                 InvalidOrderStatusException.class,
@@ -382,12 +401,22 @@ class OrderServiceTest {
                 when(product.getStock())
                                 .thenReturn(10);
 
+                Long orderId = 100L;
+
                 when(orderRepository.save(any(Order.class)))
-                                .thenAnswer(invocation -> invocation.getArgument(0));
+                                .thenAnswer(invocation -> {
+                                        Order order = invocation.getArgument(0);
+
+                                        org.springframework.test.util.ReflectionTestUtils
+                                                        .setField(order, "id", orderId);
+
+                                        return order;
+                                });
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 Order result = orderService.createOrder(
                                 userId,
@@ -398,7 +427,11 @@ class OrderServiceTest {
                 assertEquals(1, result.getItems().size());
                 assertEquals(3, result.getItems().get(0).getQuantity());
 
-                verify(product).setStock(7);
+                verify(inventoryService)
+                                .decreaseForOrder(
+                                                productId,
+                                                3,
+                                                orderId);
                 verify(orderRepository).save(result);
         }
 
@@ -413,7 +446,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 OrderValidationException exception = assertThrows(
                                 OrderValidationException.class,
@@ -487,7 +521,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 OrderValidationException exception = assertThrows(
                                 OrderValidationException.class,
@@ -541,12 +576,10 @@ class OrderServiceTest {
                 when(product.getPrice())
                                 .thenReturn(1000);
 
-                when(product.getStock())
-                                .thenReturn(2);
-
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 OrderValidationException exception = assertThrows(
                                 OrderValidationException.class,
@@ -588,7 +621,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 OrderValidationException exception = assertThrows(
                                 OrderValidationException.class,
@@ -626,7 +660,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 Page<Order> actualPage = orderService.findAllOrders(
                                 status,
@@ -661,7 +696,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 Page<Order> actualPage = orderService.findAllOrders(
                                 null,
@@ -681,10 +717,13 @@ class OrderServiceTest {
                 Long orderId = 1L;
                 Long userId = 10L;
                 Long productId = 20L;
+                int quantity = 3;
 
                 Order order = mock(Order.class);
                 OrderItem orderItem = mock(OrderItem.class);
-                Product product = mock(Product.class);
+
+                when(order.getId())
+                                .thenReturn(orderId);
 
                 when(orderRepository
                                 .findByIdAndUserIdForUpdate(
@@ -699,19 +738,12 @@ class OrderServiceTest {
                                 .thenReturn(productId);
 
                 when(orderItem.getQuantity())
-                                .thenReturn(3);
-
-                when(productService
-                                .findByIdForUpdateIncludingInactive(
-                                                productId))
-                                .thenReturn(product);
-
-                when(product.getStock())
-                                .thenReturn(7);
+                                .thenReturn(quantity);
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 orderService.cancelOrderForUser(
                                 orderId,
@@ -719,11 +751,11 @@ class OrderServiceTest {
 
                 verify(order).cancel();
 
-                verify(productService)
-                                .findByIdForUpdateIncludingInactive(
-                                                productId);
-
-                verify(product).setStock(10);
+                verify(inventoryService)
+                                .restoreForOrderCancellation(
+                                                productId,
+                                                quantity,
+                                                orderId);
         }
 
         @Test
@@ -732,10 +764,13 @@ class OrderServiceTest {
                 Long orderId = 1L;
                 Long userId = 10L;
                 Long productId = 20L;
+                int quantity = 3;
 
                 Order order = mock(Order.class);
                 OrderItem orderItem = mock(OrderItem.class);
-                Product product = mock(Product.class);
+
+                when(order.getId())
+                                .thenReturn(orderId);
 
                 when(orderRepository
                                 .findByIdAndUserIdForUpdate(
@@ -750,19 +785,12 @@ class OrderServiceTest {
                                 .thenReturn(productId);
 
                 when(orderItem.getQuantity())
-                                .thenReturn(3);
-
-                when(productService
-                                .findByIdForUpdateIncludingInactive(
-                                                productId))
-                                .thenReturn(product);
-
-                when(product.getStock())
-                                .thenReturn(7);
+                                .thenReturn(quantity);
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 orderService.cancelOrderForUser(
                                 orderId,
@@ -770,11 +798,11 @@ class OrderServiceTest {
 
                 verify(order).cancel();
 
-                verify(productService)
-                                .findByIdForUpdateIncludingInactive(
-                                                productId);
-
-                verify(product).setStock(10);
+                verify(inventoryService)
+                                .restoreForOrderCancellation(
+                                                productId,
+                                                quantity,
+                                                orderId);
         }
 
         @Test
@@ -813,7 +841,8 @@ class OrderServiceTest {
 
                 OrderService orderService = new OrderService(
                                 orderRepository,
-                                productService);
+                                productService,
+                                inventoryService);
 
                 long actualCount = orderService.countOrdersByStatus(status);
 
@@ -845,5 +874,58 @@ class OrderServiceTest {
                                 .findByIdAndUserIdWithItems(
                                                 orderId,
                                                 userId);
+        }
+
+        @Test
+        void createOrderDecreasesStockThroughInventoryServiceWithSavedOrderId() {
+
+                Long userId = 10L;
+                Long productId = 1L;
+                Long orderId = 100L;
+
+                Product product = createProduct(
+                                productId,
+                                "テスト商品",
+                                1000,
+                                5);
+
+                Cart cart = new Cart();
+                cart.addItem(new CartItem(
+                                productId,
+                                "テスト商品",
+                                1000,
+                                2));
+
+                when(productService.findByIdForUpdate(productId))
+                                .thenReturn(product);
+
+                when(orderRepository.save(any(Order.class)))
+                                .thenAnswer(invocation -> {
+
+                                        Order order = invocation.getArgument(0);
+
+                                        org.springframework.test.util.ReflectionTestUtils
+                                                        .setField(order, "id", orderId);
+
+                                        return order;
+                                });
+
+                OrderService orderService = new OrderService(
+                                orderRepository,
+                                productService,
+                                inventoryService);
+
+                Order order = orderService.createOrder(
+                                userId,
+                                cart,
+                                createCheckoutForm());
+
+                assertEquals(orderId, order.getId());
+
+                verify(inventoryService)
+                                .decreaseForOrder(
+                                                productId,
+                                                2,
+                                                orderId);
         }
 }
