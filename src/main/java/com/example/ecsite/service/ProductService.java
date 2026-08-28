@@ -11,13 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
-import com.example.ecsite.entity.StockMovement;
-import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.mapper.ProductMapper;
 import com.example.ecsite.repository.ProductRepository;
-import com.example.ecsite.repository.StockMovementRepository;
 
 @Service
 @Transactional
@@ -26,18 +23,15 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryService categoryService;
     private final ProductImageService productImageService;
-    private final StockMovementRepository stockMovementRepository;
 
     public ProductService(
             ProductRepository productRepository,
             CategoryService categoryService,
-            ProductImageService productImageService,
-            StockMovementRepository stockMovementRepository) {
+            ProductImageService productImageService) {
 
         this.productRepository = productRepository;
         this.categoryService = categoryService;
         this.productImageService = productImageService;
-        this.stockMovementRepository = stockMovementRepository;
     }
 
     public List<Product> findAll() {
@@ -53,13 +47,6 @@ public class ProductService {
     public Product findByIdForUpdate(Long id) {
 
         return productRepository.findByIdForUpdate(id)
-                .orElseThrow(() -> new ProductNotFoundException(id));
-    }
-
-    public Product findByIdForUpdateIncludingInactive(Long id) {
-
-        return productRepository
-                .findByIdForUpdateIncludingInactive(id)
                 .orElseThrow(() -> new ProductNotFoundException(id));
     }
 
@@ -236,31 +223,6 @@ public class ProductService {
         return productRepository
                 .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
                         threshold);
-    }
-
-    public void adjustStock(
-            Long productId,
-            int quantity,
-            User changedByUser,
-            String reason) {
-
-        Product product = findByIdForUpdate(productId);
-
-        int stockBefore = product.getStock();
-
-        product.adjustStock(quantity);
-
-        int stockAfter = product.getStock();
-
-        StockMovement movement = StockMovement.createAdminAdjustment(
-                product,
-                stockBefore,
-                stockAfter,
-                quantity,
-                changedByUser,
-                reason);
-
-        stockMovementRepository.save(movement);
     }
 
 }

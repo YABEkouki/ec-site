@@ -25,14 +25,14 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
-import com.example.ecsite.entity.User;
+import com.example.ecsite.entity.StockMovementType;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.StockAdjustmentForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
+import com.example.ecsite.service.InventoryService;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.service.StockMovementService;
-import com.example.ecsite.service.UserService;
 
 @ExtendWith(MockitoExtension.class)
 class AdminProductControllerTest {
@@ -47,8 +47,7 @@ class AdminProductControllerTest {
         private Model model;
 
         @Mock
-        private UserService userService;
-
+        private InventoryService inventoryService;
         @Mock
         private StockMovementService stockMovementService;
 
@@ -60,7 +59,7 @@ class AdminProductControllerTest {
                 adminProductController = new AdminProductController(
                                 productService,
                                 categoryService,
-                                userService,
+                                inventoryService,
                                 stockMovementService);
         }
 
@@ -116,13 +115,12 @@ class AdminProductControllerTest {
                                 .thenReturn(false);
 
                 CustomUserDetails userDetails = mock(CustomUserDetails.class);
-                User user = mock(User.class);
 
                 when(userDetails.getId())
                                 .thenReturn(1L);
 
-                when(userService.findById(1L))
-                                .thenReturn(user);
+                when(userDetails.getUsername())
+                                .thenReturn("admin");
 
                 String viewName = adminProductController.adjustStock(
                                 productId,
@@ -137,13 +135,13 @@ class AdminProductControllerTest {
                                 "redirect:/admin/products/" + productId + "/stock",
                                 viewName);
 
-                verify(productService)
-                                .adjustStock(
-                                                productId,
+                verify(inventoryService)
+                                .adjustByAdmin(
+                                                1L,
                                                 -3,
-                                                user,
+                                                1L,
+                                                "admin",
                                                 null);
-
                 verify(redirectAttributes)
                                 .addFlashAttribute(
                                                 "successMessage",
@@ -185,10 +183,11 @@ class AdminProductControllerTest {
                                 "admin/products/stock",
                                 viewName);
 
-                verify(productService, never())
-                                .adjustStock(
+                verify(inventoryService, never())
+                                .adjustByAdmin(
                                                 any(),
                                                 anyInt(),
+                                                any(),
                                                 any(),
                                                 any());
 
@@ -217,7 +216,6 @@ class AdminProductControllerTest {
                 BindingResult bindingResult = mock(BindingResult.class);
 
                 CustomUserDetails userDetails = mock(CustomUserDetails.class);
-                User user = mock(User.class);
 
                 when(bindingResult.hasErrors())
                                 .thenReturn(false);
@@ -227,18 +225,19 @@ class AdminProductControllerTest {
 
                 doThrow(new InvalidStockAdjustmentException(
                                 "在庫数を0未満にはできません。"))
-                                .when(productService)
-                                .adjustStock(
+                                .when(inventoryService)
+                                .adjustByAdmin(
                                                 productId,
                                                 -3,
-                                                user,
+                                                1L,
+                                                "admin",
                                                 null);
 
                 when(userDetails.getId())
                                 .thenReturn(1L);
 
-                when(userService.findById(1L))
-                                .thenReturn(user);
+                when(userDetails.getUsername())
+                                .thenReturn("admin");
 
                 String viewName = adminProductController.adjustStock(
                                 productId,
@@ -253,11 +252,12 @@ class AdminProductControllerTest {
                                 "admin/products/stock",
                                 viewName);
 
-                verify(productService)
-                                .adjustStock(
-                                                productId,
+                verify(inventoryService)
+                                .adjustByAdmin(
+                                                1L,
                                                 -3,
-                                                user,
+                                                1L,
+                                                "admin",
                                                 null);
 
                 verify(productService)
@@ -289,13 +289,12 @@ class AdminProductControllerTest {
                                 .thenReturn(false);
 
                 CustomUserDetails userDetails = mock(CustomUserDetails.class);
-                User user = mock(User.class);
 
                 when(userDetails.getId())
                                 .thenReturn(1L);
 
-                when(userService.findById(1L))
-                                .thenReturn(user);
+                when(userDetails.getUsername())
+                                .thenReturn("admin");
 
                 String viewName = adminProductController.adjustStock(
                                 productId,
@@ -310,11 +309,12 @@ class AdminProductControllerTest {
                                 "redirect:/admin/products/" + productId + "/stock?returnTo=edit",
                                 viewName);
 
-                verify(productService)
-                                .adjustStock(
-                                                productId,
+                verify(inventoryService)
+                                .adjustByAdmin(
+                                                1L,
                                                 5,
-                                                user,
+                                                1L,
+                                                "admin",
                                                 null);
 
                 verify(redirectAttributes)
@@ -347,6 +347,7 @@ class AdminProductControllerTest {
                                 from,
                                 to,
                                 "admin",
+                                StockMovementType.ORDER_PLACEMENT,
                                 0,
                                 20))
                                 .thenReturn(movementPage);
@@ -356,6 +357,7 @@ class AdminProductControllerTest {
                                 from,
                                 to,
                                 "admin",
+                                StockMovementType.ORDER_PLACEMENT,
                                 0,
                                 model);
 
@@ -372,6 +374,7 @@ class AdminProductControllerTest {
                                                 from,
                                                 to,
                                                 "admin",
+                                                StockMovementType.ORDER_PLACEMENT,
                                                 0,
                                                 20);
 
@@ -404,6 +407,11 @@ class AdminProductControllerTest {
                                 .addAttribute(
                                                 "username",
                                                 "admin");
+
+                verify(model)
+                                .addAttribute(
+                                                "movementType",
+                                                StockMovementType.ORDER_PLACEMENT);
         }
 
 }

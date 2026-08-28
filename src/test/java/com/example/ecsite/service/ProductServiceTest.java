@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,7 +15,6 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -26,14 +24,9 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
-import com.example.ecsite.entity.StockMovement;
-import com.example.ecsite.entity.StockMovementType;
-import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.CategoryNotFoundException;
-import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.repository.ProductRepository;
-import com.example.ecsite.repository.StockMovementRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ProductServiceTest {
@@ -46,9 +39,6 @@ class ProductServiceTest {
 
         @Mock
         private ProductImageService productImageService;
-
-        @Mock
-        private StockMovementRepository stockMovementRepository;
 
         @Test
         void findLowStockProductsUsesSpecifiedThreshold() {
@@ -68,8 +58,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 List<Product> actualProducts = productService.findLowStockProducts(
                                 threshold);
@@ -97,8 +86,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 productService.delete(productId);
 
@@ -123,8 +111,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 productService.restore(productId);
 
@@ -147,8 +134,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 null,
@@ -178,8 +164,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 "  商品  ",
@@ -210,8 +195,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 null,
@@ -243,8 +227,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Page<Product> actual = productService.search(
                                 "  商品  ",
@@ -294,8 +277,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Product result = productService.update(
                                 productId,
@@ -348,8 +330,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Product result = productService.update(
                                 productId,
@@ -404,8 +385,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 assertThrows(
                                 CategoryNotFoundException.class,
@@ -466,8 +446,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Product result = productService.create(form);
 
@@ -529,8 +508,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Product result = productService.update(
                                 productId,
@@ -579,8 +557,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 Product result = productService.update(
                                 productId,
@@ -596,38 +573,6 @@ class ProductServiceTest {
 
                 verify(productImageService, never())
                                 .deleteImage(any());
-        }
-
-        @Test
-        void adjustStockUsesLockedProductAndAdjustsStock() {
-
-                Long productId = 1L;
-
-                Product product = mock(Product.class);
-
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService,
-                                stockMovementRepository);
-
-                User user = mock(User.class);
-
-                productService.adjustStock(
-                                productId,
-                                -3,
-                                user,
-                                null);
-
-                verify(productRepository)
-                                .findByIdForUpdate(productId);
-
-                verify(product)
-                                .adjustStock(-3);
         }
 
         @Test
@@ -662,8 +607,7 @@ class ProductServiceTest {
                 ProductService productService = new ProductService(
                                 productRepository,
                                 categoryService,
-                                productImageService,
-                                stockMovementRepository);
+                                productImageService);
 
                 productService.update(
                                 productId,
@@ -671,115 +615,6 @@ class ProductServiceTest {
 
                 verify(product, never())
                                 .setStock(any());
-        }
-
-        @Test
-        void adjustStockSavesStockMovementHistory() {
-
-                Long productId = 1L;
-
-                Product product = mock(Product.class);
-                User user = mock(User.class);
-
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
-
-                when(product.getName())
-                                .thenReturn("テスト商品");
-
-                when(product.getStock())
-                                .thenReturn(10, 7);
-
-                when(user.getUsername())
-                                .thenReturn("admin");
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService,
-                                stockMovementRepository);
-
-                productService.adjustStock(
-                                productId,
-                                -3,
-                                user,
-                                "棚卸し差異");
-
-                ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
-
-                verify(stockMovementRepository)
-                                .save(captor.capture());
-
-                StockMovement movement = captor.getValue();
-
-                assertSame(product, movement.getProduct());
-                assertEquals("テスト商品", movement.getProductName());
-
-                assertEquals(
-                                StockMovementType.ADMIN_ADJUSTMENT,
-                                movement.getMovementType());
-
-                assertEquals(-3, movement.getQuantity());
-                assertEquals(10, movement.getStockBefore());
-                assertEquals(7, movement.getStockAfter());
-
-                assertSame(user, movement.getChangedByUser());
-                assertEquals(
-                                "admin",
-                                movement.getChangedByUsername());
-
-                assertEquals("棚卸し差異", movement.getReason());
-
-                verify(productRepository)
-                                .findByIdForUpdate(productId);
-
-                verify(product)
-                                .adjustStock(-3);
-        }
-
-        @Test
-        void adjustStockDoesNotSaveHistoryWhenAdjustmentFails() {
-
-                Long productId = 1L;
-
-                Product product = mock(Product.class);
-                User user = mock(User.class);
-
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
-
-                when(product.getStock())
-                                .thenReturn(2);
-
-                doThrow(new InvalidStockAdjustmentException(
-                                "在庫数を0未満にはできません。"))
-                                .when(product)
-                                .adjustStock(-3);
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService,
-                                stockMovementRepository);
-
-                assertThrows(
-                                InvalidStockAdjustmentException.class,
-                                () -> productService.adjustStock(
-                                                productId,
-                                                -3,
-                                                user,
-                                                "棚卸し差異"));
-
-                verify(productRepository)
-                                .findByIdForUpdate(productId);
-
-                verify(product)
-                                .adjustStock(-3);
-
-                verify(stockMovementRepository, never())
-                                .save(any(StockMovement.class));
         }
 
 }
