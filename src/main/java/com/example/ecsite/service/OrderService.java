@@ -1,5 +1,6 @@
 package com.example.ecsite.service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -17,6 +18,7 @@ import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
+import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
 
@@ -232,6 +234,33 @@ public class OrderService {
                 Order order = findOrderForUpdate(id);
 
                 cancelAndRestoreStock(order);
+        }
+
+        @Transactional(readOnly = true)
+        public Page<Order> searchOrders(
+                        AdminOrderSearchForm searchForm,
+                        int page,
+                        int size) {
+
+                LocalDateTime from = searchForm.getFrom() == null
+                                ? LocalDateTime.of(1970, 1, 1, 0, 0)
+                                : searchForm.getFrom().atStartOfDay();
+
+                LocalDateTime toExclusive = searchForm.getTo() == null
+                                ? LocalDateTime.of(9999, 12, 31, 0, 0)
+                                : searchForm.getTo()
+                                                .plusDays(1)
+                                                .atStartOfDay();
+
+                Pageable pageable = PageRequest.of(page, size);
+
+                return orderRepository.search(
+                                searchForm.getOrderId(),
+                                searchForm.getUserId(),
+                                from,
+                                toExclusive,
+                                searchForm.getStatus(),
+                                pageable);
         }
 
         private void cancelAndRestoreStock(Order order) {

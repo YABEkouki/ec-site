@@ -1,5 +1,6 @@
 package com.example.ecsite.repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -70,4 +71,23 @@ public interface OrderRepository
                         @Param("userId") Long userId);
 
         long countByStatus(OrderStatus status);
+
+        @Query("""
+                        SELECT o
+                        FROM Order o
+                        WHERE (:orderId IS NULL OR o.id = :orderId)
+                          AND (:userId IS NULL OR o.userId = :userId)
+                          AND o.orderedAt >= :from
+                          AND o.orderedAt < :toExclusive
+                          AND (:status IS NULL OR o.status = :status)
+                        ORDER BY o.orderedAt DESC, o.id DESC
+                        """)
+        Page<Order> search(
+                        @Param("orderId") Long orderId,
+                        @Param("userId") Long userId,
+                        @Param("from") LocalDateTime from,
+                        @Param("toExclusive") LocalDateTime toExclusive,
+                        @Param("status") OrderStatus status,
+                        Pageable pageable);
+
 }

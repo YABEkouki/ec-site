@@ -21,6 +21,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.service.OrderService;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,20 +41,21 @@ class AdminOrderControllerTest {
     }
 
     @Test
-    void listDisplaysAllOrders() {
+    void listDisplaysOrdersUsingSearchForm() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
 
         Order order = new Order(10L, 2000);
-
         Page<Order> orderPage = new PageImpl<>(List.of(order));
 
-        when(orderService.findAllOrders(
-                null,
+        when(orderService.searchOrders(
+                searchForm,
                 0,
                 10))
                 .thenReturn(orderPage);
 
         String viewName = adminOrderController.list(
-                null,
+                searchForm,
                 0,
                 10,
                 model);
@@ -62,8 +64,8 @@ class AdminOrderControllerTest {
                 "admin/orders/list",
                 viewName);
 
-        verify(orderService).findAllOrders(
-                null,
+        verify(orderService).searchOrders(
+                searchForm,
                 0,
                 10);
 
@@ -74,23 +76,29 @@ class AdminOrderControllerTest {
         verify(model).addAttribute(
                 "orderPage",
                 orderPage);
+
+        verify(model).addAttribute(
+                "statuses",
+                OrderStatus.values());
     }
 
     @Test
     void listFiltersOrdersByStatus() {
 
-        Order order = new Order(10L, 2000);
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        searchForm.setStatus(OrderStatus.PAID);
 
+        Order order = new Order(10L, 2000);
         Page<Order> orderPage = new PageImpl<>(List.of(order));
 
-        when(orderService.findAllOrders(
-                OrderStatus.PAID,
+        when(orderService.searchOrders(
+                searchForm,
                 0,
                 10))
                 .thenReturn(orderPage);
 
         String viewName = adminOrderController.list(
-                OrderStatus.PAID,
+                searchForm,
                 0,
                 10,
                 model);
@@ -99,14 +107,14 @@ class AdminOrderControllerTest {
                 "admin/orders/list",
                 viewName);
 
-        verify(orderService).findAllOrders(
-                OrderStatus.PAID,
+        verify(orderService).searchOrders(
+                searchForm,
                 0,
                 10);
 
         verify(model).addAttribute(
-                "selectedStatus",
-                OrderStatus.PAID);
+                "statuses",
+                OrderStatus.values());
     }
 
     @Test
@@ -290,5 +298,34 @@ class AdminOrderControllerTest {
                 .addFlashAttribute(
                         "errorMessage",
                         exception.getMessage());
+    }
+
+    @Test
+    void listSanitizesPageAndSize() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        Page<Order> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchOrders(
+                searchForm,
+                0,
+                100))
+                .thenReturn(orderPage);
+
+        String viewName = adminOrderController.list(
+                searchForm,
+                -1,
+                999,
+                model);
+
+        assertEquals(
+                "admin/orders/list",
+                viewName);
+
+        verify(orderService).searchOrders(
+                searchForm,
+                0,
+                100);
     }
 }

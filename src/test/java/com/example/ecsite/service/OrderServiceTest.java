@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,6 +35,7 @@ import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
+import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
 
@@ -927,5 +930,74 @@ class OrderServiceTest {
                                                 productId,
                                                 2,
                                                 orderId);
+        }
+
+        @Test
+        void searchOrdersConvertsDateRangeAndCallsRepository() {
+
+                AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+                searchForm.setOrderId(123L);
+                searchForm.setUserId(456L);
+                searchForm.setFrom(LocalDate.of(2026, 8, 10));
+                searchForm.setTo(LocalDate.of(2026, 8, 20));
+                searchForm.setStatus(OrderStatus.PAID);
+
+                Page<Order> expected = new PageImpl<>(List.of());
+
+                when(orderRepository.search(
+                                123L,
+                                456L,
+                                LocalDateTime.of(2026, 8, 10, 0, 0),
+                                LocalDateTime.of(2026, 8, 21, 0, 0),
+                                OrderStatus.PAID,
+                                PageRequest.of(2, 20)))
+                                .thenReturn(expected);
+
+                Page<Order> actual = orderService.searchOrders(
+                                searchForm,
+                                2,
+                                20);
+
+                assertSame(expected, actual);
+
+                verify(orderRepository).search(
+                                123L,
+                                456L,
+                                LocalDateTime.of(2026, 8, 10, 0, 0),
+                                LocalDateTime.of(2026, 8, 21, 0, 0),
+                                OrderStatus.PAID,
+                                PageRequest.of(2, 20));
+        }
+
+        @Test
+        void searchOrdersUsesDefaultDateRangeWhenDatesAreNotSpecified() {
+
+                AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+                Page<Order> expected = new PageImpl<>(List.of());
+
+                when(orderRepository.search(
+                                null,
+                                null,
+                                LocalDateTime.of(1970, 1, 1, 0, 0),
+                                LocalDateTime.of(9999, 12, 31, 0, 0),
+                                null,
+                                PageRequest.of(0, 10)))
+                                .thenReturn(expected);
+
+                Page<Order> actual = orderService.searchOrders(
+                                searchForm,
+                                0,
+                                10);
+
+                assertSame(expected, actual);
+
+                verify(orderRepository).search(
+                                null,
+                                null,
+                                LocalDateTime.of(1970, 1, 1, 0, 0),
+                                LocalDateTime.of(9999, 12, 31, 0, 0),
+                                null,
+                                PageRequest.of(0, 10));
         }
 }

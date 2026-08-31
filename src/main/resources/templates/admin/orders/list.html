@@ -13,32 +13,57 @@
 
     <h1>注文管理</h1>
 
-    <form th:action="@{/admin/orders}" method="get">
+    <form th:action="@{/admin/orders}" method="get" th:object="${searchForm}" class="order-search-form">
 
-        <label for="status">注文状態：</label>
+        <div class="order-search-fields">
 
-        <select id="status" name="status">
+            <div class="order-search-field">
+                <label for="orderId">注文番号</label>
+                <input type="number" id="orderId" th:field="*{orderId}" min="1">
+            </div>
 
-            <option value="">
-                すべて
-            </option>
+            <div class="order-search-field">
+                <label for="userId">ユーザーID</label>
+                <input type="number" id="userId" th:field="*{userId}" min="1">
+            </div>
 
-            <option th:each="status : ${statuses}" th:value="${status.name()}" th:text="${status.displayName}"
-                th:selected="${status == selectedStatus}">
-            </option>
+            <div class="order-search-field">
+                <label>注文日</label>
 
-        </select>
+                <div class="order-search-date">
+                    <input type="date" id="from" th:field="*{from}">
+
+                    <span>～</span>
+
+                    <input type="date" id="to" th:field="*{to}">
+                </div>
+            </div>
+
+            <div class="order-search-field">
+                <label for="status">注文状態</label>
+
+                <select id="status" th:field="*{status}">
+                    <option value="">すべて</option>
+
+                    <option th:each="status : ${statuses}" th:value="${status.name()}" th:text="${status.displayName}">
+                    </option>
+                </select>
+            </div>
+
+        </div>
 
         <input type="hidden" name="size" th:value="${orderPage.size}">
 
-        <button type="submit" class="button-secondary">
-            絞り込む
-        </button>
+        <div class="actions">
+            <button type="submit" class="button-secondary">
+                検索
+            </button>
 
-        <a th:href="@{/admin/orders(
+            <a th:href="@{/admin/orders(
             size=${orderPage.size})}" class="button button-secondary">
-            条件をクリア
-        </a>
+                条件をクリア
+            </a>
+        </div>
 
     </form>
 
@@ -111,23 +136,31 @@
     <nav th:if="${orderPage.totalPages > 1}">
 
         <a th:if="${orderPage.hasPrevious()}" th:href="@{/admin/orders(
-            status=${selectedStatus},
+           orderId=${searchForm.orderId},
+           userId=${searchForm.userId},
+           from=${searchForm.from},
+           to=${searchForm.to},
+           status=${searchForm.status},
            page=${orderPage.number - 1},
            size=${orderPage.size})}" class="button button-secondary">
             前へ
         </a>
 
         <span th:each="pageNumber :
-            ${#numbers.sequence(
-                0,
-                orderPage.totalPages - 1)}">
+        ${#numbers.sequence(
+            0,
+            orderPage.totalPages - 1)}">
 
             <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
                 class="button button-secondary">
             </strong>
 
             <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders(
-                status=${selectedStatus},
+               orderId=${searchForm.orderId},
+               userId=${searchForm.userId},
+               from=${searchForm.from},
+               to=${searchForm.to},
+               status=${searchForm.status},
                page=${pageNumber},
                size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
@@ -135,7 +168,11 @@
         </span>
 
         <a th:if="${orderPage.hasNext()}" th:href="@{/admin/orders(
-            status=${selectedStatus},
+           orderId=${searchForm.orderId},
+           userId=${searchForm.userId},
+           from=${searchForm.from},
+           to=${searchForm.to},
+           status=${searchForm.status},
            page=${orderPage.number + 1},
            size=${orderPage.size})}" class="button button-secondary">
             次へ
