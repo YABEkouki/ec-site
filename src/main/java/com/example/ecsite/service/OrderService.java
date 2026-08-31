@@ -25,295 +25,324 @@ import com.example.ecsite.repository.OrderRepository;
 @Service
 public class OrderService {
 
-        private final OrderRepository orderRepository;
-        private final ProductService productService;
-        private final InventoryService inventoryService;
+    private final OrderRepository orderRepository;
+    private final ProductService productService;
+    private final InventoryService inventoryService;
 
-        public OrderService(
-                        OrderRepository orderRepository,
-                        ProductService productService,
-                        InventoryService inventoryService) {
+    public OrderService(
+            OrderRepository orderRepository,
+            ProductService productService,
+            InventoryService inventoryService) {
 
-                this.orderRepository = orderRepository;
-                this.productService = productService;
-                this.inventoryService = inventoryService;
+        this.orderRepository = orderRepository;
+        this.productService = productService;
+        this.inventoryService = inventoryService;
+    }
+
+    @Transactional
+    public Order createOrder(Long userId, Cart cart, CheckoutForm checkoutForm) {
+
+        if (cart.getItems().isEmpty()) {
+            throw new OrderValidationException(
+                    "カートに商品がありません。");
         }
 
-        @Transactional
-        public Order createOrder(Long userId, Cart cart, CheckoutForm checkoutForm) {
+        Order order = new Order(userId, 0);
 
-                if (cart.getItems().isEmpty()) {
-                        throw new OrderValidationException(
-                                        "カートに商品がありません。");
-                }
+        order.setShippingAddress(
+                checkoutForm.getShippingName().trim(),
+                checkoutForm.getShippingPostalCode().trim(),
+                checkoutForm.getShippingPrefecture().trim(),
+                checkoutForm.getShippingCity().trim(),
+                checkoutForm.getShippingAddressLine().trim(),
+                checkoutForm.getShippingPhone().trim());
 
-                Order order = new Order(userId, 0);
+        int totalAmount = 0;
 
-                order.setShippingAddress(
-                                checkoutForm.getShippingName().trim(),
-                                checkoutForm.getShippingPostalCode().trim(),
-                                checkoutForm.getShippingPrefecture().trim(),
-                                checkoutForm.getShippingCity().trim(),
-                                checkoutForm.getShippingAddressLine().trim(),
-                                checkoutForm.getShippingPhone().trim());
+        for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
 
-                int totalAmount = 0;
+            Product product;
 
-                for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
+            try {
+                product = productService.findByIdForUpdate(
+                        cartItem.getProductId());
 
-                        Product product;
+            } catch (ProductNotFoundException e) {
+                throw new OrderValidationException(
+                        cartItem.getProductName()
+                                + "は現在購入できません。",
+                        e);
+            }
 
-                        try {
-                                product = productService.findByIdForUpdate(
-                                                cartItem.getProductId());
+            if (product.getPrice() != cartItem.getPrice()) {
 
-                        } catch (ProductNotFoundException e) {
-                                throw new OrderValidationException(
-                                                cartItem.getProductName()
-                                                                + "は現在購入できません。",
-                                                e);
-                        }
+                int oldPrice = cartItem.getPrice();
+                int newPrice = product.getPrice();
 
-                        if (product.getPrice() != cartItem.getPrice()) {
+                cart.refreshPrice(
+                        cartItem.getProductId(),
+                        newPrice);
 
-                                int oldPrice = cartItem.getPrice();
-                                int newPrice = product.getPrice();
+                throw new OrderValidationException(
+                        product.getName()
+                                + "の価格が"
+                                + oldPrice
+                                + "円から"
+                                + newPrice
+                                + "円に変更されました。"
+                                + "カートを確認してください。");
+            }
 
-                                cart.refreshPrice(
-                                                cartItem.getProductId(),
-                                                newPrice);
+            if (product.getStock() < cartItem.getQuantity()) {
+                throw new OrderValidationException(
+                        product.getName()
+                                + "の在庫が不足しています。");
+            }
 
-                                throw new OrderValidationException(
-                                                product.getName()
-                                                                + "の価格が"
-                                                                + oldPrice
-                                                                + "円から"
-                                                                + newPrice
-                                                                + "円に変更されました。"
-                                                                + "カートを確認してください。");
-                        }
+            OrderItem orderItem = new OrderItem(
+                    product.getId(),
+                    product.getName(),
+                    product.getPrice(),
+                    cartItem.getQuantity());
 
-                        if (product.getStock() < cartItem.getQuantity()) {
-                                throw new OrderValidationException(
-                                                product.getName()
-                                                                + "の在庫が不足しています。");
-                        }
+            order.addItem(orderItem);
 
-                        OrderItem orderItem = new OrderItem(
-                                        product.getId(),
-                                        product.getName(),
-                                        product.getPrice(),
-                                        cartItem.getQuantity());
-
-                        order.addItem(orderItem);
-
-                        totalAmount += orderItem.getSubtotal();
-                }
-
-                order.setTotalAmount(totalAmount);
-
-                Order savedOrder = orderRepository.save(order);
-
-                for (OrderItem item : savedOrder.getItems()) {
-
-                        inventoryService.decreaseForOrder(
-                                        item.getProductId(),
-                                        item.getQuantity(),
-                                        savedOrder.getId());
-                }
-
-                return savedOrder;
+            totalAmount += orderItem.getSubtotal();
         }
 
-        @Transactional(readOnly = true)
-        public Page<Order> findOrdersByUserId(Long userId, int page, int size) {
+        order.setTotalAmount(totalAmount);
 
-                Pageable pageable = PageRequest.of(page, size);
+        Order savedOrder = orderRepository.save(order);
 
-                return orderRepository.findByUserIdOrderByOrderedAtDesc(userId, pageable);
+        for (OrderItem item : savedOrder.getItems()) {
+
+            inventoryService.decreaseForOrder(
+                    item.getProductId(),
+                    item.getQuantity(),
+                    savedOrder.getId());
         }
 
-        @Transactional(readOnly = true)
-        public void validateCart(Cart cart) {
+        return savedOrder;
+    }
 
-                if (cart.getItems().isEmpty()) {
-                        throw new OrderValidationException(
-                                        "カートに商品がありません。");
-                }
+    @Transactional(readOnly = true)
+    public Page<Order> findOrdersByUserId(Long userId, int page, int size) {
 
-                List<String> messages = new ArrayList<>();
+        Pageable pageable = PageRequest.of(page, size);
 
-                for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
+        return orderRepository.findByUserIdOrderByOrderedAtDesc(userId, pageable);
+    }
 
-                        Product product;
+    @Transactional(readOnly = true)
+    public void validateCart(Cart cart) {
 
-                        try {
-                                product = productService.findById(
-                                                cartItem.getProductId());
-
-                        } catch (ProductNotFoundException e) {
-                                messages.add(
-                                                cartItem.getProductName()
-                                                                + "は現在購入できません。");
-                                continue;
-                        }
-
-                        if (product.getPrice() != cartItem.getPrice()) {
-
-                                int oldPrice = cartItem.getPrice();
-                                int newPrice = product.getPrice();
-
-                                cart.refreshPrice(
-                                                cartItem.getProductId(),
-                                                newPrice);
-
-                                messages.add(
-                                                product.getName()
-                                                                + "の価格が"
-                                                                + oldPrice
-                                                                + "円から"
-                                                                + newPrice
-                                                                + "円に変更されました。");
-                        }
-
-                        if (product.getStock() < cartItem.getQuantity()) {
-
-                                messages.add(
-                                                product.getName()
-                                                                + "の在庫が不足しています。");
-                        }
-                }
-
-                if (!messages.isEmpty()) {
-                        throw new OrderValidationException(
-                                        String.join(" ", messages));
-                }
+        if (cart.getItems().isEmpty()) {
+            throw new OrderValidationException(
+                    "カートに商品がありません。");
         }
 
-        @Transactional(readOnly = true)
-        public Page<Order> findAllOrders(
-                        OrderStatus status,
-                        int page,
-                        int size) {
+        List<String> messages = new ArrayList<>();
 
-                Pageable pageable = PageRequest.of(
-                                page,
-                                size);
+        for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
 
-                if (status == null) {
-                        return orderRepository.findAllByOrderByOrderedAtDesc(pageable);
-                }
+            Product product;
 
-                return orderRepository.findByStatusOrderByOrderedAtDesc(status, pageable);
+            try {
+                product = productService.findById(
+                        cartItem.getProductId());
+
+            } catch (ProductNotFoundException e) {
+                messages.add(
+                        cartItem.getProductName()
+                                + "は現在購入できません。");
+                continue;
+            }
+
+            if (product.getPrice() != cartItem.getPrice()) {
+
+                int oldPrice = cartItem.getPrice();
+                int newPrice = product.getPrice();
+
+                cart.refreshPrice(
+                        cartItem.getProductId(),
+                        newPrice);
+
+                messages.add(
+                        product.getName()
+                                + "の価格が"
+                                + oldPrice
+                                + "円から"
+                                + newPrice
+                                + "円に変更されました。");
+            }
+
+            if (product.getStock() < cartItem.getQuantity()) {
+
+                messages.add(
+                        product.getName()
+                                + "の在庫が不足しています。");
+            }
         }
 
-        @Transactional(readOnly = true)
-        public Order findOrderWithItems(Long id) {
+        if (!messages.isEmpty()) {
+            throw new OrderValidationException(
+                    String.join(" ", messages));
+        }
+    }
 
-                return orderRepository.findByIdWithItems(id)
-                                .orElseThrow(() -> new OrderNotFoundException(id));
+    @Transactional(readOnly = true)
+    public Page<Order> findAllOrders(
+            OrderStatus status,
+            int page,
+            int size) {
+
+        Pageable pageable = PageRequest.of(
+                page,
+                size);
+
+        if (status == null) {
+            return orderRepository.findAllByOrderByOrderedAtDesc(pageable);
         }
 
-        @Transactional
-        public void markAsPaid(Long id) {
+        return orderRepository.findByStatusOrderByOrderedAtDesc(status, pageable);
+    }
 
-                Order order = findOrderForUpdate(id);
-                order.markAsPaid();
+    @Transactional(readOnly = true)
+    public Order findOrderWithItems(Long id) {
+
+        return orderRepository.findByIdWithItems(id)
+                .orElseThrow(() -> new OrderNotFoundException(id));
+    }
+
+    @Transactional
+    public void markAsPaid(Long id) {
+
+        Order order = findOrderForUpdate(id);
+        order.markAsPaid();
+    }
+
+    @Transactional
+    public void markAsShipped(Long id) {
+
+        Order order = findOrderForUpdate(id);
+        order.markAsShipped();
+    }
+
+    @Transactional
+    public void cancelOrder(Long id) {
+
+        Order order = findOrderForUpdate(id);
+
+        cancelAndRestoreStock(order);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Order> searchOrders(
+            AdminOrderSearchForm searchForm,
+            int page,
+            int size) {
+
+        LocalDateTime from = resolveFrom(searchForm);
+        LocalDateTime toExclusive = resolveToExclusive(searchForm);
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        return orderRepository.search(
+                searchForm.getOrderId(),
+                searchForm.getUserId(),
+                from,
+                toExclusive,
+                searchForm.getStatus(),
+                pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Order> searchAllOrders(
+            AdminOrderSearchForm searchForm) {
+
+        LocalDateTime from = resolveFrom(searchForm);
+        LocalDateTime toExclusive = resolveToExclusive(searchForm);
+
+        Page<Order> orderPage = orderRepository.search(
+                searchForm.getOrderId(),
+                searchForm.getUserId(),
+                from,
+                toExclusive,
+                searchForm.getStatus(),
+                Pageable.unpaged());
+
+        return orderPage.getContent();
+    }
+
+    private void cancelAndRestoreStock(Order order) {
+
+        // 不正な状態なら、在庫を変更する前に例外になる
+        order.cancel();
+
+        for (OrderItem item : order.getItems()) {
+
+            inventoryService.restoreForOrderCancellation(
+                    item.getProductId(),
+                    item.getQuantity(),
+                    order.getId());
         }
+    }
 
-        @Transactional
-        public void markAsShipped(Long id) {
+    private Order findOrderForUpdate(Long id) {
 
-                Order order = findOrderForUpdate(id);
-                order.markAsShipped();
-        }
+        return orderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new OrderNotFoundException(id));
+    }
 
-        @Transactional
-        public void cancelOrder(Long id) {
+    @Transactional(readOnly = true)
+    public Order findOrderByIdAndUserId(
+            Long orderId,
+            Long userId) {
 
-                Order order = findOrderForUpdate(id);
+        return orderRepository
+                .findByIdAndUserIdWithItems(
+                        orderId,
+                        userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+    }
 
-                cancelAndRestoreStock(order);
-        }
+    @Transactional
+    public void cancelOrderForUser(
+            Long orderId,
+            Long userId) {
 
-        @Transactional(readOnly = true)
-        public Page<Order> searchOrders(
-                        AdminOrderSearchForm searchForm,
-                        int page,
-                        int size) {
+        Order order = orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId)
+                .orElseThrow(() -> new OrderNotFoundException(
+                        orderId));
 
-                LocalDateTime from = searchForm.getFrom() == null
-                                ? LocalDateTime.of(1970, 1, 1, 0, 0)
-                                : searchForm.getFrom().atStartOfDay();
+        cancelAndRestoreStock(order);
+    }
 
-                LocalDateTime toExclusive = searchForm.getTo() == null
-                                ? LocalDateTime.of(9999, 12, 31, 0, 0)
-                                : searchForm.getTo()
-                                                .plusDays(1)
-                                                .atStartOfDay();
+    @Transactional(readOnly = true)
+    public long countOrdersByStatus(
+            OrderStatus status) {
 
-                Pageable pageable = PageRequest.of(page, size);
+        return orderRepository.countByStatus(status);
+    }
 
-                return orderRepository.search(
-                                searchForm.getOrderId(),
-                                searchForm.getUserId(),
-                                from,
-                                toExclusive,
-                                searchForm.getStatus(),
-                                pageable);
-        }
+    private LocalDateTime resolveFrom(
+            AdminOrderSearchForm searchForm) {
 
-        private void cancelAndRestoreStock(Order order) {
+        return searchForm.getFrom() == null
+                ? LocalDateTime.of(1970, 1, 1, 0, 0)
+                : searchForm.getFrom().atStartOfDay();
+    }
 
-                // 不正な状態なら、在庫を変更する前に例外になる
-                order.cancel();
+    private LocalDateTime resolveToExclusive(
+            AdminOrderSearchForm searchForm) {
 
-                for (OrderItem item : order.getItems()) {
-
-                        inventoryService.restoreForOrderCancellation(
-                                        item.getProductId(),
-                                        item.getQuantity(),
-                                        order.getId());
-                }
-        }
-
-        private Order findOrderForUpdate(Long id) {
-
-                return orderRepository.findByIdForUpdate(id)
-                                .orElseThrow(() -> new OrderNotFoundException(id));
-        }
-
-        @Transactional(readOnly = true)
-        public Order findOrderByIdAndUserId(
-                        Long orderId,
-                        Long userId) {
-
-                return orderRepository
-                                .findByIdAndUserIdWithItems(
-                                                orderId,
-                                                userId)
-                                .orElseThrow(() -> new OrderNotFoundException(orderId));
-        }
-
-        @Transactional
-        public void cancelOrderForUser(
-                        Long orderId,
-                        Long userId) {
-
-                Order order = orderRepository
-                                .findByIdAndUserIdForUpdate(
-                                                orderId,
-                                                userId)
-                                .orElseThrow(() -> new OrderNotFoundException(
-                                                orderId));
-
-                cancelAndRestoreStock(order);
-        }
-
-        @Transactional(readOnly = true)
-        public long countOrdersByStatus(
-                        OrderStatus status) {
-
-                return orderRepository.countByStatus(status);
-        }
+        return searchForm.getTo() == null
+                ? LocalDateTime.of(9999, 12, 31, 0, 0)
+                : searchForm.getTo()
+                        .plusDays(1)
+                        .atStartOfDay();
+    }
 }
