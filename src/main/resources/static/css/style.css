@@ -408,3 +408,64 @@ nav strong {
     background-color: #fdecec;
     border: 1px solid #e2a0a0;
 }
+
+.order-search-form {
+    margin: 16px 0;
+    padding: 16px;
+    background-color: #fff;
+    border: 1px solid #d4dbe1;
+    border-radius: 6px;
+}
+
+.order-search-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 18px;
+    align-items: flex-end;
+    margin-bottom: 14px;
+}
+
+.order-search-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.order-search-field label {
+    font-weight: bold;
+}
+
+.order-search-field input[type="number"] {
+    width: 150px;
+}
+
+.order-search-date {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.order-search-date input {
+    width: 160px;
+}
+
+.order-search-field select {
+    min-width: 130px;
+}
+
+@media (max-width: 768px) {
+
+    .order-search-fields {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .order-search-field input[type="number"],
+    .order-search-field select {
+        width: 100%;
+    }
+
+    .order-search-date {
+        flex-wrap: wrap;
+    }
+}
