@@ -1,6 +1,10 @@
 package com.example.ecsite.controller;
 
+import java.util.List;
+
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,123 +19,145 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.AdminOrderSearchForm;
+import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderService;
 
 @Controller
 @RequestMapping("/admin/orders")
 public class AdminOrderController {
 
-        private final OrderService orderService;
+    private final OrderService orderService;
+    private final OrderCsvService orderCsvService;
 
-        public AdminOrderController(
-                        OrderService orderService) {
+    public AdminOrderController(
+            OrderService orderService,
+            OrderCsvService orderCsvService) {
 
-                this.orderService = orderService;
+        this.orderService = orderService;
+        this.orderCsvService = orderCsvService;
+    }
+
+    @GetMapping
+    public String list(
+            @ModelAttribute("searchForm") AdminOrderSearchForm searchForm,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Model model) {
+
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.clamp(size, 1, 100);
+
+        Page<Order> orderPage = orderService.searchOrders(
+                searchForm,
+                safePage,
+                safeSize);
+
+        model.addAttribute(
+                "orders",
+                orderPage.getContent());
+
+        model.addAttribute(
+                "orderPage",
+                orderPage);
+
+        model.addAttribute(
+                "statuses",
+                OrderStatus.values());
+
+        return "admin/orders/list";
+    }
+
+    @GetMapping("/{id}")
+    public String detail(
+            @PathVariable Long id,
+            Model model) {
+
+        model.addAttribute(
+                "order",
+                orderService.findOrderWithItems(id));
+
+        return "admin/orders/detail";
+    }
+
+    @PostMapping("/{id}/pay")
+    public String markAsPaid(
+            @PathVariable Long id,
+            RedirectAttributes redirectAttributes) {
+
+        try {
+            orderService.markAsPaid(id);
+
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "注文を支払済みに変更しました。");
+
+        } catch (InvalidOrderStatusException e) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    e.getMessage());
         }
 
-        @GetMapping
-        public String list(
-                        @ModelAttribute("searchForm") AdminOrderSearchForm searchForm,
-                        @RequestParam(defaultValue = "0") int page,
-                        @RequestParam(defaultValue = "10") int size,
-                        Model model) {
+        return "redirect:/admin/orders/" + id;
+    }
 
-                int safePage = Math.max(page, 0);
-                int safeSize = Math.clamp(size, 1, 100);
+    @PostMapping("/{id}/ship")
+    public String markAsShipped(
+            @PathVariable Long id,
+            RedirectAttributes redirectAttributes) {
 
-                Page<Order> orderPage = orderService.searchOrders(
-                                searchForm,
-                                safePage,
-                                safeSize);
+        try {
+            orderService.markAsShipped(id);
 
-                model.addAttribute(
-                                "orders",
-                                orderPage.getContent());
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "注文を発送済みに変更しました。");
 
-                model.addAttribute(
-                                "orderPage",
-                                orderPage);
-
-                model.addAttribute(
-                                "statuses",
-                                OrderStatus.values());
-
-                return "admin/orders/list";
+        } catch (InvalidOrderStatusException e) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    e.getMessage());
         }
 
-        @GetMapping("/{id}")
-        public String detail(
-                        @PathVariable Long id,
-                        Model model) {
+        return "redirect:/admin/orders/" + id;
+    }
 
-                model.addAttribute(
-                                "order",
-                                orderService.findOrderWithItems(id));
+    @PostMapping("/{id}/cancel")
+    public String cancel(
+            @PathVariable Long id,
+            RedirectAttributes redirectAttributes) {
 
-                return "admin/orders/detail";
+        try {
+            orderService.cancelOrder(id);
+
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "注文をキャンセルしました。");
+
+        } catch (InvalidOrderStatusException e) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    e.getMessage());
         }
 
-        @PostMapping("/{id}/pay")
-        public String markAsPaid(
-                        @PathVariable Long id,
-                        RedirectAttributes redirectAttributes) {
+        return "redirect:/admin/orders/" + id;
+    }
 
-                try {
-                        orderService.markAsPaid(id);
+    @GetMapping("/csv")
+    public ResponseEntity<byte[]> csv(
+            @ModelAttribute("searchForm") AdminOrderSearchForm searchForm) {
 
-                        redirectAttributes.addFlashAttribute(
-                                        "successMessage",
-                                        "注文を支払済みに変更しました。");
+        List<Order> orders = orderService.searchAllOrders(searchForm);
 
-                } catch (InvalidOrderStatusException e) {
-                        redirectAttributes.addFlashAttribute(
-                                        "errorMessage",
-                                        e.getMessage());
-                }
+        byte[] csvBytes = orderCsvService.createCsv(orders);
 
-                return "redirect:/admin/orders/" + id;
-        }
-
-        @PostMapping("/{id}/ship")
-        public String markAsShipped(
-                        @PathVariable Long id,
-                        RedirectAttributes redirectAttributes) {
-
-                try {
-                        orderService.markAsShipped(id);
-
-                        redirectAttributes.addFlashAttribute(
-                                        "successMessage",
-                                        "注文を発送済みに変更しました。");
-
-                } catch (InvalidOrderStatusException e) {
-                        redirectAttributes.addFlashAttribute(
-                                        "errorMessage",
-                                        e.getMessage());
-                }
-
-                return "redirect:/admin/orders/" + id;
-        }
-
-        @PostMapping("/{id}/cancel")
-        public String cancel(
-                        @PathVariable Long id,
-                        RedirectAttributes redirectAttributes) {
-
-                try {
-                        orderService.cancelOrder(id);
-
-                        redirectAttributes.addFlashAttribute(
-                                        "successMessage",
-                                        "注文をキャンセルしました。");
-
-                } catch (InvalidOrderStatusException e) {
-                        redirectAttributes.addFlashAttribute(
-                                        "errorMessage",
-                                        e.getMessage());
-                }
-
-                return "redirect:/admin/orders/" + id;
-        }
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CONTENT_TYPE,
+                        "text/csv;charset=UTF-8")
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"orders.csv\"")
+                .body(csvBytes);
+    }
 
 }

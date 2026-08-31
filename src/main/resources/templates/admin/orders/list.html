@@ -63,6 +63,15 @@
             size=${orderPage.size})}" class="button button-secondary">
                 条件をクリア
             </a>
+
+            <a th:href="@{/admin/orders/csv(
+        orderId=${searchForm.orderId},
+        userId=${searchForm.userId},
+        from=${searchForm.from},
+        to=${searchForm.to},
+        status=${searchForm.status})}" class="button button-secondary">
+                CSV出力
+            </a>
         </div>
 
     </form>

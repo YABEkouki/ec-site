@@ -1,11 +1,13 @@
 package com.example.ecsite.controller;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +17,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.ui.Model;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
@@ -22,6 +27,7 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.AdminOrderSearchForm;
+import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderService;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,11 +39,16 @@ class AdminOrderControllerTest {
     @Mock
     private Model model;
 
+    @Mock
+    private OrderCsvService orderCsvService;
+
     private AdminOrderController adminOrderController;
 
     @BeforeEach
     void setUp() {
-        adminOrderController = new AdminOrderController(orderService);
+        adminOrderController = new AdminOrderController(
+                orderService,
+                orderCsvService);
     }
 
     @Test
@@ -327,5 +338,56 @@ class AdminOrderControllerTest {
                 searchForm,
                 0,
                 100);
+    }
+
+    @Test
+    void csvExportsAllOrdersMatchingSearchConditions() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        searchForm.setUserId(10L);
+        searchForm.setStatus(OrderStatus.PAID);
+
+        Order firstOrder = new Order(10L, 1000);
+        Order secondOrder = new Order(10L, 2000);
+
+        List<Order> orders = List.of(firstOrder, secondOrder);
+
+        byte[] csvBytes = "csv-data".getBytes(
+                StandardCharsets.UTF_8);
+
+        when(orderService.searchAllOrders(searchForm))
+                .thenReturn(orders);
+
+        when(orderCsvService.createCsv(orders))
+                .thenReturn(csvBytes);
+
+        ResponseEntity<byte[]> response = adminOrderController.csv(searchForm);
+
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode());
+
+        assertEquals(
+                "text/csv;charset=UTF-8",
+                response.getHeaders()
+                        .getFirst(
+                                HttpHeaders.CONTENT_TYPE));
+
+        assertEquals(
+                "attachment; filename=\"orders.csv\"",
+                response.getHeaders()
+                        .getFirst(
+                                HttpHeaders.CONTENT_DISPOSITION));
+
+        assertArrayEquals(
+                csvBytes,
+                response.getBody());
+
+        verify(orderService)
+                .searchAllOrders(searchForm);
+
+        verify(orderCsvService)
+                .createCsv(orders);
     }
 }
