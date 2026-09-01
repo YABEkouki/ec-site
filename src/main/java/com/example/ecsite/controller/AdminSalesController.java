@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.example.ecsite.dto.DailySalesSummary;
-import com.example.ecsite.dto.SalesSummary;
+import com.example.ecsite.dto.SalesDashboardSummary;
 import com.example.ecsite.form.SalesDashboardForm;
 import com.example.ecsite.service.SalesDashboardService;
 
@@ -38,19 +38,25 @@ public class AdminSalesController {
         }
 
         try {
-            SalesSummary summary = salesDashboardService
-                    .getSummary(form);
+
+            SalesDashboardSummary dashboard = salesDashboardService
+                    .getDashboardSummary(form);
 
             List<DailySalesSummary> dailySales = salesDashboardService
                     .getDailySales(form);
 
             model.addAttribute(
                     "summary",
-                    summary);
+                    dashboard.current());
+
+            model.addAttribute(
+                    "comparison",
+                    dashboard);
 
             model.addAttribute(
                     "dailySales",
                     dailySales);
+
         } catch (IllegalArgumentException e) {
 
             model.addAttribute(

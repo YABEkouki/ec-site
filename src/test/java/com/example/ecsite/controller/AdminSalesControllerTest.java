@@ -5,6 +5,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -15,6 +16,8 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.ui.Model;
 
 import com.example.ecsite.dto.DailySalesSummary;
+import com.example.ecsite.dto.SalesDashboardSummary;
+import com.example.ecsite.dto.SalesMetricComparison;
 import com.example.ecsite.dto.SalesSummary;
 import com.example.ecsite.form.SalesDashboardForm;
 import com.example.ecsite.service.SalesDashboardService;
@@ -49,6 +52,14 @@ class AdminSalesControllerTest {
                 4,
                 1);
 
+        SalesDashboardSummary dashboard = new SalesDashboardSummary(
+                summary,
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 31),
+                null,
+                null,
+                null);
+
         List<DailySalesSummary> dailySales = List.of(
                 new DailySalesSummary(
                         LocalDate.of(2026, 8, 10),
@@ -56,8 +67,8 @@ class AdminSalesControllerTest {
                         2,
                         5_000));
 
-        when(salesDashboardService.getSummary(form))
-                .thenReturn(summary);
+        when(salesDashboardService.getDashboardSummary(form))
+                .thenReturn(dashboard);
 
         when(salesDashboardService.getDailySales(form))
                 .thenReturn(dailySales);
@@ -74,8 +85,9 @@ class AdminSalesControllerTest {
         verify(salesDashboardService)
                 .initializePeriod(form);
 
-        verify(salesDashboardService)
-                .getSummary(form);
+        verify(model).addAttribute(
+                "comparison",
+                dashboard);
 
         verify(salesDashboardService)
                 .getDailySales(form);
@@ -111,8 +123,16 @@ class AdminSalesControllerTest {
                 0,
                 0);
 
-        when(salesDashboardService.getSummary(form))
-                .thenReturn(summary);
+        SalesDashboardSummary dashboard = new SalesDashboardSummary(
+                summary,
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 31),
+                null,
+                null,
+                null);
+
+        when(salesDashboardService.getDashboardSummary(form))
+                .thenReturn(dashboard);
 
         when(salesDashboardService.getDailySales(form))
                 .thenReturn(List.of());
@@ -131,7 +151,11 @@ class AdminSalesControllerTest {
                 .initializePeriod(form);
 
         verify(salesDashboardService)
-                .getSummary(form);
+                .getDashboardSummary(form);
+
+        verify(model).addAttribute(
+                "comparison",
+                dashboard);
 
         verify(salesDashboardService)
                 .getDailySales(form);
@@ -148,10 +172,9 @@ class AdminSalesControllerTest {
         form.setTo(
                 LocalDate.of(2026, 8, 1));
 
-        when(salesDashboardService.getSummary(form))
-                .thenThrow(
-                        new IllegalArgumentException(
-                                "開始日は終了日以前を指定してください。"));
+        when(salesDashboardService.getDashboardSummary(form))
+                .thenThrow(new IllegalArgumentException(
+                        "開始日は終了日以前を指定してください。"));
 
         String view = controller.index(
                 form,
@@ -168,10 +191,67 @@ class AdminSalesControllerTest {
                         "開始日は終了日以前を指定してください。");
 
         verify(salesDashboardService)
-                .getSummary(form);
+                .getDashboardSummary(form);
 
         verify(salesDashboardService, never())
                 .getDailySales(form);
+    }
+
+    @Test
+    void indexAddsSalesComparisonToModel() {
+        SalesDashboardForm form = new SalesDashboardForm();
+
+        SalesSummary current = new SalesSummary(
+                12,
+                8,
+                30_000,
+                2,
+                3,
+                5,
+                2);
+
+        SalesDashboardSummary dashboard = new SalesDashboardSummary(
+                current,
+                LocalDate.of(2026, 7, 30),
+                LocalDate.of(2026, 8, 9),
+                new SalesMetricComparison(
+                        12,
+                        7,
+                        5,
+                        new BigDecimal("71.4")),
+                new SalesMetricComparison(
+                        8,
+                        5,
+                        3,
+                        new BigDecimal("60.0")),
+                new SalesMetricComparison(
+                        30000,
+                        20000,
+                        10000,
+                        new BigDecimal("50.0")));
+
+        when(salesDashboardService.getDashboardSummary(form))
+                .thenReturn(dashboard);
+
+        when(salesDashboardService.getDailySales(form))
+                .thenReturn(List.of());
+
+        String view = controller.index(
+                form,
+                true,
+                model);
+
+        assertEquals(
+                "admin/sales/index",
+                view);
+
+        verify(model).addAttribute(
+                "summary",
+                current);
+
+        verify(model).addAttribute(
+                "comparison",
+                dashboard);
     }
 
 }
