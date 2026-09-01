@@ -1,15 +1,20 @@
 package com.example.ecsite.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.example.ecsite.dto.DailySalesSummary;
+import com.example.ecsite.dto.SalesDashboardSummary;
+import com.example.ecsite.dto.SalesMetricComparison;
 import com.example.ecsite.dto.SalesSummary;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.form.SalesDashboardForm;
@@ -116,6 +121,46 @@ public class SalesDashboardService {
                 cancelledCount);
     }
 
+    public SalesDashboardSummary getDashboardSummary(
+            SalesDashboardForm form) {
+
+        DateTimeRange currentRange = resolveDateTimeRange(form);
+
+        long days = ChronoUnit.DAYS.between(
+                form.getFrom(),
+                form.getTo()) + 1;
+
+        LocalDate comparisonTo = form.getFrom().minusDays(1);
+
+        LocalDate comparisonFrom = comparisonTo.minusDays(days - 1);
+
+        DateTimeRange comparisonRange = new DateTimeRange(
+                comparisonFrom.atStartOfDay(),
+                comparisonTo.plusDays(1).atStartOfDay());
+
+        SalesSummary current = getSummary(
+                currentRange.from(),
+                currentRange.toExclusive());
+
+        SalesSummary previous = getSummary(
+                comparisonRange.from(),
+                comparisonRange.toExclusive());
+
+        return new SalesDashboardSummary(
+                current,
+                comparisonFrom,
+                comparisonTo,
+                createComparison(
+                        current.totalOrderCount(),
+                        previous.totalOrderCount()),
+                createComparison(
+                        current.salesOrderCount(),
+                        previous.salesOrderCount()),
+                createComparison(
+                        current.salesAmount(),
+                        previous.salesAmount()));
+    }
+
     private List<DailySalesSummary> getDailySales(
             LocalDateTime from,
             LocalDateTime toExclusive) {
@@ -153,4 +198,28 @@ public class SalesDashboardService {
             LocalDateTime from,
             LocalDateTime toExclusive) {
     }
+
+    private SalesMetricComparison createComparison(
+            long currentValue,
+            long previousValue) {
+
+        BigDecimal changeRate = null;
+
+        if (previousValue != 0) {
+            changeRate = BigDecimal.valueOf(
+                    currentValue - previousValue)
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(
+                            BigDecimal.valueOf(previousValue),
+                            1,
+                            RoundingMode.HALF_UP);
+        }
+
+        return new SalesMetricComparison(
+                currentValue,
+                previousValue,
+                currentValue - previousValue,
+                changeRate);
+    }
+
 }

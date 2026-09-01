@@ -60,6 +60,154 @@
                 </dd>
             </dl>
 
+            <h3>前期間比較</h3>
+
+            <p th:if="${comparison != null}">
+                比較期間：
+                <span th:text="${#temporals.format(comparison.comparisonFrom(), 'yyyy/MM/dd')}">
+                    2026/07/01
+                </span>
+                ～
+                <span th:text="${#temporals.format(comparison.comparisonTo(), 'yyyy/MM/dd')}">
+                    2026/07/31
+                </span>
+            </p>
+
+            <table th:if="${comparison != null}">
+                <thead>
+                    <tr>
+                        <th>指標</th>
+                        <th>今回</th>
+                        <th>前期間</th>
+                        <th>増減</th>
+                        <th>増減率</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr>
+                        <td>注文数</td>
+
+                        <td th:text="${comparison.totalOrderCount().currentValue()}">
+                            0
+                        </td>
+
+                        <td th:text="${comparison.totalOrderCount().previousValue()}">
+                            0
+                        </td>
+
+                        <td>
+                            <span th:if="${comparison.totalOrderCount().difference() > 0}">
+                                +
+                            </span>
+                            <span th:text="${comparison.totalOrderCount().difference()}">
+                                0
+                            </span>
+                        </td>
+
+                        <td>
+                            <span th:if="${comparison.totalOrderCount().changeRate() != null}">
+                                <span th:if="${comparison.totalOrderCount().changeRate().signum() > 0}">
+                                    +
+                                </span>
+                                <span th:text="${comparison.totalOrderCount().changeRate()}">
+                                    0.0
+                                </span>
+                                %
+                            </span>
+
+                            <span th:if="${comparison.totalOrderCount().changeRate() == null}">
+                                －
+                            </span>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>売上対象注文数</td>
+
+                        <td th:text="${comparison.salesOrderCount().currentValue()}">
+                            0
+                        </td>
+
+                        <td th:text="${comparison.salesOrderCount().previousValue()}">
+                            0
+                        </td>
+
+                        <td>
+                            <span th:if="${comparison.salesOrderCount().difference() > 0}">
+                                +
+                            </span>
+                            <span th:text="${comparison.salesOrderCount().difference()}">
+                                0
+                            </span>
+                        </td>
+
+                        <td>
+                            <span th:if="${comparison.salesOrderCount().changeRate() != null}">
+                                <span th:if="${comparison.salesOrderCount().changeRate().signum() > 0}">
+                                    +
+                                </span>
+                                <span th:text="${comparison.salesOrderCount().changeRate()}">
+                                    0.0
+                                </span>
+                                %
+                            </span>
+
+                            <span th:if="${comparison.salesOrderCount().changeRate() == null}">
+                                －
+                            </span>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>売上合計</td>
+
+                        <td>
+                            <span
+                                th:text="${#numbers.formatInteger(comparison.salesAmount().currentValue(), 1, 'COMMA')}">
+                                0
+                            </span>
+                            円
+                        </td>
+
+                        <td>
+                            <span
+                                th:text="${#numbers.formatInteger(comparison.salesAmount().previousValue(), 1, 'COMMA')}">
+                                0
+                            </span>
+                            円
+                        </td>
+
+                        <td>
+                            <span th:if="${comparison.salesAmount().difference() > 0}">
+                                +
+                            </span>
+                            <span
+                                th:text="${#numbers.formatInteger(comparison.salesAmount().difference(), 1, 'COMMA')}">
+                                0
+                            </span>
+                            円
+                        </td>
+
+                        <td>
+                            <span th:if="${comparison.salesAmount().changeRate() != null}">
+                                <span th:if="${comparison.salesAmount().changeRate().signum() > 0}">
+                                    +
+                                </span>
+                                <span th:text="${comparison.salesAmount().changeRate()}">
+                                    0.0
+                                </span>
+                                %
+                            </span>
+
+                            <span th:if="${comparison.salesAmount().changeRate() == null}">
+                                －
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
             <h3>注文ステータス別件数</h3>
 
             <table>

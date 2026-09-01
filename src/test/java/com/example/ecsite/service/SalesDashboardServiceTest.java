@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -19,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import com.example.ecsite.dto.DailySalesSummary;
+import com.example.ecsite.dto.SalesDashboardSummary;
 import com.example.ecsite.dto.SalesSummary;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.form.SalesDashboardForm;
@@ -248,6 +250,307 @@ class SalesDashboardServiceTest {
         verify(orderRepository).findDailySales(
                 expectedFrom,
                 expectedToExclusive);
+    }
+
+    @Test
+    void getDashboardSummaryUsesImmediatelyPreviousSameLengthPeriod() {
+        SalesDashboardForm form = new SalesDashboardForm();
+        form.setFrom(LocalDate.of(2026, 8, 10));
+        form.setTo(LocalDate.of(2026, 8, 20));
+
+        SalesDashboardSummary dashboard = salesDashboardService.getDashboardSummary(form);
+
+        assertEquals(
+                LocalDate.of(2026, 7, 30),
+                dashboard.comparisonFrom());
+
+        assertEquals(
+                LocalDate.of(2026, 8, 9),
+                dashboard.comparisonTo());
+    }
+
+    @Test
+    void getDashboardSummaryReturnsComparisonValues() {
+        SalesDashboardForm form = new SalesDashboardForm();
+        form.setFrom(LocalDate.of(2026, 8, 10));
+        form.setTo(LocalDate.of(2026, 8, 20));
+
+        LocalDateTime currentFrom = LocalDateTime.of(2026, 8, 10, 0, 0);
+        LocalDateTime currentToExclusive = LocalDateTime.of(2026, 8, 21, 0, 0);
+
+        LocalDateTime previousFrom = LocalDateTime.of(2026, 7, 30, 0, 0);
+        LocalDateTime previousToExclusive = LocalDateTime.of(2026, 8, 10, 0, 0);
+
+        when(orderRepository.countSalesOrders(
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(8L);
+
+        when(orderRepository.sumSalesAmount(
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(30000L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.ORDERED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(2L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.PAID,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(3L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.SHIPPED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(5L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.CANCELLED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(2L);
+
+        when(orderRepository.countSalesOrders(
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(5L);
+
+        when(orderRepository.sumSalesAmount(
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(20000L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.ORDERED,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(1L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.PAID,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(2L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.SHIPPED,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(3L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.CANCELLED,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(1L);
+
+        SalesDashboardSummary dashboard = salesDashboardService.getDashboardSummary(form);
+
+        assertEquals(12L,
+                dashboard.totalOrderCount().currentValue());
+        assertEquals(7L,
+                dashboard.totalOrderCount().previousValue());
+        assertEquals(5L,
+                dashboard.totalOrderCount().difference());
+
+        assertEquals(8L,
+                dashboard.salesOrderCount().currentValue());
+        assertEquals(5L,
+                dashboard.salesOrderCount().previousValue());
+        assertEquals(3L,
+                dashboard.salesOrderCount().difference());
+
+        assertEquals(30000L,
+                dashboard.salesAmount().currentValue());
+        assertEquals(20000L,
+                dashboard.salesAmount().previousValue());
+        assertEquals(10000L,
+                dashboard.salesAmount().difference());
+    }
+
+    @Test
+    void getDashboardSummaryCalculatesChangeRate() {
+        SalesDashboardForm form = new SalesDashboardForm();
+        form.setFrom(LocalDate.of(2026, 8, 10));
+        form.setTo(LocalDate.of(2026, 8, 20));
+
+        LocalDateTime currentFrom = LocalDateTime.of(2026, 8, 10, 0, 0);
+        LocalDateTime currentToExclusive = LocalDateTime.of(2026, 8, 21, 0, 0);
+
+        LocalDateTime previousFrom = LocalDateTime.of(2026, 7, 30, 0, 0);
+        LocalDateTime previousToExclusive = LocalDateTime.of(2026, 8, 10, 0, 0);
+
+        when(orderRepository.countSalesOrders(
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(8L);
+
+        when(orderRepository.sumSalesAmount(
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(30000L);
+
+        when(orderRepository.countSalesOrders(
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(5L);
+
+        when(orderRepository.sumSalesAmount(
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(20000L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.ORDERED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(2L);
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.PAID,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(3L);
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.SHIPPED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(5L);
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.CANCELLED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(2L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.ORDERED,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(1L);
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.PAID,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(2L);
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.SHIPPED,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(3L);
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.CANCELLED,
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(1L);
+
+        SalesDashboardSummary dashboard = salesDashboardService.getDashboardSummary(form);
+
+        assertEquals(
+                new BigDecimal("71.4"),
+                dashboard.totalOrderCount().changeRate());
+
+        assertEquals(
+                new BigDecimal("60.0"),
+                dashboard.salesOrderCount().changeRate());
+
+        assertEquals(
+                new BigDecimal("50.0"),
+                dashboard.salesAmount().changeRate());
+    }
+
+    @Test
+    void getDashboardSummaryReturnsNullChangeRateWhenPreviousValueIsZero() {
+        SalesDashboardForm form = new SalesDashboardForm();
+        form.setFrom(LocalDate.of(2026, 8, 10));
+        form.setTo(LocalDate.of(2026, 8, 10));
+
+        LocalDateTime currentFrom = LocalDateTime.of(2026, 8, 10, 0, 0);
+        LocalDateTime currentToExclusive = LocalDateTime.of(2026, 8, 11, 0, 0);
+
+        LocalDateTime previousFrom = LocalDateTime.of(2026, 8, 9, 0, 0);
+        LocalDateTime previousToExclusive = LocalDateTime.of(2026, 8, 10, 0, 0);
+
+        when(orderRepository.countSalesOrders(
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(2L);
+
+        when(orderRepository.sumSalesAmount(
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(5000L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.ORDERED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(1L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.PAID,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(1L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.SHIPPED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(1L);
+
+        when(orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.CANCELLED,
+                currentFrom,
+                currentToExclusive))
+                .thenReturn(0L);
+
+        when(orderRepository.countSalesOrders(
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(0L);
+
+        when(orderRepository.sumSalesAmount(
+                previousFrom,
+                previousToExclusive))
+                .thenReturn(0L);
+
+        for (OrderStatus status : OrderStatus.values()) {
+            when(orderRepository.countByStatusAndOrderedAtRange(
+                    status,
+                    previousFrom,
+                    previousToExclusive))
+                    .thenReturn(0L);
+        }
+
+        SalesDashboardSummary dashboard = salesDashboardService.getDashboardSummary(form);
+
+        assertEquals(
+                3L,
+                dashboard.totalOrderCount().difference());
+
+        assertEquals(
+                2L,
+                dashboard.salesOrderCount().difference());
+
+        assertEquals(
+                5000L,
+                dashboard.salesAmount().difference());
+
+        assertEquals(
+                null,
+                dashboard.totalOrderCount().changeRate());
+
+        assertEquals(
+                null,
+                dashboard.salesOrderCount().changeRate());
+
+        assertEquals(
+                null,
+                dashboard.salesAmount().changeRate());
     }
 
 }
