@@ -2,7 +2,9 @@ package com.example.ecsite.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.repository.projection.DailySalesProjection;
 
 import jakarta.persistence.EntityManager;
 
@@ -21,179 +24,375 @@ import jakarta.persistence.EntityManager;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class OrderRepositoryTest {
 
-        @Autowired
-        private OrderRepository orderRepository;
+    @Autowired
+    private OrderRepository orderRepository;
 
-        @Autowired
-        private EntityManager entityManager;
+    @Autowired
+    private EntityManager entityManager;
 
-        @Autowired
-        private UserRepository userRepository;
+    @Autowired
+    private UserRepository userRepository;
 
-        private static final LocalDateTime SEARCH_FROM = LocalDateTime.of(1970, 1, 1, 0, 0);
+    private static final LocalDateTime SEARCH_FROM = LocalDateTime.of(1970, 1, 1, 0, 0);
 
-        private static final LocalDateTime SEARCH_TO = LocalDateTime.of(9999, 12, 31, 0, 0);
+    private static final LocalDateTime SEARCH_TO = LocalDateTime.of(9999, 12, 31, 0, 0);
 
-        @Test
-        void searchFiltersByUserId() {
+    @Test
+    void searchFiltersByUserId() {
 
-                User firstUser = createUser("order-search-user-1");
-                User secondUser = createUser("order-search-user-2");
+        User firstUser = createUser("order-search-user-1");
+        User secondUser = createUser("order-search-user-2");
 
-                createOrder(
-                                firstUser.getId(),
-                                LocalDateTime.of(2026, 8, 10, 10, 0));
+        createOrder(
+                firstUser.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0));
 
-                Order target = createOrder(
-                                secondUser.getId(),
-                                LocalDateTime.of(2026, 8, 11, 10, 0));
+        Order target = createOrder(
+                secondUser.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0));
 
-                Page<Order> result = orderRepository.search(
-                                null,
-                                secondUser.getId(),
-                                SEARCH_FROM,
-                                SEARCH_TO,
-                                null,
-                                PageRequest.of(0, 20));
+        Page<Order> result = orderRepository.search(
+                null,
+                secondUser.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                PageRequest.of(0, 20));
 
-                assertEquals(1, result.getTotalElements());
-                assertEquals(target.getId(), result.getContent().get(0).getId());
-        }
+        assertEquals(1, result.getTotalElements());
+        assertEquals(target.getId(), result.getContent().get(0).getId());
+    }
 
-        @Test
-        void searchFiltersByOrderId() {
+    @Test
+    void searchFiltersByOrderId() {
 
-                User user = createUser("order-search-user-3");
+        User user = createUser("order-search-user-3");
 
-                Order target = createOrder(
-                                user.getId(),
-                                LocalDateTime.of(2026, 8, 11, 10, 0));
+        Order target = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0));
 
-                Page<Order> result = orderRepository.search(
-                                target.getId(),
-                                null,
-                                SEARCH_FROM,
-                                SEARCH_TO,
-                                null,
-                                PageRequest.of(0, 20));
+        Page<Order> result = orderRepository.search(
+                target.getId(),
+                null,
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                PageRequest.of(0, 20));
 
-                assertEquals(1, result.getTotalElements());
-                assertEquals(target.getId(), result.getContent().get(0).getId());
-        }
+        assertEquals(1, result.getTotalElements());
+        assertEquals(target.getId(), result.getContent().get(0).getId());
+    }
 
-        @Test
-        void searchFiltersByOrderedAtRange() {
+    @Test
+    void searchFiltersByOrderedAtRange() {
 
-                User user = createUser("order-search-range-user");
+        User user = createUser("order-search-range-user");
 
-                createOrder(
-                                user.getId(),
-                                LocalDateTime.of(2026, 8, 9, 23, 59));
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 9, 23, 59));
 
-                Order firstInRange = createOrder(
-                                user.getId(),
-                                LocalDateTime.of(2026, 8, 10, 0, 0));
+        Order firstInRange = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 0, 0));
 
-                Order lastInRange = createOrder(
-                                user.getId(),
-                                LocalDateTime.of(2026, 8, 20, 23, 59));
+        Order lastInRange = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 20, 23, 59));
 
-                createOrder(
-                                user.getId(),
-                                LocalDateTime.of(2026, 8, 21, 0, 0));
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 21, 0, 0));
 
-                Page<Order> result = orderRepository.search(
-                                null,
-                                user.getId(),
-                                LocalDateTime.of(2026, 8, 10, 0, 0),
-                                LocalDateTime.of(2026, 8, 21, 0, 0),
-                                null,
-                                PageRequest.of(0, 20));
+        Page<Order> result = orderRepository.search(
+                null,
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 21, 0, 0),
+                null,
+                PageRequest.of(0, 20));
 
-                assertEquals(2, result.getTotalElements());
-                assertEquals(lastInRange.getId(), result.getContent().get(0).getId());
-                assertEquals(firstInRange.getId(), result.getContent().get(1).getId());
-        }
+        assertEquals(2, result.getTotalElements());
+        assertEquals(lastInRange.getId(), result.getContent().get(0).getId());
+        assertEquals(firstInRange.getId(), result.getContent().get(1).getId());
+    }
 
-        @Test
-        void searchFiltersByStatus() {
+    @Test
+    void searchFiltersByStatus() {
 
-                User user = createUser("order-search-user-5");
+        User user = createUser("order-search-user-5");
 
-                Order paidOrder = createOrder(
-                                user.getId(),
-                                LocalDateTime.of(2026, 8, 11, 10, 0));
+        Order paidOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0));
 
-                paidOrder.markAsPaid();
-                entityManager.flush();
+        paidOrder.markAsPaid();
+        entityManager.flush();
 
-                Page<Order> result = orderRepository.search(
-                                null,
-                                null,
-                                SEARCH_FROM,
-                                SEARCH_TO,
-                                OrderStatus.PAID,
-                                PageRequest.of(0, 20));
+        Page<Order> result = orderRepository.search(
+                null,
+                null,
+                SEARCH_FROM,
+                SEARCH_TO,
+                OrderStatus.PAID,
+                PageRequest.of(0, 20));
 
-                assertEquals(1, result.getTotalElements());
-                assertEquals(paidOrder.getId(), result.getContent().get(0).getId());
-        }
+        assertEquals(1, result.getTotalElements());
+        assertEquals(paidOrder.getId(), result.getContent().get(0).getId());
+    }
 
-        @Test
-        void searchCombinesConditionsWithAnd() {
+    @Test
+    void searchCombinesConditionsWithAnd() {
 
-                User targetUser = createUser("order-search-target");
-                User otherUser = createUser("order-search-other");
+        User targetUser = createUser("order-search-target");
+        User otherUser = createUser("order-search-other");
 
-                Order target = createOrder(
-                                targetUser.getId(),
-                                LocalDateTime.of(2026, 8, 15, 11, 0));
+        Order target = createOrder(
+                targetUser.getId(),
+                LocalDateTime.of(2026, 8, 15, 11, 0));
 
-                Order paidOtherUser = createOrder(
-                                otherUser.getId(),
-                                LocalDateTime.of(2026, 8, 15, 12, 0));
+        Order paidOtherUser = createOrder(
+                otherUser.getId(),
+                LocalDateTime.of(2026, 8, 15, 12, 0));
 
-                target.markAsPaid();
-                paidOtherUser.markAsPaid();
-                entityManager.flush();
+        target.markAsPaid();
+        paidOtherUser.markAsPaid();
+        entityManager.flush();
 
-                Page<Order> result = orderRepository.search(
-                                null,
-                                targetUser.getId(),
-                                LocalDateTime.of(2026, 8, 15, 0, 0),
-                                LocalDateTime.of(2026, 8, 16, 0, 0),
-                                OrderStatus.PAID,
-                                PageRequest.of(0, 20));
+        Page<Order> result = orderRepository.search(
+                null,
+                targetUser.getId(),
+                LocalDateTime.of(2026, 8, 15, 0, 0),
+                LocalDateTime.of(2026, 8, 16, 0, 0),
+                OrderStatus.PAID,
+                PageRequest.of(0, 20));
 
-                assertEquals(1, result.getTotalElements());
-                assertEquals(target.getId(), result.getContent().get(0).getId());
-        }
+        assertEquals(1, result.getTotalElements());
+        assertEquals(target.getId(), result.getContent().get(0).getId());
+    }
 
-        private Order createOrder(
-                        Long userId,
-                        LocalDateTime orderedAt) {
+    @Test
+    void countSalesOrdersCountsOnlyPaidAndShippedWithinRange() {
 
-                Order order = new Order(userId, 1000);
-                order.setOrderedAt(orderedAt);
+        User user = createUser("sales-dashboard-user");
 
-                Order saved = orderRepository.save(order);
-                entityManager.flush();
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 9, 23, 59));
 
-                return saved;
-        }
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0));
 
-        private User createUser(String username) {
+        Order paidOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0));
 
-                User user = new User();
-                user.setUsername(username);
-                user.setPassword("password");
-                user.setRole("ROLE_USER");
-                user.setEnabled(true);
+        Order shippedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 12, 10, 0));
 
-                User saved = userRepository.save(user);
-                entityManager.flush();
+        Order cancelledOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 13, 10, 0));
 
-                return saved;
-        }
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 14, 0, 0));
+
+        paidOrder.markAsPaid();
+
+        shippedOrder.markAsPaid();
+        shippedOrder.markAsShipped();
+
+        cancelledOrder.cancel();
+
+        entityManager.flush();
+
+        long result = orderRepository.countSalesOrders(
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 14, 0, 0));
+
+        assertEquals(2, result);
+    }
+
+    @Test
+    void sumSalesAmountSumsOnlyPaidAndShippedWithinRange() {
+
+        User user = createUser("sales-amount-user");
+
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0),
+                1000);
+
+        Order paidOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0),
+                2000);
+
+        Order shippedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 12, 10, 0),
+                3000);
+
+        Order cancelledOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 13, 10, 0),
+                4000);
+
+        paidOrder.markAsPaid();
+
+        shippedOrder.markAsPaid();
+        shippedOrder.markAsShipped();
+
+        cancelledOrder.cancel();
+
+        entityManager.flush();
+
+        long result = orderRepository.sumSalesAmount(
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 14, 0, 0));
+
+        assertEquals(5000, result);
+    }
+
+    @Test
+    void countByStatusWithinRangeCountsOnlyMatchingStatusAndPeriod() {
+
+        User user = createUser("sales-status-count-user");
+
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 9, 23, 59));
+
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0));
+
+        Order firstPaidOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0));
+
+        Order secondPaidOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 12, 10, 0));
+
+        Order shippedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 13, 10, 0));
+
+        Order outsideRangeOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 14, 0, 0));
+
+        firstPaidOrder.markAsPaid();
+        secondPaidOrder.markAsPaid();
+
+        shippedOrder.markAsPaid();
+        shippedOrder.markAsShipped();
+
+        outsideRangeOrder.markAsPaid();
+
+        entityManager.flush();
+
+        long result = orderRepository.countByStatusAndOrderedAtRange(
+                OrderStatus.PAID,
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 14, 0, 0));
+
+        assertEquals(2, result);
+    }
+
+    @Test
+    void findDailySalesAggregatesOrdersByDate() {
+
+        User user = createUser("daily-sales-user");
+
+        Order paidOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0),
+                2000);
+
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 15, 0),
+                1000);
+
+        Order shippedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 9, 0),
+                3000);
+
+        Order cancelledOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 18, 0),
+                4000);
+
+        paidOrder.markAsPaid();
+
+        shippedOrder.markAsPaid();
+        shippedOrder.markAsShipped();
+
+        cancelledOrder.cancel();
+
+        entityManager.flush();
+
+        List<DailySalesProjection> result = orderRepository.findDailySales(
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 12, 0, 0));
+
+        assertEquals(2, result.size());
+
+        DailySalesProjection firstDay = result.get(0);
+
+        assertEquals(LocalDate.of(2026, 8, 10), firstDay.getDate());
+        assertEquals(2, firstDay.getOrderCount());
+        assertEquals(1, firstDay.getSalesOrderCount());
+        assertEquals(2000, firstDay.getSalesAmount());
+
+        DailySalesProjection secondDay = result.get(1);
+
+        assertEquals(LocalDate.of(2026, 8, 11), secondDay.getDate());
+        assertEquals(2, secondDay.getOrderCount());
+        assertEquals(1, secondDay.getSalesOrderCount());
+        assertEquals(3000, secondDay.getSalesAmount());
+    }
+
+    private Order createOrder(
+            Long userId,
+            LocalDateTime orderedAt) {
+
+        return createOrder(userId, orderedAt, 1000);
+    }
+
+    private Order createOrder(
+            Long userId,
+            LocalDateTime orderedAt,
+            int totalAmount) {
+
+        Order order = new Order(userId, totalAmount);
+        order.setOrderedAt(orderedAt);
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private User createUser(String username) {
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("password");
+        user.setRole("ROLE_USER");
+        user.setEnabled(true);
+
+        User saved = userRepository.save(user);
+        entityManager.flush();
+
+        return saved;
+    }
 
 }
