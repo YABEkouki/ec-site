@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>売上ダッシュボード</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>売上ダッシュボード</h1>
+
+        <section>
+            <h2>集計期間</h2>
+
+            <form th:action="@{/admin/sales}" th:object="${searchForm}" method="get">
+
+                <input type="hidden" name="search" value="true">
+
+                <div>
+                    <label for="from">開始日</label>
+                    <input type="date" id="from" th:field="*{from}" required>
+                </div>
+
+                <div>
+                    <label for="to">終了日</label>
+                    <input type="date" id="to" th:field="*{to}" required>
+                </div>
+
+                <button type="submit">集計</button>
+            </form>
+
+            <p th:if="${errorMessage != null}" th:text="${errorMessage}">
+                エラーメッセージ
+            </p>
+        </section>
+
+        <section th:if="${summary != null}">
+            <h2>集計結果</h2>
+
+            <dl>
+                <dt>注文数</dt>
+                <dd th:text="${summary.totalOrderCount()}">0</dd>
+
+                <dt>売上対象注文数</dt>
+                <dd th:text="${summary.salesOrderCount()}">0</dd>
+
+                <dt>売上合計</dt>
+                <dd>
+                    <span th:text="${#numbers.formatInteger(summary.salesAmount(), 1, 'COMMA')}">
+                        0
+                    </span>
+                    円
+                </dd>
+            </dl>
+
+            <h3>注文ステータス別件数</h3>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>ステータス</th>
+                        <th>件数</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>注文受付</td>
+                        <td th:text="${summary.orderedCount()}">0</td>
+                    </tr>
+                    <tr>
+                        <td>支払済み</td>
+                        <td th:text="${summary.paidCount()}">0</td>
+                    </tr>
+                    <tr>
+                        <td>発送済み</td>
+                        <td th:text="${summary.shippedCount()}">0</td>
+                    </tr>
+                    <tr>
+                        <td>キャンセル</td>
+                        <td th:text="${summary.cancelledCount()}">0</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section th:if="${dailySales != null}">
+            <h2>日別集計</h2>
+
+            <p th:if="${#lists.isEmpty(dailySales)}">
+                対象期間に注文はありません。
+            </p>
+
+            <table th:unless="${#lists.isEmpty(dailySales)}">
+                <thead>
+                    <tr>
+                        <th>日付</th>
+                        <th>注文数</th>
+                        <th>売上対象注文数</th>
+                        <th>売上</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="daily : ${dailySales}">
+                        <td th:text="${#temporals.format(daily.date(), 'yyyy/MM/dd')}">
+                            2026/08/01
+                        </td>
+                        <td th:text="${daily.orderCount()}">
+                            0
+                        </td>
+                        <td th:text="${daily.salesOrderCount()}">
+                            0
+                        </td>
+                        <td>
+                            <span th:text="${#numbers.formatInteger(daily.salesAmount(), 1, 'COMMA')}">
+                                0
+                            </span>
+                            円
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+    </main>
+
+</body>
+
+</html>
