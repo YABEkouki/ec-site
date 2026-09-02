@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import com.example.ecsite.dto.CategorySalesRanking;
 import com.example.ecsite.dto.CustomerSalesRanking;
 import com.example.ecsite.dto.DailySalesSummary;
 import com.example.ecsite.dto.ProductSalesRanking;
@@ -111,6 +112,25 @@ public class SalesDashboardService {
                         projection.getUsername(),
                         projection.getOrderCount(),
                         projection.getQuantity(),
+                        projection.getSalesAmount()))
+                .toList();
+    }
+
+    public List<CategorySalesRanking> getCategorySalesRanking(
+            SalesDashboardForm form) {
+
+        DateTimeRange range = resolveDateTimeRange(form);
+
+        return orderRepository.findCategorySalesRanking(
+                range.from(),
+                range.toExclusive(),
+                PageRequest.of(0, 10))
+                .stream()
+                .map(projection -> new CategorySalesRanking(
+                        projection.getCategoryId(),
+                        projection.getCategoryName(),
+                        projection.getQuantity(),
+                        projection.getOrderCount(),
                         projection.getSalesAmount()))
                 .toList();
     }

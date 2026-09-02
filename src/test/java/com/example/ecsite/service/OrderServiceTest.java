@@ -27,6 +27,7 @@ import org.springframework.data.domain.Pageable;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
+import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
@@ -98,6 +99,9 @@ class OrderServiceTest {
 
         assertEquals(2000, order.getTotalAmount());
         assertEquals(1, order.getItems().size());
+        assertEquals(100L, order.getItems().get(0).getCategoryId());
+        assertEquals("テストカテゴリ", order.getItems().get(0).getCategoryName());
+
         verify(inventoryService)
                 .decreaseForOrder(
                         1L,
@@ -219,11 +223,17 @@ class OrderServiceTest {
             int price,
             int stock) {
 
+        Category category = new Category("テストカテゴリ");
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(category, "id", 100L);
+
         Product product = new Product();
         product.setId(id);
         product.setName(name);
         product.setPrice(price);
         product.setStock(stock);
+        product.setCategory(category);
 
         return product;
     }
@@ -375,6 +385,7 @@ class OrderServiceTest {
         Cart cart = mock(Cart.class);
         CartItem cartItem = mock(CartItem.class);
         Product product = mock(Product.class);
+        Category category = mock(Category.class);
         CheckoutForm checkoutForm = createValidCheckoutForm();
 
         when(cart.getItems())
@@ -403,6 +414,15 @@ class OrderServiceTest {
 
         when(product.getStock())
                 .thenReturn(10);
+
+        when(product.getCategory())
+                .thenReturn(category);
+
+        when(category.getId())
+                .thenReturn(100L);
+
+        when(category.getName())
+                .thenReturn("テストカテゴリ");
 
         Long orderId = 100L;
 

@@ -34,6 +34,12 @@ public class OrderItem {
     @Column(nullable = false)
     private int quantity;
 
+    @Column(name = "category_id", nullable = false)
+    private Long categoryId;
+
+    @Column(name = "category_name", nullable = false, length = 100)
+    private String categoryName;
+
     @Column(nullable = false)
     private int subtotal;
 
@@ -43,11 +49,15 @@ public class OrderItem {
     public OrderItem(
             Long productId,
             String productName,
+            Long categoryId,
+            String categoryName,
             int price,
             int quantity) {
 
         this.productId = productId;
         this.productName = productName;
+        this.categoryId = categoryId;
+        this.categoryName = categoryName;
         this.price = price;
         this.quantity = quantity;
         this.subtotal = price * quantity;
@@ -79,6 +89,22 @@ public class OrderItem {
 
     public void setProductName(String productName) {
         this.productName = productName;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Long categoryId) {
+        this.categoryId = categoryId;
+    }
+
+    public String getCategoryName() {
+        return categoryName;
+    }
+
+    public void setCategoryName(String categoryName) {
+        this.categoryName = categoryName;
     }
 
     public int getPrice() {

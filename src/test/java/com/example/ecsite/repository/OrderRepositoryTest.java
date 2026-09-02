@@ -19,6 +19,7 @@ import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
 import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
@@ -557,6 +558,104 @@ class OrderRepositoryTest {
                 second.getSalesAmount());
     }
 
+    @Test
+    void findCategorySalesRankingUsesOrderTimeCategorySnapshot() {
+
+        User user = createUser(
+                "category-sales-ranking-user");
+
+        Product firstProduct = createProduct(
+                "カテゴリランキング商品1",
+                1000);
+
+        Category orderTimeCategory = firstProduct.getCategory();
+
+        Product secondProduct = createProduct(
+                "カテゴリランキング商品2",
+                2000);
+
+        secondProduct.setCategory(orderTimeCategory);
+        entityManager.flush();
+
+        Order firstPaidOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0),
+                firstProduct,
+                "カテゴリランキング商品1",
+                1000,
+                2);
+
+        Order shippedOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0),
+                secondProduct,
+                "カテゴリランキング商品2",
+                2000,
+                3);
+
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 12, 10, 0),
+                firstProduct,
+                "カテゴリランキング商品1",
+                1000,
+                10);
+
+        Order cancelledOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 13, 10, 0),
+                firstProduct,
+                "カテゴリランキング商品1",
+                1000,
+                20);
+
+        firstPaidOrder.markAsPaid();
+
+        shippedOrder.markAsPaid();
+        shippedOrder.markAsShipped();
+
+        cancelledOrder.cancel();
+
+        Category changedCategory = new Category(
+                "changed-category-" + System.nanoTime());
+
+        entityManager.persist(changedCategory);
+
+        firstProduct.setCategory(changedCategory);
+        secondProduct.setCategory(changedCategory);
+
+        entityManager.flush();
+
+        List<CategorySalesRankingProjection> result = orderRepository.findCategorySalesRanking(
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 14, 0, 0),
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.size());
+
+        CategorySalesRankingProjection ranking = result.get(0);
+
+        assertEquals(
+                orderTimeCategory.getId(),
+                ranking.getCategoryId());
+
+        assertEquals(
+                orderTimeCategory.getName(),
+                ranking.getCategoryName());
+
+        assertEquals(
+                5,
+                ranking.getQuantity());
+
+        assertEquals(
+                2,
+                ranking.getOrderCount());
+
+        assertEquals(
+                8000,
+                ranking.getSalesAmount());
+    }
+
     private Order createOrder(
             Long userId,
             LocalDateTime orderedAt,
@@ -603,6 +702,8 @@ class OrderRepositoryTest {
         OrderItem item = new OrderItem(
                 product.getId(),
                 productName,
+                product.getCategory().getId(),
+                product.getCategory().getName(),
                 price,
                 quantity);
 

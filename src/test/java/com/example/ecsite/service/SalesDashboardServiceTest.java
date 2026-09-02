@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.data.domain.PageRequest;
 
+import com.example.ecsite.dto.CategorySalesRanking;
 import com.example.ecsite.dto.CustomerSalesRanking;
 import com.example.ecsite.dto.DailySalesSummary;
 import com.example.ecsite.dto.ProductSalesRanking;
@@ -28,6 +29,7 @@ import com.example.ecsite.dto.SalesSummary;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.form.SalesDashboardForm;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
 import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
@@ -265,6 +267,69 @@ class SalesDashboardServiceTest {
                         from,
                         toExclusive,
                         PageRequest.of(0, 10));
+    }
+
+    @Test
+    void getCategorySalesRankingConvertsProjectionToDto() {
+
+        SalesDashboardForm form = new SalesDashboardForm();
+        form.setFrom(LocalDate.of(2026, 8, 1));
+        form.setTo(LocalDate.of(2026, 8, 31));
+
+        LocalDateTime from = LocalDateTime.of(
+                2026, 8, 1, 0, 0);
+
+        LocalDateTime toExclusive = LocalDateTime.of(
+                2026, 9, 1, 0, 0);
+
+        CategorySalesRankingProjection first = mock(CategorySalesRankingProjection.class);
+
+        when(first.getCategoryId()).thenReturn(10L);
+        when(first.getCategoryName()).thenReturn("食品");
+        when(first.getQuantity()).thenReturn(8L);
+        when(first.getOrderCount()).thenReturn(3L);
+        when(first.getSalesAmount()).thenReturn(12000L);
+
+        CategorySalesRankingProjection second = mock(CategorySalesRankingProjection.class);
+
+        when(second.getCategoryId()).thenReturn(20L);
+        when(second.getCategoryName()).thenReturn("日用品");
+        when(second.getQuantity()).thenReturn(5L);
+        when(second.getOrderCount()).thenReturn(2L);
+        when(second.getSalesAmount()).thenReturn(8000L);
+
+        when(orderRepository.findCategorySalesRanking(
+                from,
+                toExclusive,
+                PageRequest.of(0, 10)))
+                .thenReturn(List.of(first, second));
+
+        List<CategorySalesRanking> result = salesDashboardService.getCategorySalesRanking(form);
+
+        assertEquals(2, result.size());
+
+        assertEquals(
+                new CategorySalesRanking(
+                        10L,
+                        "食品",
+                        8,
+                        3,
+                        12000),
+                result.get(0));
+
+        assertEquals(
+                new CategorySalesRanking(
+                        20L,
+                        "日用品",
+                        5,
+                        2,
+                        8000),
+                result.get(1));
+
+        verify(orderRepository).findCategorySalesRanking(
+                from,
+                toExclusive,
+                PageRequest.of(0, 10));
     }
 
     @Test
