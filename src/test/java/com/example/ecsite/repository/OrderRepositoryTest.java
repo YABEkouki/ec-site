@@ -138,7 +138,7 @@ class OrderRepositoryTest {
 
         Page<Order> result = orderRepository.search(
                 null,
-                null,
+                user.getId(),
                 SEARCH_FROM,
                 SEARCH_TO,
                 OrderStatus.PAID,
