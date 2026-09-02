@@ -19,6 +19,7 @@ import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
 import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
 
@@ -397,14 +398,6 @@ class OrderRepositoryTest {
                 1200,
                 1);
 
-        Order orderedOrder = createOrderWithItem(
-                user.getId(),
-                LocalDateTime.of(2026, 8, 13, 10, 0),
-                product,
-                "注文時の商品名",
-                1000,
-                10);
-
         Order cancelledOrder = createOrderWithItem(
                 user.getId(),
                 LocalDateTime.of(2026, 8, 14, 10, 0),
@@ -444,6 +437,124 @@ class OrderRepositoryTest {
             LocalDateTime orderedAt) {
 
         return createOrder(userId, orderedAt, 1000);
+    }
+
+    @Test
+    void findCustomerSalesRankingAggregatesOnlyPaidAndShippedOrders() {
+
+        User firstUser = createUser(
+                "customer-sales-ranking-user-1");
+
+        User secondUser = createUser(
+                "customer-sales-ranking-user-2");
+
+        Product product = createProduct(
+                "顧客ランキング商品",
+                1000);
+
+        Order firstPaidOrder = createOrderWithItem(
+                firstUser.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0),
+                product,
+                "顧客ランキング商品",
+                1000,
+                2);
+
+        Order shippedOrder = createOrderWithItem(
+                firstUser.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0),
+                product,
+                "顧客ランキング商品",
+                1000,
+                3);
+
+        Order secondUserPaidOrder = createOrderWithItem(
+                secondUser.getId(),
+                LocalDateTime.of(2026, 8, 12, 10, 0),
+                product,
+                "顧客ランキング商品",
+                1000,
+                3);
+
+        createOrderWithItem(
+                firstUser.getId(),
+                LocalDateTime.of(2026, 8, 13, 10, 0),
+                product,
+                "顧客ランキング商品",
+                1000,
+                10);
+
+        Order cancelledOrder = createOrderWithItem(
+                firstUser.getId(),
+                LocalDateTime.of(2026, 8, 14, 10, 0),
+                product,
+                "顧客ランキング商品",
+                1000,
+                20);
+
+        firstPaidOrder.markAsPaid();
+
+        shippedOrder.markAsPaid();
+        shippedOrder.markAsShipped();
+
+        secondUserPaidOrder.markAsPaid();
+
+        cancelledOrder.cancel();
+
+        entityManager.flush();
+
+        List<CustomerSalesRankingProjection> result = orderRepository.findCustomerSalesRanking(
+                LocalDateTime.of(
+                        2026, 8, 10, 0, 0),
+                LocalDateTime.of(
+                        2026, 8, 15, 0, 0),
+                PageRequest.of(0, 10));
+
+        assertEquals(2, result.size());
+
+        CustomerSalesRankingProjection first = result.get(0);
+
+        assertEquals(
+                firstUser.getId(),
+                first.getUserId());
+
+        assertEquals(
+                "customer-sales-ranking-user-1",
+                first.getUsername());
+
+        assertEquals(
+                2,
+                first.getOrderCount());
+
+        assertEquals(
+                5,
+                first.getQuantity());
+
+        assertEquals(
+                5000,
+                first.getSalesAmount());
+
+        CustomerSalesRankingProjection second = result.get(1);
+
+        assertEquals(
+                secondUser.getId(),
+                second.getUserId());
+
+        assertEquals(
+                "customer-sales-ranking-user-2",
+                second.getUsername());
+
+        assertEquals(
+                1,
+                second.getOrderCount());
+
+        assertEquals(
+                3,
+                second.getQuantity());
+
+        assertEquals(
+                3000,
+                second.getSalesAmount());
     }
 
     private Order createOrder(

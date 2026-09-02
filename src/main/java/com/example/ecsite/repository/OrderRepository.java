@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
 import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
 
@@ -172,6 +173,30 @@ public interface OrderRepository
             ORDER BY SUM(i.subtotal) DESC
             """)
     List<ProductSalesRankingProjection> findProductSalesRanking(
+            @Param("from") LocalDateTime from,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            Pageable pageable);
+
+    @Query("""
+            SELECT
+                u.id AS userId,
+                u.username AS username,
+                COUNT(DISTINCT o.id) AS orderCount,
+                SUM(i.quantity) AS quantity,
+                SUM(i.subtotal) AS salesAmount
+            FROM User u, Order o
+            JOIN o.items i
+            WHERE u.id = o.userId
+              AND o.status IN (
+                com.example.ecsite.entity.OrderStatus.PAID,
+                com.example.ecsite.entity.OrderStatus.SHIPPED
+            )
+              AND o.orderedAt >= :from
+              AND o.orderedAt < :toExclusive
+            GROUP BY u.id, u.username
+            ORDER BY SUM(i.subtotal) DESC, u.id ASC
+            """)
+    List<CustomerSalesRankingProjection> findCustomerSalesRanking(
             @Param("from") LocalDateTime from,
             @Param("toExclusive") LocalDateTime toExclusive,
             Pageable pageable);

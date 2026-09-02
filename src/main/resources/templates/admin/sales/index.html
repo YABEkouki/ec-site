@@ -327,6 +327,44 @@
             </table>
         </section>
 
+        <section th:if="${customerSalesRanking != null}">
+            <h2>顧客別売上ランキング</h2>
+
+            <p>
+                購入金額の高い顧客を上位10件表示します。
+            </p>
+
+            <p th:if="${#lists.isEmpty(customerSalesRanking)}">
+                対象期間に売上対象の顧客はいません。
+            </p>
+
+            <table th:unless="${#lists.isEmpty(customerSalesRanking)}">
+                <thead>
+                    <tr>
+                        <th>順位</th>
+                        <th>ユーザーID</th>
+                        <th>ユーザー名</th>
+                        <th>注文件数</th>
+                        <th>購入商品数</th>
+                        <th>購入金額</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="ranking, status : ${customerSalesRanking}">
+                        <td th:text="${status.count}">1</td>
+                        <td th:text="${ranking.userId()}">1</td>
+                        <td th:text="${ranking.username()}">user</td>
+                        <td th:text="${ranking.orderCount()}">0</td>
+                        <td th:text="${ranking.quantity()}">0</td>
+                        <td>
+                            <span th:text="${#numbers.formatInteger(ranking.salesAmount(), 1, 'COMMA')}">0</span>
+                            円
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
     </main>
 
 </body>
