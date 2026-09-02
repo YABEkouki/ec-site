@@ -72,6 +72,8 @@
                 現在在庫
             </label>
 
+            <input type="hidden" th:field="*{stock}">
+
             <p>
                 <strong th:text="${product.stock}"></strong>
                 個
