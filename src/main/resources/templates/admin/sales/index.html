@@ -276,6 +276,57 @@
             </table>
         </section>
 
+        <section th:if="${productSalesRanking != null}">
+            <h2>商品別売上ランキング</h2>
+
+            <p>
+                売上金額の高い商品を上位10件表示します。
+            </p>
+
+            <p th:if="${#lists.isEmpty(productSalesRanking)}">
+                対象期間に売上対象の商品はありません。
+            </p>
+
+            <table th:unless="${#lists.isEmpty(productSalesRanking)}">
+                <thead>
+                    <tr>
+                        <th>順位</th>
+                        <th>商品名</th>
+                        <th>販売数量</th>
+                        <th>注文件数</th>
+                        <th>売上</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr th:each="ranking, status : ${productSalesRanking}">
+                        <td th:text="${status.count}">
+                            1
+                        </td>
+
+                        <td th:text="${ranking.productName()}">
+                            商品名
+                        </td>
+
+                        <td th:text="${ranking.quantity()}">
+                            0
+                        </td>
+
+                        <td th:text="${ranking.orderCount()}">
+                            0
+                        </td>
+
+                        <td>
+                            <span th:text="${#numbers.formatInteger(ranking.salesAmount(), 1, 'COMMA')}">
+                                0
+                            </span>
+                            円
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
     </main>
 
 </body>

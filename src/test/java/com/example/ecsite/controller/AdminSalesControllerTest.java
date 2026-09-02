@@ -16,6 +16,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.ui.Model;
 
 import com.example.ecsite.dto.DailySalesSummary;
+import com.example.ecsite.dto.ProductSalesRanking;
 import com.example.ecsite.dto.SalesDashboardSummary;
 import com.example.ecsite.dto.SalesMetricComparison;
 import com.example.ecsite.dto.SalesSummary;
@@ -101,6 +102,69 @@ class AdminSalesControllerTest {
                 .addAttribute(
                         "dailySales",
                         dailySales);
+    }
+
+    @Test
+    void indexAddsProductSalesRankingToModel() {
+
+        SalesDashboardForm form = new SalesDashboardForm();
+
+        SalesSummary summary = new SalesSummary(
+                10,
+                7,
+                25_000,
+                2,
+                3,
+                4,
+                1);
+
+        SalesDashboardSummary dashboard = new SalesDashboardSummary(
+                summary,
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 31),
+                null,
+                null,
+                null);
+
+        List<ProductSalesRanking> productSalesRanking = List.of(
+                new ProductSalesRanking(
+                        10L,
+                        "商品A",
+                        8,
+                        3,
+                        12_000),
+                new ProductSalesRanking(
+                        20L,
+                        "商品B",
+                        5,
+                        2,
+                        8_000));
+
+        when(salesDashboardService.getDashboardSummary(form))
+                .thenReturn(dashboard);
+
+        when(salesDashboardService.getDailySales(form))
+                .thenReturn(List.of());
+
+        when(salesDashboardService.getProductSalesRanking(form))
+                .thenReturn(productSalesRanking);
+
+        String view = controller.index(
+                form,
+                true,
+                model);
+
+        assertEquals(
+                "admin/sales/index",
+                view);
+
+        verify(salesDashboardService)
+                .getProductSalesRanking(form);
+
+        verify(model)
+                .addAttribute(
+                        "productSalesRanking",
+                        productSalesRanking);
     }
 
     @Test

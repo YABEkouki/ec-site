@@ -14,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.repository.projection.DailySalesProjection;
+import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
 
 import jakarta.persistence.LockModeType;
 
@@ -151,5 +152,28 @@ public interface OrderRepository
     List<DailySalesProjection> findDailySales(
             @Param("from") LocalDateTime from,
             @Param("toExclusive") LocalDateTime toExclusive);
+
+    @Query("""
+            SELECT
+                i.productId AS productId,
+                i.productName AS productName,
+                SUM(i.quantity) AS quantity,
+                COUNT(DISTINCT o.id) AS orderCount,
+                SUM(i.subtotal) AS salesAmount
+            FROM Order o
+            JOIN o.items i
+            WHERE o.status IN (
+                com.example.ecsite.entity.OrderStatus.PAID,
+                com.example.ecsite.entity.OrderStatus.SHIPPED
+            )
+              AND o.orderedAt >= :from
+              AND o.orderedAt < :toExclusive
+            GROUP BY i.productId, i.productName
+            ORDER BY SUM(i.subtotal) DESC
+            """)
+    List<ProductSalesRankingProjection> findProductSalesRanking(
+            @Param("from") LocalDateTime from,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            Pageable pageable);
 
 }

@@ -10,9 +10,11 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.example.ecsite.dto.DailySalesSummary;
+import com.example.ecsite.dto.ProductSalesRanking;
 import com.example.ecsite.dto.SalesDashboardSummary;
 import com.example.ecsite.dto.SalesMetricComparison;
 import com.example.ecsite.dto.SalesSummary;
@@ -72,6 +74,25 @@ public class SalesDashboardService {
         return getDailySales(
                 range.from(),
                 range.toExclusive());
+    }
+
+    public List<ProductSalesRanking> getProductSalesRanking(
+            SalesDashboardForm form) {
+
+        DateTimeRange range = resolveDateTimeRange(form);
+
+        return orderRepository.findProductSalesRanking(
+                range.from(),
+                range.toExclusive(),
+                PageRequest.of(0, 10))
+                .stream()
+                .map(projection -> new ProductSalesRanking(
+                        projection.getProductId(),
+                        projection.getProductName(),
+                        projection.getQuantity(),
+                        projection.getOrderCount(),
+                        projection.getSalesAmount()))
+                .toList();
     }
 
     private SalesSummary getSummary(
