@@ -18,14 +18,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.data.domain.PageRequest;
 
 import com.example.ecsite.dto.DailySalesSummary;
+import com.example.ecsite.dto.ProductSalesRanking;
 import com.example.ecsite.dto.SalesDashboardSummary;
 import com.example.ecsite.dto.SalesSummary;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.form.SalesDashboardForm;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.DailySalesProjection;
+import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
 
 class SalesDashboardServiceTest {
 
@@ -138,6 +141,67 @@ class SalesDashboardServiceTest {
                         3,
                         8000),
                 result.get(1));
+    }
+
+    @Test
+    void getProductSalesRankingConvertsProjectionToDto() {
+
+        SalesDashboardForm form = new SalesDashboardForm();
+        form.setFrom(LocalDate.of(2026, 8, 1));
+        form.setTo(LocalDate.of(2026, 8, 31));
+
+        LocalDateTime from = LocalDateTime.of(2026, 8, 1, 0, 0);
+
+        LocalDateTime toExclusive = LocalDateTime.of(2026, 9, 1, 0, 0);
+
+        ProductSalesRankingProjection first = mock(ProductSalesRankingProjection.class);
+
+        when(first.getProductId()).thenReturn(10L);
+        when(first.getProductName()).thenReturn("商品A");
+        when(first.getQuantity()).thenReturn(8L);
+        when(first.getOrderCount()).thenReturn(3L);
+        when(first.getSalesAmount()).thenReturn(12000L);
+
+        ProductSalesRankingProjection second = mock(ProductSalesRankingProjection.class);
+
+        when(second.getProductId()).thenReturn(20L);
+        when(second.getProductName()).thenReturn("商品B");
+        when(second.getQuantity()).thenReturn(5L);
+        when(second.getOrderCount()).thenReturn(2L);
+        when(second.getSalesAmount()).thenReturn(8000L);
+
+        when(orderRepository.findProductSalesRanking(
+                from,
+                toExclusive,
+                PageRequest.of(0, 10)))
+                .thenReturn(List.of(first, second));
+
+        List<ProductSalesRanking> result = salesDashboardService.getProductSalesRanking(form);
+
+        assertEquals(2, result.size());
+
+        assertEquals(
+                new ProductSalesRanking(
+                        10L,
+                        "商品A",
+                        8,
+                        3,
+                        12000),
+                result.get(0));
+
+        assertEquals(
+                new ProductSalesRanking(
+                        20L,
+                        "商品B",
+                        5,
+                        2,
+                        8000),
+                result.get(1));
+
+        verify(orderRepository).findProductSalesRanking(
+                from,
+                toExclusive,
+                PageRequest.of(0, 10));
     }
 
     @Test

@@ -13,10 +13,14 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
+import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.repository.projection.DailySalesProjection;
+import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
 
 import jakarta.persistence.EntityManager;
 
@@ -360,6 +364,81 @@ class OrderRepositoryTest {
         assertEquals(3000, secondDay.getSalesAmount());
     }
 
+    @Test
+    void findProductSalesRankingAggregatesOnlyPaidAndShippedOrders() {
+
+        User user = createUser("product-sales-ranking-user");
+
+        Product product = createProduct(
+                "現在の商品名",
+                9999);
+
+        Order firstPaidOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 10, 10, 0),
+                product,
+                "注文時の商品名",
+                1000,
+                2);
+
+        Order secondPaidOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0),
+                product,
+                "注文時の商品名",
+                1000,
+                3);
+
+        Order shippedOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 12, 10, 0),
+                product,
+                "注文時の商品名",
+                1200,
+                1);
+
+        Order orderedOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 13, 10, 0),
+                product,
+                "注文時の商品名",
+                1000,
+                10);
+
+        Order cancelledOrder = createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 14, 10, 0),
+                product,
+                "注文時の商品名",
+                1000,
+                20);
+
+        firstPaidOrder.markAsPaid();
+        secondPaidOrder.markAsPaid();
+
+        shippedOrder.markAsPaid();
+        shippedOrder.markAsShipped();
+
+        cancelledOrder.cancel();
+
+        entityManager.flush();
+
+        List<ProductSalesRankingProjection> result = orderRepository.findProductSalesRanking(
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 15, 0, 0),
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.size());
+
+        ProductSalesRankingProjection ranking = result.get(0);
+
+        assertEquals(product.getId(), ranking.getProductId());
+        assertEquals("注文時の商品名", ranking.getProductName());
+        assertEquals(6, ranking.getQuantity());
+        assertEquals(3, ranking.getOrderCount());
+        assertEquals(6200, ranking.getSalesAmount());
+    }
+
     private Order createOrder(
             Long userId,
             LocalDateTime orderedAt) {
@@ -374,6 +453,54 @@ class OrderRepositoryTest {
 
         Order order = new Order(userId, totalAmount);
         order.setOrderedAt(orderedAt);
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private Product createProduct(
+            String name,
+            int price) {
+
+        Category category = new Category(
+                "ranking-category-" + System.nanoTime());
+
+        entityManager.persist(category);
+
+        Product product = new Product();
+        product.setName(name);
+        product.setPrice(price);
+        product.setStock(100);
+        product.setCategory(category);
+
+        entityManager.persist(product);
+        entityManager.flush();
+
+        return product;
+    }
+
+    private Order createOrderWithItem(
+            Long userId,
+            LocalDateTime orderedAt,
+            Product product,
+            String productName,
+            int price,
+            int quantity) {
+
+        OrderItem item = new OrderItem(
+                product.getId(),
+                productName,
+                price,
+                quantity);
+
+        Order order = new Order(
+                userId,
+                item.getSubtotal());
+
+        order.setOrderedAt(orderedAt);
+        order.addItem(item);
 
         Order saved = orderRepository.save(order);
         entityManager.flush();
