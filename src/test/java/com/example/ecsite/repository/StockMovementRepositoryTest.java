@@ -12,10 +12,12 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
+import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
 import com.example.ecsite.entity.StockMovementType;
+import com.example.ecsite.entity.User;
 
 import jakarta.persistence.EntityManager;
 
@@ -23,226 +25,227 @@ import jakarta.persistence.EntityManager;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class StockMovementRepositoryTest {
 
-        private static final LocalDateTime SEARCH_FROM = LocalDateTime.of(1970, 1, 1, 0, 0);
+    private static final LocalDateTime SEARCH_FROM = LocalDateTime.of(1970, 1, 1, 0, 0);
 
-        private static final LocalDateTime SEARCH_TO = LocalDateTime.of(9999, 12, 31, 0, 0);
+    private static final LocalDateTime SEARCH_TO = LocalDateTime.of(9999, 12, 31, 0, 0);
 
-        @Autowired
-        private StockMovementRepository stockMovementRepository;
+    @Autowired
+    private StockMovementRepository stockMovementRepository;
 
-        @Autowired
-        private ProductRepository productRepository;
+    @Autowired
+    private ProductRepository productRepository;
 
-        @Autowired
-        private UserRepository userRepository;
+    @Autowired
+    private CategoryRepository categoryRepository;
 
-        @Autowired
-        private EntityManager entityManager;
+    @Autowired
+    private UserRepository userRepository;
 
-        @Autowired
-        private OrderRepository orderRepository;
+    @Autowired
+    private EntityManager entityManager;
 
-        @Test
-        void findByProductIdReturnsMovementsNewestFirst() {
+    @Autowired
+    private OrderRepository orderRepository;
 
-                Product product = productRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+    @Test
+    void findByProductIdReturnsMovementsNewestFirst() {
 
-                var user = userRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+        Product product = createProduct("stock-movement-test-product");
+        User user = createTestUser();
 
-                int stockBefore = product.getStock();
+        int stockBefore = product.getStock();
 
-                StockMovement first = StockMovement.createAdminAdjustment(
-                                product,
-                                stockBefore,
-                                stockBefore + 5,
-                                5,
-                                user.getId(),
-                                user.getUsername(),
-                                "1回目");
+        StockMovement first = StockMovement.createAdminAdjustment(
+                product,
+                stockBefore,
+                stockBefore + 5,
+                5,
+                user.getId(),
+                user.getUsername(),
+                "1回目");
 
-                stockMovementRepository.save(first);
-                entityManager.flush();
+        stockMovementRepository.save(first);
+        entityManager.flush();
 
-                StockMovement second = StockMovement.createAdminAdjustment(
-                                product,
-                                stockBefore + 5,
-                                stockBefore + 8,
-                                3,
-                                user.getId(),
-                                user.getUsername(),
-                                "2回目");
+        StockMovement second = StockMovement.createAdminAdjustment(
+                product,
+                stockBefore + 5,
+                stockBefore + 8,
+                3,
+                user.getId(),
+                user.getUsername(),
+                "2回目");
 
-                stockMovementRepository.save(second);
-                entityManager.flush();
+        stockMovementRepository.save(second);
+        entityManager.flush();
 
-                Page<StockMovement> result = stockMovementRepository
-                                .findByProductIdOrderByChangedAtDescIdDesc(
-                                                product.getId(),
-                                                PageRequest.of(0, 20));
+        Page<StockMovement> result = stockMovementRepository
+                .findByProductIdOrderByChangedAtDescIdDesc(
+                        product.getId(),
+                        PageRequest.of(0, 20));
 
-                assertEquals(2, result.getTotalElements());
+        assertEquals(2, result.getTotalElements());
 
-                List<StockMovement> movements = result.getContent();
+        List<StockMovement> movements = result.getContent();
 
-                assertEquals("2回目", movements.get(0).getReason());
-                assertEquals("1回目", movements.get(1).getReason());
-        }
+        assertEquals("2回目", movements.get(0).getReason());
+        assertEquals("1回目", movements.get(1).getReason());
+    }
 
-        @Test
-        void searchFiltersByChangedByUsername() {
+    @Test
+    void searchFiltersByChangedByUsername() {
 
-                Product product = productRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+        Product product = createProduct("stock-movement-test-product");
+        User user = createTestUser();
+        int stockBefore = product.getStock();
 
-                var user = userRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+        stockMovementRepository.save(
+                StockMovement.createAdminAdjustment(
+                        product,
+                        stockBefore,
+                        stockBefore + 5,
+                        5,
+                        user.getId(),
+                        user.getUsername(),
+                        "検索テスト"));
 
-                int stockBefore = product.getStock();
+        entityManager.flush();
 
-                stockMovementRepository.save(
-                                StockMovement.createAdminAdjustment(
-                                                product,
-                                                stockBefore,
-                                                stockBefore + 5,
-                                                5,
-                                                user.getId(),
-                                                user.getUsername(),
-                                                "検索テスト"));
+        Page<StockMovement> result = stockMovementRepository.searchByProduct(
+                product.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                user.getUsername(),
+                null,
+                PageRequest.of(0, 20));
 
-                entityManager.flush();
+        assertEquals(1, result.getTotalElements());
+        assertEquals(
+                user.getUsername(),
+                result.getContent()
+                        .get(0)
+                        .getChangedByUsername());
 
-                Page<StockMovement> result = stockMovementRepository.searchByProduct(
-                                product.getId(),
-                                SEARCH_FROM,
-                                SEARCH_TO,
-                                user.getUsername(),
-                                null,
-                                PageRequest.of(0, 20));
+        Page<StockMovement> notFound = stockMovementRepository.searchByProduct(
+                product.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                "存在しないユーザー名",
+                null,
+                PageRequest.of(0, 20));
 
-                assertEquals(1, result.getTotalElements());
-                assertEquals(
-                                user.getUsername(),
-                                result.getContent()
-                                                .get(0)
-                                                .getChangedByUsername());
+        assertEquals(0, notFound.getTotalElements());
+    }
 
-                Page<StockMovement> notFound = stockMovementRepository.searchByProduct(
-                                product.getId(),
-                                SEARCH_FROM,
-                                SEARCH_TO,
-                                "存在しないユーザー名",
-                                null,
-                                PageRequest.of(0, 20));
+    @Test
+    void searchWithNoConditionsReturnsProductMovements() {
 
-                assertEquals(0, notFound.getTotalElements());
-        }
+        Product product = createProduct("stock-movement-test-product");
+        User user = createTestUser();
+        int stockBefore = product.getStock();
 
-        @Test
-        void searchWithNoConditionsReturnsProductMovements() {
+        stockMovementRepository.save(
+                StockMovement.createAdminAdjustment(
+                        product,
+                        stockBefore,
+                        stockBefore + 2,
+                        2,
+                        user.getId(),
+                        user.getUsername(),
+                        "条件なし検索"));
 
-                Product product = productRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+        entityManager.flush();
 
-                var user = userRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+        Page<StockMovement> result = stockMovementRepository.searchByProduct(
+                product.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                "",
+                null,
+                PageRequest.of(0, 20));
 
-                int stockBefore = product.getStock();
+        assertEquals(1, result.getTotalElements());
+    }
 
-                stockMovementRepository.save(
-                                StockMovement.createAdminAdjustment(
-                                                product,
-                                                stockBefore,
-                                                stockBefore + 2,
-                                                2,
-                                                user.getId(),
-                                                user.getUsername(),
-                                                "条件なし検索"));
+    @Test
+    void searchByProductFiltersByMovementType() {
 
-                entityManager.flush();
+        Product product = createProduct("stock-movement-test-product");
+        User user = createTestUser();
+        int stockBefore = product.getStock();
 
-                Page<StockMovement> result = stockMovementRepository.searchByProduct(
-                                product.getId(),
-                                SEARCH_FROM,
-                                SEARCH_TO,
-                                "",
-                                null,
-                                PageRequest.of(0, 20));
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
 
-                assertEquals(1, result.getTotalElements());
-        }
+        stockMovementRepository.save(
+                StockMovement.createAdminAdjustment(
+                        product,
+                        stockBefore,
+                        stockBefore + 5,
+                        5,
+                        user.getId(),
+                        user.getUsername(),
+                        "管理者調整"));
 
-        @Test
-        void searchByProductFiltersByMovementType() {
+        stockMovementRepository.save(
+                StockMovement.createOrderPlacement(
+                        product,
+                        stockBefore + 5,
+                        stockBefore + 3,
+                        -2,
+                        order.getId()));
 
-                Product product = productRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+        entityManager.flush();
 
-                var user = userRepository.findAll()
-                                .stream()
-                                .findFirst()
-                                .orElseThrow();
+        Page<StockMovement> result = stockMovementRepository.searchByProduct(
+                product.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                "",
+                StockMovementType.ORDER_PLACEMENT,
+                PageRequest.of(0, 20));
 
-                int stockBefore = product.getStock();
+        assertEquals(1, result.getTotalElements());
 
-                Order order = orderRepository.save(
-                                new Order(user.getId(), 1000));
+        assertEquals(
+                StockMovementType.ORDER_PLACEMENT,
+                result.getContent()
+                        .get(0)
+                        .getMovementType());
 
-                stockMovementRepository.save(
-                                StockMovement.createAdminAdjustment(
-                                                product,
-                                                stockBefore,
-                                                stockBefore + 5,
-                                                5,
-                                                user.getId(),
-                                                user.getUsername(),
-                                                "管理者調整"));
+        assertEquals(
+                order.getId(),
+                result.getContent()
+                        .get(0)
+                        .getOrderId());
+    }
 
-                stockMovementRepository.save(
-                                StockMovement.createOrderPlacement(
-                                                product,
-                                                stockBefore + 5,
-                                                stockBefore + 3,
-                                                -2,
-                                                order.getId()));
+    private User createUser(String username) {
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("password");
+        user.setRole("ROLE_ADMIN");
+        user.setEnabled(true);
 
-                entityManager.flush();
+        return userRepository.save(user);
+    }
 
-                Page<StockMovement> result = stockMovementRepository.searchByProduct(
-                                product.getId(),
-                                SEARCH_FROM,
-                                SEARCH_TO,
-                                "",
-                                StockMovementType.ORDER_PLACEMENT,
-                                PageRequest.of(0, 20));
+    private Product createProduct(String name) {
+        Category category = categoryRepository.save(
+                new Category(name + "-category"));
 
-                assertEquals(1, result.getTotalElements());
+        Product product = new Product();
+        product.setName(name);
+        product.setPrice(1000);
+        product.setStock(10);
+        product.setDescription("Repository test product");
+        product.setCategory(category);
+        product.setActive(true);
 
-                assertEquals(
-                                StockMovementType.ORDER_PLACEMENT,
-                                result.getContent()
-                                                .get(0)
-                                                .getMovementType());
+        return productRepository.save(product);
+    }
 
-                assertEquals(
-                                order.getId(),
-                                result.getContent()
-                                                .get(0)
-                                                .getOrderId());
-        }
+    private User createTestUser() {
+        return createUser("stock-movement-test-user");
+    }
 }
