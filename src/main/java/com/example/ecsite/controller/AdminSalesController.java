@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import com.example.ecsite.dto.CustomerSalesRanking;
 import com.example.ecsite.dto.DailySalesSummary;
 import com.example.ecsite.dto.ProductSalesRanking;
 import com.example.ecsite.dto.SalesDashboardSummary;
@@ -49,6 +50,9 @@ public class AdminSalesController {
             List<ProductSalesRanking> productSalesRanking = salesDashboardService
                     .getProductSalesRanking(form);
 
+            List<CustomerSalesRanking> customerSalesRanking = salesDashboardService
+                    .getCustomerSalesRanking(form);
+
             model.addAttribute(
                     "summary",
                     dashboard.current());
@@ -64,6 +68,10 @@ public class AdminSalesController {
             model.addAttribute(
                     "productSalesRanking",
                     productSalesRanking);
+
+            model.addAttribute(
+                    "customerSalesRanking",
+                    customerSalesRanking);
 
         } catch (IllegalArgumentException e) {
 

@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.ui.Model;
 
+import com.example.ecsite.dto.CustomerSalesRanking;
 import com.example.ecsite.dto.DailySalesSummary;
 import com.example.ecsite.dto.ProductSalesRanking;
 import com.example.ecsite.dto.SalesDashboardSummary;
@@ -165,6 +166,72 @@ class AdminSalesControllerTest {
                 .addAttribute(
                         "productSalesRanking",
                         productSalesRanking);
+    }
+
+    @Test
+    void indexAddsCustomerSalesRankingToModel() {
+
+        SalesDashboardForm form = new SalesDashboardForm();
+
+        SalesSummary summary = new SalesSummary(
+                10,
+                7,
+                25_000,
+                2,
+                3,
+                4,
+                1);
+
+        SalesDashboardSummary dashboard = new SalesDashboardSummary(
+                summary,
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 31),
+                null,
+                null,
+                null);
+
+        List<CustomerSalesRanking> customerSalesRanking = List.of(
+                new CustomerSalesRanking(
+                        10L,
+                        "user-a",
+                        3,
+                        8,
+                        12_000),
+                new CustomerSalesRanking(
+                        20L,
+                        "user-b",
+                        2,
+                        5,
+                        8_000));
+
+        when(salesDashboardService.getDashboardSummary(form))
+                .thenReturn(dashboard);
+
+        when(salesDashboardService.getDailySales(form))
+                .thenReturn(List.of());
+
+        when(salesDashboardService.getProductSalesRanking(form))
+                .thenReturn(List.of());
+
+        when(salesDashboardService.getCustomerSalesRanking(form))
+                .thenReturn(customerSalesRanking);
+
+        String view = controller.index(
+                form,
+                true,
+                model);
+
+        assertEquals(
+                "admin/sales/index",
+                view);
+
+        verify(salesDashboardService)
+                .getCustomerSalesRanking(form);
+
+        verify(model)
+                .addAttribute(
+                        "customerSalesRanking",
+                        customerSalesRanking);
     }
 
     @Test

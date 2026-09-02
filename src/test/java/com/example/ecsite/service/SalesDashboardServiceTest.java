@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.data.domain.PageRequest;
 
+import com.example.ecsite.dto.CustomerSalesRanking;
 import com.example.ecsite.dto.DailySalesSummary;
 import com.example.ecsite.dto.ProductSalesRanking;
 import com.example.ecsite.dto.SalesDashboardSummary;
@@ -27,6 +28,7 @@ import com.example.ecsite.dto.SalesSummary;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.form.SalesDashboardForm;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
 import com.example.ecsite.repository.projection.ProductSalesRankingProjection;
 
@@ -202,6 +204,67 @@ class SalesDashboardServiceTest {
                 from,
                 toExclusive,
                 PageRequest.of(0, 10));
+    }
+
+    @Test
+    void getCustomerSalesRankingConvertsProjectionToDto() {
+
+        SalesDashboardForm form = new SalesDashboardForm();
+        form.setFrom(LocalDate.of(2026, 8, 1));
+        form.setTo(LocalDate.of(2026, 8, 31));
+
+        LocalDateTime from = LocalDateTime.of(2026, 8, 1, 0, 0);
+
+        LocalDateTime toExclusive = LocalDateTime.of(2026, 9, 1, 0, 0);
+
+        CustomerSalesRankingProjection first = mock(CustomerSalesRankingProjection.class);
+
+        when(first.getUserId()).thenReturn(10L);
+        when(first.getUsername()).thenReturn("user-a");
+        when(first.getOrderCount()).thenReturn(3L);
+        when(first.getQuantity()).thenReturn(8L);
+        when(first.getSalesAmount()).thenReturn(12000L);
+
+        CustomerSalesRankingProjection second = mock(CustomerSalesRankingProjection.class);
+
+        when(second.getUserId()).thenReturn(20L);
+        when(second.getUsername()).thenReturn("user-b");
+        when(second.getOrderCount()).thenReturn(2L);
+        when(second.getQuantity()).thenReturn(5L);
+        when(second.getSalesAmount()).thenReturn(8000L);
+
+        when(orderRepository.findCustomerSalesRanking(
+                from,
+                toExclusive,
+                PageRequest.of(0, 10)))
+                .thenReturn(List.of(first, second));
+
+        List<CustomerSalesRanking> result = salesDashboardService
+                .getCustomerSalesRanking(form);
+
+        assertEquals(2, result.size());
+
+        CustomerSalesRanking firstRanking = result.get(0);
+
+        assertEquals(10L, firstRanking.userId());
+        assertEquals("user-a", firstRanking.username());
+        assertEquals(3L, firstRanking.orderCount());
+        assertEquals(8L, firstRanking.quantity());
+        assertEquals(12000L, firstRanking.salesAmount());
+
+        CustomerSalesRanking secondRanking = result.get(1);
+
+        assertEquals(20L, secondRanking.userId());
+        assertEquals("user-b", secondRanking.username());
+        assertEquals(2L, secondRanking.orderCount());
+        assertEquals(5L, secondRanking.quantity());
+        assertEquals(8000L, secondRanking.salesAmount());
+
+        verify(orderRepository)
+                .findCustomerSalesRanking(
+                        from,
+                        toExclusive,
+                        PageRequest.of(0, 10));
     }
 
     @Test
