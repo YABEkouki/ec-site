@@ -15,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.ui.Model;
 
+import com.example.ecsite.dto.CategorySalesRanking;
 import com.example.ecsite.dto.CustomerSalesRanking;
 import com.example.ecsite.dto.DailySalesSummary;
 import com.example.ecsite.dto.ProductSalesRanking;
@@ -232,6 +233,75 @@ class AdminSalesControllerTest {
                 .addAttribute(
                         "customerSalesRanking",
                         customerSalesRanking);
+    }
+
+    @Test
+    void indexAddsCategorySalesRankingToModel() {
+
+        SalesDashboardForm form = new SalesDashboardForm();
+
+        SalesSummary summary = new SalesSummary(
+                10,
+                7,
+                25_000,
+                2,
+                3,
+                4,
+                1);
+
+        SalesDashboardSummary dashboard = new SalesDashboardSummary(
+                summary,
+                LocalDate.of(2026, 7, 1),
+                LocalDate.of(2026, 7, 31),
+                null,
+                null,
+                null);
+
+        List<CategorySalesRanking> categorySalesRanking = List.of(
+                new CategorySalesRanking(
+                        10L,
+                        "食品",
+                        8,
+                        3,
+                        12_000),
+                new CategorySalesRanking(
+                        20L,
+                        "日用品",
+                        5,
+                        2,
+                        8_000));
+
+        when(salesDashboardService.getDashboardSummary(form))
+                .thenReturn(dashboard);
+
+        when(salesDashboardService.getDailySales(form))
+                .thenReturn(List.of());
+
+        when(salesDashboardService.getProductSalesRanking(form))
+                .thenReturn(List.of());
+
+        when(salesDashboardService.getCustomerSalesRanking(form))
+                .thenReturn(List.of());
+
+        when(salesDashboardService.getCategorySalesRanking(form))
+                .thenReturn(categorySalesRanking);
+
+        String view = controller.index(
+                form,
+                true,
+                model);
+
+        assertEquals(
+                "admin/sales/index",
+                view);
+
+        verify(salesDashboardService)
+                .getCategorySalesRanking(form);
+
+        verify(model)
+                .addAttribute(
+                        "categorySalesRanking",
+                        categorySalesRanking);
     }
 
     @Test
