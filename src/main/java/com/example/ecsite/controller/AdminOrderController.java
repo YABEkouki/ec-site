@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,8 +20,10 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.AdminOrderSearchForm;
+import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderStatusHistoryService;
 
 @Controller
 @RequestMapping("/admin/orders")
@@ -28,13 +31,16 @@ public class AdminOrderController {
 
     private final OrderService orderService;
     private final OrderCsvService orderCsvService;
+    private final OrderStatusHistoryService orderStatusHistoryService;
 
     public AdminOrderController(
             OrderService orderService,
-            OrderCsvService orderCsvService) {
+            OrderCsvService orderCsvService,
+            OrderStatusHistoryService orderStatusHistoryService) {
 
         this.orderService = orderService;
         this.orderCsvService = orderCsvService;
+        this.orderStatusHistoryService = orderStatusHistoryService;
     }
 
     @GetMapping
@@ -76,16 +82,24 @@ public class AdminOrderController {
                 "order",
                 orderService.findOrderWithItems(id));
 
+        model.addAttribute(
+                "statusHistories",
+                orderStatusHistoryService.findByOrderId(id));
+
         return "admin/orders/detail";
     }
 
     @PostMapping("/{id}/pay")
     public String markAsPaid(
             @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         try {
-            orderService.markAsPaid(id);
+            orderService.markAsPaid(
+                    id,
+                    loginUser.getId(),
+                    loginUser.getUsername());
 
             redirectAttributes.addFlashAttribute(
                     "successMessage",
@@ -103,10 +117,14 @@ public class AdminOrderController {
     @PostMapping("/{id}/ship")
     public String markAsShipped(
             @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         try {
-            orderService.markAsShipped(id);
+            orderService.markAsShipped(
+                    id,
+                    loginUser.getId(),
+                    loginUser.getUsername());
 
             redirectAttributes.addFlashAttribute(
                     "successMessage",
@@ -124,10 +142,14 @@ public class AdminOrderController {
     @PostMapping("/{id}/cancel")
     public String cancel(
             @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         try {
-            orderService.cancelOrder(id);
+            orderService.cancelOrder(
+                    id,
+                    loginUser.getId(),
+                    loginUser.getUsername());
 
             redirectAttributes.addFlashAttribute(
                     "successMessage",

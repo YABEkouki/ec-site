@@ -18,74 +18,74 @@ import com.example.ecsite.service.OrderService;
 @Controller
 public class OrderController {
 
-        private final OrderService orderService;
+    private final OrderService orderService;
 
-        public OrderController(OrderService orderService) {
-                this.orderService = orderService;
+    public OrderController(OrderService orderService) {
+        this.orderService = orderService;
+    }
+
+    @GetMapping("/orders")
+    public String list(
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Model model) {
+
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.clamp(size, 1, 100);
+
+        Page<Order> orderPage = orderService.findOrdersByUserId(
+                loginUser.getId(),
+                safePage,
+                safeSize);
+
+        model.addAttribute(
+                "orders", orderPage.getContent());
+
+        model.addAttribute(
+                "orderPage", orderPage);
+
+        return "orders/list";
+    }
+
+    @GetMapping("/orders/{id}")
+    public String detail(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model) {
+
+        model.addAttribute(
+                "order",
+                orderService.findOrderByIdAndUserId(
+                        id,
+                        loginUser.getId()));
+
+        return "orders/detail";
+    }
+
+    @PostMapping("/orders/{id}/cancel")
+    public String cancel(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        try {
+            orderService.cancelOrderForUser(
+                    id,
+                    loginUser.getId(),
+                    loginUser.getUsername());
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "注文をキャンセルしました。");
+
+        } catch (InvalidOrderStatusException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    e.getMessage());
         }
 
-        @GetMapping("/orders")
-        public String list(
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        @RequestParam(defaultValue = "0") int page,
-                        @RequestParam(defaultValue = "10") int size,
-                        Model model) {
+        return "redirect:/orders/" + id;
+    }
 
-                int safePage = Math.max(page, 0);
-                int safeSize = Math.clamp(size, 1, 100);
-
-                Page<Order> orderPage = orderService.findOrdersByUserId(
-                                loginUser.getId(),
-                                safePage,
-                                safeSize);
-
-                model.addAttribute(
-                                "orders", orderPage.getContent());
-
-                model.addAttribute(
-                                "orderPage", orderPage);
-
-                return "orders/list";
-        }
-
-        @GetMapping("/orders/{id}")
-        public String detail(
-                        @PathVariable Long id,
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        Model model) {
-
-                model.addAttribute(
-                                "order",
-                                orderService.findOrderByIdAndUserId(
-                                                id,
-                                                loginUser.getId()));
-
-                return "orders/detail";
-        }
-
-        @PostMapping("/orders/{id}/cancel")
-        public String cancel(
-                        @PathVariable Long id,
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        RedirectAttributes redirectAttributes) {
-
-                try {
-                        orderService.cancelOrderForUser(
-                                        id,
-                                        loginUser.getId());
-
-                        redirectAttributes.addFlashAttribute(
-                                        "successMessage",
-                                        "注文をキャンセルしました。");
-
-                } catch (InvalidOrderStatusException e) {
-
-                        redirectAttributes.addFlashAttribute(
-                                        "errorMessage",
-                                        e.getMessage());
-                }
-
-                return "redirect:/orders/" + id;
-        }
-        
 }

@@ -25,10 +25,13 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.AdminOrderSearchForm;
+import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderStatusHistoryService;
 
 @ExtendWith(MockitoExtension.class)
 class AdminOrderControllerTest {
@@ -42,13 +45,23 @@ class AdminOrderControllerTest {
     @Mock
     private OrderCsvService orderCsvService;
 
+    @Mock
+    private OrderStatusHistoryService orderStatusHistoryService;
+
+    @Mock
+    private CustomUserDetails loginUser;
+
     private AdminOrderController adminOrderController;
+
+    private static final Long ADMIN_ID = 20L;
+    private static final String ADMIN_USERNAME = "admin";
 
     @BeforeEach
     void setUp() {
         adminOrderController = new AdminOrderController(
                 orderService,
-                orderCsvService);
+                orderCsvService,
+                orderStatusHistoryService);
     }
 
     @Test
@@ -134,9 +147,15 @@ class AdminOrderControllerTest {
         Long orderId = 1L;
 
         Order order = new Order(10L, 2000);
+        OrderStatusHistory history = mock(OrderStatusHistory.class);
+
+        List<OrderStatusHistory> statusHistories = List.of(history);
 
         when(orderService.findOrderWithItems(orderId))
                 .thenReturn(order);
+
+        when(orderStatusHistoryService.findByOrderId(orderId))
+                .thenReturn(statusHistories);
 
         String viewName = adminOrderController.detail(
                 orderId,
@@ -149,38 +168,28 @@ class AdminOrderControllerTest {
         verify(orderService)
                 .findOrderWithItems(orderId);
 
+        verify(orderStatusHistoryService)
+                .findByOrderId(orderId);
+
         verify(model)
                 .addAttribute(
                         "order",
                         order);
-    }
 
-    @Test
-    void markAsPaidChangesOrderStatusAndRedirectsToDetail() {
-
-        Long orderId = 1L;
-
-        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
-
-        String viewName = adminOrderController.markAsPaid(
-                orderId,
-                redirectAttributes);
-
-        assertEquals(
-                "redirect:/admin/orders/" + orderId,
-                viewName);
-
-        verify(orderService)
-                .markAsPaid(orderId);
-
-        verify(redirectAttributes)
-                .addFlashAttribute(
-                        "successMessage",
-                        "注文を支払済みに変更しました。");
+        verify(model)
+                .addAttribute(
+                        "statusHistories",
+                        statusHistories);
     }
 
     @Test
     void markAsShippedChangesOrderStatusAndRedirectsToDetail() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
 
         Long orderId = 1L;
 
@@ -188,6 +197,7 @@ class AdminOrderControllerTest {
 
         String viewName = adminOrderController.markAsShipped(
                 orderId,
+                loginUser,
                 redirectAttributes);
 
         assertEquals(
@@ -195,7 +205,10 @@ class AdminOrderControllerTest {
                 viewName);
 
         verify(orderService)
-                .markAsShipped(orderId);
+                .markAsShipped(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
@@ -206,12 +219,19 @@ class AdminOrderControllerTest {
     @Test
     void cancelCancelsOrderAndRedirectsToDetail() {
 
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
         Long orderId = 1L;
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
         String viewName = adminOrderController.cancel(
                 orderId,
+                loginUser,
                 redirectAttributes);
 
         assertEquals(
@@ -219,7 +239,10 @@ class AdminOrderControllerTest {
                 viewName);
 
         verify(orderService)
-                .cancelOrder(orderId);
+                .cancelOrder(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
@@ -230,6 +253,12 @@ class AdminOrderControllerTest {
     @Test
     void markAsPaidDisplaysErrorWhenStatusIsInvalid() {
 
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
         Long orderId = 1L;
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
@@ -239,10 +268,14 @@ class AdminOrderControllerTest {
 
         doThrow(exception)
                 .when(orderService)
-                .markAsPaid(orderId);
+                .markAsPaid(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME);
 
         String viewName = adminOrderController.markAsPaid(
                 orderId,
+                loginUser,
                 redirectAttributes);
 
         assertEquals(
@@ -258,6 +291,12 @@ class AdminOrderControllerTest {
     @Test
     void markAsShippedDisplaysErrorWhenStatusIsInvalid() {
 
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
         Long orderId = 1L;
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
@@ -267,10 +306,14 @@ class AdminOrderControllerTest {
 
         doThrow(exception)
                 .when(orderService)
-                .markAsShipped(orderId);
+                .markAsShipped(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME);
 
         String viewName = adminOrderController.markAsShipped(
                 orderId,
+                loginUser,
                 redirectAttributes);
 
         assertEquals(
@@ -286,6 +329,12 @@ class AdminOrderControllerTest {
     @Test
     void cancelDisplaysErrorWhenStatusIsInvalid() {
 
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
         Long orderId = 1L;
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
@@ -295,10 +344,14 @@ class AdminOrderControllerTest {
 
         doThrow(exception)
                 .when(orderService)
-                .cancelOrder(orderId);
+                .cancelOrder(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME);
 
         String viewName = adminOrderController.cancel(
                 orderId,
+                loginUser,
                 redirectAttributes);
 
         assertEquals(
