@@ -1,5 +1,6 @@
 package com.example.ecsite.controller;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,12 +14,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.ui.Model;
 
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.form.AdminOrderStatusHistorySearchForm;
+import com.example.ecsite.service.OrderStatusHistoryCsvService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,6 +31,9 @@ class AdminOrderStatusHistoryControllerTest {
 
     @Mock
     private OrderStatusHistoryService orderStatusHistoryService;
+
+    @Mock
+    private OrderStatusHistoryCsvService orderStatusHistoryCsvService;
 
     @Mock
     private Model model;
@@ -36,7 +44,8 @@ class AdminOrderStatusHistoryControllerTest {
     void setUp() {
 
         controller = new AdminOrderStatusHistoryController(
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderStatusHistoryCsvService);
     }
 
     @Test
@@ -180,4 +189,57 @@ class AdminOrderStatusHistoryControllerTest {
                 0,
                 1);
     }
+
+    @Test
+    void csvExportsAllHistoriesMatchingSearchConditions() {
+
+        AdminOrderStatusHistorySearchForm searchForm = new AdminOrderStatusHistorySearchForm();
+
+        searchForm.setOrderId(10L);
+        searchForm.setFromStatus(OrderStatus.ORDERED);
+        searchForm.setToStatus(OrderStatus.PAID);
+        searchForm.setChangedByType(
+                OrderStatusHistoryActorType.ADMIN);
+        searchForm.setChangedByUsername("AdminUser");
+
+        OrderStatusHistory history = org.mockito.Mockito.mock(
+                OrderStatusHistory.class);
+
+        List<OrderStatusHistory> histories = List.of(history);
+
+        byte[] csvBytes = new byte[] { 1, 2, 3 };
+
+        when(orderStatusHistoryService.searchAll(searchForm))
+                .thenReturn(histories);
+
+        when(orderStatusHistoryCsvService.createCsv(histories))
+                .thenReturn(csvBytes);
+
+        ResponseEntity<byte[]> response = controller.csv(searchForm);
+
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode());
+
+        assertEquals(
+                "text/csv;charset=UTF-8",
+                response.getHeaders()
+                        .getFirst(HttpHeaders.CONTENT_TYPE));
+
+        assertEquals(
+                "attachment; filename=\"order-status-histories.csv\"",
+                response.getHeaders()
+                        .getFirst(HttpHeaders.CONTENT_DISPOSITION));
+
+        assertArrayEquals(
+                csvBytes,
+                response.getBody());
+
+        verify(orderStatusHistoryService)
+                .searchAll(searchForm);
+
+        verify(orderStatusHistoryCsvService)
+                .createCsv(histories);
+    }
+
 }

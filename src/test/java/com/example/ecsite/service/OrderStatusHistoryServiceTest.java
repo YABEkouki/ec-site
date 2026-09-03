@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
@@ -200,6 +201,53 @@ class OrderStatusHistoryServiceTest {
                 LocalDateTime.of(2000, 1, 1, 0, 0),
                 LocalDateTime.of(2100, 1, 1, 0, 0),
                 PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchAllReturnsAllMatchingHistoriesWithoutPaging() {
+
+        AdminOrderStatusHistorySearchForm form = new AdminOrderStatusHistorySearchForm();
+
+        form.setOrderId(10L);
+        form.setFromStatus(OrderStatus.ORDERED);
+        form.setToStatus(OrderStatus.PAID);
+        form.setChangedByType(OrderStatusHistoryActorType.ADMIN);
+        form.setChangedByUsername("  AdminUser  ");
+        form.setFrom(LocalDate.of(2026, 9, 1));
+        form.setTo(LocalDate.of(2026, 9, 3));
+
+        OrderStatusHistory history1 = mock(OrderStatusHistory.class);
+        OrderStatusHistory history2 = mock(OrderStatusHistory.class);
+
+        List<OrderStatusHistory> expected = List.of(history1, history2);
+
+        Page<OrderStatusHistory> expectedPage = new PageImpl<>(expected);
+
+        when(orderStatusHistoryRepository.search(
+                eq(10L),
+                eq(OrderStatus.ORDERED),
+                eq(OrderStatus.PAID),
+                eq(OrderStatusHistoryActorType.ADMIN),
+                eq("AdminUser"),
+                eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
+                eq(LocalDateTime.of(2026, 9, 4, 0, 0)),
+                eq(Pageable.unpaged())))
+                .thenReturn(expectedPage);
+
+        List<OrderStatusHistory> actual = orderStatusHistoryService.searchAll(form);
+
+        org.junit.jupiter.api.Assertions
+                .assertEquals(expected, actual);
+
+        verify(orderStatusHistoryRepository).search(
+                10L,
+                OrderStatus.ORDERED,
+                OrderStatus.PAID,
+                OrderStatusHistoryActorType.ADMIN,
+                "AdminUser",
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0),
+                Pageable.unpaged());
     }
 
 }
