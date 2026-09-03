@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,8 +25,7 @@ public class OrderStatusHistoryService {
     public OrderStatusHistoryService(
             OrderStatusHistoryRepository orderStatusHistoryRepository) {
 
-        this.orderStatusHistoryRepository =
-                orderStatusHistoryRepository;
+        this.orderStatusHistoryRepository = orderStatusHistoryRepository;
     }
 
     @Transactional
@@ -37,14 +37,13 @@ public class OrderStatusHistoryService {
             Long changedByAccountId,
             String changedByUsername) {
 
-        OrderStatusHistory history =
-                OrderStatusHistory.create(
-                        order,
-                        fromStatus,
-                        toStatus,
-                        changedByType,
-                        changedByAccountId,
-                        changedByUsername);
+        OrderStatusHistory history = OrderStatusHistory.create(
+                order,
+                fromStatus,
+                toStatus,
+                changedByType,
+                changedByAccountId,
+                changedByUsername);
 
         orderStatusHistoryRepository.save(history);
     }
@@ -62,15 +61,32 @@ public class OrderStatusHistoryService {
             int page,
             int size) {
 
-        LocalDateTime from =
-                form.getFrom() != null
-                        ? form.getFrom().atStartOfDay()
-                        : LocalDate.of(2000, 1, 1).atStartOfDay();
+        return search(
+                form,
+                PageRequest.of(page, size));
+    }
 
-        LocalDateTime toExclusive =
-                form.getTo() != null
-                        ? form.getTo().plusDays(1).atStartOfDay()
-                        : LocalDate.of(2100, 1, 1).atStartOfDay();
+    @Transactional(readOnly = true)
+    public List<OrderStatusHistory> searchAll(
+            AdminOrderStatusHistorySearchForm form) {
+
+        return search(
+                form,
+                Pageable.unpaged())
+                .getContent();
+    }
+
+    private Page<OrderStatusHistory> search(
+            AdminOrderStatusHistorySearchForm form,
+            Pageable pageable) {
+
+        LocalDateTime from = form.getFrom() != null
+                ? form.getFrom().atStartOfDay()
+                : LocalDate.of(2000, 1, 1).atStartOfDay();
+
+        LocalDateTime toExclusive = form.getTo() != null
+                ? form.getTo().plusDays(1).atStartOfDay()
+                : LocalDate.of(2100, 1, 1).atStartOfDay();
 
         String changedByUsername = form.getChangedByUsername();
 
@@ -90,6 +106,7 @@ public class OrderStatusHistoryService {
                 changedByUsername,
                 from,
                 toExclusive,
-                PageRequest.of(page, size));
+                pageable);
     }
+
 }

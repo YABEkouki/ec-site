@@ -65,9 +65,13 @@
 
         <button type="submit">検索</button>
 
-        <a th:href="@{/admin/order-status-histories}">
+        <button type="button" onclick="location.href='/admin/order-status-histories'">
             条件クリア
-        </a>
+        </button>
+
+        <button type="submit" th:formaction="@{/admin/order-status-histories/csv}" formmethod="get">
+            CSV出力
+        </button>
     </form>
 
     <hr>
