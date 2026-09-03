@@ -189,11 +189,15 @@ class OrderControllerTest {
 
         Long orderId = 1L;
         Long userId = 10L;
+        String username = "user1";
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
         when(loginUser.getId())
                 .thenReturn(userId);
+
+        when(loginUser.getUsername())
+                .thenReturn(username);
 
         String viewName = orderController.cancel(
                 orderId,
@@ -207,7 +211,8 @@ class OrderControllerTest {
         verify(orderService)
                 .cancelOrderForUser(
                         orderId,
-                        userId);
+                        userId,
+                        username);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
@@ -220,11 +225,15 @@ class OrderControllerTest {
 
         Long orderId = 1L;
         Long userId = 10L;
+        String username = "user1";
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
         when(loginUser.getId())
                 .thenReturn(userId);
+
+        when(loginUser.getUsername())
+                .thenReturn(username);
 
         InvalidOrderStatusException exception = new InvalidOrderStatusException(
                 "注文受付中の注文だけを"
@@ -234,7 +243,8 @@ class OrderControllerTest {
                 .when(orderService)
                 .cancelOrderForUser(
                         orderId,
-                        userId);
+                        userId,
+                        username);
 
         String viewName = orderController.cancel(
                 orderId,

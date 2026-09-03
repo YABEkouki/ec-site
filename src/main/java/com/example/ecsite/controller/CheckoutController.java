@@ -214,6 +214,7 @@ public class CheckoutController {
         try {
             Order order = orderService.createOrder(
                     loginUser.getId(),
+                    loginUser.getUsername(),
                     cart,
                     checkoutForm);
 

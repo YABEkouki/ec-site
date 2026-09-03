@@ -14,6 +14,7 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
@@ -28,19 +29,26 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final ProductService productService;
     private final InventoryService inventoryService;
+    private final OrderStatusHistoryService orderStatusHistoryService;
 
     public OrderService(
             OrderRepository orderRepository,
             ProductService productService,
-            InventoryService inventoryService) {
+            InventoryService inventoryService,
+            OrderStatusHistoryService orderStatusHistoryService) {
 
         this.orderRepository = orderRepository;
         this.productService = productService;
         this.inventoryService = inventoryService;
+        this.orderStatusHistoryService = orderStatusHistoryService;
     }
 
     @Transactional
-    public Order createOrder(Long userId, Cart cart, CheckoutForm checkoutForm) {
+    public Order createOrder(
+            Long userId,
+            String username,
+            Cart cart,
+            CheckoutForm checkoutForm) {
 
         if (cart.getItems().isEmpty()) {
             throw new OrderValidationException(
@@ -115,6 +123,14 @@ public class OrderService {
         order.setTotalAmount(totalAmount);
 
         Order savedOrder = orderRepository.save(order);
+
+        orderStatusHistoryService.record(
+                savedOrder,
+                null,
+                OrderStatus.ORDERED,
+                OrderStatusHistoryActorType.USER,
+                userId,
+                username);
 
         for (OrderItem item : savedOrder.getItems()) {
 
@@ -217,25 +233,60 @@ public class OrderService {
     }
 
     @Transactional
-    public void markAsPaid(Long id) {
+    public void markAsPaid(
+            Long id,
+            Long accountId,
+            String username) {
 
         Order order = findOrderForUpdate(id);
+
+        OrderStatus fromStatus = order.getStatus();
+
         order.markAsPaid();
+
+        orderStatusHistoryService.record(
+                order,
+                fromStatus,
+                order.getStatus(),
+                OrderStatusHistoryActorType.ADMIN,
+                accountId,
+                username);
     }
 
     @Transactional
-    public void markAsShipped(Long id) {
+    public void markAsShipped(
+            Long id,
+            Long accountId,
+            String username) {
 
         Order order = findOrderForUpdate(id);
+
+        OrderStatus fromStatus = order.getStatus();
+
         order.markAsShipped();
+
+        orderStatusHistoryService.record(
+                order,
+                fromStatus,
+                order.getStatus(),
+                OrderStatusHistoryActorType.ADMIN,
+                accountId,
+                username);
     }
 
     @Transactional
-    public void cancelOrder(Long id) {
+    public void cancelOrder(
+            Long id,
+            Long accountId,
+            String username) {
 
         Order order = findOrderForUpdate(id);
 
-        cancelAndRestoreStock(order);
+        cancelAndRestoreStock(
+                order,
+                OrderStatusHistoryActorType.ADMIN,
+                accountId,
+                username);
     }
 
     @Transactional(readOnly = true)
@@ -276,10 +327,24 @@ public class OrderService {
         return orderPage.getContent();
     }
 
-    private void cancelAndRestoreStock(Order order) {
+    private void cancelAndRestoreStock(
+            Order order,
+            OrderStatusHistoryActorType changedByType,
+            Long accountId,
+            String username) {
+
+        OrderStatus fromStatus = order.getStatus();
 
         // 不正な状態なら、在庫を変更する前に例外になる
         order.cancel();
+
+        orderStatusHistoryService.record(
+                order,
+                fromStatus,
+                order.getStatus(),
+                changedByType,
+                accountId,
+                username);
 
         for (OrderItem item : order.getItems()) {
 
@@ -311,7 +376,8 @@ public class OrderService {
     @Transactional
     public void cancelOrderForUser(
             Long orderId,
-            Long userId) {
+            Long userId,
+            String username) {
 
         Order order = orderRepository
                 .findByIdAndUserIdForUpdate(
@@ -320,7 +386,11 @@ public class OrderService {
                 .orElseThrow(() -> new OrderNotFoundException(
                         orderId));
 
-        cancelAndRestoreStock(order);
+        cancelAndRestoreStock(
+                order,
+                OrderStatusHistoryActorType.USER,
+                userId,
+                username);
     }
 
     @Transactional(readOnly = true)

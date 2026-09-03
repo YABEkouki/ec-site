@@ -31,6 +31,7 @@ import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
@@ -52,6 +53,9 @@ class OrderServiceTest {
     @Mock
     private InventoryService inventoryService;
 
+    @Mock
+    private OrderStatusHistoryService orderStatusHistoryService;
+
     private OrderService orderService;
 
     @BeforeEach
@@ -59,11 +63,15 @@ class OrderServiceTest {
         orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
     }
 
     @Test
     void createOrderSavesOrderAndReducesStock() {
+
+        Long userId = 10L;
+        String username = "testuser";
 
         Product product = createProduct(
                 1L,
@@ -94,8 +102,10 @@ class OrderServiceTest {
                 });
 
         Order order = orderService.createOrder(
-                10L,
-                cart, createCheckoutForm());
+                userId,
+                username,
+                cart,
+                createCheckoutForm());
 
         assertEquals(2000, order.getTotalAmount());
         assertEquals(1, order.getItems().size());
@@ -109,10 +119,21 @@ class OrderServiceTest {
                         orderId);
 
         verify(orderRepository).save(order);
+
+        verify(orderStatusHistoryService)
+                .record(
+                        order,
+                        null,
+                        OrderStatus.ORDERED,
+                        OrderStatusHistoryActorType.USER,
+                        userId,
+                        username);
     }
 
     @Test
     void createOrderRejectsChangedPriceAndRefreshesCart() {
+
+        String username = "testuser";
 
         Product product = createProduct(
                 1L,
@@ -134,6 +155,7 @@ class OrderServiceTest {
                 OrderValidationException.class,
                 () -> orderService.createOrder(
                         10L,
+                        username,
                         cart,
                         createCheckoutForm()));
 
@@ -152,6 +174,8 @@ class OrderServiceTest {
 
     @Test
     void createOrderRejectsInsufficientStock() {
+
+        String username = "testuser";
 
         Product product = createProduct(
                 1L,
@@ -173,6 +197,7 @@ class OrderServiceTest {
                 OrderValidationException.class,
                 () -> orderService.createOrder(
                         10L,
+                        username,
                         cart,
                         createCheckoutForm()));
 
@@ -189,6 +214,8 @@ class OrderServiceTest {
     @Test
     void createOrderRejectsUnavailableProduct() {
 
+        String username = "testuser";
+
         Cart cart = new Cart();
         cart.addItem(new CartItem(
                 1L,
@@ -204,6 +231,7 @@ class OrderServiceTest {
                 OrderValidationException.class,
                 () -> orderService.createOrder(
                         10L,
+                        username,
                         cart,
                         createCheckoutForm()));
 
@@ -277,7 +305,8 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         Page<Order> actualPage = orderService.findOrdersByUserId(
                 userId,
@@ -299,11 +328,19 @@ class OrderServiceTest {
         Long productId = 10L;
         int quantity = 3;
 
+        Long adminId = 20L;
+        String adminUsername = "admin";
+
         Order order = mock(Order.class);
         OrderItem orderItem = mock(OrderItem.class);
 
         when(order.getId())
                 .thenReturn(orderId);
+
+        when(order.getStatus())
+                .thenReturn(
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED);
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
@@ -320,9 +357,13 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
-        orderService.cancelOrder(orderId);
+        orderService.cancelOrder(
+                orderId,
+                adminId,
+                adminUsername);
 
         verify(order).cancel();
 
@@ -331,6 +372,15 @@ class OrderServiceTest {
                         productId,
                         quantity,
                         orderId);
+
+        verify(orderStatusHistoryService)
+                .record(
+                        order,
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED,
+                        OrderStatusHistoryActorType.ADMIN,
+                        adminId,
+                        adminUsername);
     }
 
     @Test
@@ -338,17 +388,24 @@ class OrderServiceTest {
 
         Long orderId = 999L;
 
+        Long adminId = 20L;
+        String adminUsername = "admin";
+
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.empty());
 
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         assertThrows(
                 OrderNotFoundException.class,
-                () -> orderService.cancelOrder(orderId));
+                () -> orderService.cancelOrder(
+                        orderId,
+                        adminId,
+                        adminUsername));
 
         verifyNoInteractions(productService);
     }
@@ -357,6 +414,9 @@ class OrderServiceTest {
     void paidOrderCannotBeCancelledAndStockIsNotChanged() {
 
         Long orderId = 1L;
+
+        Long adminId = 20L;
+        String adminUsername = "admin";
 
         Order order = new Order(10L, 1000);
         order.markAsPaid();
@@ -367,19 +427,26 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         assertThrows(
                 InvalidOrderStatusException.class,
-                () -> orderService.cancelOrder(orderId));
+                () -> orderService.cancelOrder(
+                        orderId,
+                        adminId,
+                        adminUsername));
 
         verifyNoInteractions(productService);
+
+        verifyNoInteractions(orderStatusHistoryService);
     }
 
     @Test
     void createOrderCalculatesTotalAndReducesStock() {
 
         Long userId = 10L;
+        String username = "testuser";
         Long productId = 20L;
 
         Cart cart = mock(Cart.class);
@@ -439,10 +506,12 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         Order result = orderService.createOrder(
                 userId,
+                username,
                 cart,
                 checkoutForm);
 
@@ -461,6 +530,8 @@ class OrderServiceTest {
     @Test
     void createOrderRejectsEmptyCart() {
 
+        String username = "testuser";
+
         Cart cart = mock(Cart.class);
         CheckoutForm checkoutForm = mock(CheckoutForm.class);
 
@@ -470,12 +541,14 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
                 () -> orderService.createOrder(
                         10L,
+                        username,
                         cart,
                         checkoutForm));
 
@@ -516,6 +589,7 @@ class OrderServiceTest {
     void createOrderRejectsChangedProductPrice() {
 
         Long userId = 10L;
+        String username = "testuser";
         Long productId = 20L;
 
         Cart cart = mock(Cart.class);
@@ -545,12 +619,14 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
                 () -> orderService.createOrder(
                         userId,
+                        username,
                         cart,
                         checkoutForm));
 
@@ -570,6 +646,7 @@ class OrderServiceTest {
     void createOrderRejectsInsufficientStockSecond() {
 
         Long userId = 10L;
+        String username = "testuser";
         Long productId = 20L;
 
         Cart cart = mock(Cart.class);
@@ -602,12 +679,14 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
                 () -> orderService.createOrder(
                         userId,
+                        username,
                         cart,
                         checkoutForm));
 
@@ -622,6 +701,7 @@ class OrderServiceTest {
     void createOrderRejectsUnavailableProductSecond() {
 
         Long userId = 10L;
+        String username = "testuser";
         Long productId = 20L;
 
         Cart cart = mock(Cart.class);
@@ -645,12 +725,14 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
                 () -> orderService.createOrder(
                         userId,
+                        username,
                         cart,
                         checkoutForm));
 
@@ -684,7 +766,8 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         Page<Order> actualPage = orderService.findAllOrders(
                 status,
@@ -720,7 +803,8 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         Page<Order> actualPage = orderService.findAllOrders(
                 null,
@@ -739,6 +823,7 @@ class OrderServiceTest {
 
         Long orderId = 1L;
         Long userId = 10L;
+        String username = "testuser";
         Long productId = 20L;
         int quantity = 3;
 
@@ -747,6 +832,11 @@ class OrderServiceTest {
 
         when(order.getId())
                 .thenReturn(orderId);
+
+        when(order.getStatus())
+                .thenReturn(
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED);
 
         when(orderRepository
                 .findByIdAndUserIdForUpdate(
@@ -766,11 +856,13 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         orderService.cancelOrderForUser(
                 orderId,
-                userId);
+                userId,
+                username);
 
         verify(order).cancel();
 
@@ -779,6 +871,15 @@ class OrderServiceTest {
                         productId,
                         quantity,
                         orderId);
+
+        verify(orderStatusHistoryService)
+                .record(
+                        order,
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED,
+                        OrderStatusHistoryActorType.USER,
+                        userId,
+                        username);
     }
 
     @Test
@@ -786,6 +887,7 @@ class OrderServiceTest {
 
         Long orderId = 1L;
         Long userId = 10L;
+        String username = "testuser";
         Long productId = 20L;
         int quantity = 3;
 
@@ -813,11 +915,13 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         orderService.cancelOrderForUser(
                 orderId,
-                userId);
+                userId,
+                username);
 
         verify(order).cancel();
 
@@ -865,7 +969,8 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         long actualCount = orderService.countOrdersByStatus(status);
 
@@ -903,6 +1008,7 @@ class OrderServiceTest {
     void createOrderDecreasesStockThroughInventoryServiceWithSavedOrderId() {
 
         Long userId = 10L;
+        String username = "testuser";
         Long productId = 1L;
         Long orderId = 100L;
 
@@ -936,10 +1042,12 @@ class OrderServiceTest {
         OrderService orderService = new OrderService(
                 orderRepository,
                 productService,
-                inventoryService);
+                inventoryService,
+                orderStatusHistoryService);
 
         Order order = orderService.createOrder(
                 userId,
+                username,
                 cart,
                 createCheckoutForm());
 
@@ -1059,5 +1167,68 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 OrderStatus.PAID,
                 Pageable.unpaged());
+    }
+
+    @Test
+    void markAsPaidRecordsAdminStatusHistory() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+
+        Order order = new Order(10L, 1000);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        orderService.markAsPaid(
+                orderId,
+                adminId,
+                adminUsername);
+
+        assertEquals(
+                OrderStatus.PAID,
+                order.getStatus());
+
+        verify(orderStatusHistoryService)
+                .record(
+                        order,
+                        OrderStatus.ORDERED,
+                        OrderStatus.PAID,
+                        OrderStatusHistoryActorType.ADMIN,
+                        adminId,
+                        adminUsername);
+    }
+
+    @Test
+    void markAsShippedRecordsAdminStatusHistory() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+
+        Order order = new Order(10L, 1000);
+        order.markAsPaid();
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        orderService.markAsShipped(
+                orderId,
+                adminId,
+                adminUsername);
+
+        assertEquals(
+                OrderStatus.SHIPPED,
+                order.getStatus());
+
+        verify(orderStatusHistoryService)
+                .record(
+                        order,
+                        OrderStatus.PAID,
+                        OrderStatus.SHIPPED,
+                        OrderStatusHistoryActorType.ADMIN,
+                        adminId,
+                        adminUsername);
     }
 }
