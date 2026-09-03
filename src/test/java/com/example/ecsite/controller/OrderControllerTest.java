@@ -19,9 +19,11 @@ import org.springframework.ui.Model;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderStatusHistoryService;
 
 @ExtendWith(MockitoExtension.class)
 class OrderControllerTest {
@@ -35,11 +37,16 @@ class OrderControllerTest {
     @Mock
     private CustomUserDetails loginUser;
 
+    @Mock
+    private OrderStatusHistoryService orderStatusHistoryService;
+
     private OrderController orderController;
 
     @BeforeEach
     void setUp() {
-        orderController = new OrderController(orderService);
+        orderController = new OrderController(
+                orderService,
+                orderStatusHistoryService);
     }
 
     @Test
@@ -94,6 +101,10 @@ class OrderControllerTest {
 
         Order order = new Order(userId, 2000);
 
+        OrderStatusHistory history = mock(OrderStatusHistory.class);
+
+        List<OrderStatusHistory> statusHistories = List.of(history);
+
         when(loginUser.getId())
                 .thenReturn(userId);
 
@@ -101,6 +112,9 @@ class OrderControllerTest {
                 orderId,
                 userId))
                 .thenReturn(order);
+
+        when(orderStatusHistoryService.findByOrderId(orderId))
+                .thenReturn(statusHistories);
 
         String viewName = orderController.detail(
                 orderId,
@@ -118,6 +132,14 @@ class OrderControllerTest {
                 .addAttribute(
                         "order",
                         order);
+
+        verify(orderStatusHistoryService)
+                .findByOrderId(orderId);
+
+        verify(model)
+                .addAttribute(
+                        "statusHistories",
+                        statusHistories);
     }
 
     @Test
