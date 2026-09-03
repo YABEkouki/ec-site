@@ -133,6 +133,45 @@
         配送先情報は登録されていません。
     </p>
 
+    <section>
+        <h2>ステータス変更履歴</h2>
+
+        <table th:unless="${#lists.isEmpty(statusHistories)}">
+            <thead>
+                <tr>
+                    <th>変更日時</th>
+                    <th>変更前</th>
+                    <th>変更後</th>
+                    <th>変更者種別</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr th:each="history : ${statusHistories}">
+                    <td th:text="${#temporals.format(
+                        history.changedAt,
+                        'yyyy/MM/dd HH:mm')}">
+                    </td>
+
+                    <td th:text="${history.fromStatus != null
+                        ? history.fromStatus.displayName
+                        : '-'}">
+                    </td>
+
+                    <td th:text="${history.toStatus.displayName}">
+                    </td>
+
+                    <td th:text="${history.changedByType.displayName}">
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p th:if="${#lists.isEmpty(statusHistories)}">
+            ステータス変更履歴はありません。
+        </p>
+    </section>
+
     <h2>注文明細</h2>
 
     <table>

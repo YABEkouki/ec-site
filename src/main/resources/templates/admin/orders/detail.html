@@ -142,7 +142,8 @@
                 <th>変更前</th>
                 <th>変更後</th>
                 <th>変更者種別</th>
-                <th>変更者</th>
+                <th>変更者ID</th>
+                <th>変更者ユーザー名</th>
             </tr>
         </thead>
 
@@ -162,6 +163,9 @@
                 </td>
 
                 <td th:text="${history.changedByType.displayName}">
+                </td>
+
+                <td th:text="${history.changedByAccountId != null ? history.changedByAccountId : '-'}">
                 </td>
 
                 <td th:text="${history.changedByUsername}">

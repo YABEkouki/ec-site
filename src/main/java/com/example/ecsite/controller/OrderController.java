@@ -14,14 +14,20 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderStatusHistoryService;
 
 @Controller
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderStatusHistoryService orderStatusHistoryService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(
+            OrderService orderService,
+            OrderStatusHistoryService orderStatusHistoryService) {
+
         this.orderService = orderService;
+        this.orderStatusHistoryService = orderStatusHistoryService;
     }
 
     @GetMapping("/orders")
@@ -59,6 +65,10 @@ public class OrderController {
                 orderService.findOrderByIdAndUserId(
                         id,
                         loginUser.getId()));
+
+        model.addAttribute(
+                "statusHistories",
+                orderStatusHistoryService.findByOrderId(id));
 
         return "orders/detail";
     }
