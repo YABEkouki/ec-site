@@ -86,6 +86,7 @@
                 <th>変更者種別</th>
                 <th>変更者ID</th>
                 <th>変更者ユーザー名</th>
+                <th>変更理由・備考</th>
             </tr>
         </thead>
 
@@ -117,6 +118,11 @@
 
                 <td th:text="${history.changedByUsername}">
                 </td>
+
+                <td th:text="${#strings.isEmpty(history.internalNote) ? '-' : history.internalNote}"
+                    style="white-space: pre-wrap;">
+                </td>
+
             </tr>
 
             <tr th:if="${#lists.isEmpty(histories)}">

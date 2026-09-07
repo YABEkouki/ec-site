@@ -60,6 +60,26 @@ class OrderStatusHistoryServiceTest {
     }
 
     @Test
+    void recordSavesTrimmedInternalNote() {
+
+        Order order = new Order(10L, 1000);
+
+        orderStatusHistoryService.record(
+                order,
+                OrderStatus.ORDERED,
+                OrderStatus.PAID,
+                OrderStatusHistoryActorType.ADMIN,
+                20L,
+                "admin",
+                "  入金を確認したため  ");
+
+        verify(orderStatusHistoryRepository)
+                .save(org.mockito.ArgumentMatchers.argThat(
+                        history -> "入金を確認したため"
+                                .equals(history.getInternalNote())));
+    }
+
+    @Test
     void findByOrderIdReturnsHistoriesInRepositoryOrder() {
 
         Long orderId = 1L;
@@ -248,6 +268,43 @@ class OrderStatusHistoryServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 LocalDateTime.of(2026, 9, 4, 0, 0),
                 Pageable.unpaged());
+    }
+
+    @Test
+    void recordConvertsBlankInternalNoteToNull() {
+
+        Order order = new Order(10L, 1000);
+
+        orderStatusHistoryService.record(
+                order,
+                OrderStatus.ORDERED,
+                OrderStatus.PAID,
+                OrderStatusHistoryActorType.ADMIN,
+                20L,
+                "admin",
+                "   ");
+
+        verify(orderStatusHistoryRepository)
+                .save(org.mockito.ArgumentMatchers.argThat(
+                        history -> history.getInternalNote() == null));
+    }
+
+    @Test
+    void recordWithoutInternalNoteSavesNull() {
+
+        Order order = new Order(10L, 1000);
+
+        orderStatusHistoryService.record(
+                order,
+                OrderStatus.ORDERED,
+                OrderStatus.PAID,
+                OrderStatusHistoryActorType.ADMIN,
+                20L,
+                "admin");
+
+        verify(orderStatusHistoryRepository)
+                .save(org.mockito.ArgumentMatchers.argThat(
+                        history -> history.getInternalNote() == null));
     }
 
 }

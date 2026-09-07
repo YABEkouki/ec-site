@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,10 +21,13 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.AdminOrderSearchForm;
+import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
+
+import jakarta.validation.Valid;
 
 @Controller
 @RequestMapping("/admin/orders")
@@ -92,14 +96,25 @@ public class AdminOrderController {
     @PostMapping("/{id}/pay")
     public String markAsPaid(
             @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
             @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "変更理由・備考は500文字以内で入力してください。");
+
+            return "redirect:/admin/orders/" + id;
+        }
 
         try {
             orderService.markAsPaid(
                     id,
                     loginUser.getId(),
-                    loginUser.getUsername());
+                    loginUser.getUsername(),
+                    form.getInternalNote());
 
             redirectAttributes.addFlashAttribute(
                     "successMessage",
@@ -117,14 +132,25 @@ public class AdminOrderController {
     @PostMapping("/{id}/ship")
     public String markAsShipped(
             @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
             @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "変更理由・備考は500文字以内で入力してください。");
+
+            return "redirect:/admin/orders/" + id;
+        }
 
         try {
             orderService.markAsShipped(
                     id,
                     loginUser.getId(),
-                    loginUser.getUsername());
+                    loginUser.getUsername(),
+                    form.getInternalNote());
 
             redirectAttributes.addFlashAttribute(
                     "successMessage",
@@ -142,14 +168,25 @@ public class AdminOrderController {
     @PostMapping("/{id}/cancel")
     public String cancel(
             @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
             @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "変更理由・備考は500文字以内で入力してください。");
+
+            return "redirect:/admin/orders/" + id;
+        }
 
         try {
             orderService.cancelOrder(
                     id,
                     loginUser.getId(),
-                    loginUser.getUsername());
+                    loginUser.getUsername(),
+                    form.getInternalNote());
 
             redirectAttributes.addFlashAttribute(
                     "successMessage",

@@ -555,4 +555,35 @@ class OrderStatusHistoryRepositoryTest {
         assertEquals(1, secondPage.getNumber());
     }
 
+    @Test
+    void saveAndLoadInternalNote() {
+
+        User user = createUser("history-internal-note-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderStatusHistory history = OrderStatusHistory.create(
+                order,
+                OrderStatus.ORDERED,
+                OrderStatus.PAID,
+                OrderStatusHistoryActorType.ADMIN,
+                user.getId(),
+                user.getUsername());
+
+        history.setInternalNote("入金確認済み");
+
+        OrderStatusHistory saved = orderStatusHistoryRepository.save(history);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        OrderStatusHistory loaded = orderStatusHistoryRepository.findById(saved.getId())
+                .orElseThrow();
+
+        assertEquals(
+                "入金確認済み",
+                loaded.getInternalNote());
+    }
+
 }

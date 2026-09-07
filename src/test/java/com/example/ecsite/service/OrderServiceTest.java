@@ -330,6 +330,7 @@ class OrderServiceTest {
 
         Long adminId = 20L;
         String adminUsername = "admin";
+        String internalNote = "お客様から電話でキャンセル依頼";
 
         Order order = mock(Order.class);
         OrderItem orderItem = mock(OrderItem.class);
@@ -363,7 +364,8 @@ class OrderServiceTest {
         orderService.cancelOrder(
                 orderId,
                 adminId,
-                adminUsername);
+                adminUsername,
+                internalNote);
 
         verify(order).cancel();
 
@@ -380,7 +382,8 @@ class OrderServiceTest {
                         OrderStatus.CANCELLED,
                         OrderStatusHistoryActorType.ADMIN,
                         adminId,
-                        adminUsername);
+                        adminUsername,
+                        internalNote);
     }
 
     @Test
@@ -405,7 +408,8 @@ class OrderServiceTest {
                 () -> orderService.cancelOrder(
                         orderId,
                         adminId,
-                        adminUsername));
+                        adminUsername,
+                        null));
 
         verifyNoInteractions(productService);
     }
@@ -435,7 +439,8 @@ class OrderServiceTest {
                 () -> orderService.cancelOrder(
                         orderId,
                         adminId,
-                        adminUsername));
+                        adminUsername,
+                        null));
 
         verifyNoInteractions(productService);
 
@@ -879,7 +884,8 @@ class OrderServiceTest {
                         OrderStatus.CANCELLED,
                         OrderStatusHistoryActorType.USER,
                         userId,
-                        username);
+                        username,
+                        null);
     }
 
     @Test
@@ -1170,11 +1176,12 @@ class OrderServiceTest {
     }
 
     @Test
-    void markAsPaidRecordsAdminStatusHistory() {
+    void markAsPaidRecordsAdminStatusHistoryWithInternalNote() {
 
         Long orderId = 1L;
         Long adminId = 20L;
         String adminUsername = "admin";
+        String internalNote = "入金確認済み";
 
         Order order = new Order(10L, 1000);
 
@@ -1184,7 +1191,8 @@ class OrderServiceTest {
         orderService.markAsPaid(
                 orderId,
                 adminId,
-                adminUsername);
+                adminUsername,
+                internalNote);
 
         assertEquals(
                 OrderStatus.PAID,
@@ -1197,15 +1205,17 @@ class OrderServiceTest {
                         OrderStatus.PAID,
                         OrderStatusHistoryActorType.ADMIN,
                         adminId,
-                        adminUsername);
+                        adminUsername,
+                        internalNote);
     }
 
     @Test
-    void markAsShippedRecordsAdminStatusHistory() {
+    void markAsShippedRecordsAdminStatusHistoryWithInternalNote() {
 
         Long orderId = 1L;
         Long adminId = 20L;
         String adminUsername = "admin";
+        String internalNote = "配送手配完了";
 
         Order order = new Order(10L, 1000);
         order.markAsPaid();
@@ -1216,7 +1226,8 @@ class OrderServiceTest {
         orderService.markAsShipped(
                 orderId,
                 adminId,
-                adminUsername);
+                adminUsername,
+                internalNote);
 
         assertEquals(
                 OrderStatus.SHIPPED,
@@ -1229,6 +1240,7 @@ class OrderServiceTest {
                         OrderStatus.SHIPPED,
                         OrderStatusHistoryActorType.ADMIN,
                         adminId,
-                        adminUsername);
+                        adminUsername,
+                        internalNote);
     }
 }

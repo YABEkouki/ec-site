@@ -37,6 +37,25 @@ public class OrderStatusHistoryService {
             Long changedByAccountId,
             String changedByUsername) {
 
+        record(
+                order,
+                fromStatus,
+                toStatus,
+                changedByType,
+                changedByAccountId,
+                changedByUsername,
+                null);
+    }
+
+    public void record(
+            Order order,
+            OrderStatus fromStatus,
+            OrderStatus toStatus,
+            OrderStatusHistoryActorType changedByType,
+            Long changedByAccountId,
+            String changedByUsername,
+            String internalNote) {
+
         OrderStatusHistory history = OrderStatusHistory.create(
                 order,
                 fromStatus,
@@ -45,7 +64,20 @@ public class OrderStatusHistoryService {
                 changedByAccountId,
                 changedByUsername);
 
+        history.setInternalNote(normalizeInternalNote(internalNote));
+
         orderStatusHistoryRepository.save(history);
+    }
+
+    private String normalizeInternalNote(String internalNote) {
+
+        if (internalNote == null) {
+            return null;
+        }
+
+        String trimmed = internalNote.trim();
+
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     @Transactional(readOnly = true)

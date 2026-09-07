@@ -93,34 +93,51 @@
 
     <div th:if="${order.canMarkAsPaid() or order.canCancel()}">
 
-        <form th:if="${order.canMarkAsPaid()}" th:action="@{/admin/orders/{id}/pay(
-            id=${order.id})}" method="post" class="inline-form">
+        <form th:action="@{/admin/orders/{id}/pay(id=${order.id})}" method="post">
 
-            <button type="submit" class="button-primary" onclick="return confirm(
-                    'この注文を支払済みにしますか？');">
+            <p>
+                <label for="internalNoteOrdered">
+                    変更理由・備考（任意）
+                </label>
+            </p>
+
+            <p>
+                <textarea id="internalNoteOrdered" name="internalNote" rows="3" maxlength="500"></textarea>
+            </p>
+
+            <button th:if="${order.canMarkAsPaid()}" type="submit" class="button-primary"
+                th:formaction="@{/admin/orders/{id}/pay(id=${order.id})}" onclick="return confirm('この注文を支払済みにしますか？');">
                 支払済みにする
             </button>
-        </form>
 
-        <form th:if="${order.canCancel()}" th:action="@{/admin/orders/{id}/cancel(
-            id=${order.id})}" method="post" class="inline-form">
-
-            <button type="submit" class="button-danger" onclick="return confirm(
-                    'この注文をキャンセルしますか？');">
+            <button th:if="${order.canCancel()}" type="submit" class="button-danger"
+                th:formaction="@{/admin/orders/{id}/cancel(id=${order.id})}"
+                onclick="return confirm('この注文をキャンセルしますか？');">
                 キャンセル
             </button>
+
         </form>
 
     </div>
 
     <div th:if="${order.canMarkAsShipped()}">
-        <form th:action="@{/admin/orders/{id}/ship(
-            id=${order.id})}" method="post">
 
-            <button type="submit" class="button-primary" onclick="return confirm(
-                    'この注文を発送済みにしますか？');">
+        <form th:action="@{/admin/orders/{id}/ship(id=${order.id})}" method="post">
+
+            <p>
+                <label for="internalNoteShipped">
+                    変更理由・備考（任意）
+                </label>
+            </p>
+
+            <p>
+                <textarea id="internalNoteShipped" name="internalNote" rows="3" maxlength="500"></textarea>
+            </p>
+
+            <button type="submit" class="button-primary" onclick="return confirm('この注文を発送済みにしますか？');">
                 発送済みにする
             </button>
+
         </form>
 
     </div>
@@ -144,6 +161,7 @@
                 <th>変更者種別</th>
                 <th>変更者ID</th>
                 <th>変更者ユーザー名</th>
+                <th>変更理由・備考</th>
             </tr>
         </thead>
 
@@ -169,6 +187,10 @@
                 </td>
 
                 <td th:text="${history.changedByUsername}">
+                </td>
+
+                <td th:text="${#strings.isEmpty(history.internalNote) ? '-' : history.internalNote}"
+                    style="white-space: pre-wrap;">
                 </td>
             </tr>
         </tbody>

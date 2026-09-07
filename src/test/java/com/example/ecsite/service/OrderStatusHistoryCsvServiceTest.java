@@ -18,8 +18,7 @@ import com.example.ecsite.entity.OrderStatusHistoryActorType;
 
 class OrderStatusHistoryCsvServiceTest {
 
-    private final OrderStatusHistoryCsvService orderStatusHistoryCsvService =
-            new OrderStatusHistoryCsvService();
+    private final OrderStatusHistoryCsvService orderStatusHistoryCsvService = new OrderStatusHistoryCsvService();
 
     @Test
     void createCsvOutputsBomHeaderAndHistoryRows() {
@@ -43,28 +42,28 @@ class OrderStatusHistoryCsvServiceTest {
                 .thenReturn(20L);
         when(history.getChangedByUsername())
                 .thenReturn("admin");
+        when(history.getInternalNote())
+                .thenReturn("入金確認済み");
 
-        byte[] csvBytes =
-                orderStatusHistoryCsvService.createCsv(
-                        List.of(history));
+        byte[] csvBytes = orderStatusHistoryCsvService.createCsv(
+                List.of(history));
 
         assertTrue(csvBytes.length >= 3);
         assertEquals((byte) 0xEF, csvBytes[0]);
         assertEquals((byte) 0xBB, csvBytes[1]);
         assertEquals((byte) 0xBF, csvBytes[2]);
 
-        String csv =
-                new String(
-                        csvBytes,
-                        3,
-                        csvBytes.length - 3,
-                        StandardCharsets.UTF_8);
+        String csv = new String(
+                csvBytes,
+                3,
+                csvBytes.length - 3,
+                StandardCharsets.UTF_8);
 
         assertEquals(
                 """
-                変更日時,注文ID,変更前ステータス,変更後ステータス,変更者種別,変更者ID,変更者ユーザー名\r
-                2026/09/03 14:30:45,10,注文受付,支払済み,管理者,20,admin\r
-                """,
+                        変更日時,注文ID,変更前ステータス,変更後ステータス,変更者種別,変更者ID,変更者ユーザー名,変更理由・備考\r
+                        2026/09/03 14:30:45,10,注文受付,支払済み,管理者,20,admin,入金確認済み\r
+                        """,
                 csv);
     }
 
@@ -91,19 +90,57 @@ class OrderStatusHistoryCsvServiceTest {
         when(history.getChangedByUsername())
                 .thenReturn("system,\"batch\"");
 
-        byte[] csvBytes =
-                orderStatusHistoryCsvService.createCsv(
-                        List.of(history));
+        byte[] csvBytes = orderStatusHistoryCsvService.createCsv(
+                List.of(history));
 
-        String csv =
-                new String(
-                        csvBytes,
-                        3,
-                        csvBytes.length - 3,
-                        StandardCharsets.UTF_8);
+        String csv = new String(
+                csvBytes,
+                3,
+                csvBytes.length - 3,
+                StandardCharsets.UTF_8);
 
         assertTrue(
                 csv.contains(
                         "2026/09/03 15:00:00,11,,注文受付,システム,,\"system,\"\"batch\"\"\""));
     }
+
+    @Test
+    void createCsvEscapesInternalNote() {
+
+        Order order = mock(Order.class);
+        when(order.getId()).thenReturn(12L);
+
+        OrderStatusHistory history = mock(OrderStatusHistory.class);
+
+        when(history.getChangedAt())
+                .thenReturn(LocalDateTime.of(2026, 9, 3, 16, 0));
+        when(history.getOrder())
+                .thenReturn(order);
+        when(history.getFromStatus())
+                .thenReturn(OrderStatus.PAID);
+        when(history.getToStatus())
+                .thenReturn(OrderStatus.SHIPPED);
+        when(history.getChangedByType())
+                .thenReturn(OrderStatusHistoryActorType.ADMIN);
+        when(history.getChangedByAccountId())
+                .thenReturn(20L);
+        when(history.getChangedByUsername())
+                .thenReturn("admin");
+        when(history.getInternalNote())
+                .thenReturn("確認済み,\"発送可\"\n倉庫へ連絡済み");
+
+        byte[] csvBytes = orderStatusHistoryCsvService.createCsv(
+                List.of(history));
+
+        String csv = new String(
+                csvBytes,
+                3,
+                csvBytes.length - 3,
+                StandardCharsets.UTF_8);
+
+        assertTrue(
+                csv.contains(
+                        "\"確認済み,\"\"発送可\"\"\n倉庫へ連絡済み\""));
+    }
+
 }
