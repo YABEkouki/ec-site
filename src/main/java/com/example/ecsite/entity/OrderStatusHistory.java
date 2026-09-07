@@ -44,11 +44,10 @@ public class OrderStatusHistory {
     @Column(name = "changed_by_username", nullable = false, length = 100)
     private String changedByUsername;
 
-    @Column(
-            name = "changed_at",
-            nullable = false,
-            insertable = false,
-            updatable = false)
+    @Column(name = "internal_note", length = 500)
+    private String internalNote;
+
+    @Column(name = "changed_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime changedAt;
 
     protected OrderStatusHistory() {
@@ -62,8 +61,7 @@ public class OrderStatusHistory {
             Long changedByAccountId,
             String changedByUsername) {
 
-        OrderStatusHistory history =
-                new OrderStatusHistory();
+        OrderStatusHistory history = new OrderStatusHistory();
 
         history.order = order;
         history.fromStatus = fromStatus;
@@ -101,6 +99,14 @@ public class OrderStatusHistory {
 
     public String getChangedByUsername() {
         return changedByUsername;
+    }
+
+    public String getInternalNote() {
+        return internalNote;
+    }
+
+    public void setInternalNote(String internalNote) {
+        this.internalNote = internalNote;
     }
 
     public LocalDateTime getChangedAt() {

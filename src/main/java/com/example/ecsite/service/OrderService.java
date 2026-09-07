@@ -236,7 +236,8 @@ public class OrderService {
     public void markAsPaid(
             Long id,
             Long accountId,
-            String username) {
+            String username,
+            String internalNote) {
 
         Order order = findOrderForUpdate(id);
 
@@ -250,14 +251,28 @@ public class OrderService {
                 order.getStatus(),
                 OrderStatusHistoryActorType.ADMIN,
                 accountId,
-                username);
+                username,
+                internalNote);
+    }
+
+    public void markAsPaid(
+            Long orderId,
+            Long adminId,
+            String adminUsername) {
+
+        markAsPaid(
+                orderId,
+                adminId,
+                adminUsername,
+                null);
     }
 
     @Transactional
     public void markAsShipped(
             Long id,
             Long accountId,
-            String username) {
+            String username,
+            String internalNote) {
 
         Order order = findOrderForUpdate(id);
 
@@ -271,14 +286,28 @@ public class OrderService {
                 order.getStatus(),
                 OrderStatusHistoryActorType.ADMIN,
                 accountId,
-                username);
+                username,
+                internalNote);
+    }
+
+    public void markAsShipped(
+            Long orderId,
+            Long adminId,
+            String adminUsername) {
+
+        markAsShipped(
+                orderId,
+                adminId,
+                adminUsername,
+                null);
     }
 
     @Transactional
     public void cancelOrder(
             Long id,
             Long accountId,
-            String username) {
+            String username,
+            String internalNote) {
 
         Order order = findOrderForUpdate(id);
 
@@ -286,7 +315,20 @@ public class OrderService {
                 order,
                 OrderStatusHistoryActorType.ADMIN,
                 accountId,
-                username);
+                username,
+                internalNote);
+    }
+
+    public void cancelOrder(
+            Long orderId,
+            Long adminId,
+            String adminUsername) {
+
+        cancelOrder(
+                orderId,
+                adminId,
+                adminUsername,
+                null);
     }
 
     @Transactional(readOnly = true)
@@ -331,7 +373,8 @@ public class OrderService {
             Order order,
             OrderStatusHistoryActorType changedByType,
             Long accountId,
-            String username) {
+            String username,
+            String internalNote) {
 
         OrderStatus fromStatus = order.getStatus();
 
@@ -344,7 +387,8 @@ public class OrderService {
                 order.getStatus(),
                 changedByType,
                 accountId,
-                username);
+                username,
+                internalNote);
 
         for (OrderItem item : order.getItems()) {
 
@@ -390,7 +434,8 @@ public class OrderService {
                 order,
                 OrderStatusHistoryActorType.USER,
                 userId,
-                username);
+                username,
+                null);
     }
 
     @Transactional(readOnly = true)

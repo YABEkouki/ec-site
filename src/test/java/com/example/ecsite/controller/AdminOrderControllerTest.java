@@ -21,6 +21,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
@@ -28,6 +29,7 @@ import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.AdminOrderSearchForm;
+import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderService;
@@ -195,8 +197,14 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
         String viewName = adminOrderController.markAsShipped(
                 orderId,
+                form,
+                bindingResult,
                 loginUser,
                 redirectAttributes);
 
@@ -208,7 +216,8 @@ class AdminOrderControllerTest {
                 .markAsShipped(
                         orderId,
                         ADMIN_ID,
-                        ADMIN_USERNAME);
+                        ADMIN_USERNAME,
+                        null);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
@@ -229,8 +238,14 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
         String viewName = adminOrderController.cancel(
                 orderId,
+                form,
+                bindingResult,
                 loginUser,
                 redirectAttributes);
 
@@ -242,12 +257,55 @@ class AdminOrderControllerTest {
                 .cancelOrder(
                         orderId,
                         ADMIN_ID,
-                        ADMIN_USERNAME);
+                        ADMIN_USERNAME,
+                        null);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
                         "successMessage",
                         "注文をキャンセルしました。");
+    }
+
+    @Test
+    void markAsPaidPassesInternalNoteToOrderService() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+        form.setInternalNote("入金を確認したため");
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        String viewName = adminOrderController.markAsPaid(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(orderService)
+                .markAsPaid(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME,
+                        "入金を確認したため");
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "注文を支払済みに変更しました。");
     }
 
     @Test
@@ -263,6 +321,10 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
         InvalidOrderStatusException exception = new InvalidOrderStatusException(
                 "注文受付中の注文だけを支払済みに変更できます。");
 
@@ -271,10 +333,13 @@ class AdminOrderControllerTest {
                 .markAsPaid(
                         orderId,
                         ADMIN_ID,
-                        ADMIN_USERNAME);
+                        ADMIN_USERNAME,
+                        null);
 
         String viewName = adminOrderController.markAsPaid(
                 orderId,
+                form,
+                bindingResult,
                 loginUser,
                 redirectAttributes);
 
@@ -301,6 +366,10 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
         InvalidOrderStatusException exception = new InvalidOrderStatusException(
                 "支払済みの注文だけを発送済みに変更できます。");
 
@@ -309,10 +378,13 @@ class AdminOrderControllerTest {
                 .markAsShipped(
                         orderId,
                         ADMIN_ID,
-                        ADMIN_USERNAME);
+                        ADMIN_USERNAME,
+                        null);
 
         String viewName = adminOrderController.markAsShipped(
                 orderId,
+                form,
+                bindingResult,
                 loginUser,
                 redirectAttributes);
 
@@ -339,6 +411,10 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
         InvalidOrderStatusException exception = new InvalidOrderStatusException(
                 "注文受付中の注文だけをキャンセルできます。");
 
@@ -347,10 +423,13 @@ class AdminOrderControllerTest {
                 .cancelOrder(
                         orderId,
                         ADMIN_ID,
-                        ADMIN_USERNAME);
+                        ADMIN_USERNAME,
+                        null);
 
         String viewName = adminOrderController.cancel(
                 orderId,
+                form,
+                bindingResult,
                 loginUser,
                 redirectAttributes);
 
@@ -443,4 +522,119 @@ class AdminOrderControllerTest {
         verify(orderCsvService)
                 .createCsv(orders);
     }
+
+    @Test
+    void markAsPaidDoesNotCallServiceWhenFormHasValidationErrors() {
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        String viewName = adminOrderController.markAsPaid(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(orderService, org.mockito.Mockito.never())
+                .markAsPaid(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "変更理由・備考は500文字以内で入力してください。");
+    }
+
+    @Test
+    void markAsShippedDoesNotCallServiceWhenFormHasValidationErrors() {
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        String viewName = adminOrderController.markAsShipped(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(orderService, org.mockito.Mockito.never())
+                .markAsShipped(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "変更理由・備考は500文字以内で入力してください。");
+    }
+
+    @Test
+    void cancelDoesNotCallServiceWhenFormHasValidationErrors() {
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        String viewName = adminOrderController.cancel(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(orderService, org.mockito.Mockito.never())
+                .cancelOrder(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "変更理由・備考は500文字以内で入力してください。");
+    }
+
 }
