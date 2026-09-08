@@ -36,6 +36,10 @@ public class Order {
     @Column(nullable = false, length = 30)
     private OrderStatus status = OrderStatus.ORDERED;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "handling_status", nullable = false, length = 30)
+    private OrderHandlingStatus handlingStatus = OrderHandlingStatus.NONE;
+
     @Column(name = "ordered_at", nullable = false)
     private LocalDateTime orderedAt;
 
@@ -96,6 +100,14 @@ public class Order {
 
     public LocalDateTime getOrderedAt() {
         return orderedAt;
+    }
+
+    public OrderHandlingStatus getHandlingStatus() {
+        return handlingStatus;
+    }
+
+    public void changeHandlingStatus(OrderHandlingStatus handlingStatus) {
+        this.handlingStatus = handlingStatus;
     }
 
     public void setOrderedAt(LocalDateTime orderedAt) {

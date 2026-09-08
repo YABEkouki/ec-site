@@ -13,167 +13,190 @@ import com.example.ecsite.exception.InvalidOrderStatusException;
 
 class OrderTest {
 
-        @Test
-        void newOrderStartsWithOrderedStatus() {
+    @Test
+    void newOrderStartsWithOrderedStatus() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertEquals(
-                                OrderStatus.ORDERED,
-                                order.getStatus());
-        }
+        assertEquals(
+                OrderStatus.ORDERED,
+                order.getStatus());
+    }
 
-        @Test
-        void orderCanMoveFromOrderedToPaidToShipped() {
+    @Test
+    void orderCanMoveFromOrderedToPaidToShipped() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                order.markAsPaid();
+        order.markAsPaid();
 
-                assertEquals(
-                                OrderStatus.PAID,
-                                order.getStatus());
+        assertEquals(
+                OrderStatus.PAID,
+                order.getStatus());
 
-                order.markAsShipped();
+        order.markAsShipped();
 
-                assertEquals(
-                                OrderStatus.SHIPPED,
-                                order.getStatus());
-        }
+        assertEquals(
+                OrderStatus.SHIPPED,
+                order.getStatus());
+    }
 
-        @Test
-        void orderedOrderCannotBeShippedDirectly() {
+    @Test
+    void orderedOrderCannotBeShippedDirectly() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertThrows(
-                                InvalidOrderStatusException.class,
-                                order::markAsShipped);
+        assertThrows(
+                InvalidOrderStatusException.class,
+                order::markAsShipped);
 
-                assertEquals(
-                                OrderStatus.ORDERED,
-                                order.getStatus());
-        }
+        assertEquals(
+                OrderStatus.ORDERED,
+                order.getStatus());
+    }
 
-        @Test
-        void orderedOrderCanBeCancelled() {
+    @Test
+    void orderedOrderCanBeCancelled() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                order.cancel();
+        order.cancel();
 
-                assertEquals(
-                                OrderStatus.CANCELLED,
-                                order.getStatus());
-        }
+        assertEquals(
+                OrderStatus.CANCELLED,
+                order.getStatus());
+    }
 
-        @Test
-        void paidOrderCannotBeCancelled() {
+    @Test
+    void paidOrderCannotBeCancelled() {
 
-                Order order = new Order(1L, 1000);
-                order.markAsPaid();
+        Order order = new Order(1L, 1000);
+        order.markAsPaid();
 
-                assertThrows(
-                                InvalidOrderStatusException.class,
-                                order::cancel);
+        assertThrows(
+                InvalidOrderStatusException.class,
+                order::cancel);
 
-                assertEquals(
-                                OrderStatus.PAID,
-                                order.getStatus());
-        }
+        assertEquals(
+                OrderStatus.PAID,
+                order.getStatus());
+    }
 
-        @Test
-        void paidAndShippedTimestampsAreRecorded() {
+    @Test
+    void paidAndShippedTimestampsAreRecorded() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertNull(order.getPaidAt());
-                assertNull(order.getShippedAt());
+        assertNull(order.getPaidAt());
+        assertNull(order.getShippedAt());
 
-                order.markAsPaid();
+        order.markAsPaid();
 
-                assertNotNull(order.getPaidAt());
-                assertNull(order.getShippedAt());
+        assertNotNull(order.getPaidAt());
+        assertNull(order.getShippedAt());
 
-                order.markAsShipped();
+        order.markAsShipped();
 
-                assertNotNull(order.getPaidAt());
-                assertNotNull(order.getShippedAt());
-        }
+        assertNotNull(order.getPaidAt());
+        assertNotNull(order.getShippedAt());
+    }
 
-        @Test
-        void cancelledTimestampIsRecorded() {
+    @Test
+    void cancelledTimestampIsRecorded() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertNull(order.getCancelledAt());
+        assertNull(order.getCancelledAt());
 
-                order.cancel();
+        order.cancel();
 
-                assertNotNull(order.getCancelledAt());
-        }
+        assertNotNull(order.getCancelledAt());
+    }
 
-        @Test
-        void invalidShippingDoesNotRecordTimestamp() {
+    @Test
+    void invalidShippingDoesNotRecordTimestamp() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertThrows(
-                                InvalidOrderStatusException.class,
-                                order::markAsShipped);
+        assertThrows(
+                InvalidOrderStatusException.class,
+                order::markAsShipped);
 
-                assertNull(order.getShippedAt());
-        }
+        assertNull(order.getShippedAt());
+    }
 
-        @Test
-        void orderedOrderCanBeCancelledAccordingToStatus() {
+    @Test
+    void orderedOrderCanBeCancelledAccordingToStatus() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertTrue(order.canCancel());
-        }
+        assertTrue(order.canCancel());
+    }
 
-        @Test
-        void paidOrderCannotBeCancelledAccordingToStatus() {
+    @Test
+    void paidOrderCannotBeCancelledAccordingToStatus() {
 
-                Order order = new Order(1L, 1000);
-                order.markAsPaid();
+        Order order = new Order(1L, 1000);
+        order.markAsPaid();
 
-                assertFalse(order.canCancel());
-        }
+        assertFalse(order.canCancel());
+    }
 
-        @Test
-        void orderedOrderCanBeMarkedAsPaid() {
+    @Test
+    void orderedOrderCanBeMarkedAsPaid() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertTrue(order.canMarkAsPaid());
-        }
+        assertTrue(order.canMarkAsPaid());
+    }
 
-        @Test
-        void paidOrderCannotBeMarkedAsPaidAgain() {
+    @Test
+    void paidOrderCannotBeMarkedAsPaidAgain() {
 
-                Order order = new Order(1L, 1000);
-                order.markAsPaid();
+        Order order = new Order(1L, 1000);
+        order.markAsPaid();
 
-                assertFalse(order.canMarkAsPaid());
-        }
+        assertFalse(order.canMarkAsPaid());
+    }
 
-        @Test
-        void paidOrderCanBeMarkedAsShipped() {
+    @Test
+    void paidOrderCanBeMarkedAsShipped() {
 
-                Order order = new Order(1L, 1000);
-                order.markAsPaid();
+        Order order = new Order(1L, 1000);
+        order.markAsPaid();
 
-                assertTrue(order.canMarkAsShipped());
-        }
+        assertTrue(order.canMarkAsShipped());
+    }
 
-        @Test
-        void orderedOrderCannotBeMarkedAsShipped() {
+    @Test
+    void orderedOrderCannotBeMarkedAsShipped() {
 
-                Order order = new Order(1L, 1000);
+        Order order = new Order(1L, 1000);
 
-                assertFalse(order.canMarkAsShipped());
-        }
+        assertFalse(order.canMarkAsShipped());
+    }
+
+    @Test
+    void newOrderStartsWithNoneHandlingStatus() {
+
+        Order order = new Order(1L, 1000);
+
+        assertEquals(
+                OrderHandlingStatus.NONE,
+                order.getHandlingStatus());
+    }
+
+    @Test
+    void handlingStatusCanBeChanged() {
+
+        Order order = new Order(1L, 1000);
+
+        order.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        assertEquals(
+                OrderHandlingStatus.IN_PROGRESS,
+                order.getHandlingStatus());
+    }
 
 }

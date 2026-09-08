@@ -60,13 +60,14 @@ class OrderCsvServiceTest {
                 StandardCharsets.UTF_8);
 
         assertTrue(csv.startsWith(
-                "注文番号,ユーザーID,注文日時,注文状態,合計金額,"
+                "注文番号,ユーザーID,注文日時,注文状態,対応状況,合計金額,"
                         + "受取人,郵便番号,都道府県,市区町村,住所,電話番号,"
                         + "支払日時,発送日時,キャンセル日時"));
 
         assertTrue(csv.contains("10"));
         assertTrue(csv.contains("2026/08/31 14:32:15"));
         assertTrue(csv.contains("注文受付"));
+        assertTrue(csv.contains("通常"));
         assertTrue(csv.contains("2500"));
         assertTrue(csv.contains("山田 太郎"));
         assertTrue(csv.contains("東京都"));

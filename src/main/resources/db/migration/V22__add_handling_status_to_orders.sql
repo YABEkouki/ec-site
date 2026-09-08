@@ -1,0 +1,2 @@
+ALTER TABLE orders
+ADD COLUMN handling_status VARCHAR(30) NOT NULL DEFAULT 'NONE';

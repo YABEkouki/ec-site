@@ -25,7 +25,7 @@ public class OrderCsvService {
         StringBuilder csv = new StringBuilder();
 
         csv.append(
-                "注文番号,ユーザーID,注文日時,注文状態,合計金額,"
+                "注文番号,ユーザーID,注文日時,注文状態,対応状況,合計金額,"
                         + "受取人,郵便番号,都道府県,市区町村,住所,電話番号,"
                         + "支払日時,発送日時,キャンセル日時")
                 .append("\r\n");
@@ -36,10 +36,11 @@ public class OrderCsvService {
                     .append(",")
                     .append(order.getUserId())
                     .append(",")
-                    .append(DATE_TIME_FORMATTER.format(
-                            order.getOrderedAt()))
+                    .append(DATE_TIME_FORMATTER.format(order.getOrderedAt()))
                     .append(",")
                     .append(order.getStatus().getDisplayName())
+                    .append(",")
+                    .append(order.getHandlingStatus().getDisplayName())
                     .append(",")
                     .append(order.getTotalAmount())
                     .append(",")

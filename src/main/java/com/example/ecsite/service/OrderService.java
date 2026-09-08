@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
@@ -295,6 +296,16 @@ public class OrderService {
                 internalNote);
     }
 
+    @Transactional
+    public void changeHandlingStatus(
+            Long id,
+            OrderHandlingStatus handlingStatus) {
+
+        Order order = findOrderForUpdate(id);
+
+        order.changeHandlingStatus(handlingStatus);
+    }
+
     @Transactional(readOnly = true)
     public Page<Order> searchOrders(
             AdminOrderSearchForm searchForm,
@@ -312,6 +323,7 @@ public class OrderService {
                 from,
                 toExclusive,
                 searchForm.getStatus(),
+                searchForm.getHandlingStatus(),
                 pageable);
     }
 
@@ -328,6 +340,7 @@ public class OrderService {
                 from,
                 toExclusive,
                 searchForm.getStatus(),
+                searchForm.getHandlingStatus(),
                 Pageable.unpaged());
 
         return orderPage.getContent();

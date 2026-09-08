@@ -50,6 +50,18 @@
                 </select>
             </div>
 
+            <div class="order-search-field">
+                <label for="handlingStatus">対応状況</label>
+
+                <select id="handlingStatus" th:field="*{handlingStatus}">
+                    <option value="">すべて</option>
+
+                    <option th:each="handlingStatus : ${handlingStatuses}" th:value="${handlingStatus.name()}"
+                        th:text="${handlingStatus.displayName}">
+                    </option>
+                </select>
+            </div>
+
         </div>
 
         <input type="hidden" name="size" th:value="${orderPage.size}">
@@ -69,7 +81,8 @@
         userId=${searchForm.userId},
         from=${searchForm.from},
         to=${searchForm.to},
-        status=${searchForm.status})}" class="button button-secondary">
+        status=${searchForm.status},
+        handlingStatus=${searchForm.handlingStatus})}" class="button button-secondary">
                 CSV出力
             </a>
         </div>
@@ -90,6 +103,7 @@
                 <th>受取人</th>
                 <th>合計金額</th>
                 <th>状態</th>
+                <th>対応状況</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -131,6 +145,9 @@
                     </span>
                 </td>
 
+                <td th:text="${order.handlingStatus.displayName}">
+                </td>
+
                 <td>
                     <a th:href="@{/admin/orders/{id}(
                     id=${order.id})}" class="button button-secondary">
@@ -150,6 +167,7 @@
            from=${searchForm.from},
            to=${searchForm.to},
            status=${searchForm.status},
+           handlingStatus=${searchForm.handlingStatus},
            page=${orderPage.number - 1},
            size=${orderPage.size})}" class="button button-secondary">
             前へ
@@ -170,6 +188,7 @@
                from=${searchForm.from},
                to=${searchForm.to},
                status=${searchForm.status},
+               handlingStatus=${searchForm.handlingStatus},
                page=${pageNumber},
                size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
@@ -182,6 +201,7 @@
            from=${searchForm.from},
            to=${searchForm.to},
            status=${searchForm.status},
+           handlingStatus=${searchForm.handlingStatus},
            page=${orderPage.number + 1},
            size=${orderPage.size})}" class="button button-secondary">
             次へ
