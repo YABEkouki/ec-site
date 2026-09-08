@@ -57,6 +57,9 @@ class OrderServiceTest {
     @Mock
     private OrderStatusHistoryService orderStatusHistoryService;
 
+    @Mock
+    private OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
+
     private OrderService orderService;
 
     @BeforeEach
@@ -65,7 +68,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
     }
 
     @Test
@@ -307,7 +311,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         Page<Order> actualPage = orderService.findOrdersByUserId(
                 userId,
@@ -360,7 +365,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         orderService.cancelOrder(
                 orderId,
@@ -402,7 +408,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         assertThrows(
                 OrderNotFoundException.class,
@@ -433,7 +440,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         assertThrows(
                 InvalidOrderStatusException.class,
@@ -513,7 +521,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         Order result = orderService.createOrder(
                 userId,
@@ -548,7 +557,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -626,7 +636,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -686,7 +697,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -732,7 +744,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -773,7 +786,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         Page<Order> actualPage = orderService.findAllOrders(
                 status,
@@ -810,7 +824,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         Page<Order> actualPage = orderService.findAllOrders(
                 null,
@@ -863,7 +878,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         orderService.cancelOrderForUser(
                 orderId,
@@ -923,7 +939,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         orderService.cancelOrderForUser(
                 orderId,
@@ -977,7 +994,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         long actualCount = orderService.countOrdersByStatus(status);
 
@@ -1050,7 +1068,8 @@ class OrderServiceTest {
                 orderRepository,
                 productService,
                 inventoryService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService);
 
         Order order = orderService.createOrder(
                 userId,
@@ -1252,25 +1271,66 @@ class OrderServiceTest {
     }
 
     @Test
-    void changeHandlingStatusUpdatesOrderHandlingStatus() {
+    void changeHandlingStatusUpdatesStatusAndRecordsHistory() {
 
         Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
 
         Order order = new Order(10L, 1000);
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        orderService.changeHandlingStatus(
+        boolean changed = orderService.changeHandlingStatus(
                 orderId,
-                OrderHandlingStatus.NEEDS_ACTION);
+                OrderHandlingStatus.NEEDS_ACTION,
+                adminId,
+                adminUsername);
+
+        assertEquals(true, changed);
 
         assertEquals(
                 OrderHandlingStatus.NEEDS_ACTION,
                 order.getHandlingStatus());
 
-        verify(orderRepository)
-                .findByIdForUpdate(orderId);
+        verify(orderHandlingStatusHistoryService)
+                .record(
+                        order,
+                        OrderHandlingStatus.NONE,
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        adminId,
+                        adminUsername);
+    }
+
+    @Test
+    void changeHandlingStatusDoesNothingWhenStatusIsUnchanged() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+
+        Order order = new Order(10L, 1000);
+        order.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        boolean changed = orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION,
+                adminId,
+                adminUsername);
+
+        assertEquals(false, changed);
+
+        assertEquals(
+                OrderHandlingStatus.NEEDS_ACTION,
+                order.getHandlingStatus());
+
+        verifyNoInteractions(
+                orderHandlingStatusHistoryService);
     }
 
 }

@@ -27,6 +27,7 @@ import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
+import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
@@ -41,17 +42,20 @@ public class AdminOrderController {
     private final OrderCsvService orderCsvService;
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderNoteService orderNoteService;
+    private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
 
     public AdminOrderController(
             OrderService orderService,
             OrderCsvService orderCsvService,
             OrderStatusHistoryService orderStatusHistoryService,
-            OrderNoteService orderNoteService) {
+            OrderNoteService orderNoteService,
+            OrderHandlingStatusHistoryService orderHandlingStatusHistoryService) {
 
         this.orderService = orderService;
         this.orderCsvService = orderCsvService;
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.orderNoteService = orderNoteService;
+        this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
     }
 
     @GetMapping
@@ -114,6 +118,10 @@ public class AdminOrderController {
         model.addAttribute(
                 "handlingStatuses",
                 OrderHandlingStatus.values());
+
+        model.addAttribute(
+                "handlingStatusHistories",
+                orderHandlingStatusHistoryService.findByOrderId(id));
 
         AdminOrderHandlingStatusForm handlingStatusForm = new AdminOrderHandlingStatusForm();
 
@@ -292,6 +300,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderHandlingStatusForm form,
             BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {
@@ -302,13 +311,21 @@ public class AdminOrderController {
             return "redirect:/admin/orders/" + id;
         }
 
-        orderService.changeHandlingStatus(
+        boolean changed = orderService.changeHandlingStatus(
                 id,
-                form.getHandlingStatus());
+                form.getHandlingStatus(),
+                loginUser.getId(),
+                loginUser.getUsername());
 
-        redirectAttributes.addFlashAttribute(
-                "successMessage",
-                "対応状況を変更しました。");
+        if (changed) {
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "対応状況を変更しました。");
+        } else {
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "対応状況は変更されていません。");
+        }
 
         return "redirect:/admin/orders/" + id;
     }

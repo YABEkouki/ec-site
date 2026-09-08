@@ -111,6 +111,33 @@
         </button>
     </form>
 
+    <h3>対応状況変更履歴</h3>
+
+    <table th:if="${!#lists.isEmpty(handlingStatusHistories)}">
+        <thead>
+            <tr>
+                <th>変更日時</th>
+                <th>変更前</th>
+                <th>変更後</th>
+                <th>管理者ID</th>
+                <th>管理者ユーザー名</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="history : ${handlingStatusHistories}">
+                <td th:text="${#temporals.format(history.changedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                <td th:text="${history.fromStatus.displayName}"></td>
+                <td th:text="${history.toStatus.displayName}"></td>
+                <td th:text="${history.changedByAccountId}"></td>
+                <td th:text="${history.changedByUsername}"></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p th:if="${#lists.isEmpty(handlingStatusHistories)}">
+        対応状況変更履歴はありません。
+    </p>
+
     <h2>注文操作</h2>
 
     <div th:if="${order.canMarkAsPaid() or order.canCancel()}">
