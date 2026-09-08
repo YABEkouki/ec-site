@@ -15,6 +15,7 @@ import org.springframework.data.domain.PageRequest;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
@@ -63,6 +64,7 @@ class OrderRepositoryTest {
                 SEARCH_FROM,
                 SEARCH_TO,
                 null,
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -83,6 +85,7 @@ class OrderRepositoryTest {
                 null,
                 SEARCH_FROM,
                 SEARCH_TO,
+                null,
                 null,
                 PageRequest.of(0, 20));
 
@@ -117,6 +120,7 @@ class OrderRepositoryTest {
                 LocalDateTime.of(2026, 8, 10, 0, 0),
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 null,
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(2, result.getTotalElements());
@@ -142,6 +146,7 @@ class OrderRepositoryTest {
                 SEARCH_FROM,
                 SEARCH_TO,
                 OrderStatus.PAID,
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -172,6 +177,7 @@ class OrderRepositoryTest {
                 LocalDateTime.of(2026, 8, 15, 0, 0),
                 LocalDateTime.of(2026, 8, 16, 0, 0),
                 OrderStatus.PAID,
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -732,6 +738,39 @@ class OrderRepositoryTest {
         entityManager.flush();
 
         return saved;
+    }
+
+    @Test
+    void searchFiltersByHandlingStatus() {
+
+        User user = createUser("order-handling-status-user");
+
+        Order needsActionOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 11, 10, 0));
+
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 12, 10, 0));
+
+        needsActionOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        entityManager.flush();
+
+        Page<Order> result = orderRepository.search(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                OrderHandlingStatus.NEEDS_ACTION,
+                PageRequest.of(0, 20));
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals(
+                needsActionOrder.getId(),
+                result.getContent().get(0).getId());
     }
 
 }

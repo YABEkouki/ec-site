@@ -89,6 +89,28 @@
         </tbody>
     </table>
 
+    <h2>対応状況</h2>
+
+    <p>
+        現在：
+        <strong th:text="${order.handlingStatus.displayName}">
+        </strong>
+    </p>
+
+    <form th:action="@{/admin/orders/{id}/handling-status(id=${order.id})}" th:object="${handlingStatusForm}"
+        method="post">
+
+        <select th:field="*{handlingStatus}" required>
+            <option th:each="handlingStatus : ${handlingStatuses}" th:value="${handlingStatus.name()}"
+                th:text="${handlingStatus.displayName}">
+            </option>
+        </select>
+
+        <button type="submit" onclick="return confirm('対応状況を変更しますか？');">
+            対応状況を変更
+        </button>
+    </form>
+
     <h2>注文操作</h2>
 
     <div th:if="${order.canMarkAsPaid() or order.canCancel()}">

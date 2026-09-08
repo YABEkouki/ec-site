@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
@@ -85,6 +86,7 @@ public interface OrderRepository
               AND o.orderedAt >= :from
               AND o.orderedAt < :toExclusive
               AND (:status IS NULL OR o.status = :status)
+              AND (:handlingStatus IS NULL OR o.handlingStatus = :handlingStatus)
             ORDER BY o.orderedAt DESC, o.id DESC
             """)
     Page<Order> search(
@@ -93,6 +95,7 @@ public interface OrderRepository
             @Param("from") LocalDateTime from,
             @Param("toExclusive") LocalDateTime toExclusive,
             @Param("status") OrderStatus status,
+            @Param("handlingStatus") OrderHandlingStatus handlingStatus,
             Pageable pageable);
 
     @Query("""

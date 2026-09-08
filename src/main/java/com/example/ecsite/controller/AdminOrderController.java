@@ -18,8 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
@@ -79,6 +81,10 @@ public class AdminOrderController {
                 "statuses",
                 OrderStatus.values());
 
+        model.addAttribute(
+                "handlingStatuses",
+                OrderHandlingStatus.values());
+
         return "admin/orders/list";
     }
 
@@ -87,9 +93,11 @@ public class AdminOrderController {
             @PathVariable Long id,
             Model model) {
 
+        Order order = orderService.findOrderWithItems(id);
+
         model.addAttribute(
                 "order",
-                orderService.findOrderWithItems(id));
+                order);
 
         model.addAttribute(
                 "statusHistories",
@@ -102,6 +110,19 @@ public class AdminOrderController {
         model.addAttribute(
                 "orderNoteForm",
                 new AdminOrderNoteForm());
+
+        model.addAttribute(
+                "handlingStatuses",
+                OrderHandlingStatus.values());
+
+        AdminOrderHandlingStatusForm handlingStatusForm = new AdminOrderHandlingStatusForm();
+
+        handlingStatusForm.setHandlingStatus(
+                order.getHandlingStatus());
+
+        model.addAttribute(
+                "handlingStatusForm",
+                handlingStatusForm);
 
         return "admin/orders/detail";
     }
@@ -262,6 +283,32 @@ public class AdminOrderController {
         redirectAttributes.addFlashAttribute(
                 "successMessage",
                 "注文メモを登録しました。");
+
+        return "redirect:/admin/orders/" + id;
+    }
+
+    @PostMapping("/{id}/handling-status")
+    public String changeHandlingStatus(
+            @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderHandlingStatusForm form,
+            BindingResult bindingResult,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "対応状況を選択してください。");
+
+            return "redirect:/admin/orders/" + id;
+        }
+
+        orderService.changeHandlingStatus(
+                id,
+                form.getHandlingStatus());
+
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "対応状況を変更しました。");
 
         return "redirect:/admin/orders/" + id;
     }

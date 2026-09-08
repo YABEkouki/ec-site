@@ -4,6 +4,7 @@ import java.time.LocalDate;
 
 import org.springframework.format.annotation.DateTimeFormat;
 
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 
 public class AdminOrderSearchForm {
@@ -19,6 +20,8 @@ public class AdminOrderSearchForm {
     private LocalDate to;
 
     private OrderStatus status;
+
+    private OrderHandlingStatus handlingStatus;
 
     public Long getOrderId() {
         return orderId;
@@ -59,4 +62,13 @@ public class AdminOrderSearchForm {
     public void setStatus(OrderStatus status) {
         this.status = status;
     }
+
+    public OrderHandlingStatus getHandlingStatus() {
+        return handlingStatus;
+    }
+
+    public void setHandlingStatus(OrderHandlingStatus handlingStatus) {
+        this.handlingStatus = handlingStatus;
+    }
+
 }

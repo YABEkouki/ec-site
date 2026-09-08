@@ -26,10 +26,12 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderNote;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
@@ -114,6 +116,10 @@ class AdminOrderControllerTest {
         verify(model).addAttribute(
                 "statuses",
                 OrderStatus.values());
+
+        verify(model).addAttribute(
+                "handlingStatuses",
+                OrderHandlingStatus.values());
     }
 
     @Test
@@ -159,6 +165,7 @@ class AdminOrderControllerTest {
         Order order = new Order(10L, 2000);
         OrderStatusHistory history = mock(OrderStatusHistory.class);
         OrderNote orderNote = mock(OrderNote.class);
+        order.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
 
         List<OrderStatusHistory> statusHistories = List.of(history);
         List<OrderNote> orderNotes = List.of(orderNote);
@@ -208,6 +215,17 @@ class AdminOrderControllerTest {
                 .addAttribute(
                         org.mockito.ArgumentMatchers.eq("orderNoteForm"),
                         org.mockito.ArgumentMatchers.any(AdminOrderNoteForm.class));
+
+        verify(model).addAttribute(
+                "handlingStatuses",
+                OrderHandlingStatus.values());
+
+        verify(model).addAttribute(
+                org.mockito.ArgumentMatchers.eq("handlingStatusForm"),
+                org.mockito.ArgumentMatchers.argThat(
+                        form -> form instanceof AdminOrderHandlingStatusForm
+                                && ((AdminOrderHandlingStatusForm) form)
+                                        .getHandlingStatus() == OrderHandlingStatus.IN_PROGRESS));
     }
 
     @Test
@@ -747,6 +765,41 @@ class AdminOrderControllerTest {
                 .addFlashAttribute(
                         "errorMessage",
                         "メモを入力してください。");
+    }
+
+    @Test
+    void changeHandlingStatusUpdatesStatusAndRedirectsToDetail() {
+
+        Long orderId = 1L;
+
+        AdminOrderHandlingStatusForm form = new AdminOrderHandlingStatusForm();
+
+        form.setHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = adminOrderController.changeHandlingStatus(
+                orderId,
+                form,
+                bindingResult,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(orderService)
+                .changeHandlingStatus(
+                        orderId,
+                        OrderHandlingStatus.NEEDS_ACTION);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "対応状況を変更しました。");
     }
 
 }

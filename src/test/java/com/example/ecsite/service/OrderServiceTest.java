@@ -29,6 +29,7 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
@@ -1084,6 +1085,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 10, 0, 0),
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 OrderStatus.PAID,
+                null,
                 PageRequest.of(2, 20)))
                 .thenReturn(expected);
 
@@ -1100,6 +1102,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 10, 0, 0),
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 OrderStatus.PAID,
+                null,
                 PageRequest.of(2, 20));
     }
 
@@ -1116,6 +1119,7 @@ class OrderServiceTest {
                 LocalDateTime.of(1970, 1, 1, 0, 0),
                 LocalDateTime.of(9999, 12, 31, 0, 0),
                 null,
+                null,
                 PageRequest.of(0, 10)))
                 .thenReturn(expected);
 
@@ -1131,6 +1135,7 @@ class OrderServiceTest {
                 null,
                 LocalDateTime.of(1970, 1, 1, 0, 0),
                 LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
                 null,
                 PageRequest.of(0, 10));
     }
@@ -1157,6 +1162,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 1, 0, 0),
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 OrderStatus.PAID,
+                null,
                 Pageable.unpaged()))
                 .thenReturn(expectedPage);
 
@@ -1172,6 +1178,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 1, 0, 0),
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 OrderStatus.PAID,
+                null,
                 Pageable.unpaged());
     }
 
@@ -1243,4 +1250,27 @@ class OrderServiceTest {
                         adminUsername,
                         internalNote);
     }
+
+    @Test
+    void changeHandlingStatusUpdatesOrderHandlingStatus() {
+
+        Long orderId = 1L;
+
+        Order order = new Order(10L, 1000);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        assertEquals(
+                OrderHandlingStatus.NEEDS_ACTION,
+                order.getHandlingStatus());
+
+        verify(orderRepository)
+                .findByIdForUpdate(orderId);
+    }
+
 }
