@@ -31,17 +31,20 @@ public class OrderService {
     private final ProductService productService;
     private final InventoryService inventoryService;
     private final OrderStatusHistoryService orderStatusHistoryService;
+    private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
 
     public OrderService(
             OrderRepository orderRepository,
             ProductService productService,
             InventoryService inventoryService,
-            OrderStatusHistoryService orderStatusHistoryService) {
+            OrderStatusHistoryService orderStatusHistoryService,
+            OrderHandlingStatusHistoryService orderHandlingStatusHistoryService) {
 
         this.orderRepository = orderRepository;
         this.productService = productService;
         this.inventoryService = inventoryService;
         this.orderStatusHistoryService = orderStatusHistoryService;
+        this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
     }
 
     @Transactional
@@ -297,13 +300,30 @@ public class OrderService {
     }
 
     @Transactional
-    public void changeHandlingStatus(
+    public boolean changeHandlingStatus(
             Long id,
-            OrderHandlingStatus handlingStatus) {
+            OrderHandlingStatus handlingStatus,
+            Long changedByAccountId,
+            String changedByUsername) {
 
         Order order = findOrderForUpdate(id);
 
+        OrderHandlingStatus fromStatus = order.getHandlingStatus();
+
+        if (fromStatus == handlingStatus) {
+            return false;
+        }
+
         order.changeHandlingStatus(handlingStatus);
+
+        orderHandlingStatusHistoryService.record(
+                order,
+                fromStatus,
+                handlingStatus,
+                changedByAccountId,
+                changedByUsername);
+
+        return true;
     }
 
     @Transactional(readOnly = true)

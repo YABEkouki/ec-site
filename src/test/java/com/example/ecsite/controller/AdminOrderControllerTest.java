@@ -27,6 +27,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
+import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.OrderNote;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistory;
@@ -37,6 +38,7 @@ import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
+import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
@@ -62,6 +64,9 @@ class AdminOrderControllerTest {
     @Mock
     private CustomUserDetails loginUser;
 
+    @Mock
+    private OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
+
     private AdminOrderController adminOrderController;
 
     private static final Long ADMIN_ID = 20L;
@@ -73,7 +78,8 @@ class AdminOrderControllerTest {
                 orderService,
                 orderCsvService,
                 orderStatusHistoryService,
-                orderNoteService);
+                orderNoteService,
+                orderHandlingStatusHistoryService);
     }
 
     @Test
@@ -158,17 +164,20 @@ class AdminOrderControllerTest {
     }
 
     @Test
-    void detailDisplaysOrderWithItemsAndNotes() {
+    void detailDisplaysOrderWithItemsNotesAndHandlingStatusHistories() {
 
         Long orderId = 1L;
 
         Order order = new Order(10L, 2000);
         OrderStatusHistory history = mock(OrderStatusHistory.class);
         OrderNote orderNote = mock(OrderNote.class);
+        OrderHandlingStatusHistory handlingStatusHistory = mock(OrderHandlingStatusHistory.class);
+
         order.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
 
         List<OrderStatusHistory> statusHistories = List.of(history);
         List<OrderNote> orderNotes = List.of(orderNote);
+        List<OrderHandlingStatusHistory> handlingStatusHistories = List.of(handlingStatusHistory);
 
         when(orderService.findOrderWithItems(orderId))
                 .thenReturn(order);
@@ -178,6 +187,9 @@ class AdminOrderControllerTest {
 
         when(orderNoteService.findByOrderId(orderId))
                 .thenReturn(orderNotes);
+
+        when(orderHandlingStatusHistoryService.findByOrderId(orderId))
+                .thenReturn(handlingStatusHistories);
 
         String viewName = adminOrderController.detail(
                 orderId,
@@ -226,6 +238,11 @@ class AdminOrderControllerTest {
                         form -> form instanceof AdminOrderHandlingStatusForm
                                 && ((AdminOrderHandlingStatusForm) form)
                                         .getHandlingStatus() == OrderHandlingStatus.IN_PROGRESS));
+
+        verify(model)
+                .addAttribute(
+                        "handlingStatusHistories",
+                        handlingStatusHistories);
     }
 
     @Test
@@ -771,6 +788,8 @@ class AdminOrderControllerTest {
     void changeHandlingStatusUpdatesStatusAndRedirectsToDetail() {
 
         Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
 
         AdminOrderHandlingStatusForm form = new AdminOrderHandlingStatusForm();
 
@@ -779,12 +798,28 @@ class AdminOrderControllerTest {
 
         BindingResult bindingResult = mock(BindingResult.class);
 
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(loginUser.getId())
+                .thenReturn(adminId);
+
+        when(loginUser.getUsername())
+                .thenReturn(adminUsername);
+
+        when(orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION,
+                adminId,
+                adminUsername))
+                .thenReturn(true);
 
         String viewName = adminOrderController.changeHandlingStatus(
                 orderId,
                 form,
                 bindingResult,
+                loginUser,
                 redirectAttributes);
 
         assertEquals(
@@ -794,12 +829,62 @@ class AdminOrderControllerTest {
         verify(orderService)
                 .changeHandlingStatus(
                         orderId,
-                        OrderHandlingStatus.NEEDS_ACTION);
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        adminId,
+                        adminUsername);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
                         "successMessage",
                         "対応状況を変更しました。");
+    }
+
+    @Test
+    void changeHandlingStatusShowsMessageWhenStatusIsUnchanged() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+
+        AdminOrderHandlingStatusForm form = new AdminOrderHandlingStatusForm();
+
+        form.setHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(loginUser.getId())
+                .thenReturn(adminId);
+
+        when(loginUser.getUsername())
+                .thenReturn(adminUsername);
+
+        when(orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION,
+                adminId,
+                adminUsername))
+                .thenReturn(false);
+
+        String viewName = adminOrderController.changeHandlingStatus(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "対応状況は変更されていません。");
     }
 
 }
