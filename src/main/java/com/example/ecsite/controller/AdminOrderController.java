@@ -20,10 +20,12 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
+import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 
@@ -36,15 +38,18 @@ public class AdminOrderController {
     private final OrderService orderService;
     private final OrderCsvService orderCsvService;
     private final OrderStatusHistoryService orderStatusHistoryService;
+    private final OrderNoteService orderNoteService;
 
     public AdminOrderController(
             OrderService orderService,
             OrderCsvService orderCsvService,
-            OrderStatusHistoryService orderStatusHistoryService) {
+            OrderStatusHistoryService orderStatusHistoryService,
+            OrderNoteService orderNoteService) {
 
         this.orderService = orderService;
         this.orderCsvService = orderCsvService;
         this.orderStatusHistoryService = orderStatusHistoryService;
+        this.orderNoteService = orderNoteService;
     }
 
     @GetMapping
@@ -89,6 +94,14 @@ public class AdminOrderController {
         model.addAttribute(
                 "statusHistories",
                 orderStatusHistoryService.findByOrderId(id));
+
+        model.addAttribute(
+                "orderNotes",
+                orderNoteService.findByOrderId(id));
+
+        model.addAttribute(
+                "orderNoteForm",
+                new AdminOrderNoteForm());
 
         return "admin/orders/detail";
     }
@@ -217,6 +230,40 @@ public class AdminOrderController {
                         HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"orders.csv\"")
                 .body(csvBytes);
+    }
+
+    @PostMapping("/{id}/notes")
+    public String addNote(
+            @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderNoteForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+
+            String errorMessage = bindingResult.getFieldError("note") != null
+                    ? bindingResult.getFieldError("note").getDefaultMessage()
+                    : "メモの入力内容を確認してください。";
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    errorMessage);
+
+            return "redirect:/admin/orders/" + id;
+        }
+
+        orderNoteService.addNote(
+                id,
+                form.getNote(),
+                loginUser.getId(),
+                loginUser.getUsername());
+
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "注文メモを登録しました。");
+
+        return "redirect:/admin/orders/" + id;
     }
 
 }

@@ -200,6 +200,46 @@
         ステータス変更履歴はありません。
     </p>
 
+    <section>
+        <h2>管理者メモ</h2>
+
+        <form th:action="@{/admin/orders/{id}/notes(id=${order.id})}" th:object="${orderNoteForm}" method="post">
+
+            <div style="margin-bottom: 10px;">
+                <label for="note" style="display: block; margin-bottom: 4px">メモ</label>
+                <textarea id="note" th:field="*{note}" maxlength="1000" rows="4" required></textarea>
+            </div>
+
+            <div>
+                <button type="submit">メモを登録</button>
+            </div>
+        </form>
+
+        <div th:if="${#lists.isEmpty(orderNotes)}">
+            <p>管理者メモはありません。</p>
+        </div>
+
+        <table th:unless="${#lists.isEmpty(orderNotes)}">
+            <thead>
+                <tr>
+                    <th>登録日時</th>
+                    <th>管理者ID</th>
+                    <th>管理者ユーザー名</th>
+                    <th>メモ</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr th:each="note : ${orderNotes}">
+                    <td th:text="${#temporals.format(note.createdAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                    <td th:text="${note.createdByAccountId}"></td>
+                    <td th:text="${note.createdByUsername}"></td>
+                    <td th:text="${note.note}" style="white-space: pre-wrap;"></td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
     <h2>配送先</h2>
 
     <div th:if="${order.shippingName != null}">
