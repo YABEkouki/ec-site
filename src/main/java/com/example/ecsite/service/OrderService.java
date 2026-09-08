@@ -255,18 +255,6 @@ public class OrderService {
                 internalNote);
     }
 
-    public void markAsPaid(
-            Long orderId,
-            Long adminId,
-            String adminUsername) {
-
-        markAsPaid(
-                orderId,
-                adminId,
-                adminUsername,
-                null);
-    }
-
     @Transactional
     public void markAsShipped(
             Long id,
@@ -290,18 +278,6 @@ public class OrderService {
                 internalNote);
     }
 
-    public void markAsShipped(
-            Long orderId,
-            Long adminId,
-            String adminUsername) {
-
-        markAsShipped(
-                orderId,
-                adminId,
-                adminUsername,
-                null);
-    }
-
     @Transactional
     public void cancelOrder(
             Long id,
@@ -317,18 +293,6 @@ public class OrderService {
                 accountId,
                 username,
                 internalNote);
-    }
-
-    public void cancelOrder(
-            Long orderId,
-            Long adminId,
-            String adminUsername) {
-
-        cancelOrder(
-                orderId,
-                adminId,
-                adminUsername,
-                null);
     }
 
     @Transactional(readOnly = true)
