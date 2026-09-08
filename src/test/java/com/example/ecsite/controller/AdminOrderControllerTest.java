@@ -22,16 +22,20 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderNote;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderCsvService;
+import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 
@@ -51,6 +55,9 @@ class AdminOrderControllerTest {
     private OrderStatusHistoryService orderStatusHistoryService;
 
     @Mock
+    private OrderNoteService orderNoteService;
+
+    @Mock
     private CustomUserDetails loginUser;
 
     private AdminOrderController adminOrderController;
@@ -63,7 +70,8 @@ class AdminOrderControllerTest {
         adminOrderController = new AdminOrderController(
                 orderService,
                 orderCsvService,
-                orderStatusHistoryService);
+                orderStatusHistoryService,
+                orderNoteService);
     }
 
     @Test
@@ -144,20 +152,25 @@ class AdminOrderControllerTest {
     }
 
     @Test
-    void detailDisplaysOrderWithItems() {
+    void detailDisplaysOrderWithItemsAndNotes() {
 
         Long orderId = 1L;
 
         Order order = new Order(10L, 2000);
         OrderStatusHistory history = mock(OrderStatusHistory.class);
+        OrderNote orderNote = mock(OrderNote.class);
 
         List<OrderStatusHistory> statusHistories = List.of(history);
+        List<OrderNote> orderNotes = List.of(orderNote);
 
         when(orderService.findOrderWithItems(orderId))
                 .thenReturn(order);
 
         when(orderStatusHistoryService.findByOrderId(orderId))
                 .thenReturn(statusHistories);
+
+        when(orderNoteService.findByOrderId(orderId))
+                .thenReturn(orderNotes);
 
         String viewName = adminOrderController.detail(
                 orderId,
@@ -173,6 +186,9 @@ class AdminOrderControllerTest {
         verify(orderStatusHistoryService)
                 .findByOrderId(orderId);
 
+        verify(orderNoteService)
+                .findByOrderId(orderId);
+
         verify(model)
                 .addAttribute(
                         "order",
@@ -182,6 +198,16 @@ class AdminOrderControllerTest {
                 .addAttribute(
                         "statusHistories",
                         statusHistories);
+
+        verify(model)
+                .addAttribute(
+                        "orderNotes",
+                        orderNotes);
+
+        verify(model)
+                .addAttribute(
+                        org.mockito.ArgumentMatchers.eq("orderNoteForm"),
+                        org.mockito.ArgumentMatchers.any(AdminOrderNoteForm.class));
     }
 
     @Test
@@ -635,6 +661,92 @@ class AdminOrderControllerTest {
                 .addFlashAttribute(
                         "errorMessage",
                         "変更理由・備考は500文字以内で入力してください。");
+    }
+
+    @Test
+    void addNoteRegistersOrderNoteAndRedirectsToDetail() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+
+        AdminOrderNoteForm form = new AdminOrderNoteForm();
+        form.setNote("配送前に住所確認");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = adminOrderController.addNote(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(orderNoteService)
+                .addNote(
+                        orderId,
+                        "配送前に住所確認",
+                        ADMIN_ID,
+                        ADMIN_USERNAME);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "注文メモを登録しました。");
+    }
+
+    @Test
+    void addNoteDoesNotCallServiceWhenFormHasValidationErrors() {
+
+        Long orderId = 1L;
+
+        AdminOrderNoteForm form = new AdminOrderNoteForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        FieldError fieldError = new FieldError(
+                "adminOrderNoteForm",
+                "note",
+                "メモを入力してください。");
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        when(bindingResult.getFieldError("note"))
+                .thenReturn(fieldError);
+
+        String viewName = adminOrderController.addNote(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(orderNoteService, org.mockito.Mockito.never())
+                .addNote(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "メモを入力してください。");
     }
 
 }
