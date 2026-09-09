@@ -96,34 +96,36 @@
                 <th>合計金額</th>
                 <th>状態</th>
                 <th>対応状況</th>
+                <th>対応状況更新日時</th>
+                <th>経過日数</th>
                 <th>操作</th>
             </tr>
         </thead>
 
         <tbody>
-            <tr th:each="order : ${orders}">
+            <tr th:each="item : ${orders}">
 
-                <td th:text="${order.id}"></td>
+                <td th:text="${item.order.id}"></td>
 
-                <td th:text="${order.userId}"></td>
+                <td th:text="${item.order.userId}"></td>
 
                 <td th:text="${#temporals.format(
-                order.orderedAt,
+                item.order.orderedAt,
                 'yyyy/MM/dd HH:mm')}">
                 </td>
 
                 <td>
-                    <span th:if="${order.shippingName != null}" th:text="${order.shippingName}">
+                    <span th:if="${item.order.shippingName != null}" th:text="${item.order.shippingName}">
                     </span>
 
-                    <span th:unless="${order.shippingName != null}">
+                    <span th:unless="${item.order.shippingName != null}">
                         未登録
                     </span>
                 </td>
 
                 <td>
                     <span th:text="${#numbers.formatInteger(
-                    order.totalAmount,
+                    item.order.totalAmount,
                     1,
                     'COMMA')}">
                     </span>
@@ -132,17 +134,40 @@
 
                 <td>
                     <span class="status-badge"
-                        th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
-                        th:text="${order.status.displayName}">
+                        th:classappend="' status-' + ${#strings.toLowerCase(item.order.status.name())}"
+                        th:text="${item.order.status.displayName}">
                     </span>
                 </td>
 
-                <td th:text="${order.handlingStatus.displayName}">
+                <td th:text="${item.order.handlingStatus.displayName}">
                 </td>
 
                 <td>
+                    <span th:if="${item.handlingStatusUpdatedAt != null}" th:text="${#temporals.format(
+                        item.handlingStatusUpdatedAt,
+                        'yyyy/MM/dd HH:mm')}">
+                    </span>
+
+                    <span th:unless="${item.handlingStatusUpdatedAt != null}">
+                        －
+                    </span>
+                </td>
+
+                <td>
+                    <span th:if="${item.elapsedDays != null}" th:text="${item.elapsedDays + '日'}" th:class="${item.elapsedDays >= 7}
+                ? 'action-required-danger'
+                : (${item.elapsedDays >= 3}
+                    ? 'action-required-warning'
+                    : '')">
+                    </span>
+
+                    <span th:unless="${item.elapsedDays != null}">
+                        －
+                    </span>
+                </td>
+                <td>
                     <a th:href="@{/admin/orders/{id}(
-                    id=${order.id})}" class="button button-secondary">
+                    id=${item.order.id})}" class="button button-secondary">
                         詳細
                     </a>
                 </td>

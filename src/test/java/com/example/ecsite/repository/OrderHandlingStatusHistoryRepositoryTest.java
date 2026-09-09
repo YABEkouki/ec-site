@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,7 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.repository.projection.OrderHandlingStatusUpdatedAtProjection;
 
 import jakarta.persistence.EntityManager;
 
@@ -433,6 +436,64 @@ class OrderHandlingStatusHistoryRepositoryTest {
         assertEquals(3, secondPage.getTotalElements());
         assertEquals(1, secondPage.getContent().size());
         assertEquals(1, secondPage.getNumber());
+    }
+
+    @Test
+    void findLatestUpdatedAtByOrderIdsReturnsLatestChangedAtForEachOrder() {
+
+        User user = createUser(
+                "handling-history-latest-updated-at-user");
+
+        Order order1 = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        Order order2 = orderRepository.save(
+                new Order(user.getId(), 2000));
+
+        OrderHandlingStatusHistory order1First = saveHistory(
+                order1,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                user.getId(),
+                user.getUsername());
+
+        OrderHandlingStatusHistory order1Latest = saveHistory(
+                order1,
+                OrderHandlingStatus.NEEDS_ACTION,
+                OrderHandlingStatus.IN_PROGRESS,
+                user.getId(),
+                user.getUsername());
+
+        OrderHandlingStatusHistory order2Latest = saveHistory(
+                order2,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                user.getId(),
+                user.getUsername());
+
+        entityManager.refresh(order1First);
+        entityManager.refresh(order1Latest);
+        entityManager.refresh(order2Latest);
+
+        List<OrderHandlingStatusUpdatedAtProjection> result = repository.findLatestUpdatedAtByOrderIds(
+                List.of(
+                        order1.getId(),
+                        order2.getId()));
+
+        Map<Long, LocalDateTime> updatedAtMap = result.stream()
+                .collect(Collectors.toMap(
+                        OrderHandlingStatusUpdatedAtProjection::getOrderId,
+                        OrderHandlingStatusUpdatedAtProjection::getUpdatedAt));
+
+        assertEquals(2, updatedAtMap.size());
+
+        assertEquals(
+                order1Latest.getChangedAt(),
+                updatedAtMap.get(order1.getId()));
+
+        assertEquals(
+                order2Latest.getChangedAt(),
+                updatedAtMap.get(order2.getId()));
     }
 
     private User createUser(String username) {

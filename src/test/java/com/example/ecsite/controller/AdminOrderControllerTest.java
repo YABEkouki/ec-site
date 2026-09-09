@@ -25,6 +25,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
@@ -894,9 +895,14 @@ class AdminOrderControllerTest {
 
         Order order = new Order(10L, 2000);
 
-        Page<Order> orderPage = new PageImpl<>(List.of(order));
+        AdminActionRequiredOrderDto dto = new AdminActionRequiredOrderDto(
+                order,
+                null,
+                null);
 
-        when(orderService.searchActionRequiredOrders(
+        Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of(dto));
+
+        when(orderService.searchActionRequiredOrderDetails(
                 searchForm,
                 0,
                 10))
@@ -913,7 +919,7 @@ class AdminOrderControllerTest {
                 viewName);
 
         verify(orderService)
-                .searchActionRequiredOrders(
+                .searchActionRequiredOrderDetails(
                         searchForm,
                         0,
                         10);
@@ -942,9 +948,9 @@ class AdminOrderControllerTest {
 
         AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
 
-        Page<Order> orderPage = new PageImpl<>(List.of());
+        Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of());
 
-        when(orderService.searchActionRequiredOrders(
+        when(orderService.searchActionRequiredOrderDetails(
                 searchForm,
                 0,
                 100))
@@ -961,7 +967,7 @@ class AdminOrderControllerTest {
                 viewName);
 
         verify(orderService)
-                .searchActionRequiredOrders(
+                .searchActionRequiredOrderDetails(
                         searchForm,
                         0,
                         100);

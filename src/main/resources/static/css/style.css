@@ -468,4 +468,15 @@ nav strong {
     .order-search-date {
         flex-wrap: wrap;
     }
+
+}
+
+.action-required-warning {
+    color: #c05a00;
+    font-weight: bold;
+}
+
+.action-required-danger {
+    color: #b3261e;
+    font-weight: bold;
 }
