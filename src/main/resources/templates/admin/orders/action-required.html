@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>要対応注文一覧</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>要対応注文一覧</h1>
+
+    <p>
+        要対応・対応中の注文を表示しています。
+    </p>
+
+    <form th:action="@{/admin/orders/action-required}" th:object="${searchForm}" method="get">
+        <div class="order-search-fields">
+
+            <div class="order-search-field">
+                <label for="orderId">注文番号</label>
+                <input type="number" id="orderId" th:field="*{orderId}" min="1">
+            </div>
+
+            <div class="order-search-field">
+                <label for="userId">ユーザーID</label>
+                <input type="number" id="userId" th:field="*{userId}" min="1">
+            </div>
+
+            <div class="order-search-field">
+                <label>注文日</label>
+
+                <div class="order-search-date">
+                    <input type="date" id="from" th:field="*{from}">
+
+                    <span>～</span>
+
+                    <input type="date" id="to" th:field="*{to}">
+                </div>
+            </div>
+
+            <div class="order-search-field">
+                <label for="status">注文状態</label>
+
+                <select id="status" th:field="*{status}">
+                    <option value="">すべて</option>
+
+                    <option th:each="status : ${statuses}" th:value="${status.name()}" th:text="${status.displayName}">
+                    </option>
+                </select>
+            </div>
+
+            <div class="order-search-field">
+                <label for="handlingStatus">対応状況</label>
+
+                <select id="handlingStatus" th:field="*{handlingStatus}">
+                    <option value="">すべて（要対応・対応中）</option>
+                    <option th:each="handlingStatus : ${handlingStatuses}" th:value="${handlingStatus}"
+                        th:text="${handlingStatus.displayName}">
+                    </option>
+                </select>
+            </div>
+
+        </div>
+
+        <input type="hidden" name="size" th:value="${orderPage.size}">
+
+        <div class="actions">
+            <button type="submit" class="button-secondary">
+                検索
+            </button>
+
+            <a th:href="@{/admin/orders/action-required}" class="button button-secondary">
+                クリア
+            </a>
+
+        </div>
+
+    </form>
+
+    <p th:if="${#lists.isEmpty(orders)}">
+        注文はありません。
+    </p>
+
+    <table th:unless="${#lists.isEmpty(orders)}">
+
+        <thead>
+            <tr>
+                <th>注文番号</th>
+                <th>ユーザーID</th>
+                <th>注文日時</th>
+                <th>受取人</th>
+                <th>合計金額</th>
+                <th>状態</th>
+                <th>対応状況</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="order : ${orders}">
+
+                <td th:text="${order.id}"></td>
+
+                <td th:text="${order.userId}"></td>
+
+                <td th:text="${#temporals.format(
+                order.orderedAt,
+                'yyyy/MM/dd HH:mm')}">
+                </td>
+
+                <td>
+                    <span th:if="${order.shippingName != null}" th:text="${order.shippingName}">
+                    </span>
+
+                    <span th:unless="${order.shippingName != null}">
+                        未登録
+                    </span>
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                    order.totalAmount,
+                    1,
+                    'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td>
+                    <span class="status-badge"
+                        th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
+                        th:text="${order.status.displayName}">
+                    </span>
+                </td>
+
+                <td th:text="${order.handlingStatus.displayName}">
+                </td>
+
+                <td>
+                    <a th:href="@{/admin/orders/{id}(
+                    id=${order.id})}" class="button button-secondary">
+                        詳細
+                    </a>
+                </td>
+
+            </tr>
+        </tbody>
+    </table>
+
+    <nav th:if="${orderPage.totalPages > 1}">
+
+        <a th:if="${orderPage.hasPrevious()}" th:href="@{/admin/orders/action-required(
+           orderId=${searchForm.orderId},
+           userId=${searchForm.userId},
+           from=${searchForm.from},
+           to=${searchForm.to},
+           status=${searchForm.status},
+           handlingStatus=${searchForm.handlingStatus},
+           page=${orderPage.number - 1},
+           size=${orderPage.size})}" class="button button-secondary">
+            前へ
+        </a>
+
+        <span th:each="pageNumber :
+        ${#numbers.sequence(
+            0,
+            orderPage.totalPages - 1)}">
+
+            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
+            </strong>
+
+            <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders/action-required(
+               orderId=${searchForm.orderId},
+               userId=${searchForm.userId},
+               from=${searchForm.from},
+               to=${searchForm.to},
+               status=${searchForm.status},
+               handlingStatus=${searchForm.handlingStatus},
+               page=${pageNumber},
+               size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
+            </a>
+
+        </span>
+
+        <a th:if="${orderPage.hasNext()}" th:href="@{/admin/orders/action-required(
+           orderId=${searchForm.orderId},
+           userId=${searchForm.userId},
+           from=${searchForm.from},
+           to=${searchForm.to},
+           status=${searchForm.status},
+           handlingStatus=${searchForm.handlingStatus},
+           page=${orderPage.number + 1},
+           size=${orderPage.size})}" class="button button-secondary">
+            次へ
+        </a>
+
+    </nav>
+
+    <p>
+        <a th:href="@{/admin/orders}" class="button button-secondary">
+            注文一覧へ戻る
+        </a>
+
+        <a th:href="@{/admin}" class="button button-secondary">
+            管理者トップへ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>

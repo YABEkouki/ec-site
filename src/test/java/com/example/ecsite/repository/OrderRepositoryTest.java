@@ -44,6 +44,8 @@ class OrderRepositoryTest {
 
     private static final LocalDateTime SEARCH_TO = LocalDateTime.of(9999, 12, 31, 0, 0);
 
+    private static final List<OrderHandlingStatus> ALL_HANDLING_STATUSES = List.of(OrderHandlingStatus.values());
+
     @Test
     void searchFiltersByUserId() {
 
@@ -64,7 +66,7 @@ class OrderRepositoryTest {
                 SEARCH_FROM,
                 SEARCH_TO,
                 null,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -86,7 +88,7 @@ class OrderRepositoryTest {
                 SEARCH_FROM,
                 SEARCH_TO,
                 null,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -120,7 +122,7 @@ class OrderRepositoryTest {
                 LocalDateTime.of(2026, 8, 10, 0, 0),
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 null,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(0, 20));
 
         assertEquals(2, result.getTotalElements());
@@ -146,7 +148,7 @@ class OrderRepositoryTest {
                 SEARCH_FROM,
                 SEARCH_TO,
                 OrderStatus.PAID,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -177,7 +179,7 @@ class OrderRepositoryTest {
                 LocalDateTime.of(2026, 8, 15, 0, 0),
                 LocalDateTime.of(2026, 8, 16, 0, 0),
                 OrderStatus.PAID,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -764,7 +766,7 @@ class OrderRepositoryTest {
                 SEARCH_FROM,
                 SEARCH_TO,
                 null,
-                OrderHandlingStatus.NEEDS_ACTION,
+                List.of(OrderHandlingStatus.NEEDS_ACTION),
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -778,7 +780,7 @@ class OrderRepositoryTest {
 
         User user = createUser("handling-status-summary-user");
 
-        Order normalOrder = createOrder(
+        createOrder(
                 user.getId(),
                 LocalDateTime.of(2026, 9, 1, 10, 0));
 
@@ -831,6 +833,60 @@ class OrderRepositoryTest {
                 1,
                 orderRepository.countByHandlingStatus(
                         OrderHandlingStatus.RESOLVED));
+    }
+
+    @Test
+    void searchFiltersByMultipleHandlingStatuses() {
+
+        User user = createUser("order-search-handling-status-user");
+
+        createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 1, 10, 0));
+
+        Order needsActionOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 2, 10, 0));
+
+        Order inProgressOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 3, 10, 0));
+
+        Order resolvedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 4, 10, 0));
+
+        needsActionOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        inProgressOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        resolvedOrder.changeHandlingStatus(
+                OrderHandlingStatus.RESOLVED);
+
+        entityManager.flush();
+
+        Page<Order> result = orderRepository.search(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS),
+                PageRequest.of(0, 20));
+
+        assertEquals(2, result.getTotalElements());
+
+        assertEquals(
+                inProgressOrder.getId(),
+                result.getContent().get(0).getId());
+
+        assertEquals(
+                needsActionOrder.getId(),
+                result.getContent().get(1).getId());
     }
 
 }

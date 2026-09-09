@@ -330,4 +330,31 @@ public class AdminOrderController {
         return "redirect:/admin/orders/" + id;
     }
 
+    @GetMapping("/action-required")
+    public String actionRequiredOrders(
+            @ModelAttribute("searchForm") AdminOrderSearchForm searchForm,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Model model) {
+
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.clamp(size, 1, 100);
+
+        Page<Order> orderPage = orderService.searchActionRequiredOrders(
+                searchForm,
+                safePage,
+                safeSize);
+
+        model.addAttribute("orders", orderPage.getContent());
+        model.addAttribute("orderPage", orderPage);
+        model.addAttribute("statuses", OrderStatus.values());
+        model.addAttribute(
+                "handlingStatuses",
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS));
+
+        return "admin/orders/action-required";
+    }
+
 }
