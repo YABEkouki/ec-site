@@ -78,6 +78,8 @@ public interface OrderRepository
 
     long countByStatus(OrderStatus status);
 
+    long countByHandlingStatus(OrderHandlingStatus handlingStatus);
+
     @Query("""
             SELECT o
             FROM Order o

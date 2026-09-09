@@ -77,6 +77,56 @@
             </a>
         </p>
 
+        <h2>注文対応状況</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>対応状況</th>
+                    <th>件数</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>通常</td>
+                    <td th:text="${normalHandlingCount}">0</td>
+                    <td>
+                        <a th:href="@{/admin/orders(handlingStatus='NONE')}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>要対応</strong></td>
+                    <td><strong th:text="${needsActionCount}">0</strong></td>
+                    <td>
+                        <a th:href="@{/admin/orders(handlingStatus='NEEDS_ACTION')}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>対応中</td>
+                    <td th:text="${inProgressCount}">0</td>
+                    <td>
+                        <a th:href="@{/admin/orders(handlingStatus='IN_PROGRESS')}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>対応済み</td>
+                    <td th:text="${resolvedCount}">0</td>
+                    <td>
+                        <a th:href="@{/admin/orders(handlingStatus='RESOLVED')}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
         <section>
 
             <h2>在庫警告</h2>

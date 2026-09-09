@@ -1006,6 +1006,19 @@ class OrderServiceTest {
     }
 
     @Test
+    void countOrdersByHandlingStatusReturnsRepositoryCount() {
+
+        when(orderRepository.countByHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION))
+                .thenReturn(3L);
+
+        long result = orderService.countOrdersByHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        assertEquals(3L, result);
+    }
+
+    @Test
     void findOrderByIdAndUserIdThrowsExceptionWhenOrderIsNotFound() {
 
         Long orderId = 1L;

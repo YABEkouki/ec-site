@@ -442,6 +442,11 @@ public class OrderService {
         return orderRepository.countByStatus(status);
     }
 
+    @Transactional(readOnly = true)
+    public long countOrdersByHandlingStatus(OrderHandlingStatus handlingStatus) {
+        return orderRepository.countByHandlingStatus(handlingStatus);
+    }
+
     private LocalDateTime resolveFrom(
             AdminOrderSearchForm searchForm) {
 
