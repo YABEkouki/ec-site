@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
@@ -192,6 +193,46 @@ class OrderHandlingStatusHistoryServiceTest {
                 LocalDateTime.of(2000, 1, 1, 0, 0),
                 LocalDateTime.of(2100, 1, 1, 0, 0),
                 PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchAllUsesUnpagedAndSameSearchConditions() {
+
+        AdminOrderHandlingStatusHistorySearchForm form = new AdminOrderHandlingStatusHistorySearchForm();
+
+        form.setOrderId(10L);
+        form.setFromStatus(OrderHandlingStatus.NONE);
+        form.setToStatus(OrderHandlingStatus.NEEDS_ACTION);
+        form.setChangedByUsername("  AdminUser  ");
+        form.setFrom(LocalDate.of(2026, 9, 1));
+        form.setTo(LocalDate.of(2026, 9, 3));
+
+        OrderHandlingStatusHistory history = org.mockito.Mockito.mock(OrderHandlingStatusHistory.class);
+
+        List<OrderHandlingStatusHistory> expected = List.of(history);
+
+        when(repository.search(
+                eq(10L),
+                eq(OrderHandlingStatus.NONE),
+                eq(OrderHandlingStatus.NEEDS_ACTION),
+                eq("AdminUser"),
+                eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
+                eq(LocalDateTime.of(2026, 9, 4, 0, 0)),
+                eq(Pageable.unpaged())))
+                .thenReturn(new PageImpl<>(expected));
+
+        List<OrderHandlingStatusHistory> actual = service.searchAll(form);
+
+        assertEquals(expected, actual);
+
+        verify(repository).search(
+                10L,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                "AdminUser",
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0),
+                Pageable.unpaged());
     }
 
 }
