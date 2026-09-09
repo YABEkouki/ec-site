@@ -12,7 +12,9 @@ import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,7 @@ import org.springframework.data.domain.Pageable;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
+import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
@@ -1457,6 +1460,116 @@ class OrderServiceTest {
                 10);
 
         assertSame(expectedPage, actualPage);
+    }
+
+    @Test
+    void searchActionRequiredOrderDetailsAddsUpdatedAtAndElapsedDays() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        Order order = new Order(10L, 1000);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(order, "id", 101L);
+
+        Page<Order> orderPage = new PageImpl<>(
+                List.of(order),
+                PageRequest.of(0, 10),
+                1);
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS),
+                PageRequest.of(0, 10)))
+                .thenReturn(orderPage);
+
+        LocalDateTime updatedAt = LocalDate.now()
+                .minusDays(5)
+                .atTime(10, 30);
+
+        when(orderHandlingStatusHistoryService
+                .findLatestUpdatedAtByOrderIds(
+                        List.of(101L)))
+                .thenReturn(
+                        Map.of(101L, updatedAt));
+
+        Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
+                searchForm,
+                0,
+                10);
+
+        assertEquals(1, result.getTotalElements());
+
+        AdminActionRequiredOrderDto dto = result.getContent().get(0);
+
+        assertSame(order, dto.order());
+        assertEquals(
+                updatedAt,
+                dto.handlingStatusUpdatedAt());
+
+        assertEquals(
+                ChronoUnit.DAYS.between(
+                        updatedAt.toLocalDate(),
+                        LocalDate.now()),
+                dto.elapsedDays());
+
+        verify(orderHandlingStatusHistoryService)
+                .findLatestUpdatedAtByOrderIds(
+                        List.of(101L));
+    }
+
+    @Test
+    void searchActionRequiredOrderDetailsUsesNullWhenHistoryDoesNotExist() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        Order order = new Order(10L, 1000);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(order, "id", 101L);
+
+        Page<Order> orderPage = new PageImpl<>(
+                List.of(order),
+                PageRequest.of(0, 10),
+                1);
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS),
+                PageRequest.of(0, 10)))
+                .thenReturn(orderPage);
+
+        when(orderHandlingStatusHistoryService
+                .findLatestUpdatedAtByOrderIds(
+                        List.of(101L)))
+                .thenReturn(Map.of());
+
+        Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
+                searchForm,
+                0,
+                10);
+
+        AdminActionRequiredOrderDto dto = result.getContent().get(0);
+
+        assertSame(order, dto.order());
+        assertEquals(
+                null,
+                dto.handlingStatusUpdatedAt());
+        assertEquals(
+                null,
+                dto.elapsedDays());
     }
 
 }

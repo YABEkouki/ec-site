@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
@@ -340,7 +341,7 @@ public class AdminOrderController {
         int safePage = Math.max(page, 0);
         int safeSize = Math.clamp(size, 1, 100);
 
-        Page<Order> orderPage = orderService.searchActionRequiredOrders(
+        Page<AdminActionRequiredOrderDto> orderPage = orderService.searchActionRequiredOrderDetails(
                 searchForm,
                 safePage,
                 safeSize);

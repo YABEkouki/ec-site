@@ -1,9 +1,12 @@
 package com.example.ecsite.service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.cart.Cart;
+import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
@@ -368,6 +372,44 @@ public class OrderService {
                 handlingStatuses,
                 page,
                 size);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AdminActionRequiredOrderDto> searchActionRequiredOrderDetails(
+            AdminOrderSearchForm searchForm,
+            int page,
+            int size) {
+
+        Page<Order> orderPage = searchActionRequiredOrders(
+                searchForm,
+                page,
+                size);
+
+        List<Long> orderIds = orderPage.getContent()
+                .stream()
+                .map(Order::getId)
+                .toList();
+
+        Map<Long, LocalDateTime> updatedAtMap = orderHandlingStatusHistoryService
+                .findLatestUpdatedAtByOrderIds(orderIds);
+
+        LocalDate today = LocalDate.now();
+
+        return orderPage.map(order -> {
+
+            LocalDateTime updatedAt = updatedAtMap.get(order.getId());
+
+            Long elapsedDays = updatedAt == null
+                    ? null
+                    : ChronoUnit.DAYS.between(
+                            updatedAt.toLocalDate(),
+                            today);
+
+            return new AdminActionRequiredOrderDto(
+                    order,
+                    updatedAt,
+                    elapsedDays);
+        });
     }
 
     private Page<Order> searchOrders(
