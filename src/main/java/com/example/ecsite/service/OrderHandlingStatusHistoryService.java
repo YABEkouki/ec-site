@@ -3,8 +3,6 @@ package com.example.ecsite.service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -17,7 +15,6 @@ import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.form.AdminOrderHandlingStatusHistorySearchForm;
 import com.example.ecsite.repository.OrderHandlingStatusHistoryRepository;
-import com.example.ecsite.repository.projection.OrderHandlingStatusUpdatedAtProjection;
 
 @Service
 public class OrderHandlingStatusHistoryService {
@@ -48,21 +45,6 @@ public class OrderHandlingStatusHistoryService {
 
     public List<OrderHandlingStatusHistory> findByOrderId(Long orderId) {
         return repository.findByOrderIdOrderByChangedAtAscIdAsc(orderId);
-    }
-
-    @Transactional(readOnly = true)
-    public Map<Long, LocalDateTime> findLatestUpdatedAtByOrderIds(
-            List<Long> orderIds) {
-
-        if (orderIds.isEmpty()) {
-            return Map.of();
-        }
-
-        return repository.findLatestUpdatedAtByOrderIds(orderIds)
-                .stream()
-                .collect(Collectors.toMap(
-                        OrderHandlingStatusUpdatedAtProjection::getOrderId,
-                        OrderHandlingStatusUpdatedAtProjection::getUpdatedAt));
     }
 
     @Transactional(readOnly = true)

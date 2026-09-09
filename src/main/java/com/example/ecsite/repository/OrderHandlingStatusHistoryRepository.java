@@ -11,23 +11,12 @@ import org.springframework.data.repository.query.Param;
 
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
-import com.example.ecsite.repository.projection.OrderHandlingStatusUpdatedAtProjection;
 
 public interface OrderHandlingStatusHistoryRepository
         extends JpaRepository<OrderHandlingStatusHistory, Long> {
 
     List<OrderHandlingStatusHistory> findByOrderIdOrderByChangedAtAscIdAsc(
             Long orderId);
-
-    @Query("""
-            SELECT h.order.id AS orderId,
-                   MAX(h.changedAt) AS updatedAt
-            FROM OrderHandlingStatusHistory h
-            WHERE h.order.id IN :orderIds
-            GROUP BY h.order.id
-            """)
-    List<OrderHandlingStatusUpdatedAtProjection> findLatestUpdatedAtByOrderIds(
-            @Param("orderIds") List<Long> orderIds);
 
     @Query("""
             SELECT h

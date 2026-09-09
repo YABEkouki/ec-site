@@ -22,6 +22,8 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.ActionRequiredOrderSort;
+import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
@@ -333,7 +335,7 @@ public class AdminOrderController {
 
     @GetMapping("/action-required")
     public String actionRequiredOrders(
-            @ModelAttribute("searchForm") AdminOrderSearchForm searchForm,
+            @ModelAttribute("searchForm") AdminActionRequiredOrderSearchForm searchForm,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             Model model) {
@@ -354,6 +356,9 @@ public class AdminOrderController {
                 List.of(
                         OrderHandlingStatus.NEEDS_ACTION,
                         OrderHandlingStatus.IN_PROGRESS));
+        model.addAttribute(
+                "actionRequiredOrderSorts",
+                ActionRequiredOrderSort.values());
 
         return "admin/orders/action-required";
     }
