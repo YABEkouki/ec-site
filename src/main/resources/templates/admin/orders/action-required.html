@@ -64,6 +64,25 @@
                 </select>
             </div>
 
+            <div class="order-search-field">
+                <label for="minElapsedDays">経過日数</label>
+
+                <select id="minElapsedDays" th:field="*{minElapsedDays}">
+                    <option value="">指定なし</option>
+                    <option value="3">3日以上</option>
+                    <option value="7">7日以上</option>
+                </select>
+            </div>
+
+            <div class="order-search-field">
+                <label for="sort">並び順</label>
+
+                <select id="sort" th:field="*{sort}">
+                    <option th:each="sort : ${actionRequiredOrderSorts}" th:value="${sort}"
+                        th:text="${sort.displayName}">
+                    </option>
+                </select>
+            </div>
         </div>
 
         <input type="hidden" name="size" th:value="${orderPage.size}">
@@ -185,6 +204,8 @@
            to=${searchForm.to},
            status=${searchForm.status},
            handlingStatus=${searchForm.handlingStatus},
+           minElapsedDays=${searchForm.minElapsedDays},
+           sort=${searchForm.sort},
            page=${orderPage.number - 1},
            size=${orderPage.size})}" class="button button-secondary">
             前へ
@@ -206,6 +227,8 @@
                to=${searchForm.to},
                status=${searchForm.status},
                handlingStatus=${searchForm.handlingStatus},
+               minElapsedDays=${searchForm.minElapsedDays},
+               sort=${searchForm.sort},
                page=${pageNumber},
                size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
@@ -219,6 +242,8 @@
            to=${searchForm.to},
            status=${searchForm.status},
            handlingStatus=${searchForm.handlingStatus},
+           minElapsedDays=${searchForm.minElapsedDays},
+           sort=${searchForm.sort},
            page=${orderPage.number + 1},
            size=${orderPage.size})}" class="button button-secondary">
             次へ

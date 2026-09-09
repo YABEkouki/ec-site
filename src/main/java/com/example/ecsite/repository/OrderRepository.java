@@ -14,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
@@ -228,6 +229,72 @@ public interface OrderRepository
     List<CategorySalesRankingProjection> findCategorySalesRanking(
             @Param("from") LocalDateTime from,
             @Param("toExclusive") LocalDateTime toExclusive,
+            Pageable pageable);
+
+    @Query(value = """
+            SELECT
+                o.id AS "orderId",
+                MAX(h.changed_at) AS "handlingStatusUpdatedAt"
+            FROM orders o
+            LEFT JOIN order_handling_status_histories h
+                ON h.order_id = o.id
+            WHERE (:orderId IS NULL OR o.id = :orderId)
+                AND (:userId IS NULL OR o.user_id = :userId)
+                AND o.ordered_at >= :from
+                AND o.ordered_at < :toExclusive
+                AND (:status IS NULL OR o.status = CAST(:status AS VARCHAR))
+                AND o.handling_status IN (:handlingStatuses)
+            GROUP BY o.id
+                HAVING (
+                    CAST(:elapsedCutoffExclusive AS timestamp) IS NULL
+                    OR MAX(h.changed_at) < CAST(:elapsedCutoffExclusive AS timestamp)
+                    )
+            ORDER BY
+                CASE
+                    WHEN :sort = 'OLDEST'
+                    THEN MAX(h.changed_at)
+                    END ASC NULLS LAST,
+                CASE
+                    WHEN :sort = 'NEWEST'
+                    THEN MAX(h.changed_at)
+                    END DESC NULLS LAST,
+                CASE
+                    WHEN :sort = 'OLDEST'
+                    THEN o.id
+                    END ASC,
+                CASE
+                    WHEN :sort = 'NEWEST'
+                    THEN o.id
+                    END DESC
+            """, countQuery = """
+            SELECT COUNT(*)
+            FROM (
+                SELECT o.id
+                FROM orders o
+                LEFT JOIN order_handling_status_histories h
+                    ON h.order_id = o.id
+                WHERE (:orderId IS NULL OR o.id = :orderId)
+                  AND (:userId IS NULL OR o.user_id = :userId)
+                  AND o.ordered_at >= :from
+                  AND o.ordered_at < :toExclusive
+                  AND (:status IS NULL OR o.status = CAST(:status AS VARCHAR))
+                  AND o.handling_status IN (:handlingStatuses)
+                GROUP BY o.id
+                HAVING (
+                    CAST(:elapsedCutoffExclusive AS timestamp) IS NULL
+                    OR MAX(h.changed_at) < CAST(:elapsedCutoffExclusive AS timestamp)
+                )
+            ) target_orders
+            """, nativeQuery = true)
+    Page<AdminActionRequiredOrderSearchProjection> searchActionRequiredOrders(
+            @Param("orderId") Long orderId,
+            @Param("userId") Long userId,
+            @Param("from") LocalDateTime from,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("status") String status,
+            @Param("handlingStatuses") List<String> handlingStatuses,
+            @Param("elapsedCutoffExclusive") LocalDateTime elapsedCutoffExclusive,
+            @Param("sort") String sort,
             Pageable pageable);
 
 }

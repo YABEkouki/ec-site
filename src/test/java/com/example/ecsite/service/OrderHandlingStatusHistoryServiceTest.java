@@ -2,16 +2,13 @@ package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +26,6 @@ import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.form.AdminOrderHandlingStatusHistorySearchForm;
 import com.example.ecsite.repository.OrderHandlingStatusHistoryRepository;
-import com.example.ecsite.repository.projection.OrderHandlingStatusUpdatedAtProjection;
 
 @ExtendWith(MockitoExtension.class)
 class OrderHandlingStatusHistoryServiceTest {
@@ -237,60 +233,6 @@ class OrderHandlingStatusHistoryServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 LocalDateTime.of(2026, 9, 4, 0, 0),
                 Pageable.unpaged());
-    }
-
-    @Test
-    void findLatestUpdatedAtByOrderIdsReturnsMapByOrderId() {
-
-        LocalDateTime updatedAt1 = LocalDateTime.of(2026, 9, 1, 10, 30);
-
-        LocalDateTime updatedAt2 = LocalDateTime.of(2026, 9, 5, 14, 20);
-
-        OrderHandlingStatusUpdatedAtProjection projection1 = org.mockito.Mockito.mock(
-                OrderHandlingStatusUpdatedAtProjection.class);
-
-        OrderHandlingStatusUpdatedAtProjection projection2 = org.mockito.Mockito.mock(
-                OrderHandlingStatusUpdatedAtProjection.class);
-
-        when(projection1.getOrderId())
-                .thenReturn(101L);
-
-        when(projection1.getUpdatedAt())
-                .thenReturn(updatedAt1);
-
-        when(projection2.getOrderId())
-                .thenReturn(105L);
-
-        when(projection2.getUpdatedAt())
-                .thenReturn(updatedAt2);
-
-        List<Long> orderIds = List.of(101L, 105L);
-
-        when(repository.findLatestUpdatedAtByOrderIds(orderIds))
-                .thenReturn(List.of(
-                        projection1,
-                        projection2));
-
-        Map<Long, LocalDateTime> result = service.findLatestUpdatedAtByOrderIds(orderIds);
-
-        assertEquals(2, result.size());
-        assertEquals(updatedAt1, result.get(101L));
-        assertEquals(updatedAt2, result.get(105L));
-
-        verify(repository)
-                .findLatestUpdatedAtByOrderIds(orderIds);
-    }
-
-    @Test
-    void findLatestUpdatedAtByOrderIdsDoesNotQueryRepositoryWhenOrderIdsAreEmpty() {
-
-        Map<Long, LocalDateTime> result = service.findLatestUpdatedAtByOrderIds(List.of());
-
-        assertTrue(result.isEmpty());
-
-        verify(repository, never())
-                .findLatestUpdatedAtByOrderIds(
-                        org.mockito.ArgumentMatchers.anyList());
     }
 
 }

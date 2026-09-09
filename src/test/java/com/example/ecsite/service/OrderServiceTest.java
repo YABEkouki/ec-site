@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,9 +13,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -41,9 +40,12 @@ import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
+import com.example.ecsite.form.ActionRequiredOrderSort;
+import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -1352,152 +1354,42 @@ class OrderServiceTest {
     }
 
     @Test
-    void searchActionRequiredOrdersSearchesNeedsActionAndInProgress() {
+    void searchActionRequiredOrderDetailsSearchesNeedsActionAndInProgress() {
 
-        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
-        Pageable pageable = PageRequest.of(0, 10);
+        AdminActionRequiredOrderSearchProjection projection = mock(AdminActionRequiredOrderSearchProjection.class);
 
-        Page<Order> expectedPage = new PageImpl<>(List.of());
-
-        when(orderRepository.search(
-                null,
-                null,
-                LocalDateTime.of(1970, 1, 1, 0, 0),
-                LocalDateTime.of(9999, 12, 31, 0, 0),
-                null,
-                List.of(
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        OrderHandlingStatus.IN_PROGRESS),
-                pageable))
-                .thenReturn(expectedPage);
-
-        Page<Order> actualPage = orderService.searchActionRequiredOrders(
-                searchForm,
-                0,
-                10);
-
-        assertSame(expectedPage, actualPage);
-
-        verify(orderRepository).search(
-                null,
-                null,
-                LocalDateTime.of(1970, 1, 1, 0, 0),
-                LocalDateTime.of(9999, 12, 31, 0, 0),
-                null,
-                List.of(
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        OrderHandlingStatus.IN_PROGRESS),
-                pageable);
-    }
-
-    @Test
-    void searchActionRequiredOrdersFiltersBySelectedHandlingStatus() {
-
-        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
-
-        searchForm.setHandlingStatus(
-                OrderHandlingStatus.IN_PROGRESS);
+        when(projection.getOrderId()).thenReturn(1L);
+        when(projection.getHandlingStatusUpdatedAt())
+                .thenReturn(LocalDateTime.now().minusDays(5));
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        Page<Order> expectedPage = new PageImpl<>(List.of());
+        Page<AdminActionRequiredOrderSearchProjection> projectionPage = new PageImpl<>(
+                List.of(projection),
+                pageable,
+                1);
 
-        when(orderRepository.search(
-                null,
-                null,
-                LocalDateTime.of(1970, 1, 1, 0, 0),
-                LocalDateTime.of(9999, 12, 31, 0, 0),
-                null,
-                List.of(OrderHandlingStatus.IN_PROGRESS),
-                pageable))
-                .thenReturn(expectedPage);
-
-        Page<Order> actualPage = orderService.searchActionRequiredOrders(
-                searchForm,
-                0,
-                10);
-
-        assertSame(expectedPage, actualPage);
-
-        verify(orderRepository).search(
-                null,
-                null,
-                LocalDateTime.of(1970, 1, 1, 0, 0),
-                LocalDateTime.of(9999, 12, 31, 0, 0),
-                null,
-                List.of(OrderHandlingStatus.IN_PROGRESS),
-                pageable);
-    }
-
-    @Test
-    void searchActionRequiredOrdersIgnoresNonActionRequiredHandlingStatus() {
-
-        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
-
-        searchForm.setHandlingStatus(
-                OrderHandlingStatus.NONE);
-
-        Pageable pageable = PageRequest.of(0, 10);
-
-        Page<Order> expectedPage = new PageImpl<>(List.of());
-
-        when(orderRepository.search(
-                null,
-                null,
-                LocalDateTime.of(1970, 1, 1, 0, 0),
-                LocalDateTime.of(9999, 12, 31, 0, 0),
-                null,
-                List.of(
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        OrderHandlingStatus.IN_PROGRESS),
-                pageable))
-                .thenReturn(expectedPage);
-
-        Page<Order> actualPage = orderService.searchActionRequiredOrders(
-                searchForm,
-                0,
-                10);
-
-        assertSame(expectedPage, actualPage);
-    }
-
-    @Test
-    void searchActionRequiredOrderDetailsAddsUpdatedAtAndElapsedDays() {
-
-        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        when(orderRepository.searchActionRequiredOrders(
+                eq(null),
+                eq(null),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(null),
+                eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
+                eq(null),
+                eq("OLDEST"),
+                eq(pageable)))
+                .thenReturn(projectionPage);
 
         Order order = new Order(10L, 1000);
 
         org.springframework.test.util.ReflectionTestUtils
-                .setField(order, "id", 101L);
+                .setField(order, "id", 1L);
 
-        Page<Order> orderPage = new PageImpl<>(
-                List.of(order),
-                PageRequest.of(0, 10),
-                1);
-
-        when(orderRepository.search(
-                null,
-                null,
-                LocalDateTime.of(1970, 1, 1, 0, 0),
-                LocalDateTime.of(9999, 12, 31, 0, 0),
-                null,
-                List.of(
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        OrderHandlingStatus.IN_PROGRESS),
-                PageRequest.of(0, 10)))
-                .thenReturn(orderPage);
-
-        LocalDateTime updatedAt = LocalDate.now()
-                .minusDays(5)
-                .atTime(10, 30);
-
-        when(orderHandlingStatusHistoryService
-                .findLatestUpdatedAtByOrderIds(
-                        List.of(101L)))
-                .thenReturn(
-                        Map.of(101L, updatedAt));
+        when(orderRepository.findAllById(List.of(1L)))
+                .thenReturn(List.of(order));
 
         Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
                 searchForm,
@@ -1505,56 +1397,106 @@ class OrderServiceTest {
                 10);
 
         assertEquals(1, result.getTotalElements());
-
-        AdminActionRequiredOrderDto dto = result.getContent().get(0);
-
-        assertSame(order, dto.order());
+        assertSame(order, result.getContent().get(0).order());
         assertEquals(
-                updatedAt,
-                dto.handlingStatusUpdatedAt());
+                projection.getHandlingStatusUpdatedAt(),
+                result.getContent().get(0).handlingStatusUpdatedAt());
 
-        assertEquals(
-                ChronoUnit.DAYS.between(
-                        updatedAt.toLocalDate(),
-                        LocalDate.now()),
-                dto.elapsedDays());
-
-        verify(orderHandlingStatusHistoryService)
-                .findLatestUpdatedAtByOrderIds(
-                        List.of(101L));
+        verify(orderRepository).searchActionRequiredOrders(
+                eq(null),
+                eq(null),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(null),
+                eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
+                eq(null),
+                eq("OLDEST"),
+                eq(pageable));
     }
 
     @Test
-    void searchActionRequiredOrderDetailsUsesNullWhenHistoryDoesNotExist() {
+    void searchActionRequiredOrderDetailsPassesFilterAndSortConditions() {
 
-        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        searchForm.setHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
+        searchForm.setMinElapsedDays(7);
+        searchForm.setSort(ActionRequiredOrderSort.NEWEST);
+
+        Pageable pageable = PageRequest.of(1, 20);
+
+        Page<AdminActionRequiredOrderSearchProjection> projectionPage = new PageImpl<>(
+                List.of(),
+                pageable,
+                0);
+
+        when(orderRepository.searchActionRequiredOrders(
+                eq(null),
+                eq(null),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(null),
+                eq(List.of("IN_PROGRESS")),
+                any(LocalDateTime.class),
+                eq("NEWEST"),
+                eq(pageable)))
+                .thenReturn(projectionPage);
+
+        Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
+                searchForm,
+                1,
+                20);
+
+        assertEquals(0, result.getTotalElements());
+
+        verify(orderRepository).searchActionRequiredOrders(
+                eq(null),
+                eq(null),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(null),
+                eq(List.of("IN_PROGRESS")),
+                any(LocalDateTime.class),
+                eq("NEWEST"),
+                eq(pageable));
+    }
+
+    @Test
+    void searchActionRequiredOrderDetailsKeepsNullUpdatedAtAsNull() {
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        AdminActionRequiredOrderSearchProjection projection = mock(AdminActionRequiredOrderSearchProjection.class);
+
+        when(projection.getOrderId()).thenReturn(1L);
+        when(projection.getHandlingStatusUpdatedAt()).thenReturn(null);
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        Page<AdminActionRequiredOrderSearchProjection> projectionPage = new PageImpl<>(
+                List.of(projection),
+                pageable,
+                1);
+
+        when(orderRepository.searchActionRequiredOrders(
+                eq(null),
+                eq(null),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(null),
+                eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
+                eq(null),
+                eq("OLDEST"),
+                eq(pageable)))
+                .thenReturn(projectionPage);
 
         Order order = new Order(10L, 1000);
 
         org.springframework.test.util.ReflectionTestUtils
-                .setField(order, "id", 101L);
+                .setField(order, "id", 1L);
 
-        Page<Order> orderPage = new PageImpl<>(
-                List.of(order),
-                PageRequest.of(0, 10),
-                1);
-
-        when(orderRepository.search(
-                null,
-                null,
-                LocalDateTime.of(1970, 1, 1, 0, 0),
-                LocalDateTime.of(9999, 12, 31, 0, 0),
-                null,
-                List.of(
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        OrderHandlingStatus.IN_PROGRESS),
-                PageRequest.of(0, 10)))
-                .thenReturn(orderPage);
-
-        when(orderHandlingStatusHistoryService
-                .findLatestUpdatedAtByOrderIds(
-                        List.of(101L)))
-                .thenReturn(Map.of());
+        when(orderRepository.findAllById(List.of(1L)))
+                .thenReturn(List.of(order));
 
         Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
                 searchForm,
@@ -1564,12 +1506,8 @@ class OrderServiceTest {
         AdminActionRequiredOrderDto dto = result.getContent().get(0);
 
         assertSame(order, dto.order());
-        assertEquals(
-                null,
-                dto.handlingStatusUpdatedAt());
-        assertEquals(
-                null,
-                dto.elapsedDays());
+        assertEquals(null, dto.handlingStatusUpdatedAt());
+        assertEquals(null, dto.elapsedDays());
     }
 
 }

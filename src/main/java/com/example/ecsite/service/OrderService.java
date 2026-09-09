@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -25,9 +27,12 @@ import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
+import com.example.ecsite.form.ActionRequiredOrderSort;
+import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 
 @Service
 public class OrderService {
@@ -349,55 +354,60 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Order> searchActionRequiredOrders(
-            AdminOrderSearchForm searchForm,
-            int page,
-            int size) {
-
-        OrderHandlingStatus handlingStatus = searchForm.getHandlingStatus();
-
-        List<OrderHandlingStatus> handlingStatuses;
-
-        if (handlingStatus == OrderHandlingStatus.NEEDS_ACTION
-                || handlingStatus == OrderHandlingStatus.IN_PROGRESS) {
-            handlingStatuses = List.of(handlingStatus);
-        } else {
-            handlingStatuses = List.of(
-                    OrderHandlingStatus.NEEDS_ACTION,
-                    OrderHandlingStatus.IN_PROGRESS);
-        }
-
-        return searchOrders(
-                searchForm,
-                handlingStatuses,
-                page,
-                size);
-    }
-
-    @Transactional(readOnly = true)
     public Page<AdminActionRequiredOrderDto> searchActionRequiredOrderDetails(
-            AdminOrderSearchForm searchForm,
+            AdminActionRequiredOrderSearchForm searchForm,
             int page,
             int size) {
 
-        Page<Order> orderPage = searchActionRequiredOrders(
-                searchForm,
-                page,
-                size);
+        LocalDateTime from = resolveFrom(searchForm.getFrom());
+        LocalDateTime toExclusive = resolveToExclusive(searchForm.getTo());
 
-        List<Long> orderIds = orderPage.getContent()
-                .stream()
-                .map(Order::getId)
-                .toList();
-
-        Map<Long, LocalDateTime> updatedAtMap = orderHandlingStatusHistoryService
-                .findLatestUpdatedAtByOrderIds(orderIds);
+        List<OrderHandlingStatus> handlingStatuses = resolveActionRequiredHandlingStatuses(
+                searchForm.getHandlingStatus());
 
         LocalDate today = LocalDate.now();
 
-        return orderPage.map(order -> {
+        LocalDateTime elapsedCutoffExclusive = resolveElapsedCutoffExclusive(
+                searchForm.getMinElapsedDays(),
+                today);
 
-            LocalDateTime updatedAt = updatedAtMap.get(order.getId());
+        ActionRequiredOrderSort sort = searchForm.getSort() == null
+                ? ActionRequiredOrderSort.OLDEST
+                : searchForm.getSort();
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        Page<AdminActionRequiredOrderSearchProjection> projectionPage = orderRepository.searchActionRequiredOrders(
+                searchForm.getOrderId(),
+                searchForm.getUserId(),
+                from,
+                toExclusive,
+                searchForm.getStatus() == null
+                        ? null
+                        : searchForm.getStatus().name(),
+                handlingStatuses.stream()
+                        .map(Enum::name)
+                        .toList(),
+                elapsedCutoffExclusive,
+                sort.name(),
+                pageable);
+
+        List<Long> orderIds = projectionPage.getContent()
+                .stream()
+                .map(AdminActionRequiredOrderSearchProjection::getOrderId)
+                .toList();
+
+        Map<Long, Order> orderMap = orderRepository.findAllById(orderIds)
+                .stream()
+                .collect(Collectors.toMap(
+                        Order::getId,
+                        Function.identity()));
+
+        return projectionPage.map(projection -> {
+
+            Order order = orderMap.get(projection.getOrderId());
+
+            LocalDateTime updatedAt = projection.getHandlingStatusUpdatedAt();
 
             Long elapsedDays = updatedAt == null
                     ? null
@@ -410,6 +420,49 @@ public class OrderService {
                     updatedAt,
                     elapsedDays);
         });
+    }
+
+    private LocalDateTime resolveFrom(LocalDate from) {
+        return from == null
+                ? LocalDateTime.of(1970, 1, 1, 0, 0)
+                : from.atStartOfDay();
+    }
+
+    private LocalDateTime resolveToExclusive(LocalDate to) {
+        return to == null
+                ? LocalDateTime.of(9999, 12, 31, 0, 0)
+                : to.plusDays(1).atStartOfDay();
+    }
+
+    private List<OrderHandlingStatus> resolveActionRequiredHandlingStatuses(
+            OrderHandlingStatus handlingStatus) {
+
+        if (handlingStatus == OrderHandlingStatus.NEEDS_ACTION
+                || handlingStatus == OrderHandlingStatus.IN_PROGRESS) {
+
+            return List.of(handlingStatus);
+        }
+
+        return List.of(
+                OrderHandlingStatus.NEEDS_ACTION,
+                OrderHandlingStatus.IN_PROGRESS);
+    }
+
+    private LocalDateTime resolveElapsedCutoffExclusive(
+            Integer minElapsedDays,
+            LocalDate today) {
+
+        if (minElapsedDays == null) {
+            return null;
+        }
+
+        if (minElapsedDays != 3 && minElapsedDays != 7) {
+            return null;
+        }
+
+        return today
+                .minusDays(minElapsedDays - 1L)
+                .atStartOfDay();
     }
 
     private Page<Order> searchOrders(

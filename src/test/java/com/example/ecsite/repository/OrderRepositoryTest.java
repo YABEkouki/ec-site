@@ -16,10 +16,12 @@ import org.springframework.data.domain.PageRequest;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
+import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
@@ -664,84 +666,6 @@ class OrderRepositoryTest {
                 ranking.getSalesAmount());
     }
 
-    private Order createOrder(
-            Long userId,
-            LocalDateTime orderedAt,
-            int totalAmount) {
-
-        Order order = new Order(userId, totalAmount);
-        order.setOrderedAt(orderedAt);
-
-        Order saved = orderRepository.save(order);
-        entityManager.flush();
-
-        return saved;
-    }
-
-    private Product createProduct(
-            String name,
-            int price) {
-
-        Category category = new Category(
-                "ranking-category-" + System.nanoTime());
-
-        entityManager.persist(category);
-
-        Product product = new Product();
-        product.setName(name);
-        product.setPrice(price);
-        product.setStock(100);
-        product.setCategory(category);
-
-        entityManager.persist(product);
-        entityManager.flush();
-
-        return product;
-    }
-
-    private Order createOrderWithItem(
-            Long userId,
-            LocalDateTime orderedAt,
-            Product product,
-            String productName,
-            int price,
-            int quantity) {
-
-        OrderItem item = new OrderItem(
-                product.getId(),
-                productName,
-                product.getCategory().getId(),
-                product.getCategory().getName(),
-                price,
-                quantity);
-
-        Order order = new Order(
-                userId,
-                item.getSubtotal());
-
-        order.setOrderedAt(orderedAt);
-        order.addItem(item);
-
-        Order saved = orderRepository.save(order);
-        entityManager.flush();
-
-        return saved;
-    }
-
-    private User createUser(String username) {
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword("password");
-        user.setRole("ROLE_USER");
-        user.setEnabled(true);
-
-        User saved = userRepository.save(user);
-        entityManager.flush();
-
-        return saved;
-    }
-
     @Test
     void searchFiltersByHandlingStatus() {
 
@@ -887,6 +811,341 @@ class OrderRepositoryTest {
         assertEquals(
                 needsActionOrder.getId(),
                 result.getContent().get(1).getId());
+    }
+
+    @Test
+    void searchActionRequiredOrdersSortsOldestFirstAndNullLast() {
+
+        User user = createUser("action-required-oldest-user");
+
+        Order oldest = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        Order newest = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        Order noHistory = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 3, 10, 0));
+
+        oldest.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+        newest.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
+        noHistory.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                oldest,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 8, 10, 10, 0));
+
+        createHandlingStatusHistory(
+                newest,
+                OrderHandlingStatus.NEEDS_ACTION,
+                OrderHandlingStatus.IN_PROGRESS,
+                LocalDateTime.of(2026, 8, 20, 10, 0));
+
+        entityManager.flush();
+
+        Page<AdminActionRequiredOrderSearchProjection> result = orderRepository.searchActionRequiredOrders(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                null,
+                "OLDEST",
+                PageRequest.of(0, 20));
+
+        assertEquals(3, result.getTotalElements());
+
+        assertEquals(
+                List.of(
+                        oldest.getId(),
+                        newest.getId(),
+                        noHistory.getId()),
+                result.getContent()
+                        .stream()
+                        .map(AdminActionRequiredOrderSearchProjection::getOrderId)
+                        .toList());
+    }
+
+    @Test
+    void searchActionRequiredOrdersSortsNewestFirstAndNullLast() {
+
+        User user = createUser("action-required-newest-user");
+
+        Order oldest = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        Order newest = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        Order noHistory = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 3, 10, 0));
+
+        oldest.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+        newest.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
+        noHistory.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                oldest,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 8, 10, 10, 0));
+
+        createHandlingStatusHistory(
+                newest,
+                OrderHandlingStatus.NEEDS_ACTION,
+                OrderHandlingStatus.IN_PROGRESS,
+                LocalDateTime.of(2026, 8, 20, 10, 0));
+
+        entityManager.flush();
+
+        Page<AdminActionRequiredOrderSearchProjection> result = orderRepository.searchActionRequiredOrders(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                null,
+                "NEWEST",
+                PageRequest.of(0, 20));
+
+        assertEquals(
+                List.of(
+                        newest.getId(),
+                        oldest.getId(),
+                        noHistory.getId()),
+                result.getContent()
+                        .stream()
+                        .map(AdminActionRequiredOrderSearchProjection::getOrderId)
+                        .toList());
+    }
+
+    @Test
+    void searchActionRequiredOrdersFiltersByElapsedCutoff() {
+
+        User user = createUser("action-required-cutoff-user");
+
+        Order oldOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        Order recentOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        Order noHistory = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 3, 10, 0));
+
+        oldOrder.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+        recentOrder.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+        noHistory.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                oldOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 8, 10, 23, 59));
+
+        createHandlingStatusHistory(
+                recentOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 8, 11, 0, 0));
+
+        entityManager.flush();
+
+        Page<AdminActionRequiredOrderSearchProjection> result = orderRepository.searchActionRequiredOrders(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                LocalDateTime.of(2026, 8, 11, 0, 0),
+                "OLDEST",
+                PageRequest.of(0, 20));
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals(
+                oldOrder.getId(),
+                result.getContent().get(0).getOrderId());
+    }
+
+    @Test
+    void searchActionRequiredOrdersPagesAfterAgingSort() {
+
+        User user = createUser("action-required-page-user");
+
+        Order first = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 3, 10, 0));
+
+        Order second = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        Order third = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        first.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+        second.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+        third.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                first,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 8, 10, 10, 0));
+
+        createHandlingStatusHistory(
+                second,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 8, 20, 10, 0));
+
+        createHandlingStatusHistory(
+                third,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 8, 30, 10, 0));
+
+        entityManager.flush();
+
+        Page<AdminActionRequiredOrderSearchProjection> result = orderRepository.searchActionRequiredOrders(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                null,
+                "OLDEST",
+                PageRequest.of(1, 1));
+
+        assertEquals(3, result.getTotalElements());
+        assertEquals(3, result.getTotalPages());
+        assertEquals(1, result.getContent().size());
+
+        assertEquals(
+                second.getId(),
+                result.getContent().get(0).getOrderId());
+    }
+
+    private Order createOrder(
+            Long userId,
+            LocalDateTime orderedAt,
+            int totalAmount) {
+
+        Order order = new Order(userId, totalAmount);
+        order.setOrderedAt(orderedAt);
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private Product createProduct(
+            String name,
+            int price) {
+
+        Category category = new Category(
+                "ranking-category-" + System.nanoTime());
+
+        entityManager.persist(category);
+
+        Product product = new Product();
+        product.setName(name);
+        product.setPrice(price);
+        product.setStock(100);
+        product.setCategory(category);
+
+        entityManager.persist(product);
+        entityManager.flush();
+
+        return product;
+    }
+
+    private Order createOrderWithItem(
+            Long userId,
+            LocalDateTime orderedAt,
+            Product product,
+            String productName,
+            int price,
+            int quantity) {
+
+        OrderItem item = new OrderItem(
+                product.getId(),
+                productName,
+                product.getCategory().getId(),
+                product.getCategory().getName(),
+                price,
+                quantity);
+
+        Order order = new Order(
+                userId,
+                item.getSubtotal());
+
+        order.setOrderedAt(orderedAt);
+        order.addItem(item);
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private User createUser(String username) {
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("password");
+        user.setRole("ROLE_USER");
+        user.setEnabled(true);
+
+        User saved = userRepository.save(user);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private void createHandlingStatusHistory(
+            Order order,
+            OrderHandlingStatus fromStatus,
+            OrderHandlingStatus toStatus,
+            LocalDateTime changedAt) {
+
+        OrderHandlingStatusHistory history = OrderHandlingStatusHistory.create(
+                order,
+                fromStatus,
+                toStatus,
+                1L,
+                "admin");
+
+        entityManager.persist(history);
+        entityManager.flush();
+
+        entityManager.createNativeQuery("""
+                UPDATE order_handling_status_histories
+                SET changed_at = :changedAt
+                WHERE id = :id
+                """)
+                .setParameter("changedAt", changedAt)
+                .setParameter("id", history.getId())
+                .executeUpdate();
+
+        entityManager.flush();
     }
 
 }

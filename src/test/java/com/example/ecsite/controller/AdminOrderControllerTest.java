@@ -33,6 +33,8 @@ import com.example.ecsite.entity.OrderNote;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.ActionRequiredOrderSort;
+import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
@@ -891,7 +893,7 @@ class AdminOrderControllerTest {
     @Test
     void actionRequiredOrdersDisplaysActionRequiredOrders() {
 
-        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
         Order order = new Order(10L, 2000);
 
@@ -941,12 +943,16 @@ class AdminOrderControllerTest {
                 List.of(
                         OrderHandlingStatus.NEEDS_ACTION,
                         OrderHandlingStatus.IN_PROGRESS));
+
+        verify(model).addAttribute(
+                "actionRequiredOrderSorts",
+                ActionRequiredOrderSort.values());
     }
 
     @Test
     void actionRequiredOrdersSanitizesPageAndSize() {
 
-        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
         Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of());
 
