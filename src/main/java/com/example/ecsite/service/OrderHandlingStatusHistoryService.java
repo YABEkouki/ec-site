@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +53,25 @@ public class OrderHandlingStatusHistoryService {
             int page,
             int size) {
 
+        return search(
+                form,
+                PageRequest.of(page, size));
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderHandlingStatusHistory> searchAll(
+            AdminOrderHandlingStatusHistorySearchForm form) {
+
+        return search(
+                form,
+                Pageable.unpaged())
+                .getContent();
+    }
+
+    private Page<OrderHandlingStatusHistory> search(
+            AdminOrderHandlingStatusHistorySearchForm form,
+            Pageable pageable) {
+
         LocalDateTime from = form.getFrom() != null
                 ? form.getFrom().atStartOfDay()
                 : LocalDate.of(2000, 1, 1).atStartOfDay();
@@ -77,7 +97,7 @@ public class OrderHandlingStatusHistoryService {
                 changedByUsername,
                 from,
                 toExclusive,
-                PageRequest.of(page, size));
+                pageable);
     }
 
 }
