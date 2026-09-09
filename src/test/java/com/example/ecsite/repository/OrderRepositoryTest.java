@@ -773,4 +773,64 @@ class OrderRepositoryTest {
                 result.getContent().get(0).getId());
     }
 
+    @Test
+    void countByHandlingStatusCountsOnlyMatchingOrders() {
+
+        User user = createUser("handling-status-summary-user");
+
+        Order normalOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 1, 10, 0));
+
+        Order needsActionOrder1 = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 2, 10, 0));
+
+        Order needsActionOrder2 = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 3, 10, 0));
+
+        Order inProgressOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 4, 10, 0));
+
+        Order resolvedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 5, 10, 0));
+
+        needsActionOrder1.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        needsActionOrder2.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        inProgressOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        resolvedOrder.changeHandlingStatus(
+                OrderHandlingStatus.RESOLVED);
+
+        entityManager.flush();
+
+        assertEquals(
+                1,
+                orderRepository.countByHandlingStatus(
+                        OrderHandlingStatus.NONE));
+
+        assertEquals(
+                2,
+                orderRepository.countByHandlingStatus(
+                        OrderHandlingStatus.NEEDS_ACTION));
+
+        assertEquals(
+                1,
+                orderRepository.countByHandlingStatus(
+                        OrderHandlingStatus.IN_PROGRESS));
+
+        assertEquals(
+                1,
+                orderRepository.countByHandlingStatus(
+                        OrderHandlingStatus.RESOLVED));
+    }
+
 }

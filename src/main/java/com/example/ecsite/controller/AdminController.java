@@ -4,6 +4,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
+import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ProductService;
@@ -25,25 +26,29 @@ public class AdminController {
     @GetMapping("/admin")
     public String index(Model model) {
 
-        model.addAttribute(
-                "orderedCount",
-                orderService.countOrdersByStatus(
-                        OrderStatus.ORDERED));
+        model.addAttribute("orderedCount",
+                orderService.countOrdersByStatus(OrderStatus.ORDERED));
 
-        model.addAttribute(
-                "paidCount",
-                orderService.countOrdersByStatus(
-                        OrderStatus.PAID));
+        model.addAttribute("paidCount",
+                orderService.countOrdersByStatus(OrderStatus.PAID));
 
-        model.addAttribute(
-                "shippedCount",
-                orderService.countOrdersByStatus(
-                        OrderStatus.SHIPPED));
+        model.addAttribute("shippedCount",
+                orderService.countOrdersByStatus(OrderStatus.SHIPPED));
 
-        model.addAttribute(
-                "cancelledCount",
-                orderService.countOrdersByStatus(
-                        OrderStatus.CANCELLED));
+        model.addAttribute("cancelledCount",
+                orderService.countOrdersByStatus(OrderStatus.CANCELLED));
+
+        model.addAttribute("normalHandlingCount",
+                orderService.countOrdersByHandlingStatus(OrderHandlingStatus.NONE));
+
+        model.addAttribute("needsActionCount",
+                orderService.countOrdersByHandlingStatus(OrderHandlingStatus.NEEDS_ACTION));
+
+        model.addAttribute("inProgressCount",
+                orderService.countOrdersByHandlingStatus(OrderHandlingStatus.IN_PROGRESS));
+
+        model.addAttribute("resolvedCount",
+                orderService.countOrdersByHandlingStatus(OrderHandlingStatus.RESOLVED));
 
         int lowStockThreshold = 5;
 
