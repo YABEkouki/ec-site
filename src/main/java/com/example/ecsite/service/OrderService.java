@@ -2,6 +2,7 @@ package com.example.ecsite.service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.data.domain.Page;
@@ -332,6 +333,49 @@ public class OrderService {
             int page,
             int size) {
 
+        List<OrderHandlingStatus> handlingStatuses = searchForm.getHandlingStatus() == null
+                ? Arrays.asList(OrderHandlingStatus.values())
+                : List.of(searchForm.getHandlingStatus());
+
+        return searchOrders(
+                searchForm,
+                handlingStatuses,
+                page,
+                size);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Order> searchActionRequiredOrders(
+            AdminOrderSearchForm searchForm,
+            int page,
+            int size) {
+
+        OrderHandlingStatus handlingStatus = searchForm.getHandlingStatus();
+
+        List<OrderHandlingStatus> handlingStatuses;
+
+        if (handlingStatus == OrderHandlingStatus.NEEDS_ACTION
+                || handlingStatus == OrderHandlingStatus.IN_PROGRESS) {
+            handlingStatuses = List.of(handlingStatus);
+        } else {
+            handlingStatuses = List.of(
+                    OrderHandlingStatus.NEEDS_ACTION,
+                    OrderHandlingStatus.IN_PROGRESS);
+        }
+
+        return searchOrders(
+                searchForm,
+                handlingStatuses,
+                page,
+                size);
+    }
+
+    private Page<Order> searchOrders(
+            AdminOrderSearchForm searchForm,
+            List<OrderHandlingStatus> handlingStatuses,
+            int page,
+            int size) {
+
         LocalDateTime from = resolveFrom(searchForm);
         LocalDateTime toExclusive = resolveToExclusive(searchForm);
 
@@ -343,7 +387,7 @@ public class OrderService {
                 from,
                 toExclusive,
                 searchForm.getStatus(),
-                searchForm.getHandlingStatus(),
+                handlingStatuses,
                 pageable);
     }
 
@@ -354,13 +398,17 @@ public class OrderService {
         LocalDateTime from = resolveFrom(searchForm);
         LocalDateTime toExclusive = resolveToExclusive(searchForm);
 
+        List<OrderHandlingStatus> handlingStatuses = searchForm.getHandlingStatus() == null
+                ? Arrays.asList(OrderHandlingStatus.values())
+                : List.of(searchForm.getHandlingStatus());
+
         Page<Order> orderPage = orderRepository.search(
                 searchForm.getOrderId(),
                 searchForm.getUserId(),
                 from,
                 toExclusive,
                 searchForm.getStatus(),
-                searchForm.getHandlingStatus(),
+                handlingStatuses,
                 Pageable.unpaged());
 
         return orderPage.getContent();

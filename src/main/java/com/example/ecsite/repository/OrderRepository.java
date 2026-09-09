@@ -88,7 +88,7 @@ public interface OrderRepository
               AND o.orderedAt >= :from
               AND o.orderedAt < :toExclusive
               AND (:status IS NULL OR o.status = :status)
-              AND (:handlingStatus IS NULL OR o.handlingStatus = :handlingStatus)
+              AND o.handlingStatus IN :handlingStatuses
             ORDER BY o.orderedAt DESC, o.id DESC
             """)
     Page<Order> search(
@@ -97,7 +97,7 @@ public interface OrderRepository
             @Param("from") LocalDateTime from,
             @Param("toExclusive") LocalDateTime toExclusive,
             @Param("status") OrderStatus status,
-            @Param("handlingStatus") OrderHandlingStatus handlingStatus,
+            @Param("handlingStatuses") List<OrderHandlingStatus> handlingStatuses,
             Pageable pageable);
 
     @Query("""

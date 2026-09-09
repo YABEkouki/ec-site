@@ -887,4 +887,84 @@ class AdminOrderControllerTest {
                         "対応状況は変更されていません。");
     }
 
+    @Test
+    void actionRequiredOrdersDisplaysActionRequiredOrders() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        Order order = new Order(10L, 2000);
+
+        Page<Order> orderPage = new PageImpl<>(List.of(order));
+
+        when(orderService.searchActionRequiredOrders(
+                searchForm,
+                0,
+                10))
+                .thenReturn(orderPage);
+
+        String viewName = adminOrderController.actionRequiredOrders(
+                searchForm,
+                0,
+                10,
+                model);
+
+        assertEquals(
+                "admin/orders/action-required",
+                viewName);
+
+        verify(orderService)
+                .searchActionRequiredOrders(
+                        searchForm,
+                        0,
+                        10);
+
+        verify(model).addAttribute(
+                "orders",
+                orderPage.getContent());
+
+        verify(model).addAttribute(
+                "orderPage",
+                orderPage);
+
+        verify(model).addAttribute(
+                "statuses",
+                OrderStatus.values());
+
+        verify(model).addAttribute(
+                "handlingStatuses",
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS));
+    }
+
+    @Test
+    void actionRequiredOrdersSanitizesPageAndSize() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        Page<Order> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchActionRequiredOrders(
+                searchForm,
+                0,
+                100))
+                .thenReturn(orderPage);
+
+        String viewName = adminOrderController.actionRequiredOrders(
+                searchForm,
+                -1,
+                999,
+                model);
+
+        assertEquals(
+                "admin/orders/action-required",
+                viewName);
+
+        verify(orderService)
+                .searchActionRequiredOrders(
+                        searchForm,
+                        0,
+                        100);
+    }
+
 }

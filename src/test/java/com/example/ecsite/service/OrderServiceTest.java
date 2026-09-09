@@ -62,6 +62,8 @@ class OrderServiceTest {
 
     private OrderService orderService;
 
+    private static final List<OrderHandlingStatus> ALL_HANDLING_STATUSES = List.of(OrderHandlingStatus.values());
+
     @BeforeEach
     void setUp() {
         orderService = new OrderService(
@@ -1117,7 +1119,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 10, 0, 0),
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 OrderStatus.PAID,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(2, 20)))
                 .thenReturn(expected);
 
@@ -1134,7 +1136,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 10, 0, 0),
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 OrderStatus.PAID,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(2, 20));
     }
 
@@ -1151,7 +1153,7 @@ class OrderServiceTest {
                 LocalDateTime.of(1970, 1, 1, 0, 0),
                 LocalDateTime.of(9999, 12, 31, 0, 0),
                 null,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(0, 10)))
                 .thenReturn(expected);
 
@@ -1168,7 +1170,7 @@ class OrderServiceTest {
                 LocalDateTime.of(1970, 1, 1, 0, 0),
                 LocalDateTime.of(9999, 12, 31, 0, 0),
                 null,
-                null,
+                ALL_HANDLING_STATUSES,
                 PageRequest.of(0, 10));
     }
 
@@ -1194,7 +1196,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 1, 0, 0),
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 OrderStatus.PAID,
-                null,
+                ALL_HANDLING_STATUSES,
                 Pageable.unpaged()))
                 .thenReturn(expectedPage);
 
@@ -1210,7 +1212,7 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 1, 0, 0),
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 OrderStatus.PAID,
-                null,
+                ALL_HANDLING_STATUSES,
                 Pageable.unpaged());
     }
 
@@ -1344,6 +1346,117 @@ class OrderServiceTest {
 
         verifyNoInteractions(
                 orderHandlingStatusHistoryService);
+    }
+
+    @Test
+    void searchActionRequiredOrdersSearchesNeedsActionAndInProgress() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        Page<Order> expectedPage = new PageImpl<>(List.of());
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS),
+                pageable))
+                .thenReturn(expectedPage);
+
+        Page<Order> actualPage = orderService.searchActionRequiredOrders(
+                searchForm,
+                0,
+                10);
+
+        assertSame(expectedPage, actualPage);
+
+        verify(orderRepository).search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS),
+                pageable);
+    }
+
+    @Test
+    void searchActionRequiredOrdersFiltersBySelectedHandlingStatus() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        searchForm.setHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        Page<Order> expectedPage = new PageImpl<>(List.of());
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                List.of(OrderHandlingStatus.IN_PROGRESS),
+                pageable))
+                .thenReturn(expectedPage);
+
+        Page<Order> actualPage = orderService.searchActionRequiredOrders(
+                searchForm,
+                0,
+                10);
+
+        assertSame(expectedPage, actualPage);
+
+        verify(orderRepository).search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                List.of(OrderHandlingStatus.IN_PROGRESS),
+                pageable);
+    }
+
+    @Test
+    void searchActionRequiredOrdersIgnoresNonActionRequiredHandlingStatus() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        searchForm.setHandlingStatus(
+                OrderHandlingStatus.NONE);
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        Page<Order> expectedPage = new PageImpl<>(List.of());
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS),
+                pageable))
+                .thenReturn(expectedPage);
+
+        Page<Order> actualPage = orderService.searchActionRequiredOrders(
+                searchForm,
+                0,
+                10);
+
+        assertSame(expectedPage, actualPage);
     }
 
 }
