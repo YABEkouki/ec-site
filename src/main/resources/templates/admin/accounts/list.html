@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>管理者アカウント管理</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>管理者アカウント管理</h1>
+
+    <p th:if="${successMessage}" th:text="${successMessage}">
+    </p>
+
+    <p>
+        <a th:href="@{/admin/accounts/new}" class="button button-secondary">
+            管理者アカウントを登録
+        </a>
+    </p>
+
+    <p th:if="${#lists.isEmpty(adminAccounts)}">
+        管理者アカウントはありません。
+    </p>
+
+    <table th:unless="${#lists.isEmpty(adminAccounts)}">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>ユーザー名</th>
+                <th>状態</th>
+                <th>ログイン状況</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="adminAccount : ${adminAccounts}">
+                <td th:text="${adminAccount.id}">
+                </td>
+
+                <td th:text="${adminAccount.username}">
+                </td>
+
+                <td>
+                    <span th:if="${adminAccount.enabled}">
+                        有効
+                    </span>
+
+                    <span th:unless="${adminAccount.enabled}">
+                        無効
+                    </span>
+                </td>
+
+                <td>
+                    <span th:if="${adminAccount.id == loginAdminId}">
+                        ログイン中
+                    </span>
+                </td>
+
+                <td>
+                    <a th:href="@{/admin/accounts/{id}/edit(id=${adminAccount.id})}" class="button button-secondary">
+                        編集
+                    </a>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>
+        <a th:href="@{/admin}" class="button button-secondary">
+            管理者トップへ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>

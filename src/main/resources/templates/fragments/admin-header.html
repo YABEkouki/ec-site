@@ -47,6 +47,10 @@
                 売上ダッシュボード
             </a>
 
+            <a th:href="@{/admin/accounts}">
+                管理者アカウント
+            </a>
+
             <span sec:authorize="isAuthenticated()" class="login-user">
                 <span sec:authentication="name"></span>
                 さん

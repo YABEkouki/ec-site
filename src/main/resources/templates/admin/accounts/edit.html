@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>管理者アカウント編集</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>管理者アカウント編集</h1>
+
+    <form th:action="@{/admin/accounts/{id}/edit(id=${adminAccountId})}" method="post"
+        th:object="${adminAccountEditForm}">
+
+        <div th:if="${#fields.hasGlobalErrors()}">
+            <p th:each="error : ${#fields.globalErrors()}" th:text="${error}">
+            </p>
+        </div>
+
+        <div>
+            <label for="username">ユーザー名</label>
+            <input type="text" id="username" th:field="*{username}">
+
+            <div th:if="${#fields.hasErrors('username')}" th:errors="*{username}">
+            </div>
+        </div>
+
+        <div>
+            <label for="password">
+                新しいパスワード
+            </label>
+
+            <input type="password" id="password" th:field="*{password}">
+
+            <p>
+                変更しない場合は空欄のままにしてください。
+            </p>
+
+            <div th:if="${#fields.hasErrors('password')}" th:errors="*{password}">
+            </div>
+        </div>
+
+        <div>
+            <label for="confirmPassword">
+                新しいパスワード（確認）
+            </label>
+
+            <input type="password" id="confirmPassword" th:field="*{confirmPassword}">
+
+            <div th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}">
+            </div>
+        </div>
+
+        <div>
+            <label>
+                <input type="checkbox" th:field="*{enabled}" th:disabled="${adminAccountId == loginAdminId}">
+                有効
+            </label>
+
+            <p th:if="${adminAccountId == loginAdminId}">
+                ログイン中の管理者アカウントは無効化できません。
+            </p>
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="button-secondary">
+                更新
+            </button>
+
+            <a th:href="@{/admin/accounts}" class="button button-secondary">
+                戻る
+            </a>
+        </div>
+
+    </form>
+
+</body>
+
+</html>

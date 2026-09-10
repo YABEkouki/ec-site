@@ -1,6 +1,7 @@
 package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,15 +36,12 @@ class AdminUserDetailsServiceTest {
         when(adminAccountRepository.findByUsername("admin"))
                 .thenReturn(Optional.of(adminAccount));
 
-        AdminUserDetailsService service =
-                new AdminUserDetailsService(
-                        adminAccountRepository);
+        AdminUserDetailsService service = new AdminUserDetailsService(
+                adminAccountRepository);
 
-        UserDetails result =
-                service.loadUserByUsername("admin");
+        UserDetails result = service.loadUserByUsername("admin");
 
-        AdminUserDetails userDetails =
-                (AdminUserDetails) result;
+        AdminUserDetails userDetails = (AdminUserDetails) result;
 
         assertEquals(
                 "admin",
@@ -74,9 +72,8 @@ class AdminUserDetailsServiceTest {
         when(adminAccountRepository.findByUsername("unknown"))
                 .thenReturn(Optional.empty());
 
-        AdminUserDetailsService service =
-                new AdminUserDetailsService(
-                        adminAccountRepository);
+        AdminUserDetailsService service = new AdminUserDetailsService(
+                adminAccountRepository);
 
         assertThrows(
                 UsernameNotFoundException.class,
@@ -85,4 +82,32 @@ class AdminUserDetailsServiceTest {
         verify(adminAccountRepository)
                 .findByUsername("unknown");
     }
+
+    @Test
+    void loadUserByUsernameCreatesDisabledAdminUserDetails() {
+
+        AdminAccount adminAccount = new AdminAccount();
+        adminAccount.setUsername("admin");
+        adminAccount.setPassword("encoded-password");
+        adminAccount.setEnabled(false);
+
+        when(adminAccountRepository.findByUsername("admin"))
+                .thenReturn(Optional.of(adminAccount));
+
+        AdminUserDetailsService service = new AdminUserDetailsService(
+                adminAccountRepository);
+
+        AdminUserDetails userDetails = (AdminUserDetails) service
+                .loadUserByUsername("admin");
+
+        assertFalse(userDetails.isEnabled());
+
+        assertEquals(
+                "ROLE_ADMIN",
+                userDetails.getAuthorities()
+                        .iterator()
+                        .next()
+                        .getAuthority());
+    }
+
 }
