@@ -47,16 +47,12 @@
                 売上ダッシュボード
             </a>
 
-            <a th:href="@{/}" target="_blank" rel="noopener">
-                一般画面を確認
-            </a>
-
             <span sec:authorize="isAuthenticated()" class="login-user">
                 <span sec:authentication="name"></span>
                 さん
             </span>
 
-            <form th:action="@{/logout}" method="post" class="inline-form">
+            <form th:action="@{/admin/logout}" method="post" class="inline-form">
 
                 <button type="submit" class="button-secondary">
                     ログアウト

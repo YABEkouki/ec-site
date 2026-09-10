@@ -28,7 +28,7 @@ import com.example.ecsite.entity.StockMovement;
 import com.example.ecsite.entity.StockMovementType;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.StockAdjustmentForm;
-import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.InventoryService;
 import com.example.ecsite.service.ProductService;
@@ -114,7 +114,7 @@ class AdminProductControllerTest {
                 when(bindingResult.hasErrors())
                                 .thenReturn(false);
 
-                CustomUserDetails userDetails = mock(CustomUserDetails.class);
+                AdminUserDetails userDetails = mock(AdminUserDetails.class);
 
                 when(userDetails.getId())
                                 .thenReturn(1L);
@@ -168,7 +168,7 @@ class AdminProductControllerTest {
                 when(productService.findById(productId))
                                 .thenReturn(product);
 
-                CustomUserDetails userDetails = mock(CustomUserDetails.class);
+                AdminUserDetails userDetails = mock(AdminUserDetails.class);
 
                 String viewName = adminProductController.adjustStock(
                                 productId,
@@ -215,7 +215,7 @@ class AdminProductControllerTest {
 
                 BindingResult bindingResult = mock(BindingResult.class);
 
-                CustomUserDetails userDetails = mock(CustomUserDetails.class);
+                AdminUserDetails userDetails = mock(AdminUserDetails.class);
 
                 when(bindingResult.hasErrors())
                                 .thenReturn(false);
@@ -288,7 +288,7 @@ class AdminProductControllerTest {
                 when(bindingResult.hasErrors())
                                 .thenReturn(false);
 
-                CustomUserDetails userDetails = mock(CustomUserDetails.class);
+                AdminUserDetails userDetails = mock(AdminUserDetails.class);
 
                 when(userDetails.getId())
                                 .thenReturn(1L);

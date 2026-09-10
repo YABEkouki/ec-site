@@ -1,6 +1,7 @@
 package com.example.ecsite.controller;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -56,7 +57,8 @@ class AdminControllerTest {
         when(orderService.getActionRequiredAgingSummary())
                 .thenReturn(agingSummary);
 
-        mockMvc.perform(get("/admin"))
+        mockMvc.perform(
+                get("/admin").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(view().name("admin/index"))
                 .andExpect(model().attribute("normalHandlingCount", 10L))

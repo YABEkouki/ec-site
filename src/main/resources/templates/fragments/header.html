@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="ja" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<html lang="ja"
+    xmlns:th="http://www.thymeleaf.org"
+    xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 
 <body>
 
@@ -11,23 +13,23 @@
 
         <nav class="site-nav">
 
-            <a th:href="@{/products}">
+            <a sec:authorize="hasRole('USER')" th:href="@{/products}">
                 商品一覧
             </a>
 
-            <a th:href="@{/favorites}">
+            <a sec:authorize="hasRole('USER')" th:href="@{/favorites}">
                 お気に入り
             </a>
 
-            <a th:href="@{/orders}">
+            <a sec:authorize="hasRole('USER')" th:href="@{/orders}">
                 注文履歴
             </a>
 
-            <a th:href="@{/mypage}">
+            <a sec:authorize="hasRole('USER')" th:href="@{/mypage}">
                 マイページ
             </a>
 
-            <a th:href="@{/cart}">
+            <a sec:authorize="hasRole('USER')" th:href="@{/cart}">
                 カート
             </a>
 
@@ -40,7 +42,21 @@
                 さん
             </span>
 
-            <form sec:authorize="isAuthenticated()" th:action="@{/logout}" method="post" class="inline-form">
+            <form sec:authorize="hasRole('USER')"
+                th:action="@{/logout}"
+                method="post"
+                class="inline-form">
+
+                <button type="submit" class="button-secondary">
+                    ログアウト
+                </button>
+
+            </form>
+
+            <form sec:authorize="hasRole('ADMIN')"
+                th:action="@{/admin/logout}"
+                method="post"
+                class="inline-form">
 
                 <button type="submit" class="button-secondary">
                     ログアウト

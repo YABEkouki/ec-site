@@ -39,7 +39,7 @@ import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
-import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -65,7 +65,7 @@ class AdminOrderControllerTest {
     private OrderNoteService orderNoteService;
 
     @Mock
-    private CustomUserDetails loginUser;
+    private AdminUserDetails loginUser;
 
     @Mock
     private OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
@@ -801,7 +801,7 @@ class AdminOrderControllerTest {
 
         BindingResult bindingResult = mock(BindingResult.class);
 
-        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        AdminUserDetails loginUser = mock(AdminUserDetails.class);
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
@@ -856,7 +856,7 @@ class AdminOrderControllerTest {
 
         BindingResult bindingResult = mock(BindingResult.class);
 
-        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        AdminUserDetails loginUser = mock(AdminUserDetails.class);
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 

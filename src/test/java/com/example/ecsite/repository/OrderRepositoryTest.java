@@ -1244,7 +1244,6 @@ class OrderRepositoryTest {
         User user = new User();
         user.setUsername(username);
         user.setPassword("password");
-        user.setRole("ROLE_USER");
         user.setEnabled(true);
 
         User saved = userRepository.save(user);

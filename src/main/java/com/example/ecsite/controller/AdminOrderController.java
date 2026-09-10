@@ -28,7 +28,7 @@ import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
-import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -143,7 +143,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderStatusChangeForm form,
             BindingResult bindingResult,
-            @AuthenticationPrincipal CustomUserDetails loginUser,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {
@@ -179,7 +179,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderStatusChangeForm form,
             BindingResult bindingResult,
-            @AuthenticationPrincipal CustomUserDetails loginUser,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {
@@ -215,7 +215,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderStatusChangeForm form,
             BindingResult bindingResult,
-            @AuthenticationPrincipal CustomUserDetails loginUser,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {
@@ -269,7 +269,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderNoteForm form,
             BindingResult bindingResult,
-            @AuthenticationPrincipal CustomUserDetails loginUser,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {
@@ -303,7 +303,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderHandlingStatusForm form,
             BindingResult bindingResult,
-            @AuthenticationPrincipal CustomUserDetails loginUser,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {

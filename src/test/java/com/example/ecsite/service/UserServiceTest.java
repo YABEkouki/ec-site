@@ -68,10 +68,6 @@ class UserServiceTest {
 
         assertTrue(savedUser.isEnabled());
 
-        assertEquals(
-                "ROLE_USER",
-                savedUser.getRole());
-
         verify(passwordEncoder)
                 .encode("password123");
     }
