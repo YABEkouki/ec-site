@@ -5,7 +5,7 @@ import java.util.Collection;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-public class CustomUserDetails implements UserDetails {
+public class AdminUserDetails implements UserDetails {
 
     private final Long id;
     private final String username;
@@ -13,7 +13,7 @@ public class CustomUserDetails implements UserDetails {
     private final boolean enabled;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    public CustomUserDetails(
+    public AdminUserDetails(
             Long id,
             String username,
             String password,
@@ -47,9 +47,7 @@ public class CustomUserDetails implements UserDetails {
     }
 
     @Override
-    public Collection<? extends GrantedAuthority>
-            getAuthorities() {
-
+    public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
     }
 }

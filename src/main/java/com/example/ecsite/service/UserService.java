@@ -30,7 +30,6 @@ public class UserService {
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(userForm.getPassword()));
         user.setEnabled(true);
-        user.setRole("ROLE_USER");
 
         try {
             userRepository.saveAndFlush(user);

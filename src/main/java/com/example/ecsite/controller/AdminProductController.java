@@ -24,7 +24,7 @@ import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.form.StockAdjustmentForm;
 import com.example.ecsite.mapper.ProductMapper;
-import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.InventoryService;
 import com.example.ecsite.service.ProductService;
@@ -300,7 +300,7 @@ public class AdminProductController {
                         BindingResult bindingResult,
                         Model model,
                         RedirectAttributes redirectAttributes,
-                        @AuthenticationPrincipal CustomUserDetails userDetails,
+                        @AuthenticationPrincipal AdminUserDetails userDetails,
                         @RequestParam(required = false) String returnTo) {
 
                 if (bindingResult.hasErrors()) {

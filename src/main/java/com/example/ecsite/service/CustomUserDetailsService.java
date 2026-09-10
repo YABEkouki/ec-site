@@ -31,6 +31,6 @@ public class CustomUserDetailsService implements UserDetailsService {
                 user.getUsername(),
                 user.getPassword(),
                 user.isEnabled(),
-                AuthorityUtils.createAuthorityList(user.getRole()));
+                AuthorityUtils.createAuthorityList("ROLE_USER"));
     }
 }

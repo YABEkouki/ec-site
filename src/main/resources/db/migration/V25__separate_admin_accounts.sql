@@ -1,0 +1,9 @@
+CREATE TABLE admin_accounts (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+ALTER TABLE users
+    DROP COLUMN role;
