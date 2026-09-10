@@ -11,4 +11,6 @@ public interface AdminAccountRepository extends JpaRepository<AdminAccount, Long
     Optional<AdminAccount> findByUsername(String username);
 
     boolean existsByUsername(String username);
+
+    boolean existsByUsernameAndIdNot(String username, Long id);
 }

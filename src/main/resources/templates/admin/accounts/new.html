@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>管理者アカウント登録</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>管理者アカウント登録</h1>
+
+    <form th:action="@{/admin/accounts}" method="post" th:object="${adminAccountCreateForm}">
+
+        <div>
+            <label for="username">ユーザー名</label>
+            <input type="text" id="username" th:field="*{username}">
+
+            <div th:if="${#fields.hasErrors('username')}" th:errors="*{username}">
+            </div>
+        </div>
+
+        <div>
+            <label for="password">パスワード</label>
+            <input type="password" id="password" th:field="*{password}">
+
+            <div th:if="${#fields.hasErrors('password')}" th:errors="*{password}">
+            </div>
+        </div>
+
+        <div>
+            <label for="confirmPassword">パスワード（確認）</label>
+            <input type="password" id="confirmPassword" th:field="*{confirmPassword}">
+
+            <div th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}">
+            </div>
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="button-secondary">
+                登録
+            </button>
+
+            <a th:href="@{/admin/accounts}" class="button button-secondary">
+                戻る
+            </a>
+        </div>
+
+    </form>
+
+</body>
+
+</html>
