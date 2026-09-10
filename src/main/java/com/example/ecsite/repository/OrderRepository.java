@@ -14,6 +14,7 @@ import org.springframework.data.repository.query.Param;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
@@ -296,5 +297,30 @@ public interface OrderRepository
             @Param("elapsedCutoffExclusive") LocalDateTime elapsedCutoffExclusive,
             @Param("sort") String sort,
             Pageable pageable);
+
+    @Query(value = """
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE target_orders.latest_changed_at
+                        < CAST(:threeDaysCutoffExclusive AS timestamp)
+                ) AS threeDaysOrMoreCount,
+                COUNT(*) FILTER (
+                    WHERE target_orders.latest_changed_at
+                        < CAST(:sevenDaysCutoffExclusive AS timestamp)
+                ) AS sevenDaysOrMoreCount
+            FROM (
+                SELECT
+                    o.id,
+                    MAX(h.changed_at) AS latest_changed_at
+                FROM orders o
+                LEFT JOIN order_handling_status_histories h
+                    ON h.order_id = o.id
+                WHERE o.handling_status IN ('NEEDS_ACTION', 'IN_PROGRESS')
+                GROUP BY o.id
+            ) target_orders
+            """, nativeQuery = true)
+    ActionRequiredAgingSummaryProjection findActionRequiredAgingSummary(
+            @Param("threeDaysCutoffExclusive") LocalDateTime threeDaysCutoffExclusive,
+            @Param("sevenDaysCutoffExclusive") LocalDateTime sevenDaysCutoffExclusive);
 
 }

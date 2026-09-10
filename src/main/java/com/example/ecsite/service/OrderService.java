@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.cart.Cart;
+import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
@@ -32,6 +33,7 @@ import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 
 @Service
@@ -420,6 +422,24 @@ public class OrderService {
                     updatedAt,
                     elapsedDays);
         });
+    }
+
+    @Transactional(readOnly = true)
+    public ActionRequiredAgingSummary getActionRequiredAgingSummary() {
+
+        LocalDate today = LocalDate.now();
+
+        LocalDateTime threeDaysCutoffExclusive = resolveElapsedCutoffExclusive(3, today);
+
+        LocalDateTime sevenDaysCutoffExclusive = resolveElapsedCutoffExclusive(7, today);
+
+        ActionRequiredAgingSummaryProjection projection = orderRepository.findActionRequiredAgingSummary(
+                threeDaysCutoffExclusive,
+                sevenDaysCutoffExclusive);
+
+        return new ActionRequiredAgingSummary(
+                projection.getThreeDaysOrMoreCount(),
+                projection.getSevenDaysOrMoreCount());
     }
 
     private LocalDateTime resolveFrom(LocalDate from) {

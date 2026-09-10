@@ -4,6 +4,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
+import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.service.OrderService;
@@ -49,6 +50,12 @@ public class AdminController {
 
         model.addAttribute("resolvedCount",
                 orderService.countOrdersByHandlingStatus(OrderHandlingStatus.RESOLVED));
+
+        ActionRequiredAgingSummary agingSummary = orderService.getActionRequiredAgingSummary();
+
+        model.addAttribute(
+                "actionRequiredAgingSummary",
+                agingSummary);
 
         int lowStockThreshold = 5;
 

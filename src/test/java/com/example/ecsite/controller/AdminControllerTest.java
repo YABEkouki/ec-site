@@ -12,6 +12,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.service.OrderService;
@@ -30,7 +31,7 @@ class AdminControllerTest {
     private ProductService productService;
 
     @Test
-    void indexAddsHandlingStatusCountsToModel() throws Exception {
+    void indexAddsOrderSummariesToModel() throws Exception {
 
         when(orderService.countOrdersByStatus(OrderStatus.ORDERED))
                 .thenReturn(1L);
@@ -50,13 +51,19 @@ class AdminControllerTest {
         when(orderService.countOrdersByHandlingStatus(OrderHandlingStatus.RESOLVED))
                 .thenReturn(8L);
 
+        ActionRequiredAgingSummary agingSummary = new ActionRequiredAgingSummary(4L, 2L);
+
+        when(orderService.getActionRequiredAgingSummary())
+                .thenReturn(agingSummary);
+
         mockMvc.perform(get("/admin"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("admin/index"))
                 .andExpect(model().attribute("normalHandlingCount", 10L))
                 .andExpect(model().attribute("needsActionCount", 5L))
                 .andExpect(model().attribute("inProgressCount", 3L))
-                .andExpect(model().attribute("resolvedCount", 8L));
+                .andExpect(model().attribute("resolvedCount", 8L))
+                .andExpect(model().attribute("actionRequiredAgingSummary", agingSummary));
     }
 
 }

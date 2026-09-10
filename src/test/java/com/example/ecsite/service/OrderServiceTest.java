@@ -28,6 +28,7 @@ import org.springframework.data.domain.Pageable;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
+import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
@@ -45,6 +46,7 @@ import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 
 @ExtendWith(MockitoExtension.class)
@@ -1508,6 +1510,33 @@ class OrderServiceTest {
         assertSame(order, dto.order());
         assertEquals(null, dto.handlingStatusUpdatedAt());
         assertEquals(null, dto.elapsedDays());
+    }
+
+    @Test
+    void getActionRequiredAgingSummaryReturnsRepositoryCounts() {
+
+        ActionRequiredAgingSummaryProjection projection = mock(ActionRequiredAgingSummaryProjection.class);
+
+        when(projection.getThreeDaysOrMoreCount())
+                .thenReturn(5L);
+
+        when(projection.getSevenDaysOrMoreCount())
+                .thenReturn(2L);
+
+        when(orderRepository.findActionRequiredAgingSummary(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class)))
+                .thenReturn(projection);
+
+        ActionRequiredAgingSummary result = orderService.getActionRequiredAgingSummary();
+
+        assertEquals(5L, result.threeDaysOrMoreCount());
+        assertEquals(2L, result.sevenDaysOrMoreCount());
+
+        verify(orderRepository)
+                .findActionRequiredAgingSummary(
+                        any(LocalDateTime.class),
+                        any(LocalDateTime.class));
     }
 
 }
