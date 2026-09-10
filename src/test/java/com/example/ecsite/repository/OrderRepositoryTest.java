@@ -21,6 +21,7 @@ import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
@@ -1040,6 +1041,138 @@ class OrderRepositoryTest {
         assertEquals(
                 second.getId(),
                 result.getContent().get(0).getOrderId());
+    }
+
+    @Test
+    void findActionRequiredAgingSummaryCountsThreeAndSevenDaysOrMore() {
+
+        User user = createUser("action-required-aging-summary-user");
+
+        Order threeDaysOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        Order sevenDaysOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        Order recentOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 3, 10, 0));
+
+        threeDaysOrder.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+        sevenDaysOrder.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
+        recentOrder.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                threeDaysOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 7, 23, 59));
+
+        createHandlingStatusHistory(
+                sevenDaysOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.IN_PROGRESS,
+                LocalDateTime.of(2026, 9, 3, 23, 59));
+
+        createHandlingStatusHistory(
+                recentOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 8, 0, 0));
+
+        ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
+                LocalDateTime.of(2026, 9, 8, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0));
+
+        assertEquals(2, result.getThreeDaysOrMoreCount());
+        assertEquals(1, result.getSevenDaysOrMoreCount());
+    }
+
+    @Test
+    void findActionRequiredAgingSummaryUsesLatestHandlingStatusHistory() {
+
+        User user = createUser("action-required-aging-latest-user");
+
+        Order order = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        order.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                order,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 1, 10, 0));
+
+        createHandlingStatusHistory(
+                order,
+                OrderHandlingStatus.NEEDS_ACTION,
+                OrderHandlingStatus.IN_PROGRESS,
+                LocalDateTime.of(2026, 9, 9, 10, 0));
+
+        order.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
+
+        entityManager.flush();
+
+        ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
+                LocalDateTime.of(2026, 9, 8, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0));
+
+        assertEquals(0, result.getThreeDaysOrMoreCount());
+        assertEquals(0, result.getSevenDaysOrMoreCount());
+    }
+
+    @Test
+    void findActionRequiredAgingSummaryExcludesOrdersWithoutHistory() {
+
+        User user = createUser("action-required-aging-no-history-user");
+
+        Order order = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        order.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        entityManager.flush();
+
+        ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
+                LocalDateTime.of(2026, 9, 8, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0));
+
+        assertEquals(0, result.getThreeDaysOrMoreCount());
+        assertEquals(0, result.getSevenDaysOrMoreCount());
+    }
+
+    @Test
+    void findActionRequiredAgingSummaryExcludesNonActionRequiredStatuses() {
+
+        User user = createUser("action-required-aging-status-user");
+
+        Order resolvedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        resolvedOrder.changeHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                resolvedOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 1, 10, 0));
+
+        resolvedOrder.changeHandlingStatus(OrderHandlingStatus.RESOLVED);
+
+        entityManager.flush();
+
+        ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
+                LocalDateTime.of(2026, 9, 8, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0));
+
+        assertEquals(0, result.getThreeDaysOrMoreCount());
+        assertEquals(0, result.getSevenDaysOrMoreCount());
     }
 
     private Order createOrder(

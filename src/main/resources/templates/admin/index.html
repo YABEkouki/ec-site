@@ -127,9 +127,55 @@
             </tbody>
         </table>
 
-        <a th:href="@{/admin/orders/action-required}"class="button button-secondary">
+        <a th:href="@{/admin/orders/action-required}" class="button button-secondary">
             要対応注文一覧
         </a>
+
+        <h2>要対応注文の滞留状況</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>滞留期間</th>
+                    <th>件数</th>
+                    <th></th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr>
+                    <td>3日以上滞留</td>
+                    <td th:text="${actionRequiredAgingSummary.threeDaysOrMoreCount}">
+                        0
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/orders/action-required(
+                    minElapsedDays=3,
+                    sort='OLDEST'
+                )}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><strong>7日以上滞留</strong></td>
+                    <td>
+                        <strong th:text="${actionRequiredAgingSummary.sevenDaysOrMoreCount}">
+                            0
+                        </strong>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/orders/action-required(
+                    minElapsedDays=7,
+                    sort='OLDEST'
+                )}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
 
         <section>
 
