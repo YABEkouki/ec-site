@@ -37,6 +37,10 @@ public class AdminAccountService {
                         "管理者アカウントが見つかりません。id=" + id));
     }
 
+    public List<AdminAccount> findAllEnabled() {
+        return adminAccountRepository.findByEnabledTrueOrderByUsernameAsc();
+    }
+
     @Transactional(readOnly = true)
     public boolean usernameExists(String username) {
         return adminAccountRepository.existsByUsername(normalizeUsername(username));

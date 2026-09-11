@@ -65,6 +65,28 @@
             </div>
 
             <div class="order-search-field">
+                <label for="assigneeFilter">担当者</label>
+
+                <select id="assigneeFilter" th:field="*{assigneeFilter}">
+                    <option th:each="assigneeFilter : ${assigneeFilters}" th:value="${assigneeFilter}"
+                        th:text="${assigneeFilter.displayName}">
+                    </option>
+                </select>
+            </div>
+
+            <div class="order-search-field">
+                <label for="assignedAdminAccountId">特定管理者</label>
+
+                <select id="assignedAdminAccountId" th:field="*{assignedAdminAccountId}">
+                    <option value="">選択してください</option>
+
+                    <option th:each="admin : ${adminAccounts}" th:value="${admin.id}" th:text="${admin.username
+                + (admin.enabled ? '' : '（無効）')}">
+                    </option>
+                </select>
+            </div>
+
+            <div class="order-search-field">
                 <label for="minElapsedDays">経過日数</label>
 
                 <select id="minElapsedDays" th:field="*{minElapsedDays}">
@@ -115,6 +137,7 @@
                 <th>合計金額</th>
                 <th>状態</th>
                 <th>対応状況</th>
+                <th>担当者</th>
                 <th>対応状況更新日時</th>
                 <th>経過日数</th>
                 <th>操作</th>
@@ -162,6 +185,18 @@
                 </td>
 
                 <td>
+                    <span th:if="${item.order.assignedAdminAccount != null}" th:text="${item.order.assignedAdminAccount.username
+            + (item.order.assignedAdminAccount.enabled
+                ? ''
+                : '（無効）')}">
+                    </span>
+
+                    <span th:unless="${item.order.assignedAdminAccount != null}">
+                        未担当
+                    </span>
+                </td>
+
+                <td>
                     <span th:if="${item.handlingStatusUpdatedAt != null}" th:text="${#temporals.format(
                         item.handlingStatusUpdatedAt,
                         'yyyy/MM/dd HH:mm')}">
@@ -204,6 +239,8 @@
            to=${searchForm.to},
            status=${searchForm.status},
            handlingStatus=${searchForm.handlingStatus},
+           assigneeFilter=${searchForm.assigneeFilter},
+           assignedAdminAccountId=${searchForm.assignedAdminAccountId},
            minElapsedDays=${searchForm.minElapsedDays},
            sort=${searchForm.sort},
            page=${orderPage.number - 1},
@@ -227,6 +264,8 @@
                to=${searchForm.to},
                status=${searchForm.status},
                handlingStatus=${searchForm.handlingStatus},
+               assigneeFilter=${searchForm.assigneeFilter},
+               assignedAdminAccountId=${searchForm.assignedAdminAccountId},
                minElapsedDays=${searchForm.minElapsedDays},
                sort=${searchForm.sort},
                page=${pageNumber},
@@ -242,6 +281,8 @@
            to=${searchForm.to},
            status=${searchForm.status},
            handlingStatus=${searchForm.handlingStatus},
+           assigneeFilter=${searchForm.assigneeFilter},
+           assignedAdminAccountId=${searchForm.assignedAdminAccountId},
            minElapsedDays=${searchForm.minElapsedDays},
            sort=${searchForm.sort},
            page=${orderPage.number + 1},

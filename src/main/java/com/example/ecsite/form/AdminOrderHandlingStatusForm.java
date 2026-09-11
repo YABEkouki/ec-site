@@ -16,4 +16,15 @@ public class AdminOrderHandlingStatusForm {
     public void setHandlingStatus(OrderHandlingStatus handlingStatus) {
         this.handlingStatus = handlingStatus;
     }
+
+    private Long assignedAdminAccountId;
+
+    public Long getAssignedAdminAccountId() {
+        return assignedAdminAccountId;
+    }
+
+    public void setAssignedAdminAccountId(Long assignedAdminAccountId) {
+        this.assignedAdminAccountId = assignedAdminAccountId;
+    }
+
 }

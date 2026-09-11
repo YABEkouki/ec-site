@@ -13,6 +13,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
+import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
@@ -43,6 +44,9 @@ class OrderRepositoryTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private AdminAccountRepository adminAccountRepository;
+
     private static final LocalDateTime SEARCH_FROM = LocalDateTime.of(1970, 1, 1, 0, 0);
 
     private static final LocalDateTime SEARCH_TO = LocalDateTime.of(9999, 12, 31, 0, 0);
@@ -70,6 +74,8 @@ class OrderRepositoryTest {
                 SEARCH_TO,
                 null,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -92,6 +98,8 @@ class OrderRepositoryTest {
                 SEARCH_TO,
                 null,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -126,6 +134,8 @@ class OrderRepositoryTest {
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 null,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(2, result.getTotalElements());
@@ -152,6 +162,8 @@ class OrderRepositoryTest {
                 SEARCH_TO,
                 OrderStatus.PAID,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -183,10 +195,175 @@ class OrderRepositoryTest {
                 LocalDateTime.of(2026, 8, 16, 0, 0),
                 OrderStatus.PAID,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
         assertEquals(target.getId(), result.getContent().get(0).getId());
+    }
+
+    @Test
+    void searchFiltersByUnassignedAssignee() {
+
+        User user = createUser("order-search-unassigned-user");
+
+        Order unassignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        10,
+                        10,
+                        0));
+
+        AdminAccount admin = createAdminAccount(
+                "order-search-assigned-admin",
+                true);
+
+        Order assignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        11,
+                        10,
+                        0));
+
+        assignedOrder.changeAssignedAdminAccount(admin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<Order> result = orderRepository.search(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                ALL_HANDLING_STATUSES,
+                "UNASSIGNED",
+                null,
+                PageRequest.of(0, 20));
+
+        assertEquals(
+                1,
+                result.getTotalElements());
+
+        assertEquals(
+                unassignedOrder.getId(),
+                result.getContent().get(0).getId());
+    }
+
+    @Test
+    void searchFiltersBySpecifiedAdminAssignee() {
+
+        User user = createUser("order-search-specific-admin-user");
+
+        AdminAccount firstAdmin = createAdminAccount(
+                "order-search-admin-1",
+                true);
+
+        AdminAccount secondAdmin = createAdminAccount(
+                "order-search-admin-2",
+                true);
+
+        Order firstOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        10,
+                        10,
+                        0));
+
+        firstOrder.changeAssignedAdminAccount(
+                firstAdmin);
+
+        Order secondOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        11,
+                        10,
+                        0));
+
+        secondOrder.changeAssignedAdminAccount(
+                secondAdmin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<Order> result = orderRepository.search(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                ALL_HANDLING_STATUSES,
+                "SPECIFIC",
+                secondAdmin.getId(),
+                PageRequest.of(0, 20));
+
+        assertEquals(
+                1,
+                result.getTotalElements());
+
+        assertEquals(
+                secondOrder.getId(),
+                result.getContent().get(0).getId());
+    }
+
+    @Test
+    void searchFetchesAssignedAdminAccount() {
+
+        User user = createUser("order-search-assignee-fetch-user");
+
+        AdminAccount admin = createAdminAccount(
+                "order-search-fetch-admin",
+                true);
+
+        Order order = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        8,
+                        10,
+                        10,
+                        0));
+
+        order.changeAssignedAdminAccount(admin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<Order> result = orderRepository.search(
+                order.getId(),
+                null,
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
+                PageRequest.of(0, 20));
+
+        Order actual = result.getContent().get(0);
+
+        /*
+         * Repositoryのトランザクション管理から切り離した後でも
+         * 担当管理者を参照できることを確認する。
+         */
+        entityManager.clear();
+
+        assertEquals(
+                admin.getId(),
+                actual.getAssignedAdminAccount().getId());
+
+        assertEquals(
+                "order-search-fetch-admin",
+                actual.getAssignedAdminAccount().getUsername());
     }
 
     @Test
@@ -692,6 +869,8 @@ class OrderRepositoryTest {
                 SEARCH_TO,
                 null,
                 List.of(OrderHandlingStatus.NEEDS_ACTION),
+                "ALL",
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(1, result.getTotalElements());
@@ -801,6 +980,8 @@ class OrderRepositoryTest {
                 List.of(
                         OrderHandlingStatus.NEEDS_ACTION,
                         OrderHandlingStatus.IN_PROGRESS),
+                "ALL",
+                null,
                 PageRequest.of(0, 20));
 
         assertEquals(2, result.getTotalElements());
@@ -856,6 +1037,8 @@ class OrderRepositoryTest {
                 SEARCH_TO,
                 null,
                 List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                null,
+                "ALL",
                 null,
                 "OLDEST",
                 PageRequest.of(0, 20));
@@ -916,6 +1099,8 @@ class OrderRepositoryTest {
                 null,
                 List.of("NEEDS_ACTION", "IN_PROGRESS"),
                 null,
+                "ALL",
+                null,
                 "NEWEST",
                 PageRequest.of(0, 20));
 
@@ -973,6 +1158,8 @@ class OrderRepositoryTest {
                 null,
                 List.of("NEEDS_ACTION", "IN_PROGRESS"),
                 LocalDateTime.of(2026, 8, 11, 0, 0),
+                "ALL",
+                null,
                 "OLDEST",
                 PageRequest.of(0, 20));
 
@@ -1031,6 +1218,8 @@ class OrderRepositoryTest {
                 null,
                 List.of("NEEDS_ACTION", "IN_PROGRESS"),
                 null,
+                "ALL",
+                null,
                 "OLDEST",
                 PageRequest.of(1, 1));
 
@@ -1041,6 +1230,188 @@ class OrderRepositoryTest {
         assertEquals(
                 second.getId(),
                 result.getContent().get(0).getOrderId());
+    }
+
+    @Test
+    void searchActionRequiredOrdersDoesNotFilterAssigneeWhenFilterIsAll() {
+
+        User user = createUser("action-required-assignee-all-user");
+
+        AdminAccount admin = createAdminAccount(
+                "action-required-assignee-all-admin",
+                true);
+
+        Order assignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        Order unassignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        assignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        unassignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        assignedOrder.changeAssignedAdminAccount(admin);
+
+        entityManager.flush();
+
+        Page<AdminActionRequiredOrderSearchProjection> result = orderRepository.searchActionRequiredOrders(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                null,
+                "ALL",
+                null,
+                "OLDEST",
+                PageRequest.of(0, 20));
+
+        assertEquals(2, result.getTotalElements());
+    }
+
+    @Test
+    void searchActionRequiredOrdersFiltersUnassignedOrders() {
+
+        User user = createUser("action-required-unassigned-user");
+
+        AdminAccount admin = createAdminAccount(
+                "action-required-unassigned-admin",
+                true);
+
+        Order assignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        Order unassignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        assignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        unassignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        assignedOrder.changeAssignedAdminAccount(admin);
+
+        entityManager.flush();
+
+        Page<AdminActionRequiredOrderSearchProjection> result = orderRepository.searchActionRequiredOrders(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                null,
+                "UNASSIGNED",
+                null,
+                "OLDEST",
+                PageRequest.of(0, 20));
+
+        assertEquals(1, result.getTotalElements());
+
+        assertEquals(
+                unassignedOrder.getId(),
+                result.getContent()
+                        .get(0)
+                        .getOrderId());
+    }
+
+    @Test
+    void searchActionRequiredOrdersFiltersByAssignedAdminAccountId() {
+
+        User user = createUser("action-required-specific-user");
+
+        AdminAccount firstAdmin = createAdminAccount(
+                "action-required-specific-admin-1",
+                true);
+
+        AdminAccount secondAdmin = createAdminAccount(
+                "action-required-specific-admin-2",
+                true);
+
+        Order firstOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        Order secondOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        firstOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        secondOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        firstOrder.changeAssignedAdminAccount(firstAdmin);
+        secondOrder.changeAssignedAdminAccount(secondAdmin);
+
+        entityManager.flush();
+
+        Page<AdminActionRequiredOrderSearchProjection> result = orderRepository.searchActionRequiredOrders(
+                null,
+                user.getId(),
+                SEARCH_FROM,
+                SEARCH_TO,
+                null,
+                List.of("NEEDS_ACTION", "IN_PROGRESS"),
+                null,
+                "SPECIFIC",
+                secondAdmin.getId(),
+                "OLDEST",
+                PageRequest.of(0, 20));
+
+        assertEquals(1, result.getTotalElements());
+
+        assertEquals(
+                secondOrder.getId(),
+                result.getContent()
+                        .get(0)
+                        .getOrderId());
+    }
+
+    @Test
+    void findAllWithAssignedAdminByIdInFetchesAssignedAdminAccount() {
+
+        User user = createUser("assigned-admin-fetch-user");
+
+        AdminAccount admin = createAdminAccount(
+                "assigned-admin-fetch-admin",
+                true);
+
+        Order order = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        order.changeAssignedAdminAccount(admin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Order> result = orderRepository.findAllWithAssignedAdminByIdIn(
+                List.of(order.getId()));
+
+        entityManager.clear();
+
+        assertEquals(1, result.size());
+
+        Order loadedOrder = result.get(0);
+
+        assertEquals(
+                admin.getId(),
+                loadedOrder.getAssignedAdminAccount().getId());
+
+        assertEquals(
+                "assigned-admin-fetch-admin",
+                loadedOrder.getAssignedAdminAccount().getUsername());
     }
 
     @Test
@@ -1278,6 +1649,61 @@ class OrderRepositoryTest {
                 .executeUpdate();
 
         entityManager.flush();
+    }
+
+    private AdminAccount createAdminAccount(
+            String username,
+            boolean enabled) {
+
+        AdminAccount adminAccount = new AdminAccount();
+        adminAccount.setUsername(username);
+        adminAccount.setPassword("password");
+        adminAccount.setEnabled(enabled);
+
+        AdminAccount saved = adminAccountRepository.save(adminAccount);
+
+        entityManager.flush();
+
+        return saved;
+    }
+
+    @Test
+    void findByIdWithItemsFetchesAssignedAdminAccount() {
+
+        User user = createUser("assignee-fetch-user");
+
+        AdminAccount admin = createAdminAccount(
+                "assigned-admin",
+                true);
+
+        Order order = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        11,
+                        10,
+                        0),
+                1000);
+
+        order.changeAssignedAdminAccount(admin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Order actual = orderRepository.findByIdWithItems(
+                order.getId())
+                .orElseThrow();
+
+        entityManager.clear();
+
+        assertEquals(
+                admin.getId(),
+                actual.getAssignedAdminAccount().getId());
+
+        assertEquals(
+                "assigned-admin",
+                actual.getAssignedAdminAccount().getUsername());
     }
 
 }

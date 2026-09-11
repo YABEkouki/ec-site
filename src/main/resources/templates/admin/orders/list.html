@@ -62,6 +62,29 @@
                 </select>
             </div>
 
+            <div class="order-search-field">
+                <label for="assigneeFilter">担当者</label>
+
+                <select id="assigneeFilter" th:field="*{assigneeFilter}">
+                    <option th:each="assigneeFilter : ${assigneeFilters}" th:value="${assigneeFilter}"
+                        th:text="${assigneeFilter.displayName}">
+                    </option>
+                </select>
+            </div>
+
+            <div class="order-search-field">
+                <label for="assignedAdminAccountId">特定管理者</label>
+
+                <select id="assignedAdminAccountId" th:field="*{assignedAdminAccountId}">
+
+                    <option value="">選択してください</option>
+
+                    <option th:each="admin : ${adminAccounts}" th:value="${admin.id}" th:text="${admin.username
+                + (admin.enabled ? '' : '（無効）')}">
+                    </option>
+                </select>
+            </div>
+
         </div>
 
         <input type="hidden" name="size" th:value="${orderPage.size}">
@@ -82,7 +105,9 @@
         from=${searchForm.from},
         to=${searchForm.to},
         status=${searchForm.status},
-        handlingStatus=${searchForm.handlingStatus})}" class="button button-secondary">
+        handlingStatus=${searchForm.handlingStatus},
+        assigneeFilter=${searchForm.assigneeFilter},
+        assignedAdminAccountId=${searchForm.assignedAdminAccountId})}" class="button button-secondary">
                 CSV出力
             </a>
         </div>
@@ -104,6 +129,7 @@
                 <th>合計金額</th>
                 <th>状態</th>
                 <th>対応状況</th>
+                <th>担当者</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -149,6 +175,18 @@
                 </td>
 
                 <td>
+                    <span th:if="${order.assignedAdminAccount != null}" th:text="${order.assignedAdminAccount.username
+            + (order.assignedAdminAccount.enabled
+                ? ''
+                : '（無効）')}">
+                    </span>
+
+                    <span th:unless="${order.assignedAdminAccount != null}">
+                        未担当
+                    </span>
+                </td>
+
+                <td>
                     <a th:href="@{/admin/orders/{id}(
                     id=${order.id})}" class="button button-secondary">
                         詳細
@@ -168,6 +206,8 @@
            to=${searchForm.to},
            status=${searchForm.status},
            handlingStatus=${searchForm.handlingStatus},
+           assigneeFilter=${searchForm.assigneeFilter},
+           assignedAdminAccountId=${searchForm.assignedAdminAccountId},
            page=${orderPage.number - 1},
            size=${orderPage.size})}" class="button button-secondary">
             前へ
@@ -189,6 +229,8 @@
                to=${searchForm.to},
                status=${searchForm.status},
                handlingStatus=${searchForm.handlingStatus},
+               assigneeFilter=${searchForm.assigneeFilter},
+               assignedAdminAccountId=${searchForm.assignedAdminAccountId},
                page=${pageNumber},
                size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
@@ -202,6 +244,8 @@
            to=${searchForm.to},
            status=${searchForm.status},
            handlingStatus=${searchForm.handlingStatus},
+           assigneeFilter=${searchForm.assigneeFilter},
+           assignedAdminAccountId=${searchForm.assignedAdminAccountId},
            page=${orderPage.number + 1},
            size=${orderPage.size})}" class="button button-secondary">
             次へ

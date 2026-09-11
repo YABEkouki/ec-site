@@ -199,4 +199,33 @@ class OrderTest {
                 order.getHandlingStatus());
     }
 
+    @Test
+    void assignedAdminAccountCanBeChanged() {
+
+        Order order = new Order(1L, 1000);
+
+        AdminAccount adminAccount = new AdminAccount();
+        adminAccount.setUsername("admin01");
+
+        order.changeAssignedAdminAccount(adminAccount);
+
+        assertEquals(
+                adminAccount,
+                order.getAssignedAdminAccount());
+    }
+
+    @Test
+    void assignedAdminAccountCanBeCleared() {
+
+        Order order = new Order(1L, 1000);
+
+        AdminAccount adminAccount = new AdminAccount();
+        adminAccount.setUsername("admin01");
+
+        order.changeAssignedAdminAccount(adminAccount);
+        order.changeAssignedAdminAccount(null);
+
+        assertNull(order.getAssignedAdminAccount());
+    }
+
 }
