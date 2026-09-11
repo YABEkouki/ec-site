@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,13 +45,15 @@ class OrderHandlingStatusHistoryServiceTest {
     void recordSavesHandlingStatusHistory() {
 
         Order order = new Order(10L, 1000);
+        UUID changeEventId = UUID.randomUUID();
 
         service.record(
                 order,
                 OrderHandlingStatus.NONE,
                 OrderHandlingStatus.NEEDS_ACTION,
                 20L,
-                "admin");
+                "admin",
+                changeEventId);
 
         ArgumentCaptor<OrderHandlingStatusHistory> captor = ArgumentCaptor.forClass(
                 OrderHandlingStatusHistory.class);
@@ -72,6 +75,9 @@ class OrderHandlingStatusHistoryServiceTest {
         assertEquals(
                 "admin",
                 history.getChangedByUsername());
+        assertEquals(
+                changeEventId,
+                history.getChangeEventId());
     }
 
     @Test

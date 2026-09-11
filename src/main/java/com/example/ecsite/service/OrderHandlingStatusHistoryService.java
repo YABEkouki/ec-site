@@ -3,6 +3,7 @@ package com.example.ecsite.service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -31,14 +32,16 @@ public class OrderHandlingStatusHistoryService {
             OrderHandlingStatus fromStatus,
             OrderHandlingStatus toStatus,
             Long changedByAccountId,
-            String changedByUsername) {
+            String changedByUsername,
+            UUID changeEventId) {
 
         OrderHandlingStatusHistory history = OrderHandlingStatusHistory.create(
                 order,
                 fromStatus,
                 toStatus,
                 changedByAccountId,
-                changedByUsername);
+                changedByUsername,
+                changeEventId);
 
         repository.save(history);
     }

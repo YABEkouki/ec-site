@@ -32,6 +32,7 @@ import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
+import com.example.ecsite.service.OrderAssigneeHistoryService;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -49,6 +50,7 @@ public class AdminOrderController {
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderNoteService orderNoteService;
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
+    private final OrderAssigneeHistoryService orderAssigneeHistoryService;
     private final AdminAccountService adminAccountService;
 
     public AdminOrderController(
@@ -57,6 +59,7 @@ public class AdminOrderController {
             OrderStatusHistoryService orderStatusHistoryService,
             OrderNoteService orderNoteService,
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService) {
 
         this.orderService = orderService;
@@ -64,6 +67,7 @@ public class AdminOrderController {
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.orderNoteService = orderNoteService;
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
+        this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.adminAccountService = adminAccountService;
     }
 
@@ -141,6 +145,10 @@ public class AdminOrderController {
         model.addAttribute(
                 "handlingStatusHistories",
                 orderHandlingStatusHistoryService.findByOrderId(id));
+
+        model.addAttribute(
+                "assigneeHistories",
+                orderAssigneeHistoryService.findByOrderId(id));
 
         AdminOrderHandlingStatusForm handlingStatusForm = new AdminOrderHandlingStatusForm();
 

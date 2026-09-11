@@ -5,8 +5,6 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -16,8 +14,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "order_handling_status_histories")
-public class OrderHandlingStatusHistory {
+@Table(name = "order_assignee_histories")
+public class OrderAssigneeHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -27,13 +25,17 @@ public class OrderHandlingStatusHistory {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "from_status", nullable = false, length = 30)
-    private OrderHandlingStatus fromStatus;
+    @Column(name = "from_admin_account_id")
+    private Long fromAdminAccountId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "to_status", nullable = false, length = 30)
-    private OrderHandlingStatus toStatus;
+    @Column(name = "from_admin_username", length = 100)
+    private String fromAdminUsername;
+
+    @Column(name = "to_admin_account_id")
+    private Long toAdminAccountId;
+
+    @Column(name = "to_admin_username", length = 100)
+    private String toAdminUsername;
 
     @Column(name = "changed_by_account_id", nullable = false)
     private Long changedByAccountId;
@@ -41,28 +43,36 @@ public class OrderHandlingStatusHistory {
     @Column(name = "changed_by_username", nullable = false, length = 100)
     private String changedByUsername;
 
-    @Column(name = "change_event_id")
+    @Column(name = "change_event_id", nullable = false)
     private UUID changeEventId;
 
-    @Column(name = "changed_at", nullable = false, insertable = false, updatable = false)
+    @Column(
+            name = "changed_at",
+            nullable = false,
+            insertable = false,
+            updatable = false)
     private LocalDateTime changedAt;
 
-    protected OrderHandlingStatusHistory() {
+    protected OrderAssigneeHistory() {
     }
 
-    public static OrderHandlingStatusHistory create(
+    public static OrderAssigneeHistory create(
             Order order,
-            OrderHandlingStatus fromStatus,
-            OrderHandlingStatus toStatus,
+            Long fromAdminAccountId,
+            String fromAdminUsername,
+            Long toAdminAccountId,
+            String toAdminUsername,
             Long changedByAccountId,
             String changedByUsername,
             UUID changeEventId) {
 
-        OrderHandlingStatusHistory history = new OrderHandlingStatusHistory();
+        OrderAssigneeHistory history = new OrderAssigneeHistory();
 
         history.order = order;
-        history.fromStatus = fromStatus;
-        history.toStatus = toStatus;
+        history.fromAdminAccountId = fromAdminAccountId;
+        history.fromAdminUsername = fromAdminUsername;
+        history.toAdminAccountId = toAdminAccountId;
+        history.toAdminUsername = toAdminUsername;
         history.changedByAccountId = changedByAccountId;
         history.changedByUsername = changedByUsername;
         history.changeEventId = changeEventId;
@@ -78,12 +88,20 @@ public class OrderHandlingStatusHistory {
         return order;
     }
 
-    public OrderHandlingStatus getFromStatus() {
-        return fromStatus;
+    public Long getFromAdminAccountId() {
+        return fromAdminAccountId;
     }
 
-    public OrderHandlingStatus getToStatus() {
-        return toStatus;
+    public String getFromAdminUsername() {
+        return fromAdminUsername;
+    }
+
+    public Long getToAdminAccountId() {
+        return toAdminAccountId;
+    }
+
+    public String getToAdminUsername() {
+        return toAdminUsername;
     }
 
     public Long getChangedByAccountId() {
