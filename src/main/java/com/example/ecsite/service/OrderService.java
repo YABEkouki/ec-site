@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -47,6 +48,7 @@ public class OrderService {
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
     private final AdminAccountService adminAccountService;
+    private final OrderAssigneeHistoryService orderAssigneeHistoryService;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -54,6 +56,7 @@ public class OrderService {
             InventoryService inventoryService,
             OrderStatusHistoryService orderStatusHistoryService,
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService) {
 
         this.orderRepository = orderRepository;
@@ -61,6 +64,7 @@ public class OrderService {
         this.inventoryService = inventoryService;
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
+        this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.adminAccountService = adminAccountService;
     }
 
@@ -345,9 +349,11 @@ public class OrderService {
             return false;
         }
 
+        AdminAccount newAssignedAdmin = currentAssignedAdmin;
+
         if (assignedAdminChanged) {
 
-            AdminAccount assignedAdmin = null;
+            newAssignedAdmin = null;
 
             if (assignedAdminAccountId != null) {
 
@@ -358,17 +364,40 @@ public class OrderService {
                             "担当管理者を設定できるのは要対応または対応中の注文のみです。");
                 }
 
-                assignedAdmin = adminAccountService.findById(
+                newAssignedAdmin = adminAccountService.findById(
                         assignedAdminAccountId);
 
-                if (!assignedAdmin.isEnabled()) {
+                if (!newAssignedAdmin.isEnabled()) {
                     throw new IllegalArgumentException(
                             "無効な管理者アカウントを担当者に設定することはできません。");
                 }
             }
+        }
+        
+        UUID changeEventId = UUID.randomUUID();
+
+        if (assignedAdminChanged) {
 
             order.changeAssignedAdminAccount(
-                    assignedAdmin);
+                    newAssignedAdmin);
+
+            orderAssigneeHistoryService.record(
+                    order,
+                    currentAssignedAdmin == null
+                            ? null
+                            : currentAssignedAdmin.getId(),
+                    currentAssignedAdmin == null
+                            ? null
+                            : currentAssignedAdmin.getUsername(),
+                    newAssignedAdmin == null
+                            ? null
+                            : newAssignedAdmin.getId(),
+                    newAssignedAdmin == null
+                            ? null
+                            : newAssignedAdmin.getUsername(),
+                    changedByAccountId,
+                    changedByUsername,
+                    changeEventId);
         }
 
         if (handlingStatusChanged) {
@@ -381,7 +410,8 @@ public class OrderService {
                     fromStatus,
                     handlingStatus,
                     changedByAccountId,
-                    changedByUsername);
+                    changedByUsername,
+                    changeEventId);
         }
 
         return true;

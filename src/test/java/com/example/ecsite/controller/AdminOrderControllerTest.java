@@ -28,6 +28,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderAssigneeHistory;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.OrderNote;
@@ -43,6 +44,7 @@ import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
+import com.example.ecsite.service.OrderAssigneeHistoryService;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -76,6 +78,9 @@ class AdminOrderControllerTest {
     @Mock
     private AdminAccountService adminAccountService;
 
+    @Mock
+    private OrderAssigneeHistoryService orderAssigneeHistoryService;
+
     private AdminOrderController adminOrderController;
 
     private static final Long ADMIN_ID = 20L;
@@ -89,6 +94,7 @@ class AdminOrderControllerTest {
                 orderStatusHistoryService,
                 orderNoteService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
     }
 
@@ -210,7 +216,7 @@ class AdminOrderControllerTest {
     }
 
     @Test
-    void detailDisplaysOrderWithItemsNotesAndHandlingStatusHistories() {
+    void detailDisplaysOrderWithItemsNotesAndHistories() {
 
         Long orderId = 1L;
 
@@ -218,12 +224,14 @@ class AdminOrderControllerTest {
         OrderStatusHistory history = mock(OrderStatusHistory.class);
         OrderNote orderNote = mock(OrderNote.class);
         OrderHandlingStatusHistory handlingStatusHistory = mock(OrderHandlingStatusHistory.class);
+        OrderAssigneeHistory assigneeHistory = mock(OrderAssigneeHistory.class);
 
         order.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
 
         List<OrderStatusHistory> statusHistories = List.of(history);
         List<OrderNote> orderNotes = List.of(orderNote);
         List<OrderHandlingStatusHistory> handlingStatusHistories = List.of(handlingStatusHistory);
+        List<OrderAssigneeHistory> assigneeHistories = List.of(assigneeHistory);
 
         when(orderService.findOrderWithItems(orderId))
                 .thenReturn(order);
@@ -236,6 +244,9 @@ class AdminOrderControllerTest {
 
         when(orderHandlingStatusHistoryService.findByOrderId(orderId))
                 .thenReturn(handlingStatusHistories);
+
+        when(orderAssigneeHistoryService.findByOrderId(orderId))
+                .thenReturn(assigneeHistories);
 
         AdminAccount assignableAdmin = new AdminAccount();
         assignableAdmin.setUsername("admin02");
@@ -303,6 +314,14 @@ class AdminOrderControllerTest {
                 .addAttribute(
                         "handlingStatusHistories",
                         handlingStatusHistories);
+
+        verify(orderAssigneeHistoryService)
+                .findByOrderId(orderId);
+
+        verify(model)
+                .addAttribute(
+                        "assigneeHistories",
+                        assigneeHistories);
 
         verify(model)
                 .addAttribute(

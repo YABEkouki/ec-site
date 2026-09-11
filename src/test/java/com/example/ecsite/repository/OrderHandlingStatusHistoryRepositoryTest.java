@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,7 +50,8 @@ class OrderHandlingStatusHistoryRepositoryTest {
                 OrderHandlingStatus.NONE,
                 OrderHandlingStatus.NEEDS_ACTION,
                 user.getId(),
-                user.getUsername());
+                user.getUsername(),
+                null);
 
         repository.save(needsAction);
         entityManager.flush();
@@ -59,7 +61,8 @@ class OrderHandlingStatusHistoryRepositoryTest {
                 OrderHandlingStatus.NEEDS_ACTION,
                 OrderHandlingStatus.IN_PROGRESS,
                 user.getId(),
-                user.getUsername());
+                user.getUsername(),
+                null);
 
         repository.save(inProgress);
         entityManager.flush();
@@ -457,13 +460,46 @@ class OrderHandlingStatusHistoryRepositoryTest {
                 fromStatus,
                 toStatus,
                 changedByAccountId,
-                changedByUsername);
+                changedByUsername,
+                null);
 
         OrderHandlingStatusHistory saved = repository.save(history);
 
         entityManager.flush();
 
         return saved;
+    }
+
+    @Test
+    void savePersistsChangeEventId() {
+
+        User user = createUser(
+                "handling-history-change-event-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        UUID changeEventId = UUID.randomUUID();
+
+        OrderHandlingStatusHistory history = OrderHandlingStatusHistory.create(
+                order,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                user.getId(),
+                user.getUsername(),
+                changeEventId);
+
+        OrderHandlingStatusHistory saved = repository.save(history);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        OrderHandlingStatusHistory reloaded = repository.findById(saved.getId())
+                .orElseThrow();
+
+        assertEquals(
+                changeEventId,
+                reloaded.getChangeEventId());
     }
 
 }

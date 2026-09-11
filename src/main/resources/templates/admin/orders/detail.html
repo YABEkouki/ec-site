@@ -186,6 +186,49 @@
         対応状況変更履歴はありません。
     </p>
 
+    <h3>担当管理者変更履歴</h3>
+
+    <table th:if="${!#lists.isEmpty(assigneeHistories)}">
+        <thead>
+            <tr>
+                <th>変更日時</th>
+                <th>変更前担当者</th>
+                <th>変更後担当者</th>
+                <th>管理者ID</th>
+                <th>管理者ユーザー名</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="history : ${assigneeHistories}">
+                <td th:text="${#temporals.format(
+                history.changedAt,
+                'yyyy-MM-dd HH:mm:ss')}">
+                </td>
+
+                <td th:text="${history.fromAdminUsername != null
+                ? history.fromAdminUsername
+                : '未担当'}">
+                </td>
+
+                <td th:text="${history.toAdminUsername != null
+                ? history.toAdminUsername
+                : '未担当'}">
+                </td>
+
+                <td th:text="${history.changedByAccountId}">
+                </td>
+
+                <td th:text="${history.changedByUsername}">
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p th:if="${#lists.isEmpty(assigneeHistories)}">
+        担当管理者変更履歴はありません。
+    </p>
+
     <h2>注文操作</h2>
 
     <div th:if="${order.canMarkAsPaid() or order.canCancel()}">

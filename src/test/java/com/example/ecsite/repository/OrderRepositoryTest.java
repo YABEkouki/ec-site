@@ -1634,7 +1634,8 @@ class OrderRepositoryTest {
                 fromStatus,
                 toStatus,
                 1L,
-                "admin");
+                "admin",
+                null);
 
         entityManager.persist(history);
         entityManager.flush();

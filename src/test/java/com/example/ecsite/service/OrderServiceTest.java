@@ -16,10 +16,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -73,6 +75,9 @@ class OrderServiceTest {
     @Mock
     private AdminAccountService adminAccountService;
 
+    @Mock
+    private OrderAssigneeHistoryService orderAssigneeHistoryService;
+
     private OrderService orderService;
 
     private static final List<OrderHandlingStatus> ALL_HANDLING_STATUSES = List.of(OrderHandlingStatus.values());
@@ -85,6 +90,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
     }
 
@@ -329,6 +335,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         Page<Order> actualPage = orderService.findOrdersByUserId(
@@ -384,6 +391,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         orderService.cancelOrder(
@@ -428,6 +436,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         assertThrows(
@@ -461,6 +470,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         assertThrows(
@@ -543,6 +553,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         Order result = orderService.createOrder(
@@ -580,6 +591,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         OrderValidationException exception = assertThrows(
@@ -660,6 +672,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         OrderValidationException exception = assertThrows(
@@ -722,6 +735,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         OrderValidationException exception = assertThrows(
@@ -770,6 +784,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         OrderValidationException exception = assertThrows(
@@ -813,6 +828,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         Page<Order> actualPage = orderService.findAllOrders(
@@ -852,6 +868,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         Page<Order> actualPage = orderService.findAllOrders(
@@ -907,6 +924,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         orderService.cancelOrderForUser(
@@ -969,6 +987,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         orderService.cancelOrderForUser(
@@ -1025,6 +1044,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         long actualCount = orderService.countOrdersByStatus(status);
@@ -1113,6 +1133,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
                 adminAccountService);
 
         Order order = orderService.createOrder(
@@ -1525,11 +1546,12 @@ class OrderServiceTest {
 
         verify(orderHandlingStatusHistoryService)
                 .record(
-                        order,
-                        OrderHandlingStatus.NONE,
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        adminId,
-                        adminUsername);
+                        eq(order),
+                        eq(OrderHandlingStatus.NONE),
+                        eq(OrderHandlingStatus.NEEDS_ACTION),
+                        eq(adminId),
+                        eq(adminUsername),
+                        any(UUID.class));
     }
 
     @Test
@@ -1561,6 +1583,9 @@ class OrderServiceTest {
 
         verifyNoInteractions(
                 orderHandlingStatusHistoryService);
+
+        verifyNoInteractions(
+                orderAssigneeHistoryService);
     }
 
     @Test
@@ -1576,6 +1601,12 @@ class OrderServiceTest {
         AdminAccount assignedAdmin = new AdminAccount();
         assignedAdmin.setUsername("admin02");
         assignedAdmin.setEnabled(true);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        assignedAdmin,
+                        "id",
+                        assignedAdminId);
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
@@ -1602,11 +1633,12 @@ class OrderServiceTest {
 
         verify(orderHandlingStatusHistoryService)
                 .record(
-                        order,
-                        OrderHandlingStatus.NONE,
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        adminId,
-                        adminUsername);
+                        eq(order),
+                        eq(OrderHandlingStatus.NONE),
+                        eq(OrderHandlingStatus.NEEDS_ACTION),
+                        eq(adminId),
+                        eq(adminUsername),
+                        any(UUID.class));
     }
 
     @Test
@@ -1624,6 +1656,12 @@ class OrderServiceTest {
         AdminAccount assignedAdmin = new AdminAccount();
         assignedAdmin.setUsername("admin02");
         assignedAdmin.setEnabled(true);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        assignedAdmin,
+                        "id",
+                        assignedAdminId);
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
@@ -1650,6 +1688,17 @@ class OrderServiceTest {
 
         verifyNoInteractions(
                 orderHandlingStatusHistoryService);
+
+        verify(orderAssigneeHistoryService)
+                .record(
+                        eq(order),
+                        eq(null),
+                        eq(null),
+                        eq(assignedAdminId),
+                        eq("admin02"),
+                        eq(adminId),
+                        eq(adminUsername),
+                        any(UUID.class));
     }
 
     @Test
@@ -1692,6 +1741,17 @@ class OrderServiceTest {
 
         verifyNoInteractions(
                 orderHandlingStatusHistoryService);
+
+        verify(orderAssigneeHistoryService)
+                .record(
+                        eq(order),
+                        eq(30L),
+                        eq("admin02"),
+                        eq(null),
+                        eq(null),
+                        eq(adminId),
+                        eq(adminUsername),
+                        any(UUID.class));
     }
 
     @Test
@@ -1991,11 +2051,12 @@ class OrderServiceTest {
 
         verify(orderHandlingStatusHistoryService)
                 .record(
-                        order,
-                        OrderHandlingStatus.NEEDS_ACTION,
-                        OrderHandlingStatus.IN_PROGRESS,
-                        adminId,
-                        adminUsername);
+                        eq(order),
+                        eq(OrderHandlingStatus.NEEDS_ACTION),
+                        eq(OrderHandlingStatus.IN_PROGRESS),
+                        eq(adminId),
+                        eq(adminUsername),
+                        any(UUID.class));
 
         verifyNoInteractions(adminAccountService);
     }
@@ -2093,11 +2154,12 @@ class OrderServiceTest {
 
         verify(orderHandlingStatusHistoryService)
                 .record(
-                        order,
-                        OrderHandlingStatus.IN_PROGRESS,
-                        OrderHandlingStatus.RESOLVED,
-                        adminId,
-                        adminUsername);
+                        eq(order),
+                        eq(OrderHandlingStatus.IN_PROGRESS),
+                        eq(OrderHandlingStatus.RESOLVED),
+                        eq(adminId),
+                        eq(adminUsername),
+                        any(UUID.class));
 
         verifyNoInteractions(adminAccountService);
     }
@@ -2217,6 +2279,71 @@ class OrderServiceTest {
                         eq(selectedAdminAccountId),
                         eq("OLDEST"),
                         eq(pageable));
+    }
+
+    @Test
+    void changeHandlingStatusUsesSameChangeEventIdForStatusAndAssigneeHistories() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        Order order = new Order(10L, 1000);
+
+        AdminAccount assignedAdmin = new AdminAccount();
+        assignedAdmin.setUsername("admin02");
+        assignedAdmin.setEnabled(true);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        assignedAdmin,
+                        "id",
+                        assignedAdminId);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        when(adminAccountService.findById(assignedAdminId))
+                .thenReturn(assignedAdmin);
+
+        boolean changed = orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION,
+                assignedAdminId,
+                adminId,
+                adminUsername);
+
+        assertEquals(true, changed);
+
+        ArgumentCaptor<UUID> handlingEventIdCaptor = ArgumentCaptor.forClass(UUID.class);
+
+        verify(orderHandlingStatusHistoryService)
+                .record(
+                        eq(order),
+                        eq(OrderHandlingStatus.NONE),
+                        eq(OrderHandlingStatus.NEEDS_ACTION),
+                        eq(adminId),
+                        eq(adminUsername),
+                        handlingEventIdCaptor.capture());
+
+        ArgumentCaptor<UUID> assigneeEventIdCaptor = ArgumentCaptor.forClass(UUID.class);
+
+        verify(orderAssigneeHistoryService)
+                .record(
+                        eq(order),
+                        eq(null),
+                        eq(null),
+                        eq(assignedAdminId),
+                        eq("admin02"),
+                        eq(adminId),
+                        eq(adminUsername),
+                        assigneeEventIdCaptor.capture());
+
+        assertEquals(
+                handlingEventIdCaptor.getValue(),
+                assigneeEventIdCaptor.getValue());
+
     }
 
 }
