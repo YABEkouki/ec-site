@@ -1,6 +1,7 @@
 package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,6 +31,7 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
+import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
@@ -43,6 +45,7 @@ import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ActionRequiredOrderSort;
 import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
+import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
@@ -67,6 +70,9 @@ class OrderServiceTest {
     @Mock
     private OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
 
+    @Mock
+    private AdminAccountService adminAccountService;
+
     private OrderService orderService;
 
     private static final List<OrderHandlingStatus> ALL_HANDLING_STATUSES = List.of(OrderHandlingStatus.values());
@@ -78,7 +84,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
     }
 
     @Test
@@ -321,7 +328,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         Page<Order> actualPage = orderService.findOrdersByUserId(
                 userId,
@@ -375,7 +383,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         orderService.cancelOrder(
                 orderId,
@@ -418,7 +427,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         assertThrows(
                 OrderNotFoundException.class,
@@ -450,7 +460,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         assertThrows(
                 InvalidOrderStatusException.class,
@@ -531,7 +542,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         Order result = orderService.createOrder(
                 userId,
@@ -567,7 +579,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -646,7 +659,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -707,7 +721,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -754,7 +769,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -796,7 +812,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         Page<Order> actualPage = orderService.findAllOrders(
                 status,
@@ -834,7 +851,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         Page<Order> actualPage = orderService.findAllOrders(
                 null,
@@ -888,7 +906,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         orderService.cancelOrderForUser(
                 orderId,
@@ -949,7 +968,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         orderService.cancelOrderForUser(
                 orderId,
@@ -1004,7 +1024,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         long actualCount = orderService.countOrdersByStatus(status);
 
@@ -1091,7 +1112,8 @@ class OrderServiceTest {
                 productService,
                 inventoryService,
                 orderStatusHistoryService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
 
         Order order = orderService.createOrder(
                 userId,
@@ -1127,11 +1149,14 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 OrderStatus.PAID,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(2, 20)))
                 .thenReturn(expected);
 
         Page<Order> actual = orderService.searchOrders(
                 searchForm,
+                1L,
                 2,
                 20);
 
@@ -1144,6 +1169,8 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 OrderStatus.PAID,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(2, 20));
     }
 
@@ -1161,11 +1188,14 @@ class OrderServiceTest {
                 LocalDateTime.of(9999, 12, 31, 0, 0),
                 null,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 PageRequest.of(0, 10)))
                 .thenReturn(expected);
 
         Page<Order> actual = orderService.searchOrders(
                 searchForm,
+                1L,
                 0,
                 10);
 
@@ -1178,6 +1208,132 @@ class OrderServiceTest {
                 LocalDateTime.of(9999, 12, 31, 0, 0),
                 null,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchOrdersFiltersByUnassignedAssignee() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        searchForm.setAssigneeFilter(
+                AdminOrderAssigneeFilter.UNASSIGNED);
+
+        Page<Order> expected = new PageImpl<>(List.of());
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "UNASSIGNED",
+                null,
+                PageRequest.of(0, 10)))
+                .thenReturn(expected);
+
+        Page<Order> actual = orderService.searchOrders(
+                searchForm,
+                20L,
+                0,
+                10);
+
+        assertSame(expected, actual);
+
+        verify(orderRepository).search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "UNASSIGNED",
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchOrdersFiltersByLoginAdminAssignee() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        searchForm.setAssigneeFilter(
+                AdminOrderAssigneeFilter.ME);
+
+        Page<Order> expected = new PageImpl<>(List.of());
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "ME",
+                20L,
+                PageRequest.of(0, 10)))
+                .thenReturn(expected);
+
+        Page<Order> actual = orderService.searchOrders(
+                searchForm,
+                20L,
+                0,
+                10);
+
+        assertSame(expected, actual);
+
+        verify(orderRepository).search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "ME",
+                20L,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchOrdersFiltersBySpecifiedAdminAssignee() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+        searchForm.setAssigneeFilter(
+                AdminOrderAssigneeFilter.SPECIFIC);
+        searchForm.setAssignedAdminAccountId(30L);
+
+        Page<Order> expected = new PageImpl<>(List.of());
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "SPECIFIC",
+                30L,
+                PageRequest.of(0, 10)))
+                .thenReturn(expected);
+
+        Page<Order> actual = orderService.searchOrders(
+                searchForm,
+                20L,
+                0,
+                10);
+
+        assertSame(expected, actual);
+
+        verify(orderRepository).search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "SPECIFIC",
+                30L,
                 PageRequest.of(0, 10));
     }
 
@@ -1204,10 +1360,14 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 OrderStatus.PAID,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
                 Pageable.unpaged()))
                 .thenReturn(expectedPage);
 
-        List<Order> result = orderService.searchAllOrders(searchForm);
+        List<Order> result = orderService.searchAllOrders(
+                searchForm,
+                1L);
 
         assertEquals(
                 List.of(firstOrder, secondOrder),
@@ -1220,6 +1380,52 @@ class OrderServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 OrderStatus.PAID,
                 ALL_HANDLING_STATUSES,
+                "ALL",
+                null,
+                Pageable.unpaged());
+    }
+
+    @Test
+    void searchAllOrdersFiltersBySpecifiedAdminAssignee() {
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        searchForm.setAssigneeFilter(
+                AdminOrderAssigneeFilter.SPECIFIC);
+
+        searchForm.setAssignedAdminAccountId(30L);
+
+        Page<Order> expectedPage = new PageImpl<>(List.of());
+
+        when(orderRepository.search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "SPECIFIC",
+                30L,
+                Pageable.unpaged()))
+                .thenReturn(expectedPage);
+
+        List<Order> actual = orderService.searchAllOrders(
+                searchForm,
+                20L);
+
+        assertEquals(
+                List.of(),
+                actual);
+
+        verify(orderRepository).search(
+                null,
+                null,
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                LocalDateTime.of(9999, 12, 31, 0, 0),
+                null,
+                ALL_HANDLING_STATUSES,
+                "SPECIFIC",
+                30L,
                 Pageable.unpaged());
     }
 
@@ -1307,6 +1513,7 @@ class OrderServiceTest {
         boolean changed = orderService.changeHandlingStatus(
                 orderId,
                 OrderHandlingStatus.NEEDS_ACTION,
+                null,
                 adminId,
                 adminUsername);
 
@@ -1342,6 +1549,7 @@ class OrderServiceTest {
         boolean changed = orderService.changeHandlingStatus(
                 orderId,
                 OrderHandlingStatus.NEEDS_ACTION,
+                null,
                 adminId,
                 adminUsername);
 
@@ -1356,7 +1564,140 @@ class OrderServiceTest {
     }
 
     @Test
+    void changeHandlingStatusCanAssignAdminAtSameTime() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        Order order = new Order(10L, 1000);
+
+        AdminAccount assignedAdmin = new AdminAccount();
+        assignedAdmin.setUsername("admin02");
+        assignedAdmin.setEnabled(true);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        when(adminAccountService.findById(assignedAdminId))
+                .thenReturn(assignedAdmin);
+
+        boolean changed = orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION,
+                assignedAdminId,
+                adminId,
+                adminUsername);
+
+        assertEquals(true, changed);
+
+        assertEquals(
+                OrderHandlingStatus.NEEDS_ACTION,
+                order.getHandlingStatus());
+
+        assertSame(
+                assignedAdmin,
+                order.getAssignedAdminAccount());
+
+        verify(orderHandlingStatusHistoryService)
+                .record(
+                        order,
+                        OrderHandlingStatus.NONE,
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        adminId,
+                        adminUsername);
+    }
+
+    @Test
+    void changeHandlingStatusCanChangeOnlyAssignee() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        Order order = new Order(10L, 1000);
+        order.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        AdminAccount assignedAdmin = new AdminAccount();
+        assignedAdmin.setUsername("admin02");
+        assignedAdmin.setEnabled(true);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        when(adminAccountService.findById(assignedAdminId))
+                .thenReturn(assignedAdmin);
+
+        boolean changed = orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION,
+                assignedAdminId,
+                adminId,
+                adminUsername);
+
+        assertEquals(true, changed);
+
+        assertEquals(
+                OrderHandlingStatus.NEEDS_ACTION,
+                order.getHandlingStatus());
+
+        assertSame(
+                assignedAdmin,
+                order.getAssignedAdminAccount());
+
+        verifyNoInteractions(
+                orderHandlingStatusHistoryService);
+    }
+
+    @Test
+    void changeHandlingStatusCanClearAssignee() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+
+        Order order = new Order(10L, 1000);
+        order.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        AdminAccount assignedAdmin = new AdminAccount();
+        assignedAdmin.setUsername("admin02");
+        assignedAdmin.setEnabled(true);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        assignedAdmin,
+                        "id",
+                        30L);
+
+        order.changeAssignedAdminAccount(assignedAdmin);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        boolean changed = orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.IN_PROGRESS,
+                null,
+                adminId,
+                adminUsername);
+
+        assertEquals(true, changed);
+
+        assertNull(
+                order.getAssignedAdminAccount());
+
+        verifyNoInteractions(
+                orderHandlingStatusHistoryService);
+    }
+
+    @Test
     void searchActionRequiredOrderDetailsSearchesNeedsActionAndInProgress() {
+
+        Long loginAdminAccountId = 20L;
 
         AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
@@ -1381,6 +1722,8 @@ class OrderServiceTest {
                 eq(null),
                 eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
                 eq(null),
+                eq("ALL"),
+                eq(null),
                 eq("OLDEST"),
                 eq(pageable)))
                 .thenReturn(projectionPage);
@@ -1390,11 +1733,13 @@ class OrderServiceTest {
         org.springframework.test.util.ReflectionTestUtils
                 .setField(order, "id", 1L);
 
-        when(orderRepository.findAllById(List.of(1L)))
+        when(orderRepository.findAllWithAssignedAdminByIdIn(
+                List.of(1L)))
                 .thenReturn(List.of(order));
 
         Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
                 searchForm,
+                loginAdminAccountId,
                 0,
                 10);
 
@@ -1412,12 +1757,20 @@ class OrderServiceTest {
                 eq(null),
                 eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
                 eq(null),
+                eq("ALL"),
+                eq(null),
                 eq("OLDEST"),
                 eq(pageable));
+
+        verify(orderRepository)
+                .findAllWithAssignedAdminByIdIn(
+                        List.of(1L));
     }
 
     @Test
     void searchActionRequiredOrderDetailsPassesFilterAndSortConditions() {
+
+        Long loginAdminAccountId = 20L;
 
         AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
@@ -1440,12 +1793,15 @@ class OrderServiceTest {
                 eq(null),
                 eq(List.of("IN_PROGRESS")),
                 any(LocalDateTime.class),
+                eq("ALL"),
+                eq(null),
                 eq("NEWEST"),
                 eq(pageable)))
                 .thenReturn(projectionPage);
 
         Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
                 searchForm,
+                loginAdminAccountId,
                 1,
                 20);
 
@@ -1459,12 +1815,16 @@ class OrderServiceTest {
                 eq(null),
                 eq(List.of("IN_PROGRESS")),
                 any(LocalDateTime.class),
+                eq("ALL"),
+                eq(null),
                 eq("NEWEST"),
                 eq(pageable));
     }
 
     @Test
     void searchActionRequiredOrderDetailsKeepsNullUpdatedAtAsNull() {
+
+        Long loginAdminAccountId = 20L;
 
         AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
@@ -1488,6 +1848,8 @@ class OrderServiceTest {
                 eq(null),
                 eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
                 eq(null),
+                eq("ALL"),
+                eq(null),
                 eq("OLDEST"),
                 eq(pageable)))
                 .thenReturn(projectionPage);
@@ -1497,11 +1859,12 @@ class OrderServiceTest {
         org.springframework.test.util.ReflectionTestUtils
                 .setField(order, "id", 1L);
 
-        when(orderRepository.findAllById(List.of(1L)))
+        when(orderRepository.findAllWithAssignedAdminByIdIn(List.of(1L)))
                 .thenReturn(List.of(order));
 
         Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
                 searchForm,
+                loginAdminAccountId,
                 0,
                 10);
 
@@ -1537,6 +1900,323 @@ class OrderServiceTest {
                 .findActionRequiredAgingSummary(
                         any(LocalDateTime.class),
                         any(LocalDateTime.class));
+    }
+
+    @Test
+    void changeHandlingStatusRejectsAssigningDisabledAdmin() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        Order order = new Order(10L, 1000);
+        order.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        AdminAccount disabledAdmin = new AdminAccount();
+        disabledAdmin.setUsername("disabledAdmin");
+        disabledAdmin.setEnabled(false);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        disabledAdmin,
+                        "id",
+                        assignedAdminId);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        when(adminAccountService.findById(assignedAdminId))
+                .thenReturn(disabledAdmin);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> orderService.changeHandlingStatus(
+                        orderId,
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        assignedAdminId,
+                        adminId,
+                        adminUsername));
+
+        assertNull(order.getAssignedAdminAccount());
+
+        verifyNoInteractions(
+                orderHandlingStatusHistoryService);
+    }
+
+    @Test
+    void changeHandlingStatusAllowsKeepingDisabledExistingAssignee() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        Order order = new Order(10L, 1000);
+        order.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        AdminAccount disabledAdmin = new AdminAccount();
+        disabledAdmin.setUsername("disabledAdmin");
+        disabledAdmin.setEnabled(false);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        disabledAdmin,
+                        "id",
+                        assignedAdminId);
+
+        order.changeAssignedAdminAccount(disabledAdmin);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        boolean changed = orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.IN_PROGRESS,
+                assignedAdminId,
+                adminId,
+                adminUsername);
+
+        assertEquals(true, changed);
+
+        assertSame(
+                disabledAdmin,
+                order.getAssignedAdminAccount());
+
+        assertEquals(
+                OrderHandlingStatus.IN_PROGRESS,
+                order.getHandlingStatus());
+
+        verify(orderHandlingStatusHistoryService)
+                .record(
+                        order,
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS,
+                        adminId,
+                        adminUsername);
+
+        verifyNoInteractions(adminAccountService);
+    }
+
+    @Test
+    void changeHandlingStatusRejectsNewAssignmentWhenResultingStatusIsResolved() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        Order order = new Order(10L, 1000);
+        order.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        AdminAccount assignedAdmin = new AdminAccount();
+        assignedAdmin.setUsername("admin02");
+        assignedAdmin.setEnabled(true);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        assignedAdmin,
+                        "id",
+                        assignedAdminId);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> orderService.changeHandlingStatus(
+                        orderId,
+                        OrderHandlingStatus.RESOLVED,
+                        assignedAdminId,
+                        adminId,
+                        adminUsername));
+
+        assertNull(order.getAssignedAdminAccount());
+
+        assertEquals(
+                OrderHandlingStatus.IN_PROGRESS,
+                order.getHandlingStatus());
+
+        verifyNoInteractions(
+                orderHandlingStatusHistoryService);
+
+        verifyNoInteractions(
+                adminAccountService);
+    }
+
+    @Test
+    void changeHandlingStatusAllowsKeepingAssigneeWhenResultingStatusIsResolved() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        Order order = new Order(10L, 1000);
+        order.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        AdminAccount assignedAdmin = new AdminAccount();
+        assignedAdmin.setUsername("admin02");
+        assignedAdmin.setEnabled(true);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        assignedAdmin,
+                        "id",
+                        assignedAdminId);
+
+        order.changeAssignedAdminAccount(assignedAdmin);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        boolean changed = orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.RESOLVED,
+                assignedAdminId,
+                adminId,
+                adminUsername);
+
+        assertEquals(true, changed);
+
+        assertSame(
+                assignedAdmin,
+                order.getAssignedAdminAccount());
+
+        assertEquals(
+                OrderHandlingStatus.RESOLVED,
+                order.getHandlingStatus());
+
+        verify(orderHandlingStatusHistoryService)
+                .record(
+                        order,
+                        OrderHandlingStatus.IN_PROGRESS,
+                        OrderHandlingStatus.RESOLVED,
+                        adminId,
+                        adminUsername);
+
+        verifyNoInteractions(adminAccountService);
+    }
+
+    @Test
+    void searchActionRequiredOrderDetailsUsesLoginAdminIdForMeFilter() {
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        searchForm.setAssigneeFilter(
+                AdminOrderAssigneeFilter.ME);
+
+        Long loginAdminAccountId = 20L;
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        Page<AdminActionRequiredOrderSearchProjection> projectionPage = new PageImpl<>(
+                List.of(),
+                pageable,
+                0);
+
+        when(orderRepository.searchActionRequiredOrders(
+                eq(null),
+                eq(null),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(null),
+                eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
+                eq(null),
+                eq("ME"),
+                eq(loginAdminAccountId),
+                eq("OLDEST"),
+                eq(pageable)))
+                .thenReturn(projectionPage);
+
+        Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
+                searchForm,
+                loginAdminAccountId,
+                0,
+                10);
+
+        assertEquals(0, result.getTotalElements());
+
+        verify(orderRepository)
+                .searchActionRequiredOrders(
+                        eq(null),
+                        eq(null),
+                        any(LocalDateTime.class),
+                        any(LocalDateTime.class),
+                        eq(null),
+                        eq(List.of(
+                                "NEEDS_ACTION",
+                                "IN_PROGRESS")),
+                        eq(null),
+                        eq("ME"),
+                        eq(loginAdminAccountId),
+                        eq("OLDEST"),
+                        eq(pageable));
+    }
+
+    @Test
+    void searchActionRequiredOrderDetailsUsesSelectedAdminIdForSpecificFilter() {
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        searchForm.setAssigneeFilter(
+                AdminOrderAssigneeFilter.SPECIFIC);
+
+        Long selectedAdminAccountId = 30L;
+
+        searchForm.setAssignedAdminAccountId(
+                selectedAdminAccountId);
+
+        Long loginAdminAccountId = 20L;
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        Page<AdminActionRequiredOrderSearchProjection> projectionPage = new PageImpl<>(
+                List.of(),
+                pageable,
+                0);
+
+        when(orderRepository.searchActionRequiredOrders(
+                eq(null),
+                eq(null),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(null),
+                eq(List.of("NEEDS_ACTION", "IN_PROGRESS")),
+                eq(null),
+                eq("SPECIFIC"),
+                eq(selectedAdminAccountId),
+                eq("OLDEST"),
+                eq(pageable)))
+                .thenReturn(projectionPage);
+
+        Page<AdminActionRequiredOrderDto> result = orderService.searchActionRequiredOrderDetails(
+                searchForm,
+                loginAdminAccountId,
+                0,
+                10);
+
+        assertEquals(0, result.getTotalElements());
+
+        verify(orderRepository)
+                .searchActionRequiredOrders(
+                        eq(null),
+                        eq(null),
+                        any(LocalDateTime.class),
+                        any(LocalDateTime.class),
+                        eq(null),
+                        eq(List.of(
+                                "NEEDS_ACTION",
+                                "IN_PROGRESS")),
+                        eq(null),
+                        eq("SPECIFIC"),
+                        eq(selectedAdminAccountId),
+                        eq("OLDEST"),
+                        eq(pageable));
     }
 
 }

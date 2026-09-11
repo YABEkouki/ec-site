@@ -89,26 +89,74 @@
         </tbody>
     </table>
 
-    <h2>対応状況</h2>
+    <h2>対応状況・担当者</h2>
 
     <p>
-        現在：
+        現在の対応状況：
         <strong th:text="${order.handlingStatus.displayName}">
+        </strong>
+    </p>
+
+    <p>
+        現在の担当者：
+        <strong th:if="${order.assignedAdminAccount != null}" th:text="${order.assignedAdminAccount.username
+            + (order.assignedAdminAccount.enabled ? '' : '（無効）')}">
+        </strong>
+
+        <strong th:unless="${order.assignedAdminAccount != null}">
+            未担当
         </strong>
     </p>
 
     <form th:action="@{/admin/orders/{id}/handling-status(id=${order.id})}" th:object="${handlingStatusForm}"
         method="post">
 
-        <select th:field="*{handlingStatus}" required>
-            <option th:each="handlingStatus : ${handlingStatuses}" th:value="${handlingStatus.name()}"
-                th:text="${handlingStatus.displayName}">
-            </option>
-        </select>
+        <p>
+            <label for="handlingStatus">
+                対応状況
+            </label>
+        </p>
 
-        <button type="submit" onclick="return confirm('対応状況を変更しますか？');">
-            対応状況を変更
+        <p>
+            <select id="handlingStatus" th:field="*{handlingStatus}" required>
+
+                <option th:each="handlingStatus : ${handlingStatuses}" th:value="${handlingStatus.name()}"
+                    th:text="${handlingStatus.displayName}">
+                </option>
+
+            </select>
+        </p>
+
+        <p>
+            <label for="assignedAdminAccountId">
+                担当管理者
+            </label>
+        </p>
+
+        <p>
+            <select id="assignedAdminAccountId" th:field="*{assignedAdminAccountId}">
+
+                <option value="">
+                    未担当
+                </option>
+
+                <option th:each="admin : ${assignableAdmins}" th:value="${admin.id}" th:text="${admin.username
+                    + (admin.enabled ? '' : '（無効）')}">
+                </option>
+
+            </select>
+        </p>
+
+        <p>
+            <small>
+                担当管理者を新たに設定できるのは「要対応」または「対応中」の注文のみです。
+            </small>
+        </p>
+
+        <button type="submit" onclick="return confirm('対応状況・担当者を変更しますか？');">
+            対応状況・担当者を変更
         </button>
+
     </form>
 
     <h3>対応状況変更履歴</h3>

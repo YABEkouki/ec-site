@@ -27,6 +27,10 @@ public class AdminActionRequiredOrderSearchForm {
 
     private ActionRequiredOrderSort sort = ActionRequiredOrderSort.OLDEST;
 
+    private AdminOrderAssigneeFilter assigneeFilter = AdminOrderAssigneeFilter.ALL;
+
+    private Long assignedAdminAccountId;
+
     public Long getOrderId() {
         return orderId;
     }
@@ -90,4 +94,23 @@ public class AdminActionRequiredOrderSearchForm {
     public void setSort(ActionRequiredOrderSort sort) {
         this.sort = sort;
     }
+
+    public AdminOrderAssigneeFilter getAssigneeFilter() {
+        return assigneeFilter;
+    }
+
+    public void setAssigneeFilter(
+            AdminOrderAssigneeFilter assigneeFilter) {
+        this.assigneeFilter = assigneeFilter;
+    }
+
+    public Long getAssignedAdminAccountId() {
+        return assignedAdminAccountId;
+    }
+
+    public void setAssignedAdminAccountId(
+            Long assignedAdminAccountId) {
+        this.assignedAdminAccountId = assignedAdminAccountId;
+    }
+
 }

@@ -41,6 +41,7 @@ public interface OrderRepository
             SELECT DISTINCT o
             FROM Order o
             LEFT JOIN FETCH o.items
+            LEFT JOIN FETCH o.assignedAdminAccount
             WHERE o.id = :id
             """)
 
@@ -82,8 +83,30 @@ public interface OrderRepository
 
     long countByHandlingStatus(OrderHandlingStatus handlingStatus);
 
-    @Query("""
+    @Query(value = """
             SELECT o
+            FROM Order o
+            LEFT JOIN FETCH o.assignedAdminAccount
+            WHERE (:orderId IS NULL OR o.id = :orderId)
+              AND (:userId IS NULL OR o.userId = :userId)
+              AND o.orderedAt >= :from
+              AND o.orderedAt < :toExclusive
+              AND (:status IS NULL OR o.status = :status)
+              AND o.handlingStatus IN :handlingStatuses
+              AND (
+                    :assigneeFilter = 'ALL'
+                    OR (
+                        :assigneeFilter = 'UNASSIGNED'
+                        AND o.assignedAdminAccount IS NULL
+                    )
+                    OR (
+                        :assigneeFilter IN ('ME', 'SPECIFIC')
+                        AND o.assignedAdminAccount.id = :assignedAdminAccountId
+                    )
+                  )
+            ORDER BY o.orderedAt DESC, o.id DESC
+            """, countQuery = """
+            SELECT COUNT(o)
             FROM Order o
             WHERE (:orderId IS NULL OR o.id = :orderId)
               AND (:userId IS NULL OR o.userId = :userId)
@@ -91,7 +114,17 @@ public interface OrderRepository
               AND o.orderedAt < :toExclusive
               AND (:status IS NULL OR o.status = :status)
               AND o.handlingStatus IN :handlingStatuses
-            ORDER BY o.orderedAt DESC, o.id DESC
+              AND (
+                    :assigneeFilter = 'ALL'
+                    OR (
+                        :assigneeFilter = 'UNASSIGNED'
+                        AND o.assignedAdminAccount IS NULL
+                    )
+                    OR (
+                        :assigneeFilter IN ('ME', 'SPECIFIC')
+                        AND o.assignedAdminAccount.id = :assignedAdminAccountId
+                    )
+                  )
             """)
     Page<Order> search(
             @Param("orderId") Long orderId,
@@ -100,6 +133,8 @@ public interface OrderRepository
             @Param("toExclusive") LocalDateTime toExclusive,
             @Param("status") OrderStatus status,
             @Param("handlingStatuses") List<OrderHandlingStatus> handlingStatuses,
+            @Param("assigneeFilter") String assigneeFilter,
+            @Param("assignedAdminAccountId") Long assignedAdminAccountId,
             Pageable pageable);
 
     @Query("""
@@ -240,33 +275,45 @@ public interface OrderRepository
             LEFT JOIN order_handling_status_histories h
                 ON h.order_id = o.id
             WHERE (:orderId IS NULL OR o.id = :orderId)
-                AND (:userId IS NULL OR o.user_id = :userId)
-                AND o.ordered_at >= :from
-                AND o.ordered_at < :toExclusive
-                AND (:status IS NULL OR o.status = CAST(:status AS VARCHAR))
-                AND o.handling_status IN (:handlingStatuses)
-            GROUP BY o.id
-                HAVING (
-                    CAST(:elapsedCutoffExclusive AS timestamp) IS NULL
-                    OR MAX(h.changed_at) < CAST(:elapsedCutoffExclusive AS timestamp)
+              AND (:userId IS NULL OR o.user_id = :userId)
+              AND o.ordered_at >= :from
+              AND o.ordered_at < :toExclusive
+              AND (:status IS NULL OR o.status = CAST(:status AS VARCHAR))
+              AND o.handling_status IN (:handlingStatuses)
+              AND (
+                    :assigneeFilter = 'ALL'
+                    OR (
+                        :assigneeFilter = 'UNASSIGNED'
+                        AND o.assigned_admin_account_id IS NULL
                     )
+                    OR (
+                        :assigneeFilter IN ('ME', 'SPECIFIC')
+                        AND o.assigned_admin_account_id = :assignedAdminAccountId
+                    )
+              )
+            GROUP BY o.id
+            HAVING (
+                CAST(:elapsedCutoffExclusive AS timestamp) IS NULL
+                OR MAX(h.changed_at) < CAST(:elapsedCutoffExclusive AS timestamp)
+            )
             ORDER BY
                 CASE
                     WHEN :sort = 'OLDEST'
-                    THEN MAX(h.changed_at)
-                    END ASC NULLS LAST,
+                         AND MAX(h.changed_at) IS NULL THEN 1
+                    ELSE 0
+                END ASC,
+                CASE
+                    WHEN :sort = 'OLDEST' THEN MAX(h.changed_at)
+                END ASC,
                 CASE
                     WHEN :sort = 'NEWEST'
-                    THEN MAX(h.changed_at)
-                    END DESC NULLS LAST,
+                         AND MAX(h.changed_at) IS NULL THEN 1
+                    ELSE 0
+                END ASC,
                 CASE
-                    WHEN :sort = 'OLDEST'
-                    THEN o.id
-                    END ASC,
-                CASE
-                    WHEN :sort = 'NEWEST'
-                    THEN o.id
-                    END DESC
+                    WHEN :sort = 'NEWEST' THEN MAX(h.changed_at)
+                END DESC,
+                o.id DESC
             """, countQuery = """
             SELECT COUNT(*)
             FROM (
@@ -280,12 +327,23 @@ public interface OrderRepository
                   AND o.ordered_at < :toExclusive
                   AND (:status IS NULL OR o.status = CAST(:status AS VARCHAR))
                   AND o.handling_status IN (:handlingStatuses)
+                  AND (
+                        :assigneeFilter = 'ALL'
+                        OR (
+                            :assigneeFilter = 'UNASSIGNED'
+                            AND o.assigned_admin_account_id IS NULL
+                        )
+                        OR (
+                            :assigneeFilter IN ('ME', 'SPECIFIC')
+                            AND o.assigned_admin_account_id = :assignedAdminAccountId
+                        )
+                  )
                 GROUP BY o.id
                 HAVING (
                     CAST(:elapsedCutoffExclusive AS timestamp) IS NULL
                     OR MAX(h.changed_at) < CAST(:elapsedCutoffExclusive AS timestamp)
                 )
-            ) target_orders
+            ) filtered_orders
             """, nativeQuery = true)
     Page<AdminActionRequiredOrderSearchProjection> searchActionRequiredOrders(
             @Param("orderId") Long orderId,
@@ -295,8 +353,19 @@ public interface OrderRepository
             @Param("status") String status,
             @Param("handlingStatuses") List<String> handlingStatuses,
             @Param("elapsedCutoffExclusive") LocalDateTime elapsedCutoffExclusive,
+            @Param("assigneeFilter") String assigneeFilter,
+            @Param("assignedAdminAccountId") Long assignedAdminAccountId,
             @Param("sort") String sort,
             Pageable pageable);
+
+    @Query("""
+            SELECT o
+            FROM Order o
+            LEFT JOIN FETCH o.assignedAdminAccount
+            WHERE o.id IN :ids
+            """)
+    List<Order> findAllWithAssignedAdminByIdIn(
+            @Param("ids") List<Long> ids);
 
     @Query(value = """
             SELECT

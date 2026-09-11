@@ -23,6 +23,10 @@ public class AdminOrderSearchForm {
 
     private OrderHandlingStatus handlingStatus;
 
+    private AdminOrderAssigneeFilter assigneeFilter = AdminOrderAssigneeFilter.ALL;
+
+    private Long assignedAdminAccountId;
+
     public Long getOrderId() {
         return orderId;
     }
@@ -71,4 +75,21 @@ public class AdminOrderSearchForm {
         this.handlingStatus = handlingStatus;
     }
 
+    public AdminOrderAssigneeFilter getAssigneeFilter() {
+        return assigneeFilter;
+    }
+
+    public void setAssigneeFilter(
+            AdminOrderAssigneeFilter assigneeFilter) {
+        this.assigneeFilter = assigneeFilter;
+    }
+
+    public Long getAssignedAdminAccountId() {
+        return assignedAdminAccountId;
+    }
+
+    public void setAssignedAdminAccountId(
+            Long assignedAdminAccountId) {
+        this.assignedAdminAccountId = assignedAdminAccountId;
+    }
 }

@@ -12,9 +12,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
@@ -39,6 +42,10 @@ public class Order {
     @Enumerated(EnumType.STRING)
     @Column(name = "handling_status", nullable = false, length = 30)
     private OrderHandlingStatus handlingStatus = OrderHandlingStatus.NONE;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_admin_account_id")
+    private AdminAccount assignedAdminAccount;
 
     @Column(name = "ordered_at", nullable = false)
     private LocalDateTime orderedAt;
@@ -230,6 +237,14 @@ public class Order {
 
     public boolean canMarkAsShipped() {
         return status == OrderStatus.PAID;
+    }
+
+    public AdminAccount getAssignedAdminAccount() {
+        return assignedAdminAccount;
+    }
+
+    public void changeAssignedAdminAccount(AdminAccount assignedAdminAccount) {
+        this.assignedAdminAccount = assignedAdminAccount;
     }
 
 }

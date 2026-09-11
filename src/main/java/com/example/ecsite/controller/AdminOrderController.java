@@ -18,17 +18,20 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
+import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.ActionRequiredOrderSort;
 import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
+import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.AdminUserDetails;
+import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -46,24 +49,28 @@ public class AdminOrderController {
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderNoteService orderNoteService;
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
+    private final AdminAccountService adminAccountService;
 
     public AdminOrderController(
             OrderService orderService,
             OrderCsvService orderCsvService,
             OrderStatusHistoryService orderStatusHistoryService,
             OrderNoteService orderNoteService,
-            OrderHandlingStatusHistoryService orderHandlingStatusHistoryService) {
+            OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            AdminAccountService adminAccountService) {
 
         this.orderService = orderService;
         this.orderCsvService = orderCsvService;
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.orderNoteService = orderNoteService;
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
+        this.adminAccountService = adminAccountService;
     }
 
     @GetMapping
     public String list(
             @ModelAttribute("searchForm") AdminOrderSearchForm searchForm,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             Model model) {
@@ -73,6 +80,7 @@ public class AdminOrderController {
 
         Page<Order> orderPage = orderService.searchOrders(
                 searchForm,
+                loginUser.getId(),
                 safePage,
                 safeSize);
 
@@ -91,6 +99,14 @@ public class AdminOrderController {
         model.addAttribute(
                 "handlingStatuses",
                 OrderHandlingStatus.values());
+
+        model.addAttribute(
+                "assigneeFilters",
+                AdminOrderAssigneeFilter.values());
+
+        model.addAttribute(
+                "adminAccounts",
+                adminAccountService.findAll());
 
         return "admin/orders/list";
     }
@@ -131,9 +147,32 @@ public class AdminOrderController {
         handlingStatusForm.setHandlingStatus(
                 order.getHandlingStatus());
 
+        if (order.getAssignedAdminAccount() != null) {
+            handlingStatusForm.setAssignedAdminAccountId(
+                    order.getAssignedAdminAccount().getId());
+        }
+
+        List<AdminAccount> assignableAdmins = new java.util.ArrayList<>(
+                adminAccountService.findAllEnabled());
+
+        AdminAccount currentAssignedAdmin = order.getAssignedAdminAccount();
+
+        if (currentAssignedAdmin != null
+                && !currentAssignedAdmin.isEnabled()
+                && assignableAdmins.stream()
+                        .noneMatch(admin -> admin.getId().equals(
+                                currentAssignedAdmin.getId()))) {
+
+            assignableAdmins.add(currentAssignedAdmin);
+        }
+
         model.addAttribute(
                 "handlingStatusForm",
                 handlingStatusForm);
+
+        model.addAttribute(
+                "assignableAdmins",
+                assignableAdmins);
 
         return "admin/orders/detail";
     }
@@ -248,9 +287,12 @@ public class AdminOrderController {
 
     @GetMapping("/csv")
     public ResponseEntity<byte[]> csv(
-            @ModelAttribute("searchForm") AdminOrderSearchForm searchForm) {
+            @ModelAttribute("searchForm") AdminOrderSearchForm searchForm,
+            @AuthenticationPrincipal AdminUserDetails loginUser) {
 
-        List<Order> orders = orderService.searchAllOrders(searchForm);
+        List<Order> orders = orderService.searchAllOrders(
+                searchForm,
+                loginUser.getId());
 
         byte[] csvBytes = orderCsvService.createCsv(orders);
 
@@ -314,20 +356,30 @@ public class AdminOrderController {
             return "redirect:/admin/orders/" + id;
         }
 
-        boolean changed = orderService.changeHandlingStatus(
-                id,
-                form.getHandlingStatus(),
-                loginUser.getId(),
-                loginUser.getUsername());
+        try {
 
-        if (changed) {
+            boolean changed = orderService.changeHandlingStatus(
+                    id,
+                    form.getHandlingStatus(),
+                    form.getAssignedAdminAccountId(),
+                    loginUser.getId(),
+                    loginUser.getUsername());
+
+            if (changed) {
+                redirectAttributes.addFlashAttribute(
+                        "successMessage",
+                        "対応状況・担当者を変更しました。");
+            } else {
+                redirectAttributes.addFlashAttribute(
+                        "successMessage",
+                        "対応状況・担当者は変更されていません。");
+            }
+
+        } catch (IllegalArgumentException e) {
+
             redirectAttributes.addFlashAttribute(
-                    "successMessage",
-                    "対応状況を変更しました。");
-        } else {
-            redirectAttributes.addFlashAttribute(
-                    "successMessage",
-                    "対応状況は変更されていません。");
+                    "errorMessage",
+                    e.getMessage());
         }
 
         return "redirect:/admin/orders/" + id;
@@ -338,6 +390,7 @@ public class AdminOrderController {
             @ModelAttribute("searchForm") AdminActionRequiredOrderSearchForm searchForm,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
             Model model) {
 
         int safePage = Math.max(page, 0);
@@ -345,6 +398,7 @@ public class AdminOrderController {
 
         Page<AdminActionRequiredOrderDto> orderPage = orderService.searchActionRequiredOrderDetails(
                 searchForm,
+                loginUser.getId(),
                 safePage,
                 safeSize);
 
@@ -359,6 +413,13 @@ public class AdminOrderController {
         model.addAttribute(
                 "actionRequiredOrderSorts",
                 ActionRequiredOrderSort.values());
+        model.addAttribute(
+                "assigneeFilters",
+                AdminOrderAssigneeFilter.values());
+
+        model.addAttribute(
+                "adminAccounts",
+                adminAccountService.findAll());
 
         return "admin/orders/action-required";
     }

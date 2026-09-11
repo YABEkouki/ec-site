@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
+import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
@@ -30,6 +31,7 @@ import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ActionRequiredOrderSort;
 import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
+import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
@@ -44,19 +46,22 @@ public class OrderService {
     private final InventoryService inventoryService;
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
+    private final AdminAccountService adminAccountService;
 
     public OrderService(
             OrderRepository orderRepository,
             ProductService productService,
             InventoryService inventoryService,
             OrderStatusHistoryService orderStatusHistoryService,
-            OrderHandlingStatusHistoryService orderHandlingStatusHistoryService) {
+            OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            AdminAccountService adminAccountService) {
 
         this.orderRepository = orderRepository;
         this.productService = productService;
         this.inventoryService = inventoryService;
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
+        this.adminAccountService = adminAccountService;
     }
 
     @Transactional
@@ -315,6 +320,7 @@ public class OrderService {
     public boolean changeHandlingStatus(
             Long id,
             OrderHandlingStatus handlingStatus,
+            Long assignedAdminAccountId,
             Long changedByAccountId,
             String changedByUsername) {
 
@@ -322,18 +328,61 @@ public class OrderService {
 
         OrderHandlingStatus fromStatus = order.getHandlingStatus();
 
-        if (fromStatus == handlingStatus) {
+        AdminAccount currentAssignedAdmin = order.getAssignedAdminAccount();
+
+        Long currentAssignedAdminId = currentAssignedAdmin == null
+                ? null
+                : currentAssignedAdmin.getId();
+
+        boolean handlingStatusChanged = fromStatus != handlingStatus;
+
+        boolean assignedAdminChanged = !java.util.Objects.equals(
+                currentAssignedAdminId,
+                assignedAdminAccountId);
+
+        if (!handlingStatusChanged
+                && !assignedAdminChanged) {
             return false;
         }
 
-        order.changeHandlingStatus(handlingStatus);
+        if (assignedAdminChanged) {
 
-        orderHandlingStatusHistoryService.record(
-                order,
-                fromStatus,
-                handlingStatus,
-                changedByAccountId,
-                changedByUsername);
+            AdminAccount assignedAdmin = null;
+
+            if (assignedAdminAccountId != null) {
+
+                if (handlingStatus != OrderHandlingStatus.NEEDS_ACTION
+                        && handlingStatus != OrderHandlingStatus.IN_PROGRESS) {
+
+                    throw new IllegalArgumentException(
+                            "担当管理者を設定できるのは要対応または対応中の注文のみです。");
+                }
+
+                assignedAdmin = adminAccountService.findById(
+                        assignedAdminAccountId);
+
+                if (!assignedAdmin.isEnabled()) {
+                    throw new IllegalArgumentException(
+                            "無効な管理者アカウントを担当者に設定することはできません。");
+                }
+            }
+
+            order.changeAssignedAdminAccount(
+                    assignedAdmin);
+        }
+
+        if (handlingStatusChanged) {
+
+            order.changeHandlingStatus(
+                    handlingStatus);
+
+            orderHandlingStatusHistoryService.record(
+                    order,
+                    fromStatus,
+                    handlingStatus,
+                    changedByAccountId,
+                    changedByUsername);
+        }
 
         return true;
     }
@@ -341,6 +390,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Page<Order> searchOrders(
             AdminOrderSearchForm searchForm,
+            Long loginAdminAccountId,
             int page,
             int size) {
 
@@ -351,6 +401,7 @@ public class OrderService {
         return searchOrders(
                 searchForm,
                 handlingStatuses,
+                loginAdminAccountId,
                 page,
                 size);
     }
@@ -358,6 +409,7 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Page<AdminActionRequiredOrderDto> searchActionRequiredOrderDetails(
             AdminActionRequiredOrderSearchForm searchForm,
+            Long loginAdminAccountId,
             int page,
             int size) {
 
@@ -379,6 +431,18 @@ public class OrderService {
 
         Pageable pageable = PageRequest.of(page, size);
 
+        AdminOrderAssigneeFilter assigneeFilter = searchForm.getAssigneeFilter();
+
+        if (assigneeFilter == null) {
+            assigneeFilter = AdminOrderAssigneeFilter.ALL;
+        }
+
+        Long assignedAdminAccountId = switch (assigneeFilter) {
+            case ALL, UNASSIGNED -> null;
+            case ME -> loginAdminAccountId;
+            case SPECIFIC -> searchForm.getAssignedAdminAccountId();
+        };
+
         Page<AdminActionRequiredOrderSearchProjection> projectionPage = orderRepository.searchActionRequiredOrders(
                 searchForm.getOrderId(),
                 searchForm.getUserId(),
@@ -391,6 +455,8 @@ public class OrderService {
                         .map(Enum::name)
                         .toList(),
                 elapsedCutoffExclusive,
+                assigneeFilter.name(),
+                assignedAdminAccountId,
                 sort.name(),
                 pageable);
 
@@ -399,11 +465,14 @@ public class OrderService {
                 .map(AdminActionRequiredOrderSearchProjection::getOrderId)
                 .toList();
 
-        Map<Long, Order> orderMap = orderRepository.findAllById(orderIds)
-                .stream()
-                .collect(Collectors.toMap(
-                        Order::getId,
-                        Function.identity()));
+        Map<Long, Order> orderMap = orderIds.isEmpty()
+                ? Map.of()
+                : orderRepository
+                        .findAllWithAssignedAdminByIdIn(orderIds)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                Order::getId,
+                                Function.identity()));
 
         return projectionPage.map(projection -> {
 
@@ -488,11 +557,23 @@ public class OrderService {
     private Page<Order> searchOrders(
             AdminOrderSearchForm searchForm,
             List<OrderHandlingStatus> handlingStatuses,
+            Long loginAdminAccountId,
             int page,
             int size) {
 
         LocalDateTime from = resolveFrom(searchForm);
         LocalDateTime toExclusive = resolveToExclusive(searchForm);
+
+        AdminOrderAssigneeFilter assigneeFilter = searchForm.getAssigneeFilter();
+
+        if (assigneeFilter == null) {
+            assigneeFilter = AdminOrderAssigneeFilter.ALL;
+        }
+
+        Long assignedAdminAccountId = resolveAssignedAdminAccountId(
+                assigneeFilter,
+                searchForm.getAssignedAdminAccountId(),
+                loginAdminAccountId);
 
         Pageable pageable = PageRequest.of(page, size);
 
@@ -503,12 +584,15 @@ public class OrderService {
                 toExclusive,
                 searchForm.getStatus(),
                 handlingStatuses,
+                assigneeFilter.name(),
+                assignedAdminAccountId,
                 pageable);
     }
 
     @Transactional(readOnly = true)
     public List<Order> searchAllOrders(
-            AdminOrderSearchForm searchForm) {
+            AdminOrderSearchForm searchForm,
+            Long loginAdminAccountId) {
 
         LocalDateTime from = resolveFrom(searchForm);
         LocalDateTime toExclusive = resolveToExclusive(searchForm);
@@ -517,6 +601,17 @@ public class OrderService {
                 ? Arrays.asList(OrderHandlingStatus.values())
                 : List.of(searchForm.getHandlingStatus());
 
+        AdminOrderAssigneeFilter assigneeFilter = searchForm.getAssigneeFilter();
+
+        if (assigneeFilter == null) {
+            assigneeFilter = AdminOrderAssigneeFilter.ALL;
+        }
+
+        Long assignedAdminAccountId = resolveAssignedAdminAccountId(
+                assigneeFilter,
+                searchForm.getAssignedAdminAccountId(),
+                loginAdminAccountId);
+
         Page<Order> orderPage = orderRepository.search(
                 searchForm.getOrderId(),
                 searchForm.getUserId(),
@@ -524,6 +619,8 @@ public class OrderService {
                 toExclusive,
                 searchForm.getStatus(),
                 handlingStatuses,
+                assigneeFilter.name(),
+                assignedAdminAccountId,
                 Pageable.unpaged());
 
         return orderPage.getContent();
@@ -627,4 +724,17 @@ public class OrderService {
                         .plusDays(1)
                         .atStartOfDay();
     }
+
+    private Long resolveAssignedAdminAccountId(
+            AdminOrderAssigneeFilter assigneeFilter,
+            Long selectedAdminAccountId,
+            Long loginAdminAccountId) {
+
+        return switch (assigneeFilter) {
+            case ALL, UNASSIGNED -> null;
+            case ME -> loginAdminAccountId;
+            case SPECIFIC -> selectedAdminAccountId;
+        };
+    }
+
 }

@@ -26,6 +26,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
+import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
@@ -35,11 +36,13 @@ import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.ActionRequiredOrderSort;
 import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
+import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.AdminUserDetails;
+import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -70,6 +73,9 @@ class AdminOrderControllerTest {
     @Mock
     private OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
 
+    @Mock
+    private AdminAccountService adminAccountService;
+
     private AdminOrderController adminOrderController;
 
     private static final Long ADMIN_ID = 20L;
@@ -82,11 +88,15 @@ class AdminOrderControllerTest {
                 orderCsvService,
                 orderStatusHistoryService,
                 orderNoteService,
-                orderHandlingStatusHistoryService);
+                orderHandlingStatusHistoryService,
+                adminAccountService);
     }
 
     @Test
     void listDisplaysOrdersUsingSearchForm() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
 
         AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
 
@@ -95,12 +105,29 @@ class AdminOrderControllerTest {
 
         when(orderService.searchOrders(
                 searchForm,
+                ADMIN_ID,
                 0,
                 10))
                 .thenReturn(orderPage);
 
+        AdminAccount enabledAdmin = new AdminAccount();
+        enabledAdmin.setUsername("admin01");
+        enabledAdmin.setEnabled(true);
+
+        AdminAccount disabledAdmin = new AdminAccount();
+        disabledAdmin.setUsername("admin02");
+        disabledAdmin.setEnabled(false);
+
+        List<AdminAccount> adminAccounts = List.of(
+                enabledAdmin,
+                disabledAdmin);
+
+        when(adminAccountService.findAll())
+                .thenReturn(adminAccounts);
+
         String viewName = adminOrderController.list(
                 searchForm,
+                loginUser,
                 0,
                 10,
                 model);
@@ -111,6 +138,7 @@ class AdminOrderControllerTest {
 
         verify(orderService).searchOrders(
                 searchForm,
+                ADMIN_ID,
                 0,
                 10);
 
@@ -129,10 +157,22 @@ class AdminOrderControllerTest {
         verify(model).addAttribute(
                 "handlingStatuses",
                 OrderHandlingStatus.values());
+
+        verify(model).addAttribute(
+                "assigneeFilters",
+                AdminOrderAssigneeFilter.values());
+
+        verify(model).addAttribute(
+                "adminAccounts",
+                adminAccounts);
+
     }
 
     @Test
     void listFiltersOrdersByStatus() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
 
         AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
         searchForm.setStatus(OrderStatus.PAID);
@@ -142,12 +182,14 @@ class AdminOrderControllerTest {
 
         when(orderService.searchOrders(
                 searchForm,
+                ADMIN_ID,
                 0,
                 10))
                 .thenReturn(orderPage);
 
         String viewName = adminOrderController.list(
                 searchForm,
+                loginUser,
                 0,
                 10,
                 model);
@@ -158,6 +200,7 @@ class AdminOrderControllerTest {
 
         verify(orderService).searchOrders(
                 searchForm,
+                ADMIN_ID,
                 0,
                 10);
 
@@ -193,6 +236,19 @@ class AdminOrderControllerTest {
 
         when(orderHandlingStatusHistoryService.findByOrderId(orderId))
                 .thenReturn(handlingStatusHistories);
+
+        AdminAccount assignableAdmin = new AdminAccount();
+        assignableAdmin.setUsername("admin02");
+        assignableAdmin.setEnabled(true);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(
+                        assignableAdmin,
+                        "id",
+                        30L);
+
+        when(adminAccountService.findAllEnabled())
+                .thenReturn(List.of(assignableAdmin));
 
         String viewName = adminOrderController.detail(
                 orderId,
@@ -240,12 +296,18 @@ class AdminOrderControllerTest {
                 org.mockito.ArgumentMatchers.argThat(
                         form -> form instanceof AdminOrderHandlingStatusForm
                                 && ((AdminOrderHandlingStatusForm) form)
-                                        .getHandlingStatus() == OrderHandlingStatus.IN_PROGRESS));
-
+                                        .getHandlingStatus() == OrderHandlingStatus.IN_PROGRESS
+                                && ((AdminOrderHandlingStatusForm) form)
+                                        .getAssignedAdminAccountId() == null));
         verify(model)
                 .addAttribute(
                         "handlingStatusHistories",
                         handlingStatusHistories);
+
+        verify(model)
+                .addAttribute(
+                        "assignableAdmins",
+                        List.of(assignableAdmin));
     }
 
     @Test
@@ -510,18 +572,23 @@ class AdminOrderControllerTest {
     @Test
     void listSanitizesPageAndSize() {
 
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
         AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
 
         Page<Order> orderPage = new PageImpl<>(List.of());
 
         when(orderService.searchOrders(
                 searchForm,
+                ADMIN_ID,
                 0,
                 100))
                 .thenReturn(orderPage);
 
         String viewName = adminOrderController.list(
                 searchForm,
+                loginUser,
                 -1,
                 999,
                 model);
@@ -532,6 +599,7 @@ class AdminOrderControllerTest {
 
         verify(orderService).searchOrders(
                 searchForm,
+                ADMIN_ID,
                 0,
                 100);
     }
@@ -552,13 +620,18 @@ class AdminOrderControllerTest {
         byte[] csvBytes = "csv-data".getBytes(
                 StandardCharsets.UTF_8);
 
-        when(orderService.searchAllOrders(searchForm))
+        when(orderService.searchAllOrders(
+                searchForm,
+                ADMIN_ID))
                 .thenReturn(orders);
 
         when(orderCsvService.createCsv(orders))
                 .thenReturn(csvBytes);
 
-        ResponseEntity<byte[]> response = adminOrderController.csv(searchForm);
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        ResponseEntity<byte[]> response = adminOrderController.csv(searchForm, loginUser);
 
         assertEquals(
                 HttpStatus.OK,
@@ -581,7 +654,9 @@ class AdminOrderControllerTest {
                 response.getBody());
 
         verify(orderService)
-                .searchAllOrders(searchForm);
+                .searchAllOrders(
+                        searchForm,
+                        ADMIN_ID);
 
         verify(orderCsvService)
                 .createCsv(orders);
@@ -793,11 +868,13 @@ class AdminOrderControllerTest {
         Long orderId = 1L;
         Long adminId = 20L;
         String adminUsername = "admin";
+        Long assignedAdminId = 30L;
 
         AdminOrderHandlingStatusForm form = new AdminOrderHandlingStatusForm();
 
-        form.setHandlingStatus(
-                OrderHandlingStatus.NEEDS_ACTION);
+        form.setHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        form.setAssignedAdminAccountId(assignedAdminId);
 
         BindingResult bindingResult = mock(BindingResult.class);
 
@@ -814,6 +891,7 @@ class AdminOrderControllerTest {
         when(orderService.changeHandlingStatus(
                 orderId,
                 OrderHandlingStatus.NEEDS_ACTION,
+                assignedAdminId,
                 adminId,
                 adminUsername))
                 .thenReturn(true);
@@ -833,13 +911,14 @@ class AdminOrderControllerTest {
                 .changeHandlingStatus(
                         orderId,
                         OrderHandlingStatus.NEEDS_ACTION,
+                        assignedAdminId,
                         adminId,
                         adminUsername);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
                         "successMessage",
-                        "対応状況を変更しました。");
+                        "対応状況・担当者を変更しました。");
     }
 
     @Test
@@ -869,6 +948,7 @@ class AdminOrderControllerTest {
         when(orderService.changeHandlingStatus(
                 orderId,
                 OrderHandlingStatus.NEEDS_ACTION,
+                null,
                 adminId,
                 adminUsername))
                 .thenReturn(false);
@@ -887,7 +967,7 @@ class AdminOrderControllerTest {
         verify(redirectAttributes)
                 .addFlashAttribute(
                         "successMessage",
-                        "対応状況は変更されていません。");
+                        "対応状況・担当者は変更されていません。");
     }
 
     @Test
@@ -895,7 +975,12 @@ class AdminOrderControllerTest {
 
         AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
-        Order order = new Order(10L, 2000);
+        AdminUserDetails loginUser = mock(AdminUserDetails.class);
+
+        when(loginUser.getId())
+                .thenReturn(20L);
+
+        Order order = new Order(10L, 1000);
 
         AdminActionRequiredOrderDto dto = new AdminActionRequiredOrderDto(
                 order,
@@ -904,16 +989,31 @@ class AdminOrderControllerTest {
 
         Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of(dto));
 
+        AdminAccount enabledAdmin = new AdminAccount();
+        enabledAdmin.setUsername("admin01");
+        enabledAdmin.setEnabled(true);
+
+        AdminAccount disabledAdmin = new AdminAccount();
+        disabledAdmin.setUsername("admin02");
+        disabledAdmin.setEnabled(false);
+
         when(orderService.searchActionRequiredOrderDetails(
                 searchForm,
+                20L,
                 0,
                 10))
                 .thenReturn(orderPage);
+
+        when(adminAccountService.findAll())
+                .thenReturn(List.of(
+                        enabledAdmin,
+                        disabledAdmin));
 
         String viewName = adminOrderController.actionRequiredOrders(
                 searchForm,
                 0,
                 10,
+                loginUser,
                 model);
 
         assertEquals(
@@ -923,6 +1023,7 @@ class AdminOrderControllerTest {
         verify(orderService)
                 .searchActionRequiredOrderDetails(
                         searchForm,
+                        20L,
                         0,
                         10);
 
@@ -947,6 +1048,16 @@ class AdminOrderControllerTest {
         verify(model).addAttribute(
                 "actionRequiredOrderSorts",
                 ActionRequiredOrderSort.values());
+
+        verify(model).addAttribute(
+                "assigneeFilters",
+                AdminOrderAssigneeFilter.values());
+
+        verify(model).addAttribute(
+                "adminAccounts",
+                List.of(
+                        enabledAdmin,
+                        disabledAdmin));
     }
 
     @Test
@@ -954,18 +1065,28 @@ class AdminOrderControllerTest {
 
         AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
 
+        AdminUserDetails loginUser = mock(AdminUserDetails.class);
+
+        when(loginUser.getId())
+                .thenReturn(20L);
+
         Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of());
 
         when(orderService.searchActionRequiredOrderDetails(
                 searchForm,
+                20L,
                 0,
                 100))
                 .thenReturn(orderPage);
+
+        when(adminAccountService.findAll())
+                .thenReturn(List.of());
 
         String viewName = adminOrderController.actionRequiredOrders(
                 searchForm,
                 -1,
                 999,
+                loginUser,
                 model);
 
         assertEquals(
@@ -975,8 +1096,66 @@ class AdminOrderControllerTest {
         verify(orderService)
                 .searchActionRequiredOrderDetails(
                         searchForm,
+                        20L,
                         0,
                         100);
+    }
+
+    @Test
+    void changeHandlingStatusDisplaysErrorWhenAssigneeIsInvalid() {
+
+        Long orderId = 1L;
+        Long adminId = 20L;
+        String adminUsername = "admin";
+        Long assignedAdminId = 30L;
+
+        AdminOrderHandlingStatusForm form = new AdminOrderHandlingStatusForm();
+
+        form.setHandlingStatus(
+                OrderHandlingStatus.RESOLVED);
+
+        form.setAssignedAdminAccountId(
+                assignedAdminId);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        AdminUserDetails loginUser = mock(AdminUserDetails.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(loginUser.getId())
+                .thenReturn(adminId);
+
+        when(loginUser.getUsername())
+                .thenReturn(adminUsername);
+
+        IllegalArgumentException exception = new IllegalArgumentException(
+                "担当管理者を設定できるのは要対応または対応中の注文のみです。");
+
+        doThrow(exception)
+                .when(orderService)
+                .changeHandlingStatus(
+                        orderId,
+                        OrderHandlingStatus.RESOLVED,
+                        assignedAdminId,
+                        adminId,
+                        adminUsername);
+
+        String viewName = adminOrderController.changeHandlingStatus(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId,
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        exception.getMessage());
     }
 
 }
