@@ -477,6 +477,20 @@ public class OrderService {
                 size);
     }
 
+    @Transactional(readOnly = true)
+    public Page<AdminActionRequiredOrderDto> searchUnassignedOrderDetails(
+            AdminActionRequiredOrderSearchForm searchForm,
+            int page,
+            int size) {
+
+        return searchActionRequiredOrderDetails(
+                searchForm,
+                AdminOrderAssigneeFilter.UNASSIGNED,
+                null,
+                page,
+                size);
+    }
+
     private Page<AdminActionRequiredOrderDto> searchActionRequiredOrderDetails(
             AdminActionRequiredOrderSearchForm searchForm,
             AdminOrderAssigneeFilter assigneeFilter,
@@ -559,6 +573,16 @@ public class OrderService {
                 List.of(
                         OrderHandlingStatus.NEEDS_ACTION,
                         OrderHandlingStatus.IN_PROGRESS));
+    }
+
+    @Transactional(readOnly = true)
+    public long countUnassignedActionRequiredOrders() {
+
+        return orderRepository
+                .countByAssignedAdminAccountIsNullAndHandlingStatusIn(
+                        List.of(
+                                OrderHandlingStatus.NEEDS_ACTION,
+                                OrderHandlingStatus.IN_PROGRESS));
     }
 
     @Transactional(readOnly = true)

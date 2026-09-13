@@ -88,6 +88,9 @@ class AdminControllerTest {
         when(orderService.countMyAssignedActionRequiredOrders(adminId))
                 .thenReturn(2L);
 
+        when(orderService.countUnassignedActionRequiredOrders())
+                .thenReturn(4L);
+
         mockMvc.perform(
                 get("/admin").with(authentication(authentication)))
                 .andExpect(status().isOk())
@@ -98,10 +101,14 @@ class AdminControllerTest {
                 .andExpect(model().attribute("resolvedCount", 8L))
                 .andExpect(model().attribute("actionRequiredAgingSummary", agingSummary))
                 .andExpect(model().attribute("myAssignedOrderCount", 2L))
-                .andExpect(model().attribute("myAssignedActionRequiredAgingSummary", myAssignedAgingSummary));
+                .andExpect(model().attribute("myAssignedActionRequiredAgingSummary", myAssignedAgingSummary))
+                .andExpect(model().attribute("unassignedActionRequiredOrderCount", 4L));
 
         verify(orderService)
                 .getMyAssignedActionRequiredAgingSummary(adminId);
+
+        verify(orderService)
+                .countUnassignedActionRequiredOrders();
     }
 
 }

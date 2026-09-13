@@ -86,6 +86,9 @@ public interface OrderRepository
             Long assignedAdminAccountId,
             List<OrderHandlingStatus> handlingStatuses);
 
+    long countByAssignedAdminAccountIsNullAndHandlingStatusIn(
+            List<OrderHandlingStatus> handlingStatuses);
+
     @Query(value = """
             SELECT o
             FROM Order o
