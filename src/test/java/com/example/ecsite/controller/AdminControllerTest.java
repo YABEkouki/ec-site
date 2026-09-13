@@ -1,5 +1,6 @@
 package com.example.ecsite.controller;
 
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -71,6 +72,14 @@ class AdminControllerTest {
                 true,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
 
+        ActionRequiredAgingSummary myAssignedAgingSummary = new ActionRequiredAgingSummary(
+                3L,
+                1L);
+
+        when(orderService.getMyAssignedActionRequiredAgingSummary(
+                adminId))
+                .thenReturn(myAssignedAgingSummary);
+
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 adminUser,
                 adminUser.getPassword(),
@@ -88,7 +97,11 @@ class AdminControllerTest {
                 .andExpect(model().attribute("inProgressCount", 3L))
                 .andExpect(model().attribute("resolvedCount", 8L))
                 .andExpect(model().attribute("actionRequiredAgingSummary", agingSummary))
-                .andExpect(model().attribute("myAssignedOrderCount", 2L));
+                .andExpect(model().attribute("myAssignedOrderCount", 2L))
+                .andExpect(model().attribute("myAssignedActionRequiredAgingSummary", myAssignedAgingSummary));
+
+        verify(orderService)
+                .getMyAssignedActionRequiredAgingSummary(adminId);
     }
 
 }

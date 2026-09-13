@@ -61,6 +61,13 @@ public class AdminController {
                 "myAssignedOrderCount",
                 myAssignedOrderCount);
 
+        ActionRequiredAgingSummary myAssignedAgingSummary = orderService.getMyAssignedActionRequiredAgingSummary(
+                loginUser.getId());
+
+        model.addAttribute(
+                "myAssignedActionRequiredAgingSummary",
+                myAssignedAgingSummary);
+
         ActionRequiredAgingSummary agingSummary = orderService.getActionRequiredAgingSummary();
 
         model.addAttribute(

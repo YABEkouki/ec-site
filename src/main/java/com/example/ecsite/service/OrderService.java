@@ -563,6 +563,18 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public ActionRequiredAgingSummary getActionRequiredAgingSummary() {
+        return getActionRequiredAgingSummary(null);
+    }
+
+    @Transactional(readOnly = true)
+    public ActionRequiredAgingSummary getMyAssignedActionRequiredAgingSummary(
+            Long loginAdminAccountId) {
+
+        return getActionRequiredAgingSummary(loginAdminAccountId);
+    }
+
+    private ActionRequiredAgingSummary getActionRequiredAgingSummary(
+            Long assignedAdminAccountId) {
 
         LocalDate today = LocalDate.now();
 
@@ -572,7 +584,8 @@ public class OrderService {
 
         ActionRequiredAgingSummaryProjection projection = orderRepository.findActionRequiredAgingSummary(
                 threeDaysCutoffExclusive,
-                sevenDaysCutoffExclusive);
+                sevenDaysCutoffExclusive,
+                assignedAdminAccountId);
 
         return new ActionRequiredAgingSummary(
                 projection.getThreeDaysOrMoreCount(),
