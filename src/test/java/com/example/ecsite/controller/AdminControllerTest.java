@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
+import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.security.AdminUserDetails;
@@ -96,6 +97,21 @@ class AdminControllerTest {
         when(orderService.getUnassignedActionRequiredAgingSummary())
                 .thenReturn(unassignedAgingSummary);
 
+        List<AdminAssigneeActionRequiredSummary> assigneeSummaries = List.of(
+                new AdminAssigneeActionRequiredSummary(
+                        10L,
+                        "admin01",
+                        true,
+                        5L),
+                new AdminAssigneeActionRequiredSummary(
+                        20L,
+                        "admin02",
+                        false,
+                        2L));
+
+        when(orderService.getActionRequiredOrderCountsByAssignee())
+                .thenReturn(assigneeSummaries);
+
         mockMvc.perform(
                 get("/admin").with(authentication(authentication)))
                 .andExpect(status().isOk())
@@ -108,7 +124,8 @@ class AdminControllerTest {
                 .andExpect(model().attribute("myAssignedOrderCount", 2L))
                 .andExpect(model().attribute("myAssignedActionRequiredAgingSummary", myAssignedAgingSummary))
                 .andExpect(model().attribute("unassignedActionRequiredOrderCount", 4L))
-                .andExpect(model().attribute("unassignedActionRequiredAgingSummary", unassignedAgingSummary));
+                .andExpect(model().attribute("unassignedActionRequiredAgingSummary", unassignedAgingSummary))
+                .andExpect(model().attribute("assigneeActionRequiredSummaries", assigneeSummaries));
 
         verify(orderService)
                 .getMyAssignedActionRequiredAgingSummary(adminId);
@@ -118,6 +135,9 @@ class AdminControllerTest {
 
         verify(orderService)
                 .getUnassignedActionRequiredAgingSummary();
+
+        verify(orderService)
+                .getActionRequiredOrderCountsByAssignee();
     }
 
 }

@@ -86,6 +86,10 @@ public class AdminController {
                 "actionRequiredAgingSummary",
                 agingSummary);
 
+        model.addAttribute(
+                "assigneeActionRequiredSummaries",
+                orderService.getActionRequiredOrderCountsByAssignee());
+
         int lowStockThreshold = 5;
 
         model.addAttribute(

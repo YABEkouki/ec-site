@@ -34,6 +34,7 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
+import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
@@ -54,6 +55,7 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
+import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -2580,6 +2582,64 @@ class OrderServiceTest {
                 any(LocalDateTime.class),
                 eq("UNASSIGNED"),
                 isNull());
+    }
+
+    @Test
+    void getActionRequiredOrderCountsByAssigneeMapsRepositoryProjections() {
+
+        AdminAssigneeActionRequiredCountProjection first = mock(AdminAssigneeActionRequiredCountProjection.class);
+
+        when(first.getAdminAccountId())
+                .thenReturn(10L);
+
+        when(first.getUsername())
+                .thenReturn("admin01");
+
+        when(first.getEnabled())
+                .thenReturn(true);
+
+        when(first.getOrderCount())
+                .thenReturn(5L);
+
+        AdminAssigneeActionRequiredCountProjection second = mock(AdminAssigneeActionRequiredCountProjection.class);
+
+        when(second.getAdminAccountId())
+                .thenReturn(20L);
+
+        when(second.getUsername())
+                .thenReturn("admin02");
+
+        when(second.getEnabled())
+                .thenReturn(false);
+
+        when(second.getOrderCount())
+                .thenReturn(2L);
+
+        when(orderRepository.findActionRequiredOrderCountsByAssignee())
+                .thenReturn(List.of(first, second));
+
+        List<AdminAssigneeActionRequiredSummary> result = orderService.getActionRequiredOrderCountsByAssignee();
+
+        assertEquals(2, result.size());
+
+        assertEquals(
+                new AdminAssigneeActionRequiredSummary(
+                        10L,
+                        "admin01",
+                        true,
+                        5L),
+                result.get(0));
+
+        assertEquals(
+                new AdminAssigneeActionRequiredSummary(
+                        20L,
+                        "admin02",
+                        false,
+                        2L),
+                result.get(1));
+
+        verify(orderRepository)
+                .findActionRequiredOrderCountsByAssignee();
     }
 
 }

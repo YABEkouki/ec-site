@@ -147,6 +147,44 @@
             </a>
         </p>
 
+        <section>
+            <h2>担当管理者別の要対応注文</h2>
+
+            <p th:if="${#lists.isEmpty(assigneeActionRequiredSummaries)}">
+                現在、担当中の要対応注文はありません。
+            </p>
+
+            <table th:unless="${#lists.isEmpty(assigneeActionRequiredSummaries)}">
+                <thead>
+                    <tr>
+                        <th>担当管理者</th>
+                        <th>要対応注文件数</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="summary : ${assigneeActionRequiredSummaries}">
+                        <td>
+                            <a th:href="@{/admin/orders/action-required(
+                            assigneeFilter='SPECIFIC',
+                            assignedAdminAccountId=${summary.adminAccountId}
+                        )}">
+                                <span th:text="${summary.username}">admin</span>
+                                <span th:unless="${summary.enabled}">（無効）</span>
+                            </a>
+                        </td>
+                        <td>
+                            <a th:href="@{/admin/orders/action-required(
+                            assigneeFilter='SPECIFIC',
+                            assignedAdminAccountId=${summary.adminAccountId}
+                        )}" th:text="${summary.orderCount}">
+                                0
+                            </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
         <h2>未担当要対応注文の滞留状況</h2>
 
         <table>

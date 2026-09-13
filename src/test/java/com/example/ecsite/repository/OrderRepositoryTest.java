@@ -24,6 +24,7 @@ import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
+import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
@@ -1827,6 +1828,221 @@ class OrderRepositoryTest {
         assertEquals(
                 1,
                 result.getSevenDaysOrMoreCount());
+    }
+
+    @Test
+    void findActionRequiredOrderCountsByAssigneeGroupsAndCountsActionRequiredOrders() {
+
+        User user = createUser(
+                "assignee-summary-user");
+
+        AdminAccount firstAdmin = createAdminAccount(
+                "assignee-summary-admin-1",
+                true);
+
+        AdminAccount secondAdmin = createAdminAccount(
+                "assignee-summary-admin-2",
+                true);
+
+        Order needsActionOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        1,
+                        10,
+                        0));
+
+        needsActionOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        needsActionOrder.changeAssignedAdminAccount(
+                firstAdmin);
+
+        Order inProgressOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        2,
+                        10,
+                        0));
+
+        inProgressOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        inProgressOrder.changeAssignedAdminAccount(
+                firstAdmin);
+
+        Order secondAdminsOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        3,
+                        10,
+                        0));
+
+        secondAdminsOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        secondAdminsOrder.changeAssignedAdminAccount(
+                secondAdmin);
+
+        Order resolvedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        4,
+                        10,
+                        0));
+
+        resolvedOrder.changeHandlingStatus(
+                OrderHandlingStatus.RESOLVED);
+
+        resolvedOrder.changeAssignedAdminAccount(
+                firstAdmin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<AdminAssigneeActionRequiredCountProjection> result = orderRepository
+                .findActionRequiredOrderCountsByAssignee();
+
+        assertEquals(2, result.size());
+
+        assertEquals(
+                firstAdmin.getId(),
+                result.get(0).getAdminAccountId());
+
+        assertEquals(
+                "assignee-summary-admin-1",
+                result.get(0).getUsername());
+
+        assertEquals(
+                2L,
+                result.get(0).getOrderCount());
+
+        assertEquals(
+                secondAdmin.getId(),
+                result.get(1).getAdminAccountId());
+
+        assertEquals(
+                1L,
+                result.get(1).getOrderCount());
+    }
+
+    @Test
+    void findActionRequiredOrderCountsByAssigneeExcludesUnassignedAndZeroCountAdmins() {
+
+        User user = createUser(
+                "assignee-summary-exclude-user");
+
+        AdminAccount assignedAdmin = createAdminAccount(
+                "assignee-summary-assigned-admin",
+                true);
+
+        createAdminAccount(
+                "assignee-summary-zero-admin",
+                true);
+
+        Order assignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        1,
+                        10,
+                        0));
+
+        assignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        assignedOrder.changeAssignedAdminAccount(
+                assignedAdmin);
+
+        Order unassignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        2,
+                        10,
+                        0));
+
+        unassignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<AdminAssigneeActionRequiredCountProjection> result = orderRepository
+                .findActionRequiredOrderCountsByAssignee();
+
+        assertEquals(1, result.size());
+
+        assertEquals(
+                assignedAdmin.getId(),
+                result.get(0).getAdminAccountId());
+
+        assertEquals(
+                1L,
+                result.get(0).getOrderCount());
+    }
+
+    @Test
+    void findActionRequiredOrderCountsByAssigneeIncludesDisabledAdminWithActionRequiredOrders() {
+
+        User user = createUser(
+                "assignee-summary-disabled-user");
+
+        AdminAccount disabledAdmin = createAdminAccount(
+                "assignee-summary-disabled-admin",
+                false);
+
+        createAdminAccount(
+                "assignee-summary-disabled-zero-admin",
+                false);
+
+        Order order = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        1,
+                        10,
+                        0));
+
+        order.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        order.changeAssignedAdminAccount(
+                disabledAdmin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<AdminAssigneeActionRequiredCountProjection> result = orderRepository
+                .findActionRequiredOrderCountsByAssignee();
+
+        assertEquals(1, result.size());
+
+        assertEquals(
+                disabledAdmin.getId(),
+                result.get(0).getAdminAccountId());
+
+        assertEquals(
+                "assignee-summary-disabled-admin",
+                result.get(0).getUsername());
+
+        assertEquals(
+                false,
+                result.get(0).getEnabled());
+
+        assertEquals(
+                1L,
+                result.get(0).getOrderCount());
     }
 
     @Test
