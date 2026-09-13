@@ -587,17 +587,29 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public ActionRequiredAgingSummary getActionRequiredAgingSummary() {
-        return getActionRequiredAgingSummary(null);
+        return getActionRequiredAgingSummary(
+                AdminOrderAssigneeFilter.ALL,
+                null);
     }
 
     @Transactional(readOnly = true)
     public ActionRequiredAgingSummary getMyAssignedActionRequiredAgingSummary(
             Long loginAdminAccountId) {
 
-        return getActionRequiredAgingSummary(loginAdminAccountId);
+        return getActionRequiredAgingSummary(
+                AdminOrderAssigneeFilter.ME,
+                loginAdminAccountId);
+    }
+
+    @Transactional(readOnly = true)
+    public ActionRequiredAgingSummary getUnassignedActionRequiredAgingSummary() {
+        return getActionRequiredAgingSummary(
+                AdminOrderAssigneeFilter.UNASSIGNED,
+                null);
     }
 
     private ActionRequiredAgingSummary getActionRequiredAgingSummary(
+            AdminOrderAssigneeFilter assigneeFilter,
             Long assignedAdminAccountId) {
 
         LocalDate today = LocalDate.now();
@@ -609,6 +621,7 @@ public class OrderService {
         ActionRequiredAgingSummaryProjection projection = orderRepository.findActionRequiredAgingSummary(
                 threeDaysCutoffExclusive,
                 sevenDaysCutoffExclusive,
+                assigneeFilter.name(),
                 assignedAdminAccountId);
 
         return new ActionRequiredAgingSummary(

@@ -1555,6 +1555,7 @@ class OrderRepositoryTest {
         ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
                 LocalDateTime.of(2026, 9, 8, 0, 0),
                 LocalDateTime.of(2026, 9, 4, 0, 0),
+                "ALL",
                 null);
 
         assertEquals(2, result.getThreeDaysOrMoreCount());
@@ -1591,6 +1592,7 @@ class OrderRepositoryTest {
         ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
                 LocalDateTime.of(2026, 9, 8, 0, 0),
                 LocalDateTime.of(2026, 9, 4, 0, 0),
+                "ALL",
                 null);
 
         assertEquals(0, result.getThreeDaysOrMoreCount());
@@ -1613,6 +1615,7 @@ class OrderRepositoryTest {
         ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
                 LocalDateTime.of(2026, 9, 8, 0, 0),
                 LocalDateTime.of(2026, 9, 4, 0, 0),
+                "ALL",
                 null);
 
         assertEquals(0, result.getThreeDaysOrMoreCount());
@@ -1643,6 +1646,7 @@ class OrderRepositoryTest {
         ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
                 LocalDateTime.of(2026, 9, 8, 0, 0),
                 LocalDateTime.of(2026, 9, 4, 0, 0),
+                "ALL",
                 null);
 
         assertEquals(0, result.getThreeDaysOrMoreCount());
@@ -1730,6 +1734,7 @@ class OrderRepositoryTest {
         ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
                 LocalDateTime.of(2026, 9, 8, 0, 0),
                 LocalDateTime.of(2026, 9, 4, 0, 0),
+                "ME",
                 loginAdmin.getId());
 
         assertEquals(
@@ -1738,6 +1743,89 @@ class OrderRepositoryTest {
 
         assertEquals(
                 1L,
+                result.getSevenDaysOrMoreCount());
+    }
+
+    @Test
+    void findActionRequiredAgingSummaryFiltersUnassignedOrders() {
+
+        User user = createUser(
+                "unassigned-aging-summary-user");
+
+        AdminAccount admin = createAdminAccount(
+                "unassigned-aging-summary-admin",
+                true);
+
+        Order unassignedThreeDaysOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 1, 10, 0));
+
+        unassignedThreeDaysOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                unassignedThreeDaysOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 7, 23, 59));
+
+        Order unassignedSevenDaysOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 2, 10, 0));
+
+        unassignedSevenDaysOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        createHandlingStatusHistory(
+                unassignedSevenDaysOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.IN_PROGRESS,
+                LocalDateTime.of(2026, 9, 3, 23, 59));
+
+        Order assignedOldOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 3, 10, 0));
+
+        assignedOldOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        assignedOldOrder.changeAssignedAdminAccount(
+                admin);
+
+        createHandlingStatusHistory(
+                assignedOldOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 1, 10, 0));
+
+        Order unassignedRecentOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 4, 10, 0));
+
+        unassignedRecentOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        createHandlingStatusHistory(
+                unassignedRecentOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 8, 0, 0));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        ActionRequiredAgingSummaryProjection result = orderRepository.findActionRequiredAgingSummary(
+                LocalDateTime.of(2026, 9, 8, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0),
+                "UNASSIGNED",
+                null);
+
+        assertEquals(
+                2,
+                result.getThreeDaysOrMoreCount());
+
+        assertEquals(
+                1,
                 result.getSevenDaysOrMoreCount());
     }
 

@@ -147,6 +147,37 @@
             </a>
         </p>
 
+        <h2>未担当要対応注文の滞留状況</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>条件</th>
+                    <th>件数</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>3日以上滞留</td>
+                    <td>
+                        <a th:href="@{/admin/orders/unassigned(minElapsedDays=3)}"
+                            th:text="${unassignedActionRequiredAgingSummary.threeDaysOrMoreCount}">
+                            0
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>7日以上滞留</td>
+                    <td>
+                        <a th:href="@{/admin/orders/unassigned(minElapsedDays=7)}"
+                            th:text="${unassignedActionRequiredAgingSummary.sevenDaysOrMoreCount}">
+                            0
+                        </a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
         <h2>自分の担当注文の滞留状況</h2>
 
         <table>
