@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -1948,7 +1949,8 @@ class OrderServiceTest {
 
         when(orderRepository.findActionRequiredAgingSummary(
                 any(LocalDateTime.class),
-                any(LocalDateTime.class)))
+                any(LocalDateTime.class),
+                isNull()))
                 .thenReturn(projection);
 
         ActionRequiredAgingSummary result = orderService.getActionRequiredAgingSummary();
@@ -1959,7 +1961,44 @@ class OrderServiceTest {
         verify(orderRepository)
                 .findActionRequiredAgingSummary(
                         any(LocalDateTime.class),
-                        any(LocalDateTime.class));
+                        any(LocalDateTime.class),
+                        isNull());
+    }
+
+    @Test
+    void getMyAssignedActionRequiredAgingSummaryReturnsRepositoryCounts() {
+
+        Long loginAdminAccountId = 20L;
+
+        ActionRequiredAgingSummaryProjection projection = mock(ActionRequiredAgingSummaryProjection.class);
+
+        when(projection.getThreeDaysOrMoreCount())
+                .thenReturn(5L);
+
+        when(projection.getSevenDaysOrMoreCount())
+                .thenReturn(2L);
+
+        when(orderRepository.findActionRequiredAgingSummary(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(loginAdminAccountId)))
+                .thenReturn(projection);
+
+        ActionRequiredAgingSummary result = orderService.getMyAssignedActionRequiredAgingSummary(
+                loginAdminAccountId);
+
+        assertEquals(
+                5L,
+                result.threeDaysOrMoreCount());
+
+        assertEquals(
+                2L,
+                result.sevenDaysOrMoreCount());
+
+        verify(orderRepository).findActionRequiredAgingSummary(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(loginAdminAccountId));
     }
 
     @Test

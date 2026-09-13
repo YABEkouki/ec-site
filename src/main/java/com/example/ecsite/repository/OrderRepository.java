@@ -388,11 +388,16 @@ public interface OrderRepository
                 LEFT JOIN order_handling_status_histories h
                     ON h.order_id = o.id
                 WHERE o.handling_status IN ('NEEDS_ACTION', 'IN_PROGRESS')
+                    AND (
+                        :assignedAdminAccountId IS NULL
+                        OR o.assigned_admin_account_id = :assignedAdminAccountId
+                    )
                 GROUP BY o.id
             ) target_orders
             """, nativeQuery = true)
     ActionRequiredAgingSummaryProjection findActionRequiredAgingSummary(
             @Param("threeDaysCutoffExclusive") LocalDateTime threeDaysCutoffExclusive,
-            @Param("sevenDaysCutoffExclusive") LocalDateTime sevenDaysCutoffExclusive);
+            @Param("sevenDaysCutoffExclusive") LocalDateTime sevenDaysCutoffExclusive,
+            @Param("assignedAdminAccountId") Long assignedAdminAccountId);
 
 }

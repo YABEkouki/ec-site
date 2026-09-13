@@ -137,6 +137,38 @@
             </a>
         </p>
 
+        <h2>自分の担当注文の滞留状況</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>条件</th>
+                    <th>件数</th>
+                    <th>一覧</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>3日以上滞留</td>
+                    <td th:text="${myAssignedActionRequiredAgingSummary.threeDaysOrMoreCount}">0</td>
+                    <td>
+                        <a th:href="@{/admin/orders/my-assigned(minElapsedDays=3)}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <td>7日以上滞留</td>
+                    <td th:text="${myAssignedActionRequiredAgingSummary.sevenDaysOrMoreCount}">0</td>
+                    <td>
+                        <a th:href="@{/admin/orders/my-assigned(minElapsedDays=7)}">
+                            一覧を見る
+                        </a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
         <a th:href="@{/admin/orders/action-required}" class="button button-secondary">
             要対応注文一覧
         </a>
