@@ -2,9 +2,12 @@ package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,9 +17,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderAssigneeHistory;
+import com.example.ecsite.form.AdminOrderAssigneeHistoryFilter;
+import com.example.ecsite.form.AdminOrderAssigneeHistorySearchForm;
 import com.example.ecsite.repository.OrderAssigneeHistoryRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,8 +56,7 @@ class OrderAssigneeHistoryServiceTest {
                 "operator",
                 changeEventId);
 
-        ArgumentCaptor<OrderAssigneeHistory> captor =
-                ArgumentCaptor.forClass(OrderAssigneeHistory.class);
+        ArgumentCaptor<OrderAssigneeHistory> captor = ArgumentCaptor.forClass(OrderAssigneeHistory.class);
 
         verify(repository).save(captor.capture());
 
@@ -81,4 +88,176 @@ class OrderAssigneeHistoryServiceTest {
         verify(repository)
                 .findByOrderIdOrderByChangedAtAscIdAsc(orderId);
     }
+
+    @Test
+    void searchConvertsConditionsForSpecificAdmins() {
+
+        AdminOrderAssigneeHistorySearchForm form = new AdminOrderAssigneeHistorySearchForm();
+
+        form.setOrderId(10L);
+
+        form.setFromAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.SPECIFIC);
+        form.setFromAdminAccountId(11L);
+
+        form.setToAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.SPECIFIC);
+        form.setToAdminAccountId(12L);
+
+        form.setChangedByUsername("  AdminUser  ");
+
+        form.setFrom(LocalDate.of(2026, 9, 1));
+        form.setTo(LocalDate.of(2026, 9, 3));
+
+        Page<OrderAssigneeHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(10L),
+                eq(false),
+                eq(11L),
+                eq(false),
+                eq(12L),
+                eq("AdminUser"),
+                eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
+                eq(LocalDateTime.of(2026, 9, 4, 0, 0)),
+                eq(PageRequest.of(1, 20))))
+                .thenReturn(expected);
+
+        Page<OrderAssigneeHistory> actual = service.search(form, 1, 20);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                10L,
+                false,
+                11L,
+                false,
+                12L,
+                "AdminUser",
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 4, 0, 0),
+                PageRequest.of(1, 20));
+    }
+
+    @Test
+    void searchConvertsUnassignedFilters() {
+
+        AdminOrderAssigneeHistorySearchForm form = new AdminOrderAssigneeHistorySearchForm();
+
+        form.setFromAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.UNASSIGNED);
+
+        form.setToAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.UNASSIGNED);
+
+        Page<OrderAssigneeHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(null),
+                eq(true),
+                eq(null),
+                eq(true),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
+                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<OrderAssigneeHistory> actual = service.search(form, 0, 10);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                null,
+                true,
+                null,
+                true,
+                null,
+                null,
+                LocalDateTime.of(2000, 1, 1, 0, 0),
+                LocalDateTime.of(2100, 1, 1, 0, 0),
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchUsesNoAssigneeConditionForAllFilters() {
+
+        AdminOrderAssigneeHistorySearchForm form = new AdminOrderAssigneeHistorySearchForm();
+
+        form.setFromAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.ALL);
+        form.setFromAdminAccountId(11L);
+
+        form.setToAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.ALL);
+        form.setToAdminAccountId(12L);
+
+        Page<OrderAssigneeHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
+                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<OrderAssigneeHistory> actual = service.search(form, 0, 10);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2000, 1, 1, 0, 0),
+                LocalDateTime.of(2100, 1, 1, 0, 0),
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchConvertsBlankUsernameToNull() {
+
+        AdminOrderAssigneeHistorySearchForm form = new AdminOrderAssigneeHistorySearchForm();
+
+        form.setChangedByUsername("   ");
+
+        Page<OrderAssigneeHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
+                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<OrderAssigneeHistory> actual = service.search(form, 0, 10);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2000, 1, 1, 0, 0),
+                LocalDateTime.of(2100, 1, 1, 0, 0),
+                PageRequest.of(0, 10));
+    }
+
 }

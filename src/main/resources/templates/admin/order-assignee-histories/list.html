@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>担当管理者変更履歴</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>担当管理者変更履歴</h1>
+
+    <form th:action="@{/admin/order-assignee-histories/list}" th:object="${searchForm}" method="get">
+
+        <div>
+            <label for="orderId">注文ID</label>
+            <input type="number" id="orderId" th:field="*{orderId}">
+        </div>
+
+        <div>
+            <label for="fromAssigneeFilter">
+                変更前担当者
+            </label>
+
+            <select id="fromAssigneeFilter" th:field="*{fromAssigneeFilter}" onchange="updateAssigneeSelectState()">
+                <option th:each="filter : ${assigneeFilters}" th:value="${filter}" th:text="${filter.displayName}">
+                </option>
+            </select>
+        </div>
+
+        <div>
+            <label for="fromAdminAccountId">
+                変更前管理者
+            </label>
+
+            <select id="fromAdminAccountId" th:field="*{fromAdminAccountId}">
+                <option value="">選択してください</option>
+
+                <option th:each="admin : ${adminAccounts}" th:value="${admin.id}" th:text="${admin.username
+                    + (admin.enabled ? '' : '（無効）')}">
+                </option>
+            </select>
+        </div>
+
+        <div>
+            <label for="toAssigneeFilter">
+                変更後担当者
+            </label>
+
+            <select id="toAssigneeFilter" th:field="*{toAssigneeFilter}" onchange="updateAssigneeSelectState()">
+                <option th:each="filter : ${assigneeFilters}" th:value="${filter}" th:text="${filter.displayName}">
+                </option>
+            </select>
+        </div>
+
+        <div>
+            <label for="toAdminAccountId">
+                変更後管理者
+            </label>
+
+            <select id="toAdminAccountId" th:field="*{toAdminAccountId}">
+                <option value="">選択してください</option>
+
+                <option th:each="admin : ${adminAccounts}" th:value="${admin.id}" th:text="${admin.username
+                    + (admin.enabled ? '' : '（無効）')}">
+                </option>
+            </select>
+        </div>
+
+        <div>
+            <label for="changedByUsername">
+                変更者ユーザー名
+            </label>
+
+            <input type="text" id="changedByUsername" th:field="*{changedByUsername}">
+        </div>
+
+        <div>
+            <label for="from">変更日 From</label>
+            <input type="date" id="from" th:field="*{from}">
+        </div>
+
+        <div>
+            <label for="to">変更日 To</label>
+            <input type="date" id="to" th:field="*{to}">
+        </div>
+
+        <button type="submit">
+            検索
+        </button>
+
+        <button type="button" onclick="location.href='/admin/order-assignee-histories/list'">
+            条件クリア
+        </button>
+
+    </form>
+
+    <hr>
+
+    <table>
+        <thead>
+            <tr>
+                <th>変更日時</th>
+                <th>注文ID</th>
+                <th>変更前担当者</th>
+                <th>変更後担当者</th>
+                <th>変更者ID</th>
+                <th>変更者ユーザー名</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+            <tr th:each="history : ${histories}">
+
+                <td th:text="${#temporals.format(
+                        history.changedAt,
+                        'yyyy-MM-dd HH:mm:ss')}">
+                </td>
+
+                <td>
+                    <a th:href="@{/admin/orders/{id}
+                        (id=${history.order.id})}" th:text="${history.order.id}">
+                    </a>
+                </td>
+
+                <td th:text="${history.fromAdminAccountId == null
+                        ? '未担当'
+                        : history.fromAdminUsername}">
+                </td>
+
+                <td th:text="${history.toAdminAccountId == null
+                        ? '未担当'
+                        : history.toAdminUsername}">
+                </td>
+
+                <td th:text="${history.changedByAccountId}">
+                </td>
+
+                <td th:text="${history.changedByUsername}">
+                </td>
+
+            </tr>
+
+            <tr th:if="${#lists.isEmpty(histories)}">
+                <td colspan="6">
+                    担当管理者変更履歴はありません。
+                </td>
+            </tr>
+
+        </tbody>
+    </table>
+
+    <div th:if="${historyPage.totalPages > 1}">
+
+        <a th:if="${historyPage.hasPrevious()}" th:href="@{/admin/order-assignee-histories/list(
+               page=${historyPage.number - 1},
+               size=${historyPage.size},
+               orderId=${searchForm.orderId},
+               fromAssigneeFilter=${searchForm.fromAssigneeFilter},
+               fromAdminAccountId=${searchForm.fromAdminAccountId},
+               toAssigneeFilter=${searchForm.toAssigneeFilter},
+               toAdminAccountId=${searchForm.toAdminAccountId},
+               changedByUsername=${searchForm.changedByUsername},
+               from=${searchForm.from},
+               to=${searchForm.to})}">
+            前へ
+        </a>
+
+        <span th:text="${historyPage.number + 1}">
+        </span>
+        /
+        <span th:text="${historyPage.totalPages}">
+        </span>
+
+        <a th:if="${historyPage.hasNext()}" th:href="@{/admin/order-assignee-histories/list(
+               page=${historyPage.number + 1},
+               size=${historyPage.size},
+               orderId=${searchForm.orderId},
+               fromAssigneeFilter=${searchForm.fromAssigneeFilter},
+               fromAdminAccountId=${searchForm.fromAdminAccountId},
+               toAssigneeFilter=${searchForm.toAssigneeFilter},
+               toAdminAccountId=${searchForm.toAdminAccountId},
+               changedByUsername=${searchForm.changedByUsername},
+               from=${searchForm.from},
+               to=${searchForm.to})}">
+            次へ
+        </a>
+
+    </div>
+
+    <script>
+        function updateAssigneeSelectState() {
+
+            const fromFilter =
+                document.getElementById("fromAssigneeFilter");
+
+            const fromAdmin =
+                document.getElementById("fromAdminAccountId");
+
+            const toFilter =
+                document.getElementById("toAssigneeFilter");
+
+            const toAdmin =
+                document.getElementById("toAdminAccountId");
+
+            fromAdmin.disabled =
+                fromFilter.value !== "SPECIFIC";
+
+            toAdmin.disabled =
+                toFilter.value !== "SPECIFIC";
+        }
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            updateAssigneeSelectState);
+    </script>
+
+</body>
+
+</html>
