@@ -1,5 +1,6 @@
 package com.example.ecsite.controller;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -7,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ProductService;
 
@@ -25,7 +27,9 @@ public class AdminController {
     }
 
     @GetMapping("/admin")
-    public String index(Model model) {
+    public String index(
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            Model model) {
 
         model.addAttribute("orderedCount",
                 orderService.countOrdersByStatus(OrderStatus.ORDERED));
@@ -50,6 +54,12 @@ public class AdminController {
 
         model.addAttribute("resolvedCount",
                 orderService.countOrdersByHandlingStatus(OrderHandlingStatus.RESOLVED));
+
+        long myAssignedOrderCount = orderService.countMyAssignedActionRequiredOrders(loginUser.getId());
+
+        model.addAttribute(
+                "myAssignedOrderCount",
+                myAssignedOrderCount);
 
         ActionRequiredAgingSummary agingSummary = orderService.getActionRequiredAgingSummary();
 

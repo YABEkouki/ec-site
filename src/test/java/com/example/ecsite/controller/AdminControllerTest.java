@@ -1,21 +1,26 @@
 package com.example.ecsite.controller;
 
 import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ProductService;
 
@@ -57,15 +62,33 @@ class AdminControllerTest {
         when(orderService.getActionRequiredAgingSummary())
                 .thenReturn(agingSummary);
 
+        Long adminId = 20L;
+
+        AdminUserDetails adminUser = new AdminUserDetails(
+                adminId,
+                "admin",
+                "password",
+                true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                adminUser,
+                adminUser.getPassword(),
+                adminUser.getAuthorities());
+
+        when(orderService.countMyAssignedActionRequiredOrders(adminId))
+                .thenReturn(2L);
+
         mockMvc.perform(
-                get("/admin").with(user("admin").roles("ADMIN")))
+                get("/admin").with(authentication(authentication)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("admin/index"))
                 .andExpect(model().attribute("normalHandlingCount", 10L))
                 .andExpect(model().attribute("needsActionCount", 5L))
                 .andExpect(model().attribute("inProgressCount", 3L))
                 .andExpect(model().attribute("resolvedCount", 8L))
-                .andExpect(model().attribute("actionRequiredAgingSummary", agingSummary));
+                .andExpect(model().attribute("actionRequiredAgingSummary", agingSummary))
+                .andExpect(model().attribute("myAssignedOrderCount", 2L));
     }
 
 }

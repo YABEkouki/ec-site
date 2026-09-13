@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>要対応注文一覧</title>
+    <title>自分の担当注文一覧</title>
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
@@ -11,13 +11,14 @@
     <header th:replace="~{fragments/admin-header :: header}">
     </header>
 
-    <h1>要対応注文一覧</h1>
+    <h1>自分の担当注文一覧</h1>
 
     <p>
-        要対応・対応中の注文を表示しています。
+        自分が担当している要対応・対応中の注文を表示しています。
     </p>
 
-    <form th:action="@{/admin/orders/action-required}" th:object="${searchForm}" method="get">
+    <form th:action="@{/admin/orders/my-assigned}" th:object="${searchForm}" method="get">
+
         <div class="order-search-fields">
 
             <div class="order-search-field">
@@ -57,31 +58,13 @@
                 <label for="handlingStatus">対応状況</label>
 
                 <select id="handlingStatus" th:field="*{handlingStatus}">
-                    <option value="">すべて（要対応・対応中）</option>
+
+                    <option value="">
+                        すべて（要対応・対応中）
+                    </option>
+
                     <option th:each="handlingStatus : ${handlingStatuses}" th:value="${handlingStatus}"
                         th:text="${handlingStatus.displayName}">
-                    </option>
-                </select>
-            </div>
-
-            <div class="order-search-field">
-                <label for="assigneeFilter">担当者</label>
-
-                <select id="assigneeFilter" th:field="*{assigneeFilter}" onchange="updateAssignedAdminSelectState()">
-                    <option th:each="assigneeFilter : ${assigneeFilters}" th:value="${assigneeFilter}"
-                        th:text="${assigneeFilter.displayName}">
-                    </option>
-                </select>
-            </div>
-
-            <div class="order-search-field">
-                <label for="assignedAdminAccountId">特定管理者</label>
-
-                <select id="assignedAdminAccountId" th:field="*{assignedAdminAccountId}">
-                    <option value="">選択してください</option>
-
-                    <option th:each="admin : ${adminAccounts}" th:value="${admin.id}" th:text="${admin.username
-                    + (admin.enabled ? '' : '（無効）')}">
                     </option>
                 </select>
             </div>
@@ -90,6 +73,7 @@
                 <label for="minElapsedDays">経過日数</label>
 
                 <select id="minElapsedDays" th:field="*{minElapsedDays}">
+
                     <option value="">指定なし</option>
                     <option value="3">3日以上</option>
                     <option value="7">7日以上</option>
@@ -105,16 +89,18 @@
                     </option>
                 </select>
             </div>
+
         </div>
 
         <input type="hidden" name="size" th:value="${orderPage.size}">
 
         <div class="actions">
+
             <button type="submit" class="button-secondary">
                 検索
             </button>
 
-            <a th:href="@{/admin/orders/action-required}" class="button button-secondary">
+            <a th:href="@{/admin/orders/my-assigned}" class="button button-secondary">
                 クリア
             </a>
 
@@ -127,67 +113,65 @@
 
     <nav th:if="${orderPage.totalPages > 1}">
 
-        <a th:if="${orderPage.hasPrevious()}" th:href="@{/admin/orders/action-required(
-           orderId=${searchForm.orderId},
-           userId=${searchForm.userId},
-           from=${searchForm.from},
-           to=${searchForm.to},
-           status=${searchForm.status},
-           handlingStatus=${searchForm.handlingStatus},
-           assigneeFilter=${searchForm.assigneeFilter},
-           assignedAdminAccountId=${searchForm.assignedAdminAccountId},
-           minElapsedDays=${searchForm.minElapsedDays},
-           sort=${searchForm.sort},
-           page=${orderPage.number - 1},
-           size=${orderPage.size})}" class="button button-secondary">
-            前へ
-        </a>
-
-        <span th:each="pageNumber :
-        ${#numbers.sequence(
-            0,
-            orderPage.totalPages - 1)}">
-
-            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
-                class="button button-secondary">
-            </strong>
-
-            <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders/action-required(
+        <a th:if="${orderPage.hasPrevious()}" th:href="@{/admin/orders/my-assigned(
                orderId=${searchForm.orderId},
                userId=${searchForm.userId},
                from=${searchForm.from},
                to=${searchForm.to},
                status=${searchForm.status},
                handlingStatus=${searchForm.handlingStatus},
-               assigneeFilter=${searchForm.assigneeFilter},
-               assignedAdminAccountId=${searchForm.assignedAdminAccountId},
                minElapsedDays=${searchForm.minElapsedDays},
                sort=${searchForm.sort},
-               page=${pageNumber},
-               size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
+               page=${orderPage.number - 1},
+               size=${orderPage.size})}" class="button button-secondary">
+            前へ
+        </a>
+
+        <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                orderPage.totalPages - 1)}">
+
+            <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
+            </strong>
+
+            <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders/my-assigned(
+                   orderId=${searchForm.orderId},
+                   userId=${searchForm.userId},
+                   from=${searchForm.from},
+                   to=${searchForm.to},
+                   status=${searchForm.status},
+                   handlingStatus=${searchForm.handlingStatus},
+                   minElapsedDays=${searchForm.minElapsedDays},
+                   sort=${searchForm.sort},
+                   page=${pageNumber},
+                   size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
 
         </span>
 
-        <a th:if="${orderPage.hasNext()}" th:href="@{/admin/orders/action-required(
-           orderId=${searchForm.orderId},
-           userId=${searchForm.userId},
-           from=${searchForm.from},
-           to=${searchForm.to},
-           status=${searchForm.status},
-           handlingStatus=${searchForm.handlingStatus},
-           assigneeFilter=${searchForm.assigneeFilter},
-           assignedAdminAccountId=${searchForm.assignedAdminAccountId},
-           minElapsedDays=${searchForm.minElapsedDays},
-           sort=${searchForm.sort},
-           page=${orderPage.number + 1},
-           size=${orderPage.size})}" class="button button-secondary">
+        <a th:if="${orderPage.hasNext()}" th:href="@{/admin/orders/my-assigned(
+               orderId=${searchForm.orderId},
+               userId=${searchForm.userId},
+               from=${searchForm.from},
+               to=${searchForm.to},
+               status=${searchForm.status},
+               handlingStatus=${searchForm.handlingStatus},
+               minElapsedDays=${searchForm.minElapsedDays},
+               sort=${searchForm.sort},
+               page=${orderPage.number + 1},
+               size=${orderPage.size})}" class="button button-secondary">
             次へ
         </a>
 
     </nav>
 
     <p>
+        <a th:href="@{/admin/orders/action-required}" class="button button-secondary">
+            要対応注文一覧へ
+        </a>
+
         <a th:href="@{/admin/orders}" class="button button-secondary">
             注文一覧へ戻る
         </a>
@@ -196,24 +180,6 @@
             管理者トップへ戻る
         </a>
     </p>
-
-    <script>
-        function updateAssignedAdminSelectState() {
-
-            const assigneeFilter =
-                document.getElementById("assigneeFilter");
-
-            const assignedAdmin =
-                document.getElementById("assignedAdminAccountId");
-
-            assignedAdmin.disabled =
-                assigneeFilter.value !== "SPECIFIC";
-        }
-
-        document.addEventListener(
-            "DOMContentLoaded",
-            updateAssignedAdminSelectState);
-    </script>
 
 </body>
 
