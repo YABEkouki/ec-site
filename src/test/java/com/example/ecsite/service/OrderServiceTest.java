@@ -1950,6 +1950,7 @@ class OrderServiceTest {
         when(orderRepository.findActionRequiredAgingSummary(
                 any(LocalDateTime.class),
                 any(LocalDateTime.class),
+                eq("ALL"),
                 isNull()))
                 .thenReturn(projection);
 
@@ -1962,6 +1963,7 @@ class OrderServiceTest {
                 .findActionRequiredAgingSummary(
                         any(LocalDateTime.class),
                         any(LocalDateTime.class),
+                        eq("ALL"),
                         isNull());
     }
 
@@ -1981,6 +1983,7 @@ class OrderServiceTest {
         when(orderRepository.findActionRequiredAgingSummary(
                 any(LocalDateTime.class),
                 any(LocalDateTime.class),
+                eq("ME"),
                 eq(loginAdminAccountId)))
                 .thenReturn(projection);
 
@@ -1998,6 +2001,7 @@ class OrderServiceTest {
         verify(orderRepository).findActionRequiredAgingSummary(
                 any(LocalDateTime.class),
                 any(LocalDateTime.class),
+                eq("ME"),
                 eq(loginAdminAccountId));
     }
 
@@ -2541,6 +2545,41 @@ class OrderServiceTest {
                         List.of(
                                 OrderHandlingStatus.NEEDS_ACTION,
                                 OrderHandlingStatus.IN_PROGRESS));
+    }
+
+    @Test
+    void getUnassignedActionRequiredAgingSummaryReturnsRepositoryCounts() {
+
+        ActionRequiredAgingSummaryProjection projection = mock(ActionRequiredAgingSummaryProjection.class);
+
+        when(projection.getThreeDaysOrMoreCount())
+                .thenReturn(5L);
+
+        when(projection.getSevenDaysOrMoreCount())
+                .thenReturn(2L);
+
+        when(orderRepository.findActionRequiredAgingSummary(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq("UNASSIGNED"),
+                isNull()))
+                .thenReturn(projection);
+
+        ActionRequiredAgingSummary result = orderService.getUnassignedActionRequiredAgingSummary();
+
+        assertEquals(
+                5L,
+                result.threeDaysOrMoreCount());
+
+        assertEquals(
+                2L,
+                result.sevenDaysOrMoreCount());
+
+        verify(orderRepository).findActionRequiredAgingSummary(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq("UNASSIGNED"),
+                isNull());
     }
 
 }

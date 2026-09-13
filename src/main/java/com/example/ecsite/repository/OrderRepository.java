@@ -392,8 +392,15 @@ public interface OrderRepository
                     ON h.order_id = o.id
                 WHERE o.handling_status IN ('NEEDS_ACTION', 'IN_PROGRESS')
                     AND (
-                        :assignedAdminAccountId IS NULL
-                        OR o.assigned_admin_account_id = :assignedAdminAccountId
+                        :assigneeFilter = 'ALL'
+                        OR (
+                            :assigneeFilter = 'UNASSIGNED'
+                            AND o.assigned_admin_account_id IS NULL
+                        )
+                        OR (
+                            :assigneeFilter IN ('ME', 'SPECIFIC')
+                            AND o.assigned_admin_account_id = :assignedAdminAccountId
+                        )
                     )
                 GROUP BY o.id
             ) target_orders
@@ -401,6 +408,6 @@ public interface OrderRepository
     ActionRequiredAgingSummaryProjection findActionRequiredAgingSummary(
             @Param("threeDaysCutoffExclusive") LocalDateTime threeDaysCutoffExclusive,
             @Param("sevenDaysCutoffExclusive") LocalDateTime sevenDaysCutoffExclusive,
+            @Param("assigneeFilter") String assigneeFilter,
             @Param("assignedAdminAccountId") Long assignedAdminAccountId);
-
 }
