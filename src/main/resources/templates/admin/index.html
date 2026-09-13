@@ -159,6 +159,8 @@
                     <tr>
                         <th>担当管理者</th>
                         <th>要対応注文件数</th>
+                        <th>3日以上滞留</th>
+                        <th>7日以上滞留</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -177,6 +179,25 @@
                             assigneeFilter='SPECIFIC',
                             assignedAdminAccountId=${summary.adminAccountId}
                         )}" th:text="${summary.orderCount}">
+                                0
+                            </a>
+                        </td>
+                        <td>
+                            <a th:href="@{/admin/orders/action-required(
+                        assigneeFilter='SPECIFIC',
+                        assignedAdminAccountId=${summary.adminAccountId},
+                        minElapsedDays=3
+                    )}" th:text="${summary.threeDaysOrMoreCount}">
+                                0
+                            </a>
+                        </td>
+
+                        <td>
+                            <a th:href="@{/admin/orders/action-required(
+                        assigneeFilter='SPECIFIC',
+                        assignedAdminAccountId=${summary.adminAccountId},
+                        minElapsedDays=7
+                    )}" th:text="${summary.sevenDaysOrMoreCount}">
                                 0
                             </a>
                         </td>
