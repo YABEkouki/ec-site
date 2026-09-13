@@ -1908,7 +1908,9 @@ class OrderRepositoryTest {
         entityManager.clear();
 
         List<AdminAssigneeActionRequiredCountProjection> result = orderRepository
-                .findActionRequiredOrderCountsByAssignee();
+                .findActionRequiredOrderCountsByAssignee(
+                        LocalDateTime.of(2026, 9, 8, 0, 0),
+                        LocalDateTime.of(2026, 9, 4, 0, 0));
 
         assertEquals(2, result.size());
 
@@ -1978,7 +1980,9 @@ class OrderRepositoryTest {
         entityManager.clear();
 
         List<AdminAssigneeActionRequiredCountProjection> result = orderRepository
-                .findActionRequiredOrderCountsByAssignee();
+                .findActionRequiredOrderCountsByAssignee(
+                        LocalDateTime.of(2026, 9, 8, 0, 0),
+                        LocalDateTime.of(2026, 9, 4, 0, 0));
 
         assertEquals(1, result.size());
 
@@ -2024,7 +2028,9 @@ class OrderRepositoryTest {
         entityManager.clear();
 
         List<AdminAssigneeActionRequiredCountProjection> result = orderRepository
-                .findActionRequiredOrderCountsByAssignee();
+                .findActionRequiredOrderCountsByAssignee(
+                        LocalDateTime.of(2026, 9, 8, 0, 0),
+                        LocalDateTime.of(2026, 9, 4, 0, 0));
 
         assertEquals(1, result.size());
 
@@ -2043,6 +2049,131 @@ class OrderRepositoryTest {
         assertEquals(
                 1L,
                 result.get(0).getOrderCount());
+    }
+
+    @Test
+    void findActionRequiredOrderCountsByAssigneeCountsAgingByLatestHandlingStatusHistory() {
+
+        User user = createUser(
+                "assignee-aging-summary-user");
+
+        AdminAccount firstAdmin = createAdminAccount(
+                "assignee-aging-summary-admin-1",
+                true);
+
+        AdminAccount secondAdmin = createAdminAccount(
+                "assignee-aging-summary-admin-2",
+                true);
+
+        // firstAdmin: 7日以上
+        Order sevenDaysOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 1, 10, 0));
+
+        sevenDaysOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        sevenDaysOrder.changeAssignedAdminAccount(
+                firstAdmin);
+
+        createHandlingStatusHistory(
+                sevenDaysOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 3, 23, 59));
+
+        // firstAdmin: 古い履歴はあるが、最新履歴が3日未満
+        Order latestHistoryRecentOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 2, 10, 0));
+
+        latestHistoryRecentOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        latestHistoryRecentOrder.changeAssignedAdminAccount(
+                firstAdmin);
+
+        createHandlingStatusHistory(
+                latestHistoryRecentOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 1, 10, 0));
+
+        createHandlingStatusHistory(
+                latestHistoryRecentOrder,
+                OrderHandlingStatus.NEEDS_ACTION,
+                OrderHandlingStatus.IN_PROGRESS,
+                LocalDateTime.of(2026, 9, 9, 10, 0));
+
+        // firstAdmin: 履歴なし → 総件数のみ
+        Order noHistoryOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 3, 10, 0));
+
+        noHistoryOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        noHistoryOrder.changeAssignedAdminAccount(
+                firstAdmin);
+
+        // secondAdmin: 3日以上だが7日未満
+        Order threeDaysOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 4, 10, 0));
+
+        threeDaysOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        threeDaysOrder.changeAssignedAdminAccount(
+                secondAdmin);
+
+        createHandlingStatusHistory(
+                threeDaysOrder,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                LocalDateTime.of(2026, 9, 7, 23, 59));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<AdminAssigneeActionRequiredCountProjection> result = orderRepository
+                .findActionRequiredOrderCountsByAssignee(
+                        LocalDateTime.of(2026, 9, 8, 0, 0),
+                        LocalDateTime.of(2026, 9, 4, 0, 0));
+
+        assertEquals(2, result.size());
+
+        assertEquals(
+                firstAdmin.getId(),
+                result.get(0).getAdminAccountId());
+
+        assertEquals(
+                3L,
+                result.get(0).getOrderCount());
+
+        assertEquals(
+                1L,
+                result.get(0).getThreeDaysOrMoreCount());
+
+        assertEquals(
+                1L,
+                result.get(0).getSevenDaysOrMoreCount());
+
+        assertEquals(
+                secondAdmin.getId(),
+                result.get(1).getAdminAccountId());
+
+        assertEquals(
+                1L,
+                result.get(1).getOrderCount());
+
+        assertEquals(
+                1L,
+                result.get(1).getThreeDaysOrMoreCount());
+
+        assertEquals(
+                0L,
+                result.get(1).getSevenDaysOrMoreCount());
     }
 
     @Test

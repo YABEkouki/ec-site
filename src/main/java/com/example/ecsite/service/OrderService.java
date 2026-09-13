@@ -828,14 +828,24 @@ public class OrderService {
 
     public List<AdminAssigneeActionRequiredSummary> getActionRequiredOrderCountsByAssignee() {
 
+        LocalDate today = LocalDate.now();
+
+        LocalDateTime threeDaysCutoffExclusive = resolveElapsedCutoffExclusive(3, today);
+
+        LocalDateTime sevenDaysCutoffExclusive = resolveElapsedCutoffExclusive(7, today);
+
         return orderRepository
-                .findActionRequiredOrderCountsByAssignee()
+                .findActionRequiredOrderCountsByAssignee(
+                        threeDaysCutoffExclusive,
+                        sevenDaysCutoffExclusive)
                 .stream()
                 .map(projection -> new AdminAssigneeActionRequiredSummary(
                         projection.getAdminAccountId(),
                         projection.getUsername(),
                         projection.getEnabled(),
-                        projection.getOrderCount()))
+                        projection.getOrderCount(),
+                        projection.getThreeDaysOrMoreCount(),
+                        projection.getSevenDaysOrMoreCount()))
                 .toList();
     }
 

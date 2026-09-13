@@ -417,19 +417,41 @@ public interface OrderRepository
                 a.id AS adminAccountId,
                 a.username AS username,
                 a.enabled AS enabled,
-                COUNT(o.id) AS orderCount
-            FROM orders o
+                COUNT(*) AS orderCount,
+                COUNT(*) FILTER (
+                    WHERE target_orders.latest_changed_at
+                        < CAST(:threeDaysCutoffExclusive AS timestamp)
+                ) AS threeDaysOrMoreCount,
+                COUNT(*) FILTER (
+                    WHERE target_orders.latest_changed_at
+                        < CAST(:sevenDaysCutoffExclusive AS timestamp)
+                ) AS sevenDaysOrMoreCount
+            FROM (
+                SELECT
+                    o.id,
+                    o.assigned_admin_account_id,
+                    MAX(h.changed_at) AS latest_changed_at
+                FROM orders o
+                LEFT JOIN order_handling_status_histories h
+                    ON h.order_id = o.id
+                WHERE o.handling_status IN ('NEEDS_ACTION', 'IN_PROGRESS')
+                  AND o.assigned_admin_account_id IS NOT NULL
+                GROUP BY
+                    o.id,
+                    o.assigned_admin_account_id
+            ) target_orders
             JOIN admin_accounts a
-                ON a.id = o.assigned_admin_account_id
-            WHERE o.handling_status IN ('NEEDS_ACTION', 'IN_PROGRESS')
+                ON a.id = target_orders.assigned_admin_account_id
             GROUP BY
                 a.id,
                 a.username,
                 a.enabled
             ORDER BY
-                COUNT(o.id) DESC,
+                COUNT(*) DESC,
                 a.username ASC
             """, nativeQuery = true)
-    List<AdminAssigneeActionRequiredCountProjection> findActionRequiredOrderCountsByAssignee();
+    List<AdminAssigneeActionRequiredCountProjection> findActionRequiredOrderCountsByAssignee(
+            LocalDateTime threeDaysCutoffExclusive,
+            LocalDateTime sevenDaysCutoffExclusive);
 
 }

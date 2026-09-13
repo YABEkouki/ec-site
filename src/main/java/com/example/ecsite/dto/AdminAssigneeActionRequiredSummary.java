@@ -4,5 +4,7 @@ public record AdminAssigneeActionRequiredSummary(
         Long adminAccountId,
         String username,
         boolean enabled,
-        long orderCount) {
+        long orderCount,
+        long threeDaysOrMoreCount,
+        long sevenDaysOrMoreCount) {
 }

@@ -2585,9 +2585,10 @@ class OrderServiceTest {
     }
 
     @Test
-    void getActionRequiredOrderCountsByAssigneeMapsRepositoryProjections() {
+    void getActionRequiredOrderCountsByAssigneeMapsRepositoryProjectionsWithAgingCounts() {
 
-        AdminAssigneeActionRequiredCountProjection first = mock(AdminAssigneeActionRequiredCountProjection.class);
+        AdminAssigneeActionRequiredCountProjection first = mock(
+                AdminAssigneeActionRequiredCountProjection.class);
 
         when(first.getAdminAccountId())
                 .thenReturn(10L);
@@ -2601,7 +2602,14 @@ class OrderServiceTest {
         when(first.getOrderCount())
                 .thenReturn(5L);
 
-        AdminAssigneeActionRequiredCountProjection second = mock(AdminAssigneeActionRequiredCountProjection.class);
+        when(first.getThreeDaysOrMoreCount())
+                .thenReturn(3L);
+
+        when(first.getSevenDaysOrMoreCount())
+                .thenReturn(1L);
+
+        AdminAssigneeActionRequiredCountProjection second = mock(
+                AdminAssigneeActionRequiredCountProjection.class);
 
         when(second.getAdminAccountId())
                 .thenReturn(20L);
@@ -2615,10 +2623,19 @@ class OrderServiceTest {
         when(second.getOrderCount())
                 .thenReturn(2L);
 
-        when(orderRepository.findActionRequiredOrderCountsByAssignee())
+        when(second.getThreeDaysOrMoreCount())
+                .thenReturn(1L);
+
+        when(second.getSevenDaysOrMoreCount())
+                .thenReturn(0L);
+
+        when(orderRepository.findActionRequiredOrderCountsByAssignee(
+                any(LocalDateTime.class),
+                any(LocalDateTime.class)))
                 .thenReturn(List.of(first, second));
 
-        List<AdminAssigneeActionRequiredSummary> result = orderService.getActionRequiredOrderCountsByAssignee();
+        List<AdminAssigneeActionRequiredSummary> result = orderService
+                .getActionRequiredOrderCountsByAssignee();
 
         assertEquals(2, result.size());
 
@@ -2627,7 +2644,9 @@ class OrderServiceTest {
                         10L,
                         "admin01",
                         true,
-                        5L),
+                        5L,
+                        3L,
+                        1L),
                 result.get(0));
 
         assertEquals(
@@ -2635,11 +2654,15 @@ class OrderServiceTest {
                         20L,
                         "admin02",
                         false,
-                        2L),
+                        2L,
+                        1L,
+                        0L),
                 result.get(1));
 
         verify(orderRepository)
-                .findActionRequiredOrderCountsByAssignee();
+                .findActionRequiredOrderCountsByAssignee(
+                        any(LocalDateTime.class),
+                        any(LocalDateTime.class));
     }
 
 }

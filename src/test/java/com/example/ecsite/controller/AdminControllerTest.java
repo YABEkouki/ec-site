@@ -102,12 +102,16 @@ class AdminControllerTest {
                         10L,
                         "admin01",
                         true,
-                        5L),
+                        5L,
+                        3L,
+                        1L),
                 new AdminAssigneeActionRequiredSummary(
                         20L,
                         "admin02",
                         false,
-                        2L));
+                        2L,
+                        1L,
+                        0L));
 
         when(orderService.getActionRequiredOrderCountsByAssignee())
                 .thenReturn(assigneeSummaries);

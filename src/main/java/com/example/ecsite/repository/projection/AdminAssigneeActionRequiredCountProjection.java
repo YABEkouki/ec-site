@@ -9,4 +9,8 @@ public interface AdminAssigneeActionRequiredCountProjection {
     boolean getEnabled();
 
     long getOrderCount();
+
+    long getThreeDaysOrMoreCount();
+
+    long getSevenDaysOrMoreCount();
 }
