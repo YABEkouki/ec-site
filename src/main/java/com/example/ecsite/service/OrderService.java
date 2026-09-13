@@ -373,7 +373,7 @@ public class OrderService {
                 }
             }
         }
-        
+
         UUID changeEventId = UUID.randomUUID();
 
         if (assignedAdminChanged) {
@@ -443,6 +443,47 @@ public class OrderService {
             int page,
             int size) {
 
+        AdminOrderAssigneeFilter assigneeFilter = searchForm.getAssigneeFilter();
+        if (assigneeFilter == null) {
+            assigneeFilter = AdminOrderAssigneeFilter.ALL;
+        }
+
+        Long assignedAdminAccountId = switch (assigneeFilter) {
+            case ALL, UNASSIGNED -> null;
+            case ME -> loginAdminAccountId;
+            case SPECIFIC -> searchForm.getAssignedAdminAccountId();
+        };
+
+        return searchActionRequiredOrderDetails(
+                searchForm,
+                assigneeFilter,
+                assignedAdminAccountId,
+                page,
+                size);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AdminActionRequiredOrderDto> searchMyAssignedOrderDetails(
+            AdminActionRequiredOrderSearchForm searchForm,
+            Long loginAdminAccountId,
+            int page,
+            int size) {
+
+        return searchActionRequiredOrderDetails(
+                searchForm,
+                AdminOrderAssigneeFilter.ME,
+                loginAdminAccountId,
+                page,
+                size);
+    }
+
+    private Page<AdminActionRequiredOrderDto> searchActionRequiredOrderDetails(
+            AdminActionRequiredOrderSearchForm searchForm,
+            AdminOrderAssigneeFilter assigneeFilter,
+            Long assignedAdminAccountId,
+            int page,
+            int size) {
+
         LocalDateTime from = resolveFrom(searchForm.getFrom());
         LocalDateTime toExclusive = resolveToExclusive(searchForm.getTo());
 
@@ -460,18 +501,6 @@ public class OrderService {
                 : searchForm.getSort();
 
         Pageable pageable = PageRequest.of(page, size);
-
-        AdminOrderAssigneeFilter assigneeFilter = searchForm.getAssigneeFilter();
-
-        if (assigneeFilter == null) {
-            assigneeFilter = AdminOrderAssigneeFilter.ALL;
-        }
-
-        Long assignedAdminAccountId = switch (assigneeFilter) {
-            case ALL, UNASSIGNED -> null;
-            case ME -> loginAdminAccountId;
-            case SPECIFIC -> searchForm.getAssignedAdminAccountId();
-        };
 
         Page<AdminActionRequiredOrderSearchProjection> projectionPage = orderRepository.searchActionRequiredOrders(
                 searchForm.getOrderId(),
@@ -521,6 +550,15 @@ public class OrderService {
                     updatedAt,
                     elapsedDays);
         });
+    }
+
+    @Transactional(readOnly = true)
+    public long countMyAssignedActionRequiredOrders(Long loginAdminAccountId) {
+        return orderRepository.countByAssignedAdminAccount_IdAndHandlingStatusIn(
+                loginAdminAccountId,
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS));
     }
 
     @Transactional(readOnly = true)

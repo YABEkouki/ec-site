@@ -44,7 +44,6 @@ public interface OrderRepository
             LEFT JOIN FETCH o.assignedAdminAccount
             WHERE o.id = :id
             """)
-
     Optional<Order> findByIdWithItems(
             @Param("id") Long id);
 
@@ -82,6 +81,10 @@ public interface OrderRepository
     long countByStatus(OrderStatus status);
 
     long countByHandlingStatus(OrderHandlingStatus handlingStatus);
+
+    long countByAssignedAdminAccount_IdAndHandlingStatusIn(
+            Long assignedAdminAccountId,
+            List<OrderHandlingStatus> handlingStatuses);
 
     @Query(value = """
             SELECT o

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<body>
+
+    <th:block th:fragment="orderTable">
+
+        <p th:if="${#lists.isEmpty(orders)}">
+            注文はありません。
+        </p>
+
+        <table th:unless="${#lists.isEmpty(orders)}">
+
+            <thead>
+                <tr>
+                    <th>注文番号</th>
+                    <th>ユーザーID</th>
+                    <th>注文日時</th>
+                    <th>受取人</th>
+                    <th>合計金額</th>
+                    <th>状態</th>
+                    <th>対応状況</th>
+                    <th>担当者</th>
+                    <th>対応状況更新日時</th>
+                    <th>経過日数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr th:each="item : ${orders}">
+
+                    <td th:text="${item.order.id}"></td>
+
+                    <td th:text="${item.order.userId}"></td>
+
+                    <td th:text="${#temporals.format(
+                        item.order.orderedAt,
+                        'yyyy/MM/dd HH:mm')}">
+                    </td>
+
+                    <td>
+                        <span th:if="${item.order.shippingName != null}" th:text="${item.order.shippingName}">
+                        </span>
+
+                        <span th:unless="${item.order.shippingName != null}">
+                            未登録
+                        </span>
+                    </td>
+
+                    <td>
+                        <span th:text="${#numbers.formatInteger(
+                            item.order.totalAmount,
+                            1,
+                            'COMMA')}">
+                        </span>
+                        円
+                    </td>
+
+                    <td>
+                        <span class="status-badge"
+                            th:classappend="' status-' + ${#strings.toLowerCase(item.order.status.name())}"
+                            th:text="${item.order.status.displayName}">
+                        </span>
+                    </td>
+
+                    <td th:text="${item.order.handlingStatus.displayName}">
+                    </td>
+
+                    <td>
+                        <span th:if="${item.order.assignedAdminAccount != null}" th:text="${item.order.assignedAdminAccount.username
+                                  + (item.order.assignedAdminAccount.enabled
+                                      ? ''
+                                      : '（無効）')}">
+                        </span>
+
+                        <span th:unless="${item.order.assignedAdminAccount != null}">
+                            未担当
+                        </span>
+                    </td>
+
+                    <td>
+                        <span th:if="${item.handlingStatusUpdatedAt != null}" th:text="${#temporals.format(
+                                  item.handlingStatusUpdatedAt,
+                                  'yyyy/MM/dd HH:mm')}">
+                        </span>
+
+                        <span th:unless="${item.handlingStatusUpdatedAt != null}">
+                            －
+                        </span>
+                    </td>
+
+                    <td>
+                        <span th:if="${item.elapsedDays != null}" th:text="${item.elapsedDays + '日'}" th:class="${item.elapsedDays >= 7}
+                                  ? 'action-required-danger'
+                                  : (${item.elapsedDays >= 3}
+                                      ? 'action-required-warning'
+                                      : '')">
+                        </span>
+
+                        <span th:unless="${item.elapsedDays != null}">
+                            －
+                        </span>
+                    </td>
+
+                    <td>
+                        <a th:href="@{/admin/orders/{id}(id=${item.order.id})}" class="button button-secondary">
+                            詳細
+                        </a>
+                    </td>
+
+                </tr>
+            </tbody>
+
+        </table>
+
+    </th:block>
+
+</body>
+
+</html>

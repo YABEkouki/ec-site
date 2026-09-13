@@ -1177,4 +1177,96 @@ class AdminOrderControllerTest {
                         exception.getMessage());
     }
 
+    @Test
+    void myAssignedOrdersDisplaysLoggedInAdminsOrders() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchMyAssignedOrderDetails(
+                searchForm,
+                ADMIN_ID,
+                0,
+                10))
+                .thenReturn(orderPage);
+
+        String viewName = adminOrderController.myAssignedOrders(
+                searchForm,
+                0,
+                10,
+                loginUser,
+                model);
+
+        assertEquals(
+                "admin/orders/my-assigned",
+                viewName);
+
+        verify(orderService).searchMyAssignedOrderDetails(
+                searchForm,
+                ADMIN_ID,
+                0,
+                10);
+
+        verify(model).addAttribute(
+                "orders",
+                orderPage.getContent());
+
+        verify(model).addAttribute(
+                "orderPage",
+                orderPage);
+
+        verify(model).addAttribute(
+                "statuses",
+                OrderStatus.values());
+
+        verify(model).addAttribute(
+                "handlingStatuses",
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS));
+
+        verify(model).addAttribute(
+                "actionRequiredOrderSorts",
+                ActionRequiredOrderSort.values());
+    }
+
+    @Test
+    void myAssignedOrdersSanitizesPageAndSize() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchMyAssignedOrderDetails(
+                searchForm,
+                ADMIN_ID,
+                0,
+                100))
+                .thenReturn(orderPage);
+
+        String viewName = adminOrderController.myAssignedOrders(
+                searchForm,
+                -1,
+                999,
+                loginUser,
+                model);
+
+        assertEquals(
+                "admin/orders/my-assigned",
+                viewName);
+
+        verify(orderService).searchMyAssignedOrderDetails(
+                searchForm,
+                ADMIN_ID,
+                0,
+                100);
+    }
+
 }

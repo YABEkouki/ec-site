@@ -1379,6 +1379,105 @@ class OrderRepositoryTest {
     }
 
     @Test
+    void countByAssignedAdminAccountIdAndHandlingStatusInCountsOnlyMyActionRequiredOrders() {
+
+        User user = createUser(
+                "my-assigned-count-user");
+
+        AdminAccount loginAdmin = createAdminAccount(
+                "my-assigned-count-admin",
+                true);
+
+        AdminAccount otherAdmin = createAdminAccount(
+                "my-assigned-count-other-admin",
+                true);
+
+        Order needsActionOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        1,
+                        10,
+                        0));
+
+        needsActionOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        needsActionOrder.changeAssignedAdminAccount(
+                loginAdmin);
+
+        Order inProgressOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        2,
+                        10,
+                        0));
+
+        inProgressOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        inProgressOrder.changeAssignedAdminAccount(
+                loginAdmin);
+
+        Order resolvedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        3,
+                        10,
+                        0));
+
+        resolvedOrder.changeHandlingStatus(
+                OrderHandlingStatus.RESOLVED);
+
+        resolvedOrder.changeAssignedAdminAccount(
+                loginAdmin);
+
+        Order otherAdminsOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        4,
+                        10,
+                        0));
+
+        otherAdminsOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        otherAdminsOrder.changeAssignedAdminAccount(
+                otherAdmin);
+
+        Order unassignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        5,
+                        10,
+                        0));
+
+        unassignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        long result = orderRepository
+                .countByAssignedAdminAccount_IdAndHandlingStatusIn(
+                        loginAdmin.getId(),
+                        List.of(
+                                OrderHandlingStatus.NEEDS_ACTION,
+                                OrderHandlingStatus.IN_PROGRESS));
+
+        assertEquals(2L, result);
+    }
+
+    @Test
     void findAllWithAssignedAdminByIdInFetchesAssignedAdminAccount() {
 
         User user = createUser("assigned-admin-fetch-user");

@@ -127,6 +127,16 @@
             </tbody>
         </table>
 
+        <p>
+            自分の担当注文：
+            <strong th:text="${myAssignedOrderCount}">0</strong>
+            件
+
+            <a th:href="@{/admin/orders/my-assigned}" class="button button-secondary">
+                一覧を見る
+            </a>
+        </p>
+
         <a th:href="@{/admin/orders/action-required}" class="button button-secondary">
             要対応注文一覧
         </a>
