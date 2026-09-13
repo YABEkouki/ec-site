@@ -1,6 +1,8 @@
 package com.example.ecsite.controller;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.ui.Model;
 
 import com.example.ecsite.entity.AdminAccount;
@@ -20,6 +23,7 @@ import com.example.ecsite.entity.OrderAssigneeHistory;
 import com.example.ecsite.form.AdminOrderAssigneeHistoryFilter;
 import com.example.ecsite.form.AdminOrderAssigneeHistorySearchForm;
 import com.example.ecsite.service.AdminAccountService;
+import com.example.ecsite.service.OrderAssigneeHistoryCsvService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,34 +38,33 @@ class AdminOrderAssigneeHistoryControllerTest {
     @Mock
     private Model model;
 
+    @Mock
+    private OrderAssigneeHistoryCsvService orderAssigneeHistoryCsvService;
+
     private AdminOrderAssigneeHistoryController controller;
 
     @BeforeEach
     void setUp() {
         controller = new AdminOrderAssigneeHistoryController(
                 service,
-                adminAccountService);
+                adminAccountService,
+                orderAssigneeHistoryCsvService);
     }
 
     @Test
     void listDisplaysHistoriesAndAdminAccounts() {
 
-        AdminOrderAssigneeHistorySearchForm searchForm =
-                new AdminOrderAssigneeHistorySearchForm();
+        AdminOrderAssigneeHistorySearchForm searchForm = new AdminOrderAssigneeHistorySearchForm();
 
-        OrderAssigneeHistory history =
-                org.mockito.Mockito.mock(
-                        OrderAssigneeHistory.class);
+        OrderAssigneeHistory history = org.mockito.Mockito.mock(
+                OrderAssigneeHistory.class);
 
-        Page<OrderAssigneeHistory> historyPage =
-                new PageImpl<>(List.of(history));
+        Page<OrderAssigneeHistory> historyPage = new PageImpl<>(List.of(history));
 
-        AdminAccount adminAccount =
-                org.mockito.Mockito.mock(
-                        AdminAccount.class);
+        AdminAccount adminAccount = org.mockito.Mockito.mock(
+                AdminAccount.class);
 
-        List<AdminAccount> adminAccounts =
-                List.of(adminAccount);
+        List<AdminAccount> adminAccounts = List.of(adminAccount);
 
         when(service.search(
                 searchForm,
@@ -111,8 +114,7 @@ class AdminOrderAssigneeHistoryControllerTest {
     @Test
     void listPassesSearchConditionsToService() {
 
-        AdminOrderAssigneeHistorySearchForm searchForm =
-                new AdminOrderAssigneeHistorySearchForm();
+        AdminOrderAssigneeHistorySearchForm searchForm = new AdminOrderAssigneeHistorySearchForm();
 
         searchForm.setOrderId(10L);
 
@@ -126,8 +128,7 @@ class AdminOrderAssigneeHistoryControllerTest {
         searchForm.setChangedByUsername(
                 "AdminUser");
 
-        Page<OrderAssigneeHistory> historyPage =
-                new PageImpl<>(List.of());
+        Page<OrderAssigneeHistory> historyPage = new PageImpl<>(List.of());
 
         when(service.search(
                 searchForm,
@@ -158,11 +159,9 @@ class AdminOrderAssigneeHistoryControllerTest {
     @Test
     void listSanitizesPageAndSize() {
 
-        AdminOrderAssigneeHistorySearchForm searchForm =
-                new AdminOrderAssigneeHistorySearchForm();
+        AdminOrderAssigneeHistorySearchForm searchForm = new AdminOrderAssigneeHistorySearchForm();
 
-        Page<OrderAssigneeHistory> historyPage =
-                new PageImpl<>(List.of());
+        Page<OrderAssigneeHistory> historyPage = new PageImpl<>(List.of());
 
         when(service.search(
                 searchForm,
@@ -193,11 +192,9 @@ class AdminOrderAssigneeHistoryControllerTest {
     @Test
     void listSanitizesSizeLessThanOne() {
 
-        AdminOrderAssigneeHistorySearchForm searchForm =
-                new AdminOrderAssigneeHistorySearchForm();
+        AdminOrderAssigneeHistorySearchForm searchForm = new AdminOrderAssigneeHistorySearchForm();
 
-        Page<OrderAssigneeHistory> historyPage =
-                new PageImpl<>(List.of());
+        Page<OrderAssigneeHistory> historyPage = new PageImpl<>(List.of());
 
         when(service.search(
                 searchForm,
@@ -224,4 +221,50 @@ class AdminOrderAssigneeHistoryControllerTest {
                 0,
                 1);
     }
+
+    @Test
+    void csvOutputsAllHistoriesMatchingSearchConditions() {
+
+        AdminOrderAssigneeHistorySearchForm searchForm = new AdminOrderAssigneeHistorySearchForm();
+
+        OrderAssigneeHistory history = mock(OrderAssigneeHistory.class);
+
+        List<OrderAssigneeHistory> histories = List.of(history);
+
+        byte[] csvBytes = new byte[] { 1, 2, 3 };
+
+        when(service.searchAll(searchForm))
+                .thenReturn(histories);
+
+        when(orderAssigneeHistoryCsvService.createCsv(histories))
+                .thenReturn(csvBytes);
+
+        ResponseEntity<byte[]> response = controller.csv(searchForm);
+
+        assertEquals(
+                200,
+                response.getStatusCode().value());
+
+        assertEquals(
+                "text/csv;charset=UTF-8",
+                response.getHeaders()
+                        .getContentType()
+                        .toString());
+
+        assertEquals(
+                "attachment; filename=\"order-assignee-histories.csv\"",
+                response.getHeaders()
+                        .getFirst("Content-Disposition"));
+
+        assertArrayEquals(
+                csvBytes,
+                response.getBody());
+
+        verify(service)
+                .searchAll(searchForm);
+
+        verify(orderAssigneeHistoryCsvService)
+                .createCsv(histories);
+    }
+
 }

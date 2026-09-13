@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderAssigneeHistory;
@@ -258,6 +259,60 @@ class OrderAssigneeHistoryServiceTest {
                 LocalDateTime.of(2000, 1, 1, 0, 0),
                 LocalDateTime.of(2100, 1, 1, 0, 0),
                 PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchAllReturnsAllHistoriesMatchingSearchConditions() {
+
+        AdminOrderAssigneeHistorySearchForm form = new AdminOrderAssigneeHistorySearchForm();
+
+        form.setOrderId(10L);
+
+        form.setFromAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.SPECIFIC);
+        form.setFromAdminAccountId(20L);
+
+        form.setToAssigneeFilter(
+                AdminOrderAssigneeHistoryFilter.UNASSIGNED);
+
+        form.setChangedByUsername("admin");
+
+        form.setFrom(LocalDate.of(2026, 9, 1));
+        form.setTo(LocalDate.of(2026, 9, 13));
+
+        OrderAssigneeHistory history = org.mockito.Mockito.mock(
+                OrderAssigneeHistory.class);
+
+        Page<OrderAssigneeHistory> expected = new PageImpl<>(List.of(history));
+
+        when(repository.search(
+                eq(10L),
+                eq(false),
+                eq(20L),
+                eq(true),
+                eq(null),
+                eq("admin"),
+                eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
+                eq(LocalDateTime.of(2026, 9, 14, 0, 0)),
+                eq(Pageable.unpaged())))
+                .thenReturn(expected);
+
+        List<OrderAssigneeHistory> actual = service.searchAll(form);
+
+        assertEquals(
+                List.of(history),
+                actual);
+
+        verify(repository).search(
+                10L,
+                false,
+                20L,
+                true,
+                null,
+                "admin",
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 14, 0, 0),
+                Pageable.unpaged());
     }
 
 }
