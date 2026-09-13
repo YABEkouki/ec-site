@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
+import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
@@ -823,6 +824,19 @@ public class OrderService {
     @Transactional(readOnly = true)
     public long countOrdersByHandlingStatus(OrderHandlingStatus handlingStatus) {
         return orderRepository.countByHandlingStatus(handlingStatus);
+    }
+
+    public List<AdminAssigneeActionRequiredSummary> getActionRequiredOrderCountsByAssignee() {
+
+        return orderRepository
+                .findActionRequiredOrderCountsByAssignee()
+                .stream()
+                .map(projection -> new AdminAssigneeActionRequiredSummary(
+                        projection.getAdminAccountId(),
+                        projection.getUsername(),
+                        projection.getEnabled(),
+                        projection.getOrderCount()))
+                .toList();
     }
 
     private LocalDateTime resolveFrom(

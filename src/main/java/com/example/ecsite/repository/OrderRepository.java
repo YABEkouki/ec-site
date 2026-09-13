@@ -16,6 +16,7 @@ import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
+import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
@@ -410,4 +411,25 @@ public interface OrderRepository
             @Param("sevenDaysCutoffExclusive") LocalDateTime sevenDaysCutoffExclusive,
             @Param("assigneeFilter") String assigneeFilter,
             @Param("assignedAdminAccountId") Long assignedAdminAccountId);
+
+    @Query(value = """
+            SELECT
+                a.id AS adminAccountId,
+                a.username AS username,
+                a.enabled AS enabled,
+                COUNT(o.id) AS orderCount
+            FROM orders o
+            JOIN admin_accounts a
+                ON a.id = o.assigned_admin_account_id
+            WHERE o.handling_status IN ('NEEDS_ACTION', 'IN_PROGRESS')
+            GROUP BY
+                a.id,
+                a.username,
+                a.enabled
+            ORDER BY
+                COUNT(o.id) DESC,
+                a.username ASC
+            """, nativeQuery = true)
+    List<AdminAssigneeActionRequiredCountProjection> findActionRequiredOrderCountsByAssignee();
+
 }
