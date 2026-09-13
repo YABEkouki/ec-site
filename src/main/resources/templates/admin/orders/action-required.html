@@ -67,7 +67,7 @@
             <div class="order-search-field">
                 <label for="assigneeFilter">担当者</label>
 
-                <select id="assigneeFilter" th:field="*{assigneeFilter}">
+                <select id="assigneeFilter" th:field="*{assigneeFilter}" onchange="updateAssignedAdminSelectState()">
                     <option th:each="assigneeFilter : ${assigneeFilters}" th:value="${assigneeFilter}"
                         th:text="${assigneeFilter.displayName}">
                     </option>
@@ -81,7 +81,7 @@
                     <option value="">選択してください</option>
 
                     <option th:each="admin : ${adminAccounts}" th:value="${admin.id}" th:text="${admin.username
-                + (admin.enabled ? '' : '（無効）')}">
+                    + (admin.enabled ? '' : '（無効）')}">
                     </option>
                 </select>
             </div>
@@ -301,6 +301,24 @@
             管理者トップへ戻る
         </a>
     </p>
+
+    <script>
+        function updateAssignedAdminSelectState() {
+
+            const assigneeFilter =
+                document.getElementById("assigneeFilter");
+
+            const assignedAdmin =
+                document.getElementById("assignedAdminAccountId");
+
+            assignedAdmin.disabled =
+                assigneeFilter.value !== "SPECIFIC";
+        }
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            updateAssignedAdminSelectState);
+    </script>
 
 </body>
 

@@ -106,6 +106,11 @@ public class AdminAccountService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<AdminAccount> findAllOrderByUsernameAsc() {
+        return adminAccountRepository.findAllByOrderByUsernameAsc();
+    }
+
     private String normalizeUsername(String username) {
         return username == null ? null : username.trim();
     }

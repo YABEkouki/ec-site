@@ -17,4 +17,6 @@ public interface AdminAccountRepository extends JpaRepository<AdminAccount, Long
 
     List<AdminAccount> findByEnabledTrueOrderByUsernameAsc();
 
+    List<AdminAccount> findAllByOrderByUsernameAsc();
+
 }
