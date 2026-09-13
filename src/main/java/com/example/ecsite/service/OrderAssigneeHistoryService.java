@@ -6,7 +6,9 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderAssigneeHistory;
@@ -51,10 +53,30 @@ public class OrderAssigneeHistoryService {
         return repository.findByOrderIdOrderByChangedAtAscIdAsc(orderId);
     }
 
+    @Transactional(readOnly = true)
     public Page<OrderAssigneeHistory> search(
             AdminOrderAssigneeHistorySearchForm form,
             int page,
             int size) {
+
+        return search(
+                form,
+                PageRequest.of(page, size));
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderAssigneeHistory> searchAll(
+            AdminOrderAssigneeHistorySearchForm form) {
+
+        return search(
+                form,
+                Pageable.unpaged())
+                .getContent();
+    }
+
+    private Page<OrderAssigneeHistory> search(
+            AdminOrderAssigneeHistorySearchForm form,
+            Pageable pageable) {
 
         Boolean fromUnassigned = toUnassignedFlag(
                 form.getFromAssigneeFilter());
@@ -90,7 +112,7 @@ public class OrderAssigneeHistoryService {
                 changedByUsername,
                 from,
                 toExclusive,
-                PageRequest.of(page, size));
+                pageable);
     }
 
     private Boolean toUnassignedFlag(
