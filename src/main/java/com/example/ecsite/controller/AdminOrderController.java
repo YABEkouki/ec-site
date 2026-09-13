@@ -474,4 +474,44 @@ public class AdminOrderController {
         return "admin/orders/my-assigned";
     }
 
+    @GetMapping("/unassigned")
+    public String unassignedOrders(
+            @ModelAttribute("searchForm") AdminActionRequiredOrderSearchForm searchForm,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            Model model) {
+
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.clamp(size, 1, 100);
+
+        Page<AdminActionRequiredOrderDto> orderPage = orderService.searchUnassignedOrderDetails(
+                searchForm,
+                safePage,
+                safeSize);
+
+        model.addAttribute(
+                "orders",
+                orderPage.getContent());
+
+        model.addAttribute(
+                "orderPage",
+                orderPage);
+
+        model.addAttribute(
+                "statuses",
+                OrderStatus.values());
+
+        model.addAttribute(
+                "handlingStatuses",
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS));
+
+        model.addAttribute(
+                "actionRequiredOrderSorts",
+                ActionRequiredOrderSort.values());
+
+        return "admin/orders/unassigned";
+    }
+
 }

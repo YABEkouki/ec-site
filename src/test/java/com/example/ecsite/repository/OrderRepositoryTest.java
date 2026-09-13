@@ -1741,6 +1741,81 @@ class OrderRepositoryTest {
                 result.getSevenDaysOrMoreCount());
     }
 
+    @Test
+    void countByAssignedAdminAccountIsNullAndHandlingStatusInCountsOnlyUnassignedActionRequiredOrders() {
+
+        User user = createUser(
+                "unassigned-action-required-count-user");
+
+        AdminAccount admin = createAdminAccount(
+                "unassigned-action-required-count-admin",
+                true);
+
+        Order needsActionOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        1,
+                        10,
+                        0));
+
+        needsActionOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        Order inProgressOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        2,
+                        10,
+                        0));
+
+        inProgressOrder.changeHandlingStatus(
+                OrderHandlingStatus.IN_PROGRESS);
+
+        Order resolvedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        3,
+                        10,
+                        0));
+
+        resolvedOrder.changeHandlingStatus(
+                OrderHandlingStatus.RESOLVED);
+
+        Order assignedOrder = createOrder(
+                user.getId(),
+                LocalDateTime.of(
+                        2026,
+                        9,
+                        4,
+                        10,
+                        0));
+
+        assignedOrder.changeHandlingStatus(
+                OrderHandlingStatus.NEEDS_ACTION);
+
+        assignedOrder.changeAssignedAdminAccount(
+                admin);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        long result = orderRepository
+                .countByAssignedAdminAccountIsNullAndHandlingStatusIn(
+                        List.of(
+                                OrderHandlingStatus.NEEDS_ACTION,
+                                OrderHandlingStatus.IN_PROGRESS));
+
+        assertEquals(
+                2L,
+                result);
+    }
+
     private Order createOrder(
             Long userId,
             LocalDateTime orderedAt,

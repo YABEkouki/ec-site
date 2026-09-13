@@ -1269,4 +1269,84 @@ class AdminOrderControllerTest {
                 100);
     }
 
+    @Test
+    void unassignedOrdersDisplaysUnassignedActionRequiredOrders() {
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchUnassignedOrderDetails(
+                searchForm,
+                0,
+                10))
+                .thenReturn(orderPage);
+
+        String viewName = adminOrderController.unassignedOrders(
+                searchForm,
+                0,
+                10,
+                model);
+
+        assertEquals(
+                "admin/orders/unassigned",
+                viewName);
+
+        verify(orderService).searchUnassignedOrderDetails(
+                searchForm,
+                0,
+                10);
+
+        verify(model).addAttribute(
+                "orderPage",
+                orderPage);
+
+        verify(model).addAttribute(
+                "orders",
+                orderPage.getContent());
+
+        verify(model).addAttribute(
+                "statuses",
+                OrderStatus.values());
+
+        verify(model).addAttribute(
+                "handlingStatuses",
+                List.of(
+                        OrderHandlingStatus.NEEDS_ACTION,
+                        OrderHandlingStatus.IN_PROGRESS));
+
+        verify(model).addAttribute(
+                "actionRequiredOrderSorts",
+                ActionRequiredOrderSort.values());
+    }
+
+    @Test
+    void unassignedOrdersSanitizesPageAndSize() {
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        Page<AdminActionRequiredOrderDto> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchUnassignedOrderDetails(
+                searchForm,
+                0,
+                100))
+                .thenReturn(orderPage);
+
+        String viewName = adminOrderController.unassignedOrders(
+                searchForm,
+                -1,
+                999,
+                model);
+
+        assertEquals(
+                "admin/orders/unassigned",
+                viewName);
+
+        verify(orderService).searchUnassignedOrderDetails(
+                searchForm,
+                0,
+                100);
+    }
+
 }

@@ -2441,6 +2441,60 @@ class OrderServiceTest {
     }
 
     @Test
+    void searchUnassignedOrderDetailsForcesUnassignedFilter() {
+
+        AdminActionRequiredOrderSearchForm searchForm = new AdminActionRequiredOrderSearchForm();
+
+        searchForm.setAssigneeFilter(
+                AdminOrderAssigneeFilter.SPECIFIC);
+
+        searchForm.setAssignedAdminAccountId(999L);
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        Page<AdminActionRequiredOrderSearchProjection> projectionPage = new PageImpl<>(
+                List.of(),
+                pageable,
+                0);
+
+        when(orderRepository.searchActionRequiredOrders(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                eq(AdminOrderAssigneeFilter.UNASSIGNED.name()),
+                isNull(),
+                eq(ActionRequiredOrderSort.OLDEST.name()),
+                eq(pageable)))
+                .thenReturn(projectionPage);
+
+        Page<AdminActionRequiredOrderDto> result = orderService.searchUnassignedOrderDetails(
+                searchForm,
+                0,
+                10);
+
+        assertEquals(
+                0,
+                result.getTotalElements());
+
+        verify(orderRepository).searchActionRequiredOrders(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                eq(AdminOrderAssigneeFilter.UNASSIGNED.name()),
+                isNull(),
+                eq(ActionRequiredOrderSort.OLDEST.name()),
+                eq(pageable));
+    }
+
+    @Test
     void countMyAssignedActionRequiredOrdersCountsNeedsActionAndInProgress() {
 
         Long loginAdminAccountId = 20L;
@@ -2461,6 +2515,29 @@ class OrderServiceTest {
         verify(orderRepository)
                 .countByAssignedAdminAccount_IdAndHandlingStatusIn(
                         loginAdminAccountId,
+                        List.of(
+                                OrderHandlingStatus.NEEDS_ACTION,
+                                OrderHandlingStatus.IN_PROGRESS));
+    }
+
+    @Test
+    void countUnassignedActionRequiredOrdersCountsNeedsActionAndInProgress() {
+
+        when(orderRepository
+                .countByAssignedAdminAccountIsNullAndHandlingStatusIn(
+                        List.of(
+                                OrderHandlingStatus.NEEDS_ACTION,
+                                OrderHandlingStatus.IN_PROGRESS)))
+                .thenReturn(4L);
+
+        long result = orderService.countUnassignedActionRequiredOrders();
+
+        assertEquals(
+                4L,
+                result);
+
+        verify(orderRepository)
+                .countByAssignedAdminAccountIsNullAndHandlingStatusIn(
                         List.of(
                                 OrderHandlingStatus.NEEDS_ACTION,
                                 OrderHandlingStatus.IN_PROGRESS));
