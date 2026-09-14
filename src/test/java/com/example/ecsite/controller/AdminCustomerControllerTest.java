@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.example.ecsite.dto.AdminCustomerDetail;
 import com.example.ecsite.dto.AdminCustomerListItem;
+import com.example.ecsite.dto.AdminCustomerPurchaseSummary;
 import com.example.ecsite.dto.AdminCustomerShippingAddress;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.CustomerNotFoundException;
@@ -223,6 +225,12 @@ class AdminCustomerControllerTest {
         when(adminCustomerService.findCustomerDetail(10L))
                 .thenReturn(customer);
 
+        when(adminCustomerService.getPurchaseSummary(10L))
+                .thenReturn(new AdminCustomerPurchaseSummary(
+                        0L,
+                        0L,
+                        null));
+
         mockMvc.perform(
                 get("/admin/customers/10")
                         .with(user("admin")
@@ -400,6 +408,40 @@ class AdminCustomerControllerTest {
 
         verify(adminCustomerService)
                 .findCustomerDetail(999999L);
+    }
+
+    @Test
+    void detailAddsPurchaseSummaryToModel() throws Exception {
+        Long userId = 1L;
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                userId,
+                "user1",
+                true,
+                "山田 太郎",
+                "1000001",
+                "東京都",
+                "千代田区",
+                "丸の内1-1-1",
+                "09012345678",
+                List.of());
+
+        AdminCustomerPurchaseSummary purchaseSummary = new AdminCustomerPurchaseSummary(
+                4L,
+                5000L,
+                LocalDateTime.of(2026, 9, 4, 13, 0));
+
+        when(adminCustomerService.findCustomerDetail(userId))
+                .thenReturn(customer);
+        when(adminCustomerService.getPurchaseSummary(userId))
+                .thenReturn(purchaseSummary);
+
+        mockMvc.perform(get("/admin/customers/{id}", userId)
+                .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/customers/detail"))
+                .andExpect(model().attribute("customer", customer))
+                .andExpect(model().attribute("purchaseSummary", purchaseSummary));
     }
 
 }

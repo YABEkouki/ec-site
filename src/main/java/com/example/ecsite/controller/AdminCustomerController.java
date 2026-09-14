@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import com.example.ecsite.dto.AdminCustomerDetail;
 import com.example.ecsite.dto.AdminCustomerListItem;
+import com.example.ecsite.dto.AdminCustomerPurchaseSummary;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.form.AdminCustomerSearchForm;
 import com.example.ecsite.service.AdminCustomerService;
@@ -62,10 +63,10 @@ public class AdminCustomerController {
             Model model) {
 
         AdminCustomerDetail customer = adminCustomerService.findCustomerDetail(id);
+        AdminCustomerPurchaseSummary purchaseSummary = adminCustomerService.getPurchaseSummary(id);
 
-        model.addAttribute(
-                "customer",
-                customer);
+        model.addAttribute("customer", customer);
+        model.addAttribute("purchaseSummary", purchaseSummary);
 
         return "admin/customers/detail";
     }

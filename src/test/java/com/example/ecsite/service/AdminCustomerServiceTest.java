@@ -1,5 +1,6 @@
 package com.example.ecsite.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -7,9 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,21 +29,27 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.example.ecsite.dto.AdminCustomerDetail;
 import com.example.ecsite.dto.AdminCustomerListItem;
+import com.example.ecsite.dto.AdminCustomerPurchaseSummary;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.entity.UserProfile;
 import com.example.ecsite.exception.CustomerNotFoundException;
 import com.example.ecsite.form.AdminCustomerSearchForm;
+import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.ShippingAddressRepository;
 import com.example.ecsite.repository.UserProfileRepository;
 import com.example.ecsite.repository.UserRepository;
 import com.example.ecsite.repository.projection.AdminCustomerListProjection;
+import com.example.ecsite.repository.projection.AdminCustomerPurchaseSummaryProjection;
 
 @ExtendWith(MockitoExtension.class)
 class AdminCustomerServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private OrderRepository orderRepository;
 
     @Mock
     private UserProfileRepository userProfileRepository;
@@ -56,7 +65,8 @@ class AdminCustomerServiceTest {
         adminCustomerService = new AdminCustomerService(
                 userRepository,
                 userProfileRepository,
-                shippingAddressRepository);
+                shippingAddressRepository,
+                orderRepository);
     }
 
     @Test
@@ -404,4 +414,27 @@ class AdminCustomerServiceTest {
             }
         };
     }
+
+    @Test
+    void getPurchaseSummaryReturnsMappedSummary() {
+        Long userId = 1L;
+
+        AdminCustomerPurchaseSummaryProjection projection = mock(AdminCustomerPurchaseSummaryProjection.class);
+
+        when(projection.getOrderCount()).thenReturn(4L);
+        when(projection.getPurchaseAmount()).thenReturn(5000L);
+        when(projection.getLastOrderedAt())
+                .thenReturn(LocalDateTime.of(2026, 9, 4, 13, 0));
+
+        when(orderRepository.findCustomerPurchaseSummary(userId))
+                .thenReturn(projection);
+
+        AdminCustomerPurchaseSummary summary = adminCustomerService.getPurchaseSummary(userId);
+
+        assertThat(summary.orderCount()).isEqualTo(4L);
+        assertThat(summary.purchaseAmount()).isEqualTo(5000L);
+        assertThat(summary.lastOrderedAt())
+                .isEqualTo(LocalDateTime.of(2026, 9, 4, 13, 0));
+    }
+
 }
