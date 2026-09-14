@@ -63,6 +63,8 @@ public class AdminCustomerService {
                 username,
                 name,
                 searchForm.getEnabled(),
+                searchForm.getHasOrders(),
+                searchForm.getHasPurchases(),
                 pageable)
                 .map(customer -> new AdminCustomerListItem(
                         customer.getUserId(),

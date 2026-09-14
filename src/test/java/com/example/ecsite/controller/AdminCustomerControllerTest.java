@@ -95,6 +95,8 @@ class AdminCustomerControllerTest {
                         .param("username", "customer")
                         .param("name", "山田")
                         .param("enabled", "true")
+                        .param("hasOrders", "true")
+                        .param("hasPurchases", "false")
                         .with(user("admin")
                                 .roles("ADMIN")))
                 .andExpect(status().isOk());
@@ -125,6 +127,14 @@ class AdminCustomerControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(
                 true,
                 form.getEnabled());
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                true,
+                form.getHasOrders());
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                false,
+                form.getHasPurchases());
     }
 
     @Test

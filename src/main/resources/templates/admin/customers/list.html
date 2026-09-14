@@ -42,6 +42,24 @@
                 </select>
             </div>
 
+            <div>
+                <label for="hasOrders">注文実績</label>
+                <select id="hasOrders" th:field="*{hasOrders}">
+                    <option value="">すべて</option>
+                    <option value="true">あり</option>
+                    <option value="false">なし</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="hasPurchases">購入実績</label>
+                <select id="hasPurchases" th:field="*{hasPurchases}">
+                    <option value="">すべて</option>
+                    <option value="true">あり</option>
+                    <option value="false">なし</option>
+                </select>
+            </div>
+
         </div>
 
         <input type="hidden" name="size" th:value="${customerPage.size}">
@@ -114,6 +132,8 @@
                username=${searchForm.username},
                name=${searchForm.name},
                enabled=${searchForm.enabled},
+               hasOrders=${searchForm.hasOrders},
+               hasPurchases=${searchForm.hasPurchases},
                page=${customerPage.number - 1},
                size=${customerPage.size})}" class="button button-secondary">
             前へ
@@ -133,6 +153,8 @@
                    username=${searchForm.username},
                    name=${searchForm.name},
                    enabled=${searchForm.enabled},
+                   hasOrders=${searchForm.hasOrders},
+                   hasPurchases=${searchForm.hasPurchases},
                    page=${pageNumber},
                    size=${customerPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
@@ -144,6 +166,8 @@
                username=${searchForm.username},
                name=${searchForm.name},
                enabled=${searchForm.enabled},
+               hasOrders=${searchForm.hasOrders},
+               hasPurchases=${searchForm.hasPurchases},
                page=${customerPage.number + 1},
                size=${customerPage.size})}" class="button button-secondary">
             次へ
