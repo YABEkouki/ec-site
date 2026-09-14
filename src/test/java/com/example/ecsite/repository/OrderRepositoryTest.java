@@ -1,5 +1,6 @@
 package com.example.ecsite.repository;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ import com.example.ecsite.entity.User;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
+import com.example.ecsite.repository.projection.AdminCustomerPurchaseSummaryProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
@@ -2410,6 +2412,64 @@ class OrderRepositoryTest {
         assertEquals(
                 "assigned-admin",
                 actual.getAssignedAdminAccount().getUsername());
+    }
+
+    @Test
+    void findCustomerPurchaseSummaryAggregatesOrdersForCustomer() {
+
+        User user = createUser("purchase-summary-user");
+
+        Order ordered = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 1, 10, 0),
+                1000);
+
+        Order paid = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 2, 11, 0),
+                2000);
+
+        paid.markAsPaid();
+
+        Order shipped = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 3, 12, 0),
+                3000);
+
+        shipped.markAsPaid();
+        shipped.markAsShipped();
+
+        Order cancelled = createOrder(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 4, 13, 0),
+                4000);
+
+        cancelled.cancel();
+
+        orderRepository.saveAll(List.of(
+                ordered,
+                paid,
+                shipped,
+                cancelled));
+
+        AdminCustomerPurchaseSummaryProjection summary = orderRepository.findCustomerPurchaseSummary(user.getId());
+
+        assertThat(summary.getOrderCount()).isEqualTo(4L);
+        assertThat(summary.getPurchaseAmount()).isEqualTo(5000L);
+        assertThat(summary.getLastOrderedAt())
+                .isEqualTo(LocalDateTime.of(2026, 9, 4, 13, 0));
+    }
+
+    @Test
+    void findCustomerPurchaseSummaryReturnsZeroValuesWhenCustomerHasNoOrders() {
+
+        User user = createUser("purchase-summary-return-zero-user");
+
+        AdminCustomerPurchaseSummaryProjection summary = orderRepository.findCustomerPurchaseSummary(user.getId());
+
+        assertThat(summary.getOrderCount()).isZero();
+        assertThat(summary.getPurchaseAmount()).isZero();
+        assertThat(summary.getLastOrderedAt()).isNull();
     }
 
 }

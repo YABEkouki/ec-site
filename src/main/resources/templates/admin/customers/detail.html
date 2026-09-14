@@ -107,6 +107,37 @@
             </table>
         </section>
 
+        <section class="detail-section">
+            <h2>購入サマリー</h2>
+
+            <dl class="detail-list">
+                <div>
+                    <dt>注文件数</dt>
+                    <dd th:text="|${purchaseSummary.orderCount}件|">0件</dd>
+                </div>
+
+                <div>
+                    <dt>購入総額</dt>
+                    <dd th:text="|¥${#numbers.formatInteger(purchaseSummary.purchaseAmount, 1, 'COMMA')}|">
+                        ¥0
+                    </dd>
+                </div>
+
+                <div>
+                    <dt>最終注文日時</dt>
+                    <dd th:text="${purchaseSummary.lastOrderedAt != null
+                    ? #temporals.format(purchaseSummary.lastOrderedAt, 'yyyy/MM/dd HH:mm')
+                    : '-'}">
+                        -
+                    </dd>
+                </div>
+            </dl>
+
+            <p class="note">
+                購入総額は支払済み・発送済みの注文を集計しています。
+            </p>
+        </section>
+
         <p>
             <a th:href="@{/admin/customers/{id}/orders(id=${customer.userId})}" class="button button-secondary">
                 注文履歴を見る

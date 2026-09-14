@@ -17,6 +17,7 @@ import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
+import com.example.ecsite.repository.projection.AdminCustomerPurchaseSummaryProjection;
 import com.example.ecsite.repository.projection.CategorySalesRankingProjection;
 import com.example.ecsite.repository.projection.CustomerSalesRankingProjection;
 import com.example.ecsite.repository.projection.DailySalesProjection;
@@ -453,5 +454,25 @@ public interface OrderRepository
     List<AdminAssigneeActionRequiredCountProjection> findActionRequiredOrderCountsByAssignee(
             LocalDateTime threeDaysCutoffExclusive,
             LocalDateTime sevenDaysCutoffExclusive);
+
+    @Query("""
+            SELECT
+                COUNT(o) AS orderCount,
+                COALESCE(SUM(
+                    CASE
+                        WHEN o.status IN (
+                            com.example.ecsite.entity.OrderStatus.PAID,
+                            com.example.ecsite.entity.OrderStatus.SHIPPED
+                        )
+                        THEN o.totalAmount
+                        ELSE 0
+                    END
+                ), 0) AS purchaseAmount,
+                MAX(o.orderedAt) AS lastOrderedAt
+            FROM Order o
+            WHERE o.userId = :userId
+            """)
+    AdminCustomerPurchaseSummaryProjection findCustomerPurchaseSummary(
+            @Param("userId") Long userId);
 
 }
