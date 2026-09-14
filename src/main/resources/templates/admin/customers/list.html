@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>顧客管理</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>顧客管理</h1>
+
+    <form th:action="@{/admin/customers}" method="get" th:object="${searchForm}" class="order-search-form">
+
+        <div class="order-search-fields">
+
+            <div class="order-search-field">
+                <label for="userId">顧客ID</label>
+                <input type="number" id="userId" th:field="*{userId}" min="1">
+            </div>
+
+            <div class="order-search-field">
+                <label for="username">ユーザー名</label>
+                <input type="text" id="username" th:field="*{username}">
+            </div>
+
+            <div class="order-search-field">
+                <label for="name">氏名</label>
+                <input type="text" id="name" th:field="*{name}">
+            </div>
+
+            <div class="order-search-field">
+                <label for="enabled">会員状態</label>
+
+                <select id="enabled" th:field="*{enabled}">
+                    <option value="">すべて</option>
+                    <option value="true">有効</option>
+                    <option value="false">無効</option>
+                </select>
+            </div>
+
+        </div>
+
+        <input type="hidden" name="size" th:value="${customerPage.size}">
+
+        <div class="actions">
+            <button type="submit" class="button-secondary">
+                検索
+            </button>
+
+            <a th:href="@{/admin/customers(
+                size=${customerPage.size})}" class="button button-secondary">
+                条件をクリア
+            </a>
+        </div>
+
+    </form>
+
+    <p th:if="${#lists.isEmpty(customers)}">
+        顧客はありません。
+    </p>
+
+    <table th:unless="${#lists.isEmpty(customers)}">
+
+        <thead>
+            <tr>
+                <th>顧客ID</th>
+                <th>ユーザー名</th>
+                <th>氏名</th>
+                <th>会員状態</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="customer : ${customers}">
+
+                <td th:text="${customer.userId}">
+                </td>
+
+                <td th:text="${customer.username}">
+                </td>
+
+                <td>
+                    <span th:if="${customer.name != null}" th:text="${customer.name}">
+                    </span>
+
+                    <span th:unless="${customer.name != null}">
+                        未登録
+                    </span>
+                </td>
+
+                <td th:text="${customer.enabled ? '有効' : '無効'}">
+                </td>
+
+            </tr>
+        </tbody>
+
+    </table>
+
+    <nav th:if="${customerPage.totalPages > 1}">
+
+        <a th:if="${customerPage.hasPrevious()}" th:href="@{/admin/customers(
+               userId=${searchForm.userId},
+               username=${searchForm.username},
+               name=${searchForm.name},
+               enabled=${searchForm.enabled},
+               page=${customerPage.number - 1},
+               size=${customerPage.size})}" class="button button-secondary">
+            前へ
+        </a>
+
+        <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                customerPage.totalPages - 1)}">
+
+            <strong th:if="${pageNumber == customerPage.number}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
+            </strong>
+
+            <a th:unless="${pageNumber == customerPage.number}" th:href="@{/admin/customers(
+                   userId=${searchForm.userId},
+                   username=${searchForm.username},
+                   name=${searchForm.name},
+                   enabled=${searchForm.enabled},
+                   page=${pageNumber},
+                   size=${customerPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
+            </a>
+
+        </span>
+
+        <a th:if="${customerPage.hasNext()}" th:href="@{/admin/customers(
+               userId=${searchForm.userId},
+               username=${searchForm.username},
+               name=${searchForm.name},
+               enabled=${searchForm.enabled},
+               page=${customerPage.number + 1},
+               size=${customerPage.size})}" class="button button-secondary">
+            次へ
+        </a>
+
+    </nav>
+
+    <p>
+        <a th:href="@{/admin}" class="button button-secondary">
+            管理者トップへ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>
