@@ -23,9 +23,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.example.ecsite.dto.AdminCustomerDetail;
 import com.example.ecsite.dto.AdminCustomerListItem;
 import com.example.ecsite.dto.AdminCustomerShippingAddress;
+import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.CustomerNotFoundException;
 import com.example.ecsite.form.AdminCustomerSearchForm;
 import com.example.ecsite.service.AdminCustomerService;
+import com.example.ecsite.service.OrderService;
 
 @WebMvcTest(AdminCustomerController.class)
 class AdminCustomerControllerTest {
@@ -35,6 +37,9 @@ class AdminCustomerControllerTest {
 
     @MockitoBean
     private AdminCustomerService adminCustomerService;
+
+    @MockitoBean
+    private OrderService orderService;
 
     @Test
     void listReturnsCustomerListView() throws Exception {
@@ -243,6 +248,152 @@ class AdminCustomerControllerTest {
 
         mockMvc.perform(
                 get("/admin/customers/999999")
+                        .with(user("admin")
+                                .roles("ADMIN")))
+                .andExpect(status().isNotFound());
+
+        verify(adminCustomerService)
+                .findCustomerDetail(999999L);
+    }
+
+    @Test
+    void ordersReturnsCustomerOrderHistoryView() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        Order order = new Order();
+
+        Page<Order> orderPage = new PageImpl<>(List.of(order));
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        when(orderService.findOrdersByUserId(10L, 0, 10))
+                .thenReturn(orderPage);
+
+        mockMvc.perform(
+                get("/admin/customers/10/orders")
+                        .with(user("admin")
+                                .roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(
+                        view().name(
+                                "admin/customers/orders"))
+                .andExpect(
+                        model().attribute(
+                                "customer",
+                                customer))
+                .andExpect(
+                        model().attribute(
+                                "orders",
+                                hasSize(1)))
+                .andExpect(
+                        model().attribute(
+                                "orderPage",
+                                orderPage));
+
+        verify(adminCustomerService)
+                .findCustomerDetail(10L);
+
+        verify(orderService)
+                .findOrdersByUserId(10L, 0, 10);
+    }
+
+    @Test
+    void ordersConvertsNegativePageToZero() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        when(orderService.findOrdersByUserId(10L, 0, 10))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(
+                get("/admin/customers/10/orders")
+                        .param("page", "-1")
+                        .with(user("admin")
+                                .roles("ADMIN")))
+                .andExpect(status().isOk());
+
+        verify(orderService)
+                .findOrdersByUserId(10L, 0, 10);
+    }
+
+    @Test
+    void ordersConvertsSizeOutsideRange() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        when(orderService.findOrdersByUserId(10L, 0, 1))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(
+                get("/admin/customers/10/orders")
+                        .param("size", "0")
+                        .with(user("admin")
+                                .roles("ADMIN")))
+                .andExpect(status().isOk());
+
+        verify(orderService)
+                .findOrdersByUserId(10L, 0, 1);
+
+        when(orderService.findOrdersByUserId(10L, 0, 100))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(
+                get("/admin/customers/10/orders")
+                        .param("size", "101")
+                        .with(user("admin")
+                                .roles("ADMIN")))
+                .andExpect(status().isOk());
+
+        verify(orderService)
+                .findOrdersByUserId(10L, 0, 100);
+    }
+
+    @Test
+    void ordersReturnsNotFoundWhenCustomerDoesNotExist() throws Exception {
+
+        when(adminCustomerService.findCustomerDetail(999999L))
+                .thenThrow(new CustomerNotFoundException(999999L));
+
+        mockMvc.perform(
+                get("/admin/customers/999999/orders")
                         .with(user("admin")
                                 .roles("ADMIN")))
                 .andExpect(status().isNotFound());

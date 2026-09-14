@@ -108,7 +108,14 @@
         </section>
 
         <p>
-            <a th:href="@{/admin/customers}">顧客一覧へ戻る</a>
+            <a th:href="@{/admin/customers/{id}/orders(id=${customer.userId})}" class="button button-secondary">
+                注文履歴を見る
+            </a>
+        </p>
+
+        <p>
+            <a th:href="@{/admin/customers}" class="button button-secondary">
+                顧客一覧へ戻る</a>
         </p>
     </main>
 

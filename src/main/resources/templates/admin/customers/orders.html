@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>顧客注文履歴</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}"></header>
+
+    <main>
+        <h1>顧客注文履歴</h1>
+
+        <section>
+            <h2>顧客情報</h2>
+
+            <table>
+                <tbody>
+                    <tr>
+                        <th>顧客ID</th>
+                        <td th:text="${customer.userId}"></td>
+                    </tr>
+                    <tr>
+                        <th>ユーザー名</th>
+                        <td th:text="${customer.username}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>注文履歴</h2>
+
+            <p th:if="${#lists.isEmpty(orders)}">
+                注文履歴はありません。
+            </p>
+
+            <table th:unless="${#lists.isEmpty(orders)}">
+                <thead>
+                    <tr>
+                        <th>注文番号</th>
+                        <th>注文日時</th>
+                        <th>合計金額</th>
+                        <th>状態</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr th:each="order : ${orders}">
+                        <td th:text="${order.id}"></td>
+
+                        <td th:text="${#temporals.format(
+                            order.orderedAt,
+                            'yyyy/MM/dd HH:mm')}">
+                        </td>
+
+                        <td>
+                            <span th:text="${#numbers.formatInteger(
+                                order.totalAmount,
+                                1,
+                                'COMMA')}">
+                            </span>
+                            円
+                        </td>
+
+                        <td>
+                            <span class="status-badge"
+                                th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
+                                th:text="${order.status.displayName}">
+                            </span>
+                        </td>
+
+                        <td>
+                            <a th:href="@{/admin/orders/{id}(
+                                id=${order.id})}" class="button button-secondary">
+                                詳細
+                            </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <nav th:if="${orderPage.totalPages > 1}">
+
+                <a th:if="${orderPage.hasPrevious()}" th:href="@{/admin/customers/{id}/orders(
+                        id=${customer.userId},
+                        page=${orderPage.number - 1},
+                        size=${orderPage.size})}" class="button button-secondary">
+                    前へ
+                </a>
+
+                <span th:each="pageNumber :
+                    ${#numbers.sequence(
+                        0,
+                        orderPage.totalPages - 1)}">
+
+                    <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
+                        class="button button-secondary">
+                    </strong>
+
+                    <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/customers/{id}/orders(
+                            id=${customer.userId},
+                            page=${pageNumber},
+                            size=${orderPage.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
+                    </a>
+
+                </span>
+
+                <a th:if="${orderPage.hasNext()}" th:href="@{/admin/customers/{id}/orders(
+                        id=${customer.userId},
+                        page=${orderPage.number + 1},
+                        size=${orderPage.size})}" class="button button-secondary">
+                    次へ
+                </a>
+
+            </nav>
+
+            <p>
+                注文件数：
+                <span th:text="${orderPage.totalElements}"></span>
+            </p>
+        </section>
+
+        <p>
+            <a th:href="@{/admin/customers/{id}(id=${customer.userId})}" class="button button-secondary">
+                顧客詳細へ戻る
+            </a>
+        </p>
+    </main>
+
+</body>
+
+</html>
