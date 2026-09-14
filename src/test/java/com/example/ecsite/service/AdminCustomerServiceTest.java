@@ -78,6 +78,8 @@ class AdminCustomerServiceTest {
         form.setUsername("customer");
         form.setName("山田");
         form.setEnabled(true);
+        form.setHasOrders(true);
+        form.setHasPurchases(false);
 
         AdminCustomerListProjection projection = projection(
                 10L,
@@ -90,6 +92,8 @@ class AdminCustomerServiceTest {
                 eq("customer"),
                 eq("山田"),
                 eq(true),
+                eq(true),
+                eq(false),
                 any(Pageable.class)))
                 .thenReturn(
                         new PageImpl<>(
@@ -123,6 +127,8 @@ class AdminCustomerServiceTest {
                 eq("customer"),
                 eq("山田"),
                 eq(null),
+                eq(null),
+                eq(null),
                 any(Pageable.class)))
                 .thenReturn(Page.empty());
 
@@ -136,6 +142,8 @@ class AdminCustomerServiceTest {
                         eq(null),
                         eq("customer"),
                         eq("山田"),
+                        eq(null),
+                        eq(null),
                         eq(null),
                         any(Pageable.class));
     }
@@ -153,6 +161,8 @@ class AdminCustomerServiceTest {
                 eq(null),
                 eq(null),
                 eq(null),
+                eq(null),
+                eq(null),
                 any(Pageable.class)))
                 .thenReturn(Page.empty());
 
@@ -163,6 +173,8 @@ class AdminCustomerServiceTest {
 
         verify(userRepository)
                 .searchCustomers(
+                        eq(null),
+                        eq(null),
                         eq(null),
                         eq(null),
                         eq(null),
@@ -180,6 +192,8 @@ class AdminCustomerServiceTest {
                 eq(null),
                 eq(null),
                 eq(null),
+                eq(null),
+                eq(null),
                 any(Pageable.class)))
                 .thenReturn(Page.empty());
 
@@ -193,6 +207,8 @@ class AdminCustomerServiceTest {
 
         verify(userRepository)
                 .searchCustomers(
+                        eq(null),
+                        eq(null),
                         eq(null),
                         eq(null),
                         eq(null),
@@ -222,6 +238,8 @@ class AdminCustomerServiceTest {
                 true);
 
         when(userRepository.searchCustomers(
+                eq(null),
+                eq(null),
                 eq(null),
                 eq(null),
                 eq(null),

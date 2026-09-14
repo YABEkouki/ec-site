@@ -10,6 +10,10 @@ public class AdminCustomerSearchForm {
 
     private Boolean enabled;
 
+    private Boolean hasOrders;
+
+    private Boolean hasPurchases;
+
     public Long getUserId() {
         return userId;
     }
@@ -40,5 +44,21 @@ public class AdminCustomerSearchForm {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public Boolean getHasOrders() {
+        return hasOrders;
+    }
+
+    public void setHasOrders(Boolean hasOrders) {
+        this.hasOrders = hasOrders;
+    }
+
+    public Boolean getHasPurchases() {
+        return hasPurchases;
+    }
+
+    public void setHasPurchases(Boolean hasPurchases) {
+        this.hasPurchases = hasPurchases;
     }
 }
