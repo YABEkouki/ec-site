@@ -5,9 +5,11 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import com.example.ecsite.dto.AdminCustomerDetail;
 import com.example.ecsite.dto.AdminCustomerListItem;
 import com.example.ecsite.form.AdminCustomerSearchForm;
 import com.example.ecsite.service.AdminCustomerService;
@@ -25,8 +27,7 @@ public class AdminCustomerController {
 
     @GetMapping
     public String list(
-            @ModelAttribute("searchForm")
-            AdminCustomerSearchForm searchForm,
+            @ModelAttribute("searchForm") AdminCustomerSearchForm searchForm,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             Model model) {
@@ -34,11 +35,10 @@ public class AdminCustomerController {
         int safePage = Math.max(page, 0);
         int safeSize = Math.clamp(size, 1, 100);
 
-        Page<AdminCustomerListItem> customerPage =
-                adminCustomerService.searchCustomers(
-                        searchForm,
-                        safePage,
-                        safeSize);
+        Page<AdminCustomerListItem> customerPage = adminCustomerService.searchCustomers(
+                searchForm,
+                safePage,
+                safeSize);
 
         model.addAttribute(
                 "customers",
@@ -50,4 +50,19 @@ public class AdminCustomerController {
 
         return "admin/customers/list";
     }
+
+    @GetMapping("/{id}")
+    public String detail(
+            @PathVariable Long id,
+            Model model) {
+
+        AdminCustomerDetail customer = adminCustomerService.findCustomerDetail(id);
+
+        model.addAttribute(
+                "customer",
+                customer);
+
+        return "admin/customers/detail";
+    }
+
 }

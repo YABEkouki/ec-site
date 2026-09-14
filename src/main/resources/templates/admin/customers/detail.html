@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>顧客詳細</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}"></header>
+
+    <main>
+        <h1>顧客詳細</h1>
+
+        <section>
+            <h2>アカウント情報</h2>
+
+            <table>
+                <tbody>
+                    <tr>
+                        <th>顧客ID</th>
+                        <td th:text="${customer.userId}"></td>
+                    </tr>
+                    <tr>
+                        <th>ユーザー名</th>
+                        <td th:text="${customer.username}"></td>
+                    </tr>
+                    <tr>
+                        <th>会員状態</th>
+                        <td th:text="${customer.enabled ? '有効' : '無効'}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>プロフィール</h2>
+
+            <div th:if="${customer.name == null}">
+                <p>プロフィールは登録されていません。</p>
+            </div>
+
+            <table th:if="${customer.name != null}">
+                <tbody>
+                    <tr>
+                        <th>氏名</th>
+                        <td th:text="${customer.name}"></td>
+                    </tr>
+                    <tr>
+                        <th>郵便番号</th>
+                        <td th:text="${customer.postalCode}"></td>
+                    </tr>
+                    <tr>
+                        <th>都道府県</th>
+                        <td th:text="${customer.prefecture}"></td>
+                    </tr>
+                    <tr>
+                        <th>市区町村</th>
+                        <td th:text="${customer.city}"></td>
+                    </tr>
+                    <tr>
+                        <th>住所</th>
+                        <td th:text="${customer.addressLine}"></td>
+                    </tr>
+                    <tr>
+                        <th>電話番号</th>
+                        <td th:text="${customer.phone}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>配送先</h2>
+
+            <p th:if="${#lists.isEmpty(customer.shippingAddresses)}">
+                配送先は登録されていません。
+            </p>
+
+            <table th:if="${!#lists.isEmpty(customer.shippingAddresses)}">
+                <thead>
+                    <tr>
+                        <th>配送先名</th>
+                        <th>宛名</th>
+                        <th>郵便番号</th>
+                        <th>住所</th>
+                        <th>電話番号</th>
+                        <th>デフォルト</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="address : ${customer.shippingAddresses}">
+                        <td th:text="${address.name}"></td>
+                        <td th:text="${address.recipientName}"></td>
+                        <td th:text="${address.postalCode}"></td>
+                        <td>
+                            <span th:text="${address.prefecture}"></span>
+                            <span th:text="${address.city}"></span>
+                            <span th:text="${address.addressLine}"></span>
+                        </td>
+                        <td th:text="${address.phone}"></td>
+                        <td th:text="${address.defaultAddress ? 'デフォルト' : ''}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <p>
+            <a th:href="@{/admin/customers}">顧客一覧へ戻る</a>
+        </p>
+    </main>
+
+</body>
+
+</html>
