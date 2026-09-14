@@ -20,7 +20,10 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.example.ecsite.dto.AdminCustomerDetail;
 import com.example.ecsite.dto.AdminCustomerListItem;
+import com.example.ecsite.dto.AdminCustomerShippingAddress;
+import com.example.ecsite.exception.CustomerNotFoundException;
 import com.example.ecsite.form.AdminCustomerSearchForm;
 import com.example.ecsite.service.AdminCustomerService;
 
@@ -186,4 +189,66 @@ class AdminCustomerControllerTest {
                         org.mockito.ArgumentMatchers.eq(0),
                         org.mockito.ArgumentMatchers.eq(100));
     }
+
+    @Test
+    void detailReturnsCustomerDetailView() throws Exception {
+
+        AdminCustomerShippingAddress shippingAddress = new AdminCustomerShippingAddress(
+                "自宅",
+                "山田太郎",
+                "100-0001",
+                "東京都",
+                "千代田区",
+                "千代田1-1",
+                "090-1111-2222",
+                true);
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                true,
+                "山田太郎",
+                "100-0001",
+                "東京都",
+                "千代田区",
+                "千代田1-1",
+                "090-1111-2222",
+                List.of(shippingAddress));
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        mockMvc.perform(
+                get("/admin/customers/10")
+                        .with(user("admin")
+                                .roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(
+                        view().name(
+                                "admin/customers/detail"))
+                .andExpect(
+                        model().attribute(
+                                "customer",
+                                customer));
+
+        verify(adminCustomerService)
+                .findCustomerDetail(10L);
+    }
+
+    @Test
+    void detailReturnsNotFoundWhenCustomerDoesNotExist() throws Exception {
+
+        when(adminCustomerService.findCustomerDetail(999999L))
+                .thenThrow(new CustomerNotFoundException(999999L));
+
+        mockMvc.perform(
+                get("/admin/customers/999999")
+                        .with(user("admin")
+                                .roles("ADMIN")))
+                .andExpect(status().isNotFound());
+
+        verify(adminCustomerService)
+                .findCustomerDetail(999999L);
+    }
+
 }

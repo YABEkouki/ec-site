@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>顧客が見つかりません</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <h1>404 顧客が見つかりません</h1>
+
+    <p th:text="${message}"></p>
+
+    <p>
+        <a th:href="@{/admin}" class="button button-secondary">
+            トップページへ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>

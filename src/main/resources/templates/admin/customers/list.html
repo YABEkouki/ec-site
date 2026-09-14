@@ -71,6 +71,7 @@
                 <th>ユーザー名</th>
                 <th>氏名</th>
                 <th>会員状態</th>
+                <th>詳細</th>
             </tr>
         </thead>
 
@@ -93,6 +94,12 @@
                 </td>
 
                 <td th:text="${customer.enabled ? '有効' : '無効'}">
+                </td>
+
+                <td>
+                    <a th:href="@{/admin/customers/{id}(id=${customer.userId})}">
+                        詳細
+                    </a>
                 </td>
 
             </tr>
