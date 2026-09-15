@@ -226,6 +226,11 @@ class AdminAccountControllerTest {
                 .addAttribute(
                         eq("adminAccountEditForm"),
                         any(AdminAccountEditForm.class));
+
+        verify(model)
+                .addAttribute(
+                        "adminAccount",
+                        account);
     }
 
     @Test

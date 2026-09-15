@@ -2470,6 +2470,11 @@ class OrderRepositoryTest {
         adminAccount.setPassword("password");
         adminAccount.setEnabled(enabled);
 
+        LocalDateTime now = LocalDateTime.now();
+
+        adminAccount.setCreatedAt(now);
+        adminAccount.setUpdatedAt(now);
+
         AdminAccount saved = adminAccountRepository.save(adminAccount);
 
         entityManager.flush();

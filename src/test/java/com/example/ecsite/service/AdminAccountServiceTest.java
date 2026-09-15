@@ -2,6 +2,8 @@ package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -9,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -61,6 +64,12 @@ class AdminAccountServiceTest {
         assertEquals("admin1", saved.getUsername());
         assertEquals("encoded-password", saved.getPassword());
         assertTrue(saved.isEnabled());
+
+        assertNotNull(saved.getCreatedAt());
+        assertNotNull(saved.getUpdatedAt());
+        assertEquals(saved.getCreatedAt(), saved.getUpdatedAt());
+        assertNull(saved.getPreviousLoginAt());
+        assertNull(saved.getLastLoginAt());
     }
 
     @Test
@@ -347,6 +356,86 @@ class AdminAccountServiceTest {
 
         verify(adminAccountRepository)
                 .findByEnabledTrueOrderByUsernameAsc();
+    }
+
+    @Test
+    void updateUpdatesUpdatedAt() {
+
+        AdminAccount account = createAccount(
+                "admin1",
+                "old-password",
+                true);
+
+        LocalDateTime oldUpdatedAt = LocalDateTime.of(2026, 1, 1, 0, 0);
+
+        account.setUpdatedAt(oldUpdatedAt);
+
+        when(adminAccountRepository.findById(2L))
+                .thenReturn(Optional.of(account));
+
+        when(adminAccountRepository
+                .existsByUsernameAndIdNot("admin1", 2L))
+                .thenReturn(false);
+
+        AdminAccountEditForm form = editForm("admin1", "", "", true);
+
+        AdminAccountService service = createService();
+
+        service.update(2L, form, 1L);
+
+        assertTrue(account.getUpdatedAt().isAfter(oldUpdatedAt));
+    }
+
+    @Test
+    void recordSuccessfulLoginSetsLastLoginAtOnFirstLogin() {
+
+        AdminAccount account = createAccount("admin1", "password", true);
+
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 1, 1, 0, 0);
+
+        account.setUpdatedAt(updatedAt);
+
+        when(adminAccountRepository.findById(1L))
+                .thenReturn(Optional.of(account));
+
+        AdminAccountService service = createService();
+
+        service.recordSuccessfulLogin(1L);
+
+        assertNull(account.getPreviousLoginAt());
+        assertNotNull(account.getLastLoginAt());
+        assertEquals(updatedAt, account.getUpdatedAt());
+    }
+
+    @Test
+    void recordSuccessfulLoginMovesLastLoginAtToPreviousLoginAt() {
+
+        AdminAccount account = createAccount("admin1", "password", true);
+
+        LocalDateTime oldLastLoginAt = LocalDateTime.of(2026, 9, 14, 10, 0);
+
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 1, 12, 0);
+
+        account.setLastLoginAt(oldLastLoginAt);
+        account.setUpdatedAt(updatedAt);
+
+        when(adminAccountRepository.findById(1L))
+                .thenReturn(Optional.of(account));
+
+        AdminAccountService service = createService();
+
+        service.recordSuccessfulLogin(1L);
+
+        assertEquals(
+                oldLastLoginAt,
+                account.getPreviousLoginAt());
+
+        assertTrue(
+                account.getLastLoginAt().isAfter(oldLastLoginAt));
+
+        assertEquals(
+                updatedAt,
+                account.getUpdatedAt());
     }
 
 }

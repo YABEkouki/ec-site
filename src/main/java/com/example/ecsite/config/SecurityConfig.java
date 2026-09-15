@@ -11,6 +11,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
+import com.example.ecsite.security.AdminAuthenticationSuccessHandler;
 import com.example.ecsite.security.CustomerAuthenticationSuccessHandler;
 import com.example.ecsite.service.AdminUserDetailsService;
 import com.example.ecsite.service.CustomUserDetailsService;
@@ -23,6 +24,7 @@ public class SecurityConfig {
     SecurityFilterChain adminSecurityFilterChain(
             HttpSecurity http,
             AdminUserDetailsService adminUserDetailsService,
+            AdminAuthenticationSuccessHandler adminAuthenticationSuccessHandler,
             PasswordEncoder passwordEncoder) throws Exception {
 
         http
@@ -39,7 +41,7 @@ public class SecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/admin/login")
                         .loginProcessingUrl("/admin/login")
-                        .defaultSuccessUrl("/admin", true)
+                        .successHandler(adminAuthenticationSuccessHandler)
                         .permitAll())
                 .exceptionHandling(exception -> exception
                         .accessDeniedPage("/403"))
