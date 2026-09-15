@@ -2253,128 +2253,6 @@ class OrderRepositoryTest {
                 result);
     }
 
-    private Order createOrder(
-            Long userId,
-            LocalDateTime orderedAt,
-            int totalAmount) {
-
-        Order order = new Order(userId, totalAmount);
-        order.setOrderedAt(orderedAt);
-
-        Order saved = orderRepository.save(order);
-        entityManager.flush();
-
-        return saved;
-    }
-
-    private Product createProduct(
-            String name,
-            int price) {
-
-        Category category = new Category(
-                "ranking-category-" + System.nanoTime());
-
-        entityManager.persist(category);
-
-        Product product = new Product();
-        product.setName(name);
-        product.setPrice(price);
-        product.setStock(100);
-        product.setCategory(category);
-
-        entityManager.persist(product);
-        entityManager.flush();
-
-        return product;
-    }
-
-    private Order createOrderWithItem(
-            Long userId,
-            LocalDateTime orderedAt,
-            Product product,
-            String productName,
-            int price,
-            int quantity) {
-
-        OrderItem item = new OrderItem(
-                product.getId(),
-                productName,
-                product.getCategory().getId(),
-                product.getCategory().getName(),
-                price,
-                quantity);
-
-        Order order = new Order(
-                userId,
-                item.getSubtotal());
-
-        order.setOrderedAt(orderedAt);
-        order.addItem(item);
-
-        Order saved = orderRepository.save(order);
-        entityManager.flush();
-
-        return saved;
-    }
-
-    private User createUser(String username) {
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword("password");
-        user.setEnabled(true);
-
-        User saved = userRepository.save(user);
-        entityManager.flush();
-
-        return saved;
-    }
-
-    private void createHandlingStatusHistory(
-            Order order,
-            OrderHandlingStatus fromStatus,
-            OrderHandlingStatus toStatus,
-            LocalDateTime changedAt) {
-
-        OrderHandlingStatusHistory history = OrderHandlingStatusHistory.create(
-                order,
-                fromStatus,
-                toStatus,
-                1L,
-                "admin",
-                null);
-
-        entityManager.persist(history);
-        entityManager.flush();
-
-        entityManager.createNativeQuery("""
-                UPDATE order_handling_status_histories
-                SET changed_at = :changedAt
-                WHERE id = :id
-                """)
-                .setParameter("changedAt", changedAt)
-                .setParameter("id", history.getId())
-                .executeUpdate();
-
-        entityManager.flush();
-    }
-
-    private AdminAccount createAdminAccount(
-            String username,
-            boolean enabled) {
-
-        AdminAccount adminAccount = new AdminAccount();
-        adminAccount.setUsername(username);
-        adminAccount.setPassword("password");
-        adminAccount.setEnabled(enabled);
-
-        AdminAccount saved = adminAccountRepository.save(adminAccount);
-
-        entityManager.flush();
-
-        return saved;
-    }
-
     @Test
     void findByIdWithItemsFetchesAssignedAdminAccount() {
 
@@ -2470,6 +2348,133 @@ class OrderRepositoryTest {
         assertThat(summary.getOrderCount()).isZero();
         assertThat(summary.getPurchaseAmount()).isZero();
         assertThat(summary.getLastOrderedAt()).isNull();
+    }
+
+    private Order createOrder(
+            Long userId,
+            LocalDateTime orderedAt,
+            int totalAmount) {
+
+        Order order = new Order(userId, totalAmount);
+        order.setOrderedAt(orderedAt);
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private Product createProduct(
+            String name,
+            int price) {
+
+        Category category = new Category(
+                "ranking-category-" + System.nanoTime());
+
+        entityManager.persist(category);
+
+        Product product = new Product();
+        product.setName(name);
+        product.setPrice(price);
+        product.setStock(100);
+        product.setCategory(category);
+
+        entityManager.persist(product);
+        entityManager.flush();
+
+        return product;
+    }
+
+    private Order createOrderWithItem(
+            Long userId,
+            LocalDateTime orderedAt,
+            Product product,
+            String productName,
+            int price,
+            int quantity) {
+
+        OrderItem item = new OrderItem(
+                product.getId(),
+                productName,
+                product.getCategory().getId(),
+                product.getCategory().getName(),
+                price,
+                quantity);
+
+        Order order = new Order(
+                userId,
+                item.getSubtotal());
+
+        order.setOrderedAt(orderedAt);
+        order.addItem(item);
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private User createUser(String username) {
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("password");
+        user.setEnabled(true);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
+        User saved = userRepository.save(user);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private void createHandlingStatusHistory(
+            Order order,
+            OrderHandlingStatus fromStatus,
+            OrderHandlingStatus toStatus,
+            LocalDateTime changedAt) {
+
+        OrderHandlingStatusHistory history = OrderHandlingStatusHistory.create(
+                order,
+                fromStatus,
+                toStatus,
+                1L,
+                "admin",
+                null);
+
+        entityManager.persist(history);
+        entityManager.flush();
+
+        entityManager.createNativeQuery("""
+                UPDATE order_handling_status_histories
+                SET changed_at = :changedAt
+                WHERE id = :id
+                """)
+                .setParameter("changedAt", changedAt)
+                .setParameter("id", history.getId())
+                .executeUpdate();
+
+        entityManager.flush();
+    }
+
+    private AdminAccount createAdminAccount(
+            String username,
+            boolean enabled) {
+
+        AdminAccount adminAccount = new AdminAccount();
+        adminAccount.setUsername(username);
+        adminAccount.setPassword("password");
+        adminAccount.setEnabled(enabled);
+
+        AdminAccount saved = adminAccountRepository.save(adminAccount);
+
+        entityManager.flush();
+
+        return saved;
     }
 
 }

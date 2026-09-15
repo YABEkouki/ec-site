@@ -226,6 +226,11 @@ class StockMovementRepositoryTest {
         user.setPassword("password");
         user.setEnabled(true);
 
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
         return userRepository.save(user);
     }
 
