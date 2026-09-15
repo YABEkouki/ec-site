@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,6 +27,7 @@ import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
+import com.example.ecsite.form.UserAccountEditForm;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.repository.UserRepository;
 
@@ -141,6 +143,8 @@ class UserServiceTest {
 
         LocalDateTime createdAt = LocalDateTime.of(2026, 9, 1, 10, 0);
 
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 10, 12, 0);
+
         LocalDateTime previousLoginAt = LocalDateTime.of(2026, 9, 14, 9, 0);
 
         LocalDateTime lastLoginAt = LocalDateTime.of(2026, 9, 15, 9, 0);
@@ -148,6 +152,7 @@ class UserServiceTest {
         User user = new User();
         user.setUsername("user1");
         user.setCreatedAt(createdAt);
+        user.setUpdatedAt(updatedAt);
         user.setPreviousLoginAt(previousLoginAt);
         user.setLastLoginAt(lastLoginAt);
 
@@ -162,6 +167,7 @@ class UserServiceTest {
 
         assertEquals("user1", accountInfo.username());
         assertEquals(createdAt, accountInfo.createdAt());
+        assertEquals(updatedAt, accountInfo.updatedAt());
         assertEquals(
                 previousLoginAt,
                 accountInfo.previousLoginAt());
@@ -355,6 +361,154 @@ class UserServiceTest {
         assertEquals(
                 updatedAt,
                 user.getUpdatedAt());
+    }
+
+    @Test
+    void createAccountEditFormReturnsCurrentUsername() {
+
+        User user = new User();
+        user.setUsername("user1");
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        UserAccountEditForm form = userService.createAccountEditForm(10L);
+
+        assertEquals("user1", form.getUsername());
+    }
+
+    @Test
+    void updateUsernameNormalizesUsernameAndUpdatesUpdatedAt() {
+
+        LocalDateTime oldUpdatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        LocalDateTime previousLoginAt = LocalDateTime.of(2026, 9, 14, 9, 0);
+
+        LocalDateTime lastLoginAt = LocalDateTime.of(2026, 9, 15, 9, 0);
+
+        User user = new User();
+        user.setUsername("user1");
+        user.setUpdatedAt(oldUpdatedAt);
+        user.setPreviousLoginAt(previousLoginAt);
+        user.setLastLoginAt(lastLoginAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(userRepository.existsByUsername("user2"))
+                .thenReturn(false);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        String result = userService.updateUsername(10L, " user2 ");
+
+        assertEquals("user2", result);
+        assertEquals("user2", user.getUsername());
+
+        assertTrue(
+                user.getUpdatedAt()
+                        .isAfter(oldUpdatedAt));
+
+        assertEquals(
+                previousLoginAt,
+                user.getPreviousLoginAt());
+
+        assertEquals(
+                lastLoginAt,
+                user.getLastLoginAt());
+
+        verify(userRepository)
+                .saveAndFlush(user);
+    }
+
+    @Test
+    void updateUsernameDoesNothingWhenNormalizedUsernameIsUnchanged() {
+
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        User user = new User();
+        user.setUsername("user1");
+        user.setUpdatedAt(updatedAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        String result = userService.updateUsername(10L, " user1 ");
+
+        assertEquals("user1", result);
+        assertEquals(updatedAt, user.getUpdatedAt());
+
+        verify(userRepository, never())
+                .existsByUsername(any());
+
+        verify(userRepository, never())
+                .saveAndFlush(any(User.class));
+    }
+
+    @Test
+    void updateUsernameRejectsExistingUsername() {
+
+        User user = new User();
+        user.setUsername("user1");
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(userRepository.existsByUsername("user2"))
+                .thenReturn(true);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        assertThrows(
+                UsernameAlreadyExistsException.class,
+                () -> userService.updateUsername(
+                        10L,
+                        "user2"));
+
+        assertEquals("user1", user.getUsername());
+
+        verify(userRepository, never())
+                .saveAndFlush(any(User.class));
+    }
+
+    @Test
+    void updateUsernameConvertsDatabaseDuplicateException() {
+
+        User user = new User();
+        user.setUsername("user1");
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(userRepository.existsByUsername("user2"))
+                .thenReturn(false);
+
+        when(userRepository.saveAndFlush(user))
+                .thenThrow(
+                        new DataIntegrityViolationException(
+                                "duplicate username"));
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        assertThrows(
+                UsernameAlreadyExistsException.class,
+                () -> userService.updateUsername(
+                        10L,
+                        "user2"));
     }
 
 }

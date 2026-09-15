@@ -33,6 +33,11 @@
                 </tr>
 
                 <tr>
+                    <th>アカウント更新日時</th>
+                    <td th:text="${#temporals.format(account.updatedAt, 'yyyy/MM/dd HH:mm')}"></td>
+                </tr>
+
+                <tr>
                     <th>前回ログイン日時</th>
                     <td th:text="${account.previousLoginAt != null
                         ? #temporals.format(account.previousLoginAt, 'yyyy/MM/dd HH:mm')
@@ -49,6 +54,10 @@
         </table>
 
         <div class="actions">
+            <a th:href="@{/mypage/account/edit}" class="button button-primary">
+                アカウント情報を編集
+            </a>
+
             <a th:href="@{/mypage/password/edit}" class="button button-secondary">
                 パスワードを変更
             </a>

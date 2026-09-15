@@ -1,6 +1,7 @@
 package com.example.ecsite.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -16,6 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
@@ -25,8 +28,10 @@ import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.entity.UserProfile;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
+import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.PasswordChangeForm;
 import com.example.ecsite.form.ShippingAddressForm;
+import com.example.ecsite.form.UserAccountEditForm;
 import com.example.ecsite.form.UserProfileForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.ShippingAddressService;
@@ -69,6 +74,7 @@ class MyPageControllerTest {
         UserAccountInfo accountInfo = new UserAccountInfo(
                 "user1",
                 LocalDateTime.of(2026, 9, 1, 10, 0),
+                LocalDateTime.of(2026, 9, 10, 12, 0),
                 LocalDateTime.of(2026, 9, 14, 9, 0),
                 LocalDateTime.of(2026, 9, 15, 9, 0));
 
@@ -479,6 +485,222 @@ class MyPageControllerTest {
                         "newPassword",
                         "sameAsCurrent",
                         "新しいパスワードには現在のパスワードと異なるパスワードを入力してください。");
+    }
+
+    @Test
+    void editAccountDisplaysCurrentAccountEditForm() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        when(loginUser.getId()).thenReturn(10L);
+
+        UserAccountEditForm form = new UserAccountEditForm();
+        form.setUsername("user1");
+
+        when(userService.createAccountEditForm(10L))
+                .thenReturn(form);
+
+        String viewName = controller.editAccount(
+                loginUser,
+                model);
+
+        assertEquals(
+                "mypage/account-form",
+                viewName);
+
+        verify(userService)
+                .createAccountEditForm(10L);
+
+        verify(model)
+                .addAttribute(
+                        "userAccountEditForm",
+                        form);
+    }
+
+    @Test
+    void updateAccountUpdatesUsernameAndAuthenticationPrincipal() {
+
+        CustomUserDetails loginUser = new CustomUserDetails(
+                10L,
+                "user1",
+                "encoded-password",
+                true,
+                List.of());
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                loginUser,
+                null,
+                loginUser.getAuthorities());
+
+        SecurityContextHolder.getContext()
+                .setAuthentication(authentication);
+
+        try {
+            UserAccountEditForm form = new UserAccountEditForm();
+            form.setUsername(" user2 ");
+
+            BindingResult bindingResult = mock(BindingResult.class);
+            when(bindingResult.hasErrors()).thenReturn(false);
+
+            RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+            when(userService.updateUsername(
+                    10L,
+                    " user2 "))
+                    .thenReturn("user2");
+
+            String viewName = controller.updateAccount(
+                    form,
+                    bindingResult,
+                    loginUser,
+                    redirectAttributes);
+
+            assertEquals(
+                    "redirect:/mypage",
+                    viewName);
+
+            verify(userService)
+                    .updateUsername(
+                            10L,
+                            " user2 ");
+
+            verify(redirectAttributes)
+                    .addFlashAttribute(
+                            "successMessage",
+                            "アカウント情報を更新しました。");
+
+            CustomUserDetails updatedPrincipal = (CustomUserDetails) SecurityContextHolder
+                    .getContext()
+                    .getAuthentication()
+                    .getPrincipal();
+
+            assertEquals(
+                    10L,
+                    updatedPrincipal.getId());
+
+            assertEquals(
+                    "user2",
+                    updatedPrincipal.getUsername());
+
+            assertEquals(
+                    "encoded-password",
+                    updatedPrincipal.getPassword());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void updateAccountKeepsAuthenticationWhenUsernameIsUnchanged() {
+
+        CustomUserDetails loginUser = new CustomUserDetails(
+                10L,
+                "user1",
+                "encoded-password",
+                true,
+                List.of());
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                loginUser,
+                null,
+                loginUser.getAuthorities());
+
+        SecurityContextHolder.getContext()
+                .setAuthentication(authentication);
+
+        try {
+            UserAccountEditForm form = new UserAccountEditForm();
+            form.setUsername(" user1 ");
+
+            BindingResult bindingResult = mock(BindingResult.class);
+            when(bindingResult.hasErrors()).thenReturn(false);
+
+            RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+            when(userService.updateUsername(
+                    10L,
+                    " user1 "))
+                    .thenReturn("user1");
+
+            String viewName = controller.updateAccount(
+                    form,
+                    bindingResult,
+                    loginUser,
+                    redirectAttributes);
+
+            assertEquals(
+                    "redirect:/mypage",
+                    viewName);
+
+            assertSame(
+                    authentication,
+                    SecurityContextHolder.getContext()
+                            .getAuthentication());
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void updateAccountReturnsFormWhenValidationFails() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        UserAccountEditForm form = new UserAccountEditForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        when(bindingResult.hasErrors()).thenReturn(true);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = controller.updateAccount(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "mypage/account-form",
+                viewName);
+    }
+
+    @Test
+    void updateAccountReturnsFormWhenUsernameAlreadyExists() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        when(loginUser.getId()).thenReturn(10L);
+
+        UserAccountEditForm form = new UserAccountEditForm();
+        form.setUsername("user2");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        when(bindingResult.hasErrors()).thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(userService.updateUsername(
+                10L,
+                "user2"))
+                .thenThrow(
+                        new UsernameAlreadyExistsException(
+                                "user2",
+                                null));
+
+        String viewName = controller.updateAccount(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "mypage/account-form",
+                viewName);
+
+        verify(bindingResult)
+                .rejectValue(
+                        "username",
+                        "duplicate",
+                        "ユーザー名は既に使用されています。");
     }
 
 }

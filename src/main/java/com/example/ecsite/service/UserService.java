@@ -12,6 +12,7 @@ import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
+import com.example.ecsite.form.UserAccountEditForm;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.repository.UserRepository;
 
@@ -74,6 +75,7 @@ public class UserService {
         return new UserAccountInfo(
                 user.getUsername(),
                 user.getCreatedAt(),
+                user.getUpdatedAt(),
                 user.getPreviousLoginAt(),
                 user.getLastLoginAt());
     }
@@ -115,6 +117,40 @@ public class UserService {
                 passwordEncoder.encode(newPassword));
 
         user.setUpdatedAt(LocalDateTime.now());
+    }
+
+    public UserAccountEditForm createAccountEditForm(Long userId) {
+        User user = findById(userId);
+
+        UserAccountEditForm form = new UserAccountEditForm();
+        form.setUsername(user.getUsername());
+
+        return form;
+    }
+
+    @Transactional
+    public String updateUsername(Long userId, String username) {
+        User user = findById(userId);
+        String normalizedUsername = normalizeUsername(username);
+
+        if (user.getUsername().equals(normalizedUsername)) {
+            return normalizedUsername;
+        }
+
+        if (userRepository.existsByUsername(normalizedUsername)) {
+            throw new UsernameAlreadyExistsException(normalizedUsername,null);
+        }
+
+        user.setUsername(normalizedUsername);
+        user.setUpdatedAt(LocalDateTime.now());
+
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new UsernameAlreadyExistsException(normalizedUsername, e);
+        }
+
+        return normalizedUsername;
     }
 
     private String normalizeUsername(String username) {
