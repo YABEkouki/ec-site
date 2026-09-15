@@ -13,6 +13,32 @@
 
     <h1>管理者アカウント編集</h1>
 
+    <h2>アカウント情報</h2>
+
+    <dl>
+        <dt>登録日時</dt>
+        <dd th:text="${#temporals.format(adminAccount.createdAt, 'yyyy/MM/dd HH:mm:ss')}">
+        </dd>
+
+        <dt>アカウント更新日時</dt>
+        <dd th:text="${#temporals.format(adminAccount.updatedAt, 'yyyy/MM/dd HH:mm:ss')}">
+        </dd>
+
+        <dt>前回ログイン日時</dt>
+        <dd th:text="${adminAccount.previousLoginAt != null
+            ? #temporals.format(adminAccount.previousLoginAt, 'yyyy/MM/dd HH:mm:ss')
+            : '未ログイン'}">
+            未ログイン
+        </dd>
+
+        <dt>最終ログイン日時</dt>
+        <dd th:text="${adminAccount.lastLoginAt != null
+            ? #temporals.format(adminAccount.lastLoginAt, 'yyyy/MM/dd HH:mm:ss')
+            : '未ログイン'}">
+            未ログイン
+        </dd>
+    </dl>
+
     <form th:action="@{/admin/accounts/{id}/edit(id=${adminAccountId})}" method="post"
         th:object="${adminAccountEditForm}">
 

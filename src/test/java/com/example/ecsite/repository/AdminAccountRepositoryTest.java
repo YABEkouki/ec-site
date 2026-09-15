@@ -135,6 +135,11 @@ class AdminAccountRepositoryTest {
         account.setPassword("password");
         account.setEnabled(true);
 
+        LocalDateTime now = LocalDateTime.now();
+
+        account.setCreatedAt(now);
+        account.setUpdatedAt(now);
+
         return account;
     }
 }

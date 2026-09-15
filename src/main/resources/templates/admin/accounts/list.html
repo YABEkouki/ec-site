@@ -33,6 +33,7 @@
                 <th>ユーザー名</th>
                 <th>状態</th>
                 <th>ログイン状況</th>
+                <th>最終ログイン日時</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -59,6 +60,12 @@
                     <span th:if="${adminAccount.id == loginAdminId}">
                         ログイン中
                     </span>
+                </td>
+
+                <td th:text="${adminAccount.lastLoginAt != null
+        ? #temporals.format(adminAccount.lastLoginAt, 'yyyy/MM/dd HH:mm:ss')
+        : '未ログイン'}">
+                    未ログイン
                 </td>
 
                 <td>

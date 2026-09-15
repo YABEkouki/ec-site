@@ -96,6 +96,7 @@ public class AdminAccountController {
         form.setEnabled(adminAccount.isEnabled());
 
         model.addAttribute("adminAccountEditForm", form);
+        model.addAttribute("adminAccount", adminAccount);
         model.addAttribute("adminAccountId", id);
         model.addAttribute("loginAdminId", loginUser.getId());
 
@@ -141,6 +142,7 @@ public class AdminAccountController {
         }
 
         if (bindingResult.hasErrors()) {
+            model.addAttribute("adminAccount", adminAccountService.findById(id));
             model.addAttribute("adminAccountId", id);
             model.addAttribute("loginAdminId", loginUser.getId());
             return "admin/accounts/edit";
@@ -176,6 +178,7 @@ public class AdminAccountController {
                         e.getMessage());
             }
 
+            model.addAttribute("adminAccount", adminAccountService.findById(id));
             model.addAttribute("adminAccountId", id);
             model.addAttribute("loginAdminId", loginUser.getId());
 

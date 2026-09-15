@@ -1,5 +1,6 @@
 package com.example.ecsite.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -65,6 +66,11 @@ public class AdminAccountService {
         adminAccount.setPassword(passwordEncoder.encode(form.getPassword()));
         adminAccount.setEnabled(true);
 
+        LocalDateTime now = LocalDateTime.now();
+
+        adminAccount.setCreatedAt(now);
+        adminAccount.setUpdatedAt(now);
+
         try {
             return adminAccountRepository.saveAndFlush(adminAccount);
         } catch (DataIntegrityViolationException e) {
@@ -98,12 +104,25 @@ public class AdminAccountService {
             adminAccount.setPassword(passwordEncoder.encode(form.getPassword()));
         }
 
+        adminAccount.setUpdatedAt(LocalDateTime.now());
+
         try {
             return adminAccountRepository.saveAndFlush(adminAccount);
         } catch (DataIntegrityViolationException e) {
             throw new IllegalArgumentException(
                     "このユーザー名は既に使用されています。", e);
         }
+    }
+
+    @Transactional
+    public void recordSuccessfulLogin(Long adminAccountId) {
+
+        AdminAccount adminAccount = findById(adminAccountId);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        adminAccount.setPreviousLoginAt(adminAccount.getLastLoginAt());
+        adminAccount.setLastLoginAt(now);
     }
 
     @Transactional(readOnly = true)
