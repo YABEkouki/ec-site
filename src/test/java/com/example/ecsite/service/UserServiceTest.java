@@ -23,6 +23,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.example.ecsite.dto.UserAccountInfo;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.exception.IncorrectCurrentPasswordException;
+import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.repository.UserRepository;
@@ -221,6 +223,134 @@ class UserServiceTest {
         assertFalse(
                 user.getLastLoginAt()
                         .isBefore(oldLastLoginAt));
+
+        assertEquals(
+                updatedAt,
+                user.getUpdatedAt());
+    }
+
+    @Test
+    void changePasswordChangesPasswordAndUpdatedAt() {
+
+        User user = new User();
+
+        LocalDateTime oldUpdatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        user.setPassword("encoded-current-password");
+        user.setUpdatedAt(oldUpdatedAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(passwordEncoder.matches(
+                "current-password",
+                "encoded-current-password"))
+                .thenReturn(true);
+
+        when(passwordEncoder.matches(
+                "new-password",
+                "encoded-current-password"))
+                .thenReturn(false);
+
+        when(passwordEncoder.encode("new-password"))
+                .thenReturn("encoded-new-password");
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        userService.changePassword(
+                10L,
+                "current-password",
+                "new-password");
+
+        assertEquals(
+                "encoded-new-password",
+                user.getPassword());
+
+        assertTrue(
+                user.getUpdatedAt()
+                        .isAfter(oldUpdatedAt));
+
+        verify(passwordEncoder)
+                .encode("new-password");
+    }
+
+    @Test
+    void changePasswordRejectsIncorrectCurrentPassword() {
+
+        User user = new User();
+        user.setPassword("encoded-current-password");
+
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        user.setUpdatedAt(updatedAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(passwordEncoder.matches(
+                "wrong-password",
+                "encoded-current-password"))
+                .thenReturn(false);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        assertThrows(
+                IncorrectCurrentPasswordException.class,
+                () -> userService.changePassword(
+                        10L,
+                        "wrong-password",
+                        "new-password"));
+
+        assertEquals(
+                "encoded-current-password",
+                user.getPassword());
+
+        assertEquals(
+                updatedAt,
+                user.getUpdatedAt());
+    }
+
+    @Test
+    void changePasswordRejectsSamePasswordAsCurrentPassword() {
+
+        User user = new User();
+        user.setPassword("encoded-current-password");
+
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        user.setUpdatedAt(updatedAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(passwordEncoder.matches(
+                "current-password",
+                "encoded-current-password"))
+                .thenReturn(true);
+
+        when(passwordEncoder.matches(
+                "same-password",
+                "encoded-current-password"))
+                .thenReturn(true);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        assertThrows(
+                SameAsCurrentPasswordException.class,
+                () -> userService.changePassword(
+                        10L,
+                        "current-password",
+                        "same-password"));
+
+        assertEquals(
+                "encoded-current-password",
+                user.getPassword());
 
         assertEquals(
                 updatedAt,

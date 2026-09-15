@@ -1,7 +1,9 @@
 package com.example.ecsite.config;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -119,6 +121,58 @@ class SecurityConfigTest {
                 get("/admin/accounts")
                         .with(user(adminUserDetails)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void unauthenticatedUserIsRedirectedToCustomerLoginForPasswordChangePage()
+            throws Exception {
+
+        mockMvc.perform(
+                get("/mypage/password/edit"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl(
+                        "/login"));
+    }
+
+    @Test
+    void unauthenticatedUserIsRedirectedToCustomerLoginForPasswordChangePost()
+            throws Exception {
+
+        mockMvc.perform(
+                post("/mypage/password")
+                        .with(csrf())
+                        .param(
+                                "currentPassword",
+                                "current-password")
+                        .param(
+                                "newPassword",
+                                "new-password")
+                        .param(
+                                "confirmPassword",
+                                "new-password"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl(
+                        "/login"));
+    }
+
+    @Test
+    void passwordChangePostWithoutCsrfIsForbidden()
+            throws Exception {
+
+        mockMvc.perform(
+                post("/mypage/password")
+                        .with(user("user1")
+                                .roles("USER"))
+                        .param(
+                                "currentPassword",
+                                "current-password")
+                        .param(
+                                "newPassword",
+                                "new-password")
+                        .param(
+                                "confirmPassword",
+                                "new-password"))
+                .andExpect(status().isForbidden());
     }
 
 }
