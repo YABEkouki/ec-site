@@ -1,6 +1,9 @@
 package com.example.ecsite.controller;
 
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -12,8 +15,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
+import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.PasswordChangeForm;
 import com.example.ecsite.form.ShippingAddressForm;
+import com.example.ecsite.form.UserAccountEditForm;
 import com.example.ecsite.form.UserProfileForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.ShippingAddressService;
@@ -59,6 +64,52 @@ public class MyPageController {
                 shippingAddressService.findAllByUserId(userId));
 
         return "mypage/index";
+    }
+
+    @GetMapping("/mypage/account/edit")
+    public String editAccount(
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model) {
+
+        model.addAttribute(
+                "userAccountEditForm",
+                userService.createAccountEditForm(loginUser.getId()));
+
+        return "mypage/account-form";
+    }
+
+    @PostMapping("/mypage/account")
+    public String updateAccount(
+            @Valid @ModelAttribute("userAccountEditForm") UserAccountEditForm userAccountEditForm,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            return "mypage/account-form";
+        }
+
+        String updatedUsername;
+
+        try {
+            updatedUsername = userService.updateUsername(
+                    loginUser.getId(),
+                    userAccountEditForm.getUsername());
+        } catch (UsernameAlreadyExistsException e) {
+            bindingResult.rejectValue(
+                    "username",
+                    "duplicate",
+                    "ユーザー名は既に使用されています。");
+            return "mypage/account-form";
+        }
+
+        refreshAuthenticationUsername(loginUser, updatedUsername);
+
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "アカウント情報を更新しました。");
+
+        return "redirect:/mypage";
     }
 
     @GetMapping("/mypage/password/edit")
@@ -242,4 +293,33 @@ public class MyPageController {
 
         return "redirect:/mypage";
     }
+
+    private void refreshAuthenticationUsername(
+            CustomUserDetails loginUser,
+            String updatedUsername) {
+
+        if (loginUser.getUsername().equals(updatedUsername)) {
+            return;
+        }
+
+        Authentication currentAuthentication = SecurityContextHolder.getContext().getAuthentication();
+
+        CustomUserDetails updatedPrincipal = new CustomUserDetails(
+                loginUser.getId(),
+                updatedUsername,
+                loginUser.getPassword(),
+                loginUser.isEnabled(),
+                loginUser.getAuthorities());
+
+        UsernamePasswordAuthenticationToken updatedAuthentication = new UsernamePasswordAuthenticationToken(
+                updatedPrincipal,
+                currentAuthentication.getCredentials(),
+                updatedPrincipal.getAuthorities());
+
+        updatedAuthentication.setDetails(currentAuthentication.getDetails());
+
+        SecurityContextHolder.getContext()
+                .setAuthentication(updatedAuthentication);
+    }
+
 }

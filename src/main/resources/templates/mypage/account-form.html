@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>アカウント情報編集</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>アカウント情報編集</h1>
+
+    <form th:action="@{/mypage/account}" th:object="${userAccountEditForm}" method="post" class="form-card">
+
+        <div class="form-group">
+            <label for="username">
+                ユーザー名
+                <span class="required">必須</span>
+            </label>
+
+            <input type="text" th:field="*{username}" maxlength="100" autocomplete="username" required>
+
+            <span th:if="${#fields.hasErrors('username')}" th:errors="*{username}" class="field-error">
+            </span>
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="button-primary">
+                保存
+            </button>
+
+            <a th:href="@{/mypage}" class="button button-secondary">
+                戻る
+            </a>
+        </div>
+
+    </form>
+
+</body>
+
+</html>
