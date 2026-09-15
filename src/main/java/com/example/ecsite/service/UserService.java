@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.dto.UserAccountInfo;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.exception.IncorrectCurrentPasswordException;
+import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.repository.UserRepository;
@@ -85,6 +87,34 @@ public class UserService {
 
         user.setPreviousLoginAt(user.getLastLoginAt());
         user.setLastLoginAt(now);
+    }
+
+    @Transactional
+    public void changePassword(
+            Long userId,
+            String currentPassword,
+            String newPassword) {
+
+        User user = findById(userId);
+
+        if (!passwordEncoder.matches(
+                currentPassword,
+                user.getPassword())) {
+
+            throw new IncorrectCurrentPasswordException();
+        }
+
+        if (passwordEncoder.matches(
+                newPassword,
+                user.getPassword())) {
+
+            throw new SameAsCurrentPasswordException();
+        }
+
+        user.setPassword(
+                passwordEncoder.encode(newPassword));
+
+        user.setUpdatedAt(LocalDateTime.now());
     }
 
     private String normalizeUsername(String username) {

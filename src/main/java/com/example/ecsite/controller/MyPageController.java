@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.exception.IncorrectCurrentPasswordException;
+import com.example.ecsite.exception.SameAsCurrentPasswordException;
+import com.example.ecsite.form.PasswordChangeForm;
 import com.example.ecsite.form.ShippingAddressForm;
 import com.example.ecsite.form.UserProfileForm;
 import com.example.ecsite.security.CustomUserDetails;
@@ -56,6 +59,74 @@ public class MyPageController {
                 shippingAddressService.findAllByUserId(userId));
 
         return "mypage/index";
+    }
+
+    @GetMapping("/mypage/password/edit")
+    public String editPassword(Model model) {
+
+        model.addAttribute(
+                "passwordChangeForm",
+                new PasswordChangeForm());
+
+        return "mypage/password-form";
+    }
+
+    @PostMapping("/mypage/password")
+    public String changePassword(
+            @Valid @ModelAttribute("passwordChangeForm") PasswordChangeForm passwordChangeForm,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            return "mypage/password-form";
+        }
+
+        if (!passwordChangeForm.getNewPassword()
+                .equals(passwordChangeForm.getConfirmPassword())) {
+
+            bindingResult.rejectValue(
+                    "confirmPassword",
+                    "mismatch",
+                    "新しいパスワードと確認用パスワードが一致しません。");
+
+            return "mypage/password-form";
+        }
+
+        Long userId = loginUser.getId();
+
+        try {
+
+            userService.changePassword(
+                    userId,
+                    passwordChangeForm.getCurrentPassword(),
+                    passwordChangeForm.getNewPassword());
+
+        } catch (IncorrectCurrentPasswordException e) {
+
+            bindingResult.rejectValue(
+                    "currentPassword",
+                    "incorrect",
+                    e.getMessage());
+
+            return "mypage/password-form";
+
+        } catch (SameAsCurrentPasswordException e) {
+
+            bindingResult.rejectValue(
+                    "newPassword",
+                    "sameAsCurrent",
+                    e.getMessage());
+
+            return "mypage/password-form";
+        }
+
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "パスワードを変更しました。");
+
+        return "redirect:/mypage";
+
     }
 
     @GetMapping("/mypage/profile/edit")
