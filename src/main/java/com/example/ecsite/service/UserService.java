@@ -1,9 +1,13 @@
 package com.example.ecsite.service;
 
+import java.time.LocalDateTime;
+
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.example.ecsite.dto.UserAccountInfo;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
@@ -15,7 +19,8 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository,
+    public UserService(
+            UserRepository userRepository,
             PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -30,6 +35,11 @@ public class UserService {
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(userForm.getPassword()));
         user.setEnabled(true);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
 
         try {
             userRepository.saveAndFlush(user);
@@ -49,14 +59,36 @@ public class UserService {
         return userRepository.existsByUsername(normalizeUsername(username));
     }
 
-    private String normalizeUsername(String username) {
-
-        return username.trim();
-    }
-
     public User findById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "ユーザーが見つかりません: " + id));
+    }
+
+    public UserAccountInfo getAccountInfo(Long userId) {
+
+        User user = findById(userId);
+
+        return new UserAccountInfo(
+                user.getUsername(),
+                user.getCreatedAt(),
+                user.getPreviousLoginAt(),
+                user.getLastLoginAt());
+    }
+
+    @Transactional
+    public void recordSuccessfulLogin(Long userId) {
+
+        User user = findById(userId);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setPreviousLoginAt(user.getLastLoginAt());
+        user.setLastLoginAt(now);
+    }
+
+    private String normalizeUsername(String username) {
+
+        return username.trim();
     }
 }

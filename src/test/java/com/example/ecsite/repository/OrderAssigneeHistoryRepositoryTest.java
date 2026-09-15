@@ -478,6 +478,11 @@ class OrderAssigneeHistoryRepositoryTest {
         user.setUsername(username);
         user.setPassword("password");
 
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
         return userRepository.save(user);
     }
 

@@ -431,39 +431,6 @@ class OrderStatusHistoryRepositoryTest {
         assertEquals(0, result.getTotalElements());
     }
 
-    private User createUser(String username) {
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword("password");
-        user.setEnabled(true);
-
-        return userRepository.save(user);
-    }
-
-    private OrderStatusHistory saveHistory(
-            Order order,
-            OrderStatus fromStatus,
-            OrderStatus toStatus,
-            OrderStatusHistoryActorType changedByType,
-            Long changedByAccountId,
-            String changedByUsername) {
-
-        OrderStatusHistory history = OrderStatusHistory.create(
-                order,
-                fromStatus,
-                toStatus,
-                changedByType,
-                changedByAccountId,
-                changedByUsername);
-
-        OrderStatusHistory saved = orderStatusHistoryRepository.save(history);
-
-        entityManager.flush();
-
-        return saved;
-    }
-
     @Test
     void searchReturnsEmptyWhenNoHistoryMatches() {
 
@@ -583,6 +550,44 @@ class OrderStatusHistoryRepositoryTest {
         assertEquals(
                 "入金確認済み",
                 loaded.getInternalNote());
+    }
+
+    private User createUser(String username) {
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("password");
+        user.setEnabled(true);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
+        return userRepository.save(user);
+    }
+
+    private OrderStatusHistory saveHistory(
+            Order order,
+            OrderStatus fromStatus,
+            OrderStatus toStatus,
+            OrderStatusHistoryActorType changedByType,
+            Long changedByAccountId,
+            String changedByUsername) {
+
+        OrderStatusHistory history = OrderStatusHistory.create(
+                order,
+                fromStatus,
+                toStatus,
+                changedByType,
+                changedByAccountId,
+                changedByUsername);
+
+        OrderStatusHistory saved = orderStatusHistoryRepository.save(history);
+
+        entityManager.flush();
+
+        return saved;
     }
 
 }

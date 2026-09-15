@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.LocalDateTime;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -26,8 +28,7 @@ class AdminAccountRepositoryTest {
     @Test
     void findByUsernameReturnsAccount() {
 
-        AdminAccount account =
-                createAdminAccount("admin-find");
+        AdminAccount account = createAdminAccount("admin-find");
 
         adminAccountRepository.saveAndFlush(account);
 
@@ -40,8 +41,7 @@ class AdminAccountRepositoryTest {
     @Test
     void existsByUsernameReturnsTrueWhenUsernameExists() {
 
-        AdminAccount account =
-                createAdminAccount("admin-exists");
+        AdminAccount account = createAdminAccount("admin-exists");
 
         adminAccountRepository.saveAndFlush(account);
 
@@ -53,11 +53,9 @@ class AdminAccountRepositoryTest {
     @Test
     void existsByUsernameAndIdNotExcludesSameAccount() {
 
-        AdminAccount account =
-                createAdminAccount("admin-edit");
+        AdminAccount account = createAdminAccount("admin-edit");
 
-        account =
-                adminAccountRepository.saveAndFlush(account);
+        account = adminAccountRepository.saveAndFlush(account);
 
         assertFalse(
                 adminAccountRepository
@@ -69,17 +67,13 @@ class AdminAccountRepositoryTest {
     @Test
     void existsByUsernameAndIdNotFindsOtherAccount() {
 
-        AdminAccount first =
-                createAdminAccount("admin-first");
+        AdminAccount first = createAdminAccount("admin-first");
 
-        AdminAccount second =
-                createAdminAccount("admin-second");
+        AdminAccount second = createAdminAccount("admin-second");
 
-        first =
-                adminAccountRepository.saveAndFlush(first);
+        first = adminAccountRepository.saveAndFlush(first);
 
-        second =
-                adminAccountRepository.saveAndFlush(second);
+        second = adminAccountRepository.saveAndFlush(second);
 
         assertTrue(
                 adminAccountRepository
@@ -91,11 +85,9 @@ class AdminAccountRepositoryTest {
     @Test
     void duplicateAdminUsernameIsRejected() {
 
-        AdminAccount first =
-                createAdminAccount("admin-duplicate");
+        AdminAccount first = createAdminAccount("admin-duplicate");
 
-        AdminAccount second =
-                createAdminAccount("admin-duplicate");
+        AdminAccount second = createAdminAccount("admin-duplicate");
 
         adminAccountRepository.saveAndFlush(first);
 
@@ -112,10 +104,14 @@ class AdminAccountRepositoryTest {
         user.setPassword("password");
         user.setEnabled(true);
 
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
         userRepository.saveAndFlush(user);
 
-        AdminAccount adminAccount =
-                createAdminAccount("shared-name");
+        AdminAccount adminAccount = createAdminAccount("shared-name");
 
         adminAccountRepository.saveAndFlush(adminAccount);
 
@@ -133,8 +129,7 @@ class AdminAccountRepositoryTest {
     private AdminAccount createAdminAccount(
             String username) {
 
-        AdminAccount account =
-                new AdminAccount();
+        AdminAccount account = new AdminAccount();
 
         account.setUsername(username);
         account.setPassword("password");

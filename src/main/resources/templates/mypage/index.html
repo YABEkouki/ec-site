@@ -14,14 +14,43 @@
 
     <h1>マイページ</h1>
 
-    <p th:if="${successMessage}"
-       th:text="${successMessage}"
-       class="message-success">
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
     </p>
 
     <section>
-        <h2>会員情報</h2>
+        <h2>アカウント情報</h2>
 
+        <table>
+            <tbody>
+                <tr>
+                    <th>ユーザー名</th>
+                    <td th:text="${account.username}"></td>
+                </tr>
+
+                <tr>
+                    <th>登録日時</th>
+                    <td th:text="${#temporals.format(account.createdAt, 'yyyy/MM/dd HH:mm')}"></td>
+                </tr>
+
+                <tr>
+                    <th>前回ログイン日時</th>
+                    <td th:text="${account.previousLoginAt != null
+                        ? #temporals.format(account.previousLoginAt, 'yyyy/MM/dd HH:mm')
+                        : '-'}"></td>
+                </tr>
+
+                <tr>
+                    <th>最終ログイン日時</th>
+                    <td th:text="${account.lastLoginAt != null
+                        ? #temporals.format(account.lastLoginAt, 'yyyy/MM/dd HH:mm')
+                        : '-'}"></td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>プロフィール情報</h2>
         <div th:if="${profile != null}">
             <table>
                 <tbody>
@@ -53,13 +82,12 @@
         </div>
 
         <p th:if="${profile == null}">
-            会員情報はまだ登録されていません。
+            プロフィール情報はまだ登録されていません。
         </p>
 
         <div class="actions">
-            <a th:href="@{/mypage/profile/edit}"
-               class="button button-primary">
-                会員情報を編集
+            <a th:href="@{/mypage/profile/edit}" class="button button-primary">
+                プロフィールを編集
             </a>
         </div>
     </section>
@@ -112,8 +140,7 @@
                     </td>
 
                     <td>
-                        <a th:href="@{/mypage/addresses/{id}/edit(id=${address.id})}"
-                           class="button button-secondary">
+                        <a th:href="@{/mypage/addresses/{id}/edit(id=${address.id})}" class="button button-secondary">
                             編集
                         </a>
                     </td>
@@ -122,8 +149,7 @@
         </table>
 
         <div class="actions">
-            <a th:href="@{/mypage/addresses/new}"
-               class="button button-primary">
+            <a th:href="@{/mypage/addresses/new}" class="button button-primary">
                 配送先を追加
             </a>
         </div>
@@ -133,13 +159,11 @@
         <h2>その他</h2>
 
         <div class="actions">
-            <a th:href="@{/orders}"
-               class="button button-secondary">
+            <a th:href="@{/orders}" class="button button-secondary">
                 注文履歴
             </a>
 
-            <a th:href="@{/favorites}"
-               class="button button-secondary">
+            <a th:href="@{/favorites}" class="button button-secondary">
                 お気に入り
             </a>
         </div>

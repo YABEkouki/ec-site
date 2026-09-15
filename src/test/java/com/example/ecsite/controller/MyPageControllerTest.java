@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.UserAccountInfo;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.entity.UserProfile;
 import com.example.ecsite.form.ShippingAddressForm;
@@ -23,263 +25,289 @@ import com.example.ecsite.form.UserProfileForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.ShippingAddressService;
 import com.example.ecsite.service.UserProfileService;
+import com.example.ecsite.service.UserService;
 
 @ExtendWith(MockitoExtension.class)
 class MyPageControllerTest {
 
-        @Mock
-        private UserProfileService userProfileService;
+    @Mock
+    private UserProfileService userProfileService;
 
-        @Mock
-        private ShippingAddressService shippingAddressService;
+    @Mock
+    private ShippingAddressService shippingAddressService;
 
-        @Mock
-        private Model model;
+    @Mock
+    private Model model;
 
-        private MyPageController controller;
+    @Mock
+    private UserService userService;
 
-        @BeforeEach
-        void setUp() {
+    private MyPageController controller;
 
-                controller = new MyPageController(
-                                userProfileService,
-                                shippingAddressService);
-        }
+    @BeforeEach
+    void setUp() {
 
-        @Test
-        void indexDisplaysProfileAndAddressesForLoggedInUser() {
+        controller = new MyPageController(
+                userProfileService,
+                shippingAddressService,
+                userService);
+    }
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+    @Test
+    void indexDisplaysProfileAndAddressesForLoggedInUser() {
 
-                when(loginUser.getId()).thenReturn(10L);
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-                UserProfile profile = new UserProfile();
-                List<ShippingAddress> addresses = List.of(new ShippingAddress());
+        when(loginUser.getId()).thenReturn(10L);
 
-                when(userProfileService.findByUserId(10L))
-                                .thenReturn(profile);
+        UserAccountInfo accountInfo = new UserAccountInfo(
+                "user1",
+                LocalDateTime.of(2026, 9, 1, 10, 0),
+                LocalDateTime.of(2026, 9, 14, 9, 0),
+                LocalDateTime.of(2026, 9, 15, 9, 0));
 
-                when(shippingAddressService.findAllByUserId(10L))
-                                .thenReturn(addresses);
+        when(userService.getAccountInfo(10L))
+                .thenReturn(accountInfo);
 
-                String viewName = controller.index(loginUser, model);
+        UserProfile profile = new UserProfile();
+        List<ShippingAddress> addresses = List.of(new ShippingAddress());
 
-                assertEquals("mypage/index", viewName);
+        when(userProfileService.findByUserId(10L))
+                .thenReturn(profile);
 
-                verify(model).addAttribute("profile", profile);
-                verify(model).addAttribute("addresses", addresses);
-        }
+        when(shippingAddressService.findAllByUserId(10L))
+                .thenReturn(addresses);
 
-        @Test
-        void editProfileDisplaysCurrentProfileForm() {
+        String viewName = controller.index(loginUser, model);
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        assertEquals("mypage/index", viewName);
 
-                when(loginUser.getId()).thenReturn(10L);
+        verify(model)
+                .addAttribute("profile", profile);
 
-                UserProfileForm form = new UserProfileForm();
+        verify(model)
+                .addAttribute("addresses", addresses);
 
-                when(userProfileService.createForm(10L))
-                                .thenReturn(form);
+        verify(userService)
+                .getAccountInfo(10L);
 
-                String viewName = controller.editProfile(loginUser, model);
+        verify(model)
+                .addAttribute(
+                        "account",
+                        accountInfo);
+    }
 
-                assertEquals(
-                                "mypage/profile-form",
-                                viewName);
+    @Test
+    void editProfileDisplaysCurrentProfileForm() {
 
-                verify(model)
-                                .addAttribute("userProfileForm", form);
-        }
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-        @Test
-        void updateProfileSavesLoggedInUsersProfile() {
+        when(loginUser.getId()).thenReturn(10L);
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        UserProfileForm form = new UserProfileForm();
 
-                when(loginUser.getId()).thenReturn(10L);
+        when(userProfileService.createForm(10L))
+                .thenReturn(form);
 
-                UserProfileForm form = new UserProfileForm();
+        String viewName = controller.editProfile(loginUser, model);
 
-                BindingResult bindingResult = mock(BindingResult.class);
+        assertEquals(
+                "mypage/profile-form",
+                viewName);
 
-                when(bindingResult.hasErrors())
-                                .thenReturn(false);
+        verify(model)
+                .addAttribute("userProfileForm", form);
+    }
 
-                RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+    @Test
+    void updateProfileSavesLoggedInUsersProfile() {
 
-                String viewName = controller.updateProfile(
-                                form,
-                                bindingResult,
-                                loginUser,
-                                redirectAttributes);
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-                assertEquals(
-                                "redirect:/mypage",
-                                viewName);
+        when(loginUser.getId()).thenReturn(10L);
 
-                verify(userProfileService)
-                                .save(10L, form);
+        UserProfileForm form = new UserProfileForm();
 
-                verify(redirectAttributes)
-                                .addFlashAttribute(
-                                                "successMessage",
-                                                "会員情報を更新しました。");
-        }
+        BindingResult bindingResult = mock(BindingResult.class);
 
-        @Test
-        void updateProfileReturnsFormWhenValidationFails() {
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-                UserProfileForm form = new UserProfileForm();
+        String viewName = controller.updateProfile(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
 
-                BindingResult bindingResult = mock(BindingResult.class);
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
 
-                when(bindingResult.hasErrors())
-                                .thenReturn(true);
+        verify(userProfileService)
+                .save(10L, form);
 
-                RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "会員情報を更新しました。");
+    }
 
-                String viewName = controller.updateProfile(
-                                form,
-                                bindingResult,
-                                loginUser,
-                                redirectAttributes);
+    @Test
+    void updateProfileReturnsFormWhenValidationFails() {
 
-                assertEquals(
-                                "mypage/profile-form",
-                                viewName);
-        }
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-        @Test
-        void newAddressDisplaysEmptyFormAndAddressStatus() {
+        UserProfileForm form = new UserProfileForm();
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        BindingResult bindingResult = mock(BindingResult.class);
 
-                when(loginUser.getId()).thenReturn(10L);
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
 
-                when(shippingAddressService.hasAddress(10L))
-                                .thenReturn(true);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-                String viewName = controller.newAddress(
-                                loginUser,
-                                model);
+        String viewName = controller.updateProfile(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
 
-                assertEquals(
-                                "mypage/address-form",
-                                viewName);
+        assertEquals(
+                "mypage/profile-form",
+                viewName);
+    }
 
-                verify(model)
-                                .addAttribute(
-                                                org.mockito.ArgumentMatchers.eq(
-                                                                "shippingAddressForm"),
-                                                org.mockito.ArgumentMatchers
-                                                                .any(ShippingAddressForm.class));
+    @Test
+    void newAddressDisplaysEmptyFormAndAddressStatus() {
 
-                verify(model)
-                                .addAttribute(
-                                                "hasAddress",
-                                                true);
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-                verify(shippingAddressService)
-                                .hasAddress(10L);
-        }
+        when(loginUser.getId()).thenReturn(10L);
 
-        @Test
-        void createAddressUsesLoggedInUserId() {
+        when(shippingAddressService.hasAddress(10L))
+                .thenReturn(true);
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        String viewName = controller.newAddress(
+                loginUser,
+                model);
 
-                when(loginUser.getId()).thenReturn(10L);
+        assertEquals(
+                "mypage/address-form",
+                viewName);
 
-                ShippingAddressForm form = new ShippingAddressForm();
+        verify(model)
+                .addAttribute(
+                        org.mockito.ArgumentMatchers.eq(
+                                "shippingAddressForm"),
+                        org.mockito.ArgumentMatchers
+                                .any(ShippingAddressForm.class));
 
-                BindingResult bindingResult = mock(BindingResult.class);
+        verify(model)
+                .addAttribute(
+                        "hasAddress",
+                        true);
 
-                when(bindingResult.hasErrors())
-                                .thenReturn(false);
+        verify(shippingAddressService)
+                .hasAddress(10L);
+    }
 
-                RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+    @Test
+    void createAddressUsesLoggedInUserId() {
 
-                String viewName = controller.createAddress(
-                                form,
-                                bindingResult,
-                                loginUser,
-                                redirectAttributes);
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-                assertEquals(
-                                "redirect:/mypage",
-                                viewName);
+        when(loginUser.getId()).thenReturn(10L);
 
-                verify(shippingAddressService)
-                                .create(10L, form);
-        }
+        ShippingAddressForm form = new ShippingAddressForm();
 
-        @Test
-        void editAddressUsesAddressIdAndLoggedInUserId() {
+        BindingResult bindingResult = mock(BindingResult.class);
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
 
-                when(loginUser.getId()).thenReturn(10L);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-                ShippingAddressForm form = new ShippingAddressForm();
+        String viewName = controller.createAddress(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
 
-                when(shippingAddressService
-                                .createForm(20L, 10L))
-                                .thenReturn(form);
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
 
-                String viewName = controller.editAddress(
-                                20L,
-                                loginUser,
-                                model);
+        verify(shippingAddressService)
+                .create(10L, form);
+    }
 
-                assertEquals(
-                                "mypage/address-form",
-                                viewName);
+    @Test
+    void editAddressUsesAddressIdAndLoggedInUserId() {
 
-                verify(shippingAddressService)
-                                .createForm(20L, 10L);
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-                verify(model)
-                                .addAttribute(
-                                                "shippingAddressForm",
-                                                form);
+        when(loginUser.getId()).thenReturn(10L);
 
-                verify(model)
-                                .addAttribute(
-                                                "addressId",
-                                                20L);
-        }
+        ShippingAddressForm form = new ShippingAddressForm();
 
-        @Test
-        void updateAddressUsesAddressIdAndLoggedInUserId() {
+        when(shippingAddressService
+                .createForm(20L, 10L))
+                .thenReturn(form);
 
-                CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        String viewName = controller.editAddress(
+                20L,
+                loginUser,
+                model);
 
-                when(loginUser.getId()).thenReturn(10L);
+        assertEquals(
+                "mypage/address-form",
+                viewName);
 
-                ShippingAddressForm form = new ShippingAddressForm();
+        verify(shippingAddressService)
+                .createForm(20L, 10L);
 
-                BindingResult bindingResult = mock(BindingResult.class);
+        verify(model)
+                .addAttribute(
+                        "shippingAddressForm",
+                        form);
 
-                when(bindingResult.hasErrors())
-                                .thenReturn(false);
+        verify(model)
+                .addAttribute(
+                        "addressId",
+                        20L);
+    }
 
-                RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+    @Test
+    void updateAddressUsesAddressIdAndLoggedInUserId() {
 
-                String viewName = controller.updateAddress(
-                                20L,
-                                form,
-                                bindingResult,
-                                loginUser,
-                                redirectAttributes);
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
 
-                assertEquals(
-                                "redirect:/mypage",
-                                viewName);
+        when(loginUser.getId()).thenReturn(10L);
 
-                verify(shippingAddressService)
-                                .update(20L, 10L, form);
-        }
+        ShippingAddressForm form = new ShippingAddressForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = controller.updateAddress(
+                20L,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(shippingAddressService)
+                .update(20L, 10L, form);
+    }
+
 }

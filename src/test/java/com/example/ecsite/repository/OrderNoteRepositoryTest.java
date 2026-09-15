@@ -2,6 +2,7 @@ package com.example.ecsite.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -108,6 +109,11 @@ class OrderNoteRepositoryTest {
         user.setUsername(username);
         user.setPassword("password");
         user.setEnabled(true);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
 
         return userRepository.save(user);
     }

@@ -15,152 +15,160 @@ import com.example.ecsite.form.UserProfileForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.ShippingAddressService;
 import com.example.ecsite.service.UserProfileService;
+import com.example.ecsite.service.UserService;
 
 import jakarta.validation.Valid;
 
 @Controller
 public class MyPageController {
 
-        private final UserProfileService userProfileService;
-        private final ShippingAddressService shippingAddressService;
+    private final UserProfileService userProfileService;
+    private final ShippingAddressService shippingAddressService;
+    private final UserService userService;
 
-        public MyPageController(
-                        UserProfileService userProfileService,
-                        ShippingAddressService shippingAddressService) {
+    public MyPageController(
+            UserProfileService userProfileService,
+            ShippingAddressService shippingAddressService,
+            UserService userService) {
 
-                this.userProfileService = userProfileService;
-                this.shippingAddressService = shippingAddressService;
+        this.userProfileService = userProfileService;
+        this.shippingAddressService = shippingAddressService;
+        this.userService = userService;
+    }
+
+    @GetMapping("/mypage")
+    public String index(
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model) {
+
+        Long userId = loginUser.getId();
+
+        model.addAttribute(
+                "account",
+                userService.getAccountInfo(userId));
+
+        model.addAttribute(
+                "profile",
+                userProfileService.findByUserId(userId));
+
+        model.addAttribute(
+                "addresses",
+                shippingAddressService.findAllByUserId(userId));
+
+        return "mypage/index";
+    }
+
+    @GetMapping("/mypage/profile/edit")
+    public String editProfile(
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model) {
+
+        model.addAttribute(
+                "userProfileForm",
+                userProfileService.createForm(loginUser.getId()));
+
+        return "mypage/profile-form";
+    }
+
+    @PostMapping("/mypage/profile")
+    public String updateProfile(
+            @Valid @ModelAttribute("userProfileForm") UserProfileForm userProfileForm,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            return "mypage/profile-form";
         }
 
-        @GetMapping("/mypage")
-        public String index(
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        Model model) {
+        userProfileService.save(
+                loginUser.getId(),
+                userProfileForm);
 
-                Long userId = loginUser.getId();
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "会員情報を更新しました。");
 
-                model.addAttribute(
-                                "profile",
-                                userProfileService.findByUserId(userId));
+        return "redirect:/mypage";
+    }
 
-                model.addAttribute(
-                                "addresses",
-                                shippingAddressService.findAllByUserId(userId));
+    @GetMapping("/mypage/addresses/new")
+    public String newAddress(@AuthenticationPrincipal CustomUserDetails loginUser, Model model) {
 
-                return "mypage/index";
+        model.addAttribute(
+                "shippingAddressForm",
+                new ShippingAddressForm());
+
+        model.addAttribute(
+                "hasAddress",
+                shippingAddressService.hasAddress(
+                        loginUser.getId()));
+
+        return "mypage/address-form";
+    }
+
+    @PostMapping("/mypage/addresses")
+    public String createAddress(
+            @Valid @ModelAttribute("shippingAddressForm") ShippingAddressForm shippingAddressForm,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            return "mypage/address-form";
         }
 
-        @GetMapping("/mypage/profile/edit")
-        public String editProfile(
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        Model model) {
+        shippingAddressService.create(
+                loginUser.getId(),
+                shippingAddressForm);
 
-                model.addAttribute(
-                                "userProfileForm",
-                                userProfileService.createForm(loginUser.getId()));
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "配送先を登録しました。");
 
-                return "mypage/profile-form";
+        return "redirect:/mypage";
+    }
+
+    @GetMapping("/mypage/addresses/{addressId}/edit")
+    public String editAddress(
+            @PathVariable Long addressId,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model) {
+
+        model.addAttribute(
+                "shippingAddressForm",
+                shippingAddressService.createForm(
+                        addressId,
+                        loginUser.getId()));
+
+        model.addAttribute(
+                "addressId",
+                addressId);
+
+        return "mypage/address-form";
+    }
+
+    @PostMapping("/mypage/addresses/{addressId}")
+    public String updateAddress(
+            @PathVariable Long addressId,
+            @Valid @ModelAttribute("shippingAddressForm") ShippingAddressForm shippingAddressForm,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            return "mypage/address-form";
         }
 
-        @PostMapping("/mypage/profile")
-        public String updateProfile(
-                        @Valid @ModelAttribute("userProfileForm") UserProfileForm userProfileForm,
-                        BindingResult bindingResult,
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        RedirectAttributes redirectAttributes) {
+        shippingAddressService.update(
+                addressId,
+                loginUser.getId(),
+                shippingAddressForm);
 
-                if (bindingResult.hasErrors()) {
-                        return "mypage/profile-form";
-                }
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "配送先を更新しました。");
 
-                userProfileService.save(
-                                loginUser.getId(),
-                                userProfileForm);
-
-                redirectAttributes.addFlashAttribute(
-                                "successMessage",
-                                "会員情報を更新しました。");
-
-                return "redirect:/mypage";
-        }
-
-        @GetMapping("/mypage/addresses/new")
-        public String newAddress(@AuthenticationPrincipal CustomUserDetails loginUser, Model model) {
-
-                model.addAttribute(
-                                "shippingAddressForm",
-                                new ShippingAddressForm());
-
-                model.addAttribute(
-                                "hasAddress",
-                                shippingAddressService.hasAddress(
-                                                loginUser.getId()));
-
-                return "mypage/address-form";
-        }
-
-        @PostMapping("/mypage/addresses")
-        public String createAddress(
-                        @Valid @ModelAttribute("shippingAddressForm") ShippingAddressForm shippingAddressForm,
-                        BindingResult bindingResult,
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        RedirectAttributes redirectAttributes) {
-
-                if (bindingResult.hasErrors()) {
-                        return "mypage/address-form";
-                }
-
-                shippingAddressService.create(
-                                loginUser.getId(),
-                                shippingAddressForm);
-
-                redirectAttributes.addFlashAttribute(
-                                "successMessage",
-                                "配送先を登録しました。");
-
-                return "redirect:/mypage";
-        }
-
-        @GetMapping("/mypage/addresses/{addressId}/edit")
-        public String editAddress(
-                        @PathVariable Long addressId,
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        Model model) {
-
-                model.addAttribute(
-                                "shippingAddressForm",
-                                shippingAddressService.createForm(
-                                                addressId,
-                                                loginUser.getId()));
-
-                model.addAttribute(
-                                "addressId",
-                                addressId);
-
-                return "mypage/address-form";
-        }
-
-        @PostMapping("/mypage/addresses/{addressId}")
-        public String updateAddress(
-                        @PathVariable Long addressId,
-                        @Valid @ModelAttribute("shippingAddressForm") ShippingAddressForm shippingAddressForm,
-                        BindingResult bindingResult,
-                        @AuthenticationPrincipal CustomUserDetails loginUser,
-                        RedirectAttributes redirectAttributes) {
-
-                if (bindingResult.hasErrors()) {
-                        return "mypage/address-form";
-                }
-
-                shippingAddressService.update(
-                                addressId,
-                                loginUser.getId(),
-                                shippingAddressForm);
-
-                redirectAttributes.addFlashAttribute(
-                                "successMessage",
-                                "配送先を更新しました。");
-
-                return "redirect:/mypage";
-        }
+        return "redirect:/mypage";
+    }
 }
