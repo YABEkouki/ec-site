@@ -23,7 +23,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.example.ecsite.dto.AdminAccountInfo;
 import com.example.ecsite.entity.AdminAccount;
+import com.example.ecsite.exception.IncorrectCurrentPasswordException;
+import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.form.AdminAccountCreateForm;
 import com.example.ecsite.form.AdminAccountEditForm;
 import com.example.ecsite.repository.AdminAccountRepository;
@@ -436,6 +439,204 @@ class AdminAccountServiceTest {
         assertEquals(
                 updatedAt,
                 account.getUpdatedAt());
+    }
+
+    @Test
+    void getAccountInfoReturnsAccountInformation() {
+
+        AdminAccount account = createAccount(
+                "admin1",
+                "encoded-password",
+                true);
+
+        LocalDateTime createdAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 10, 11, 0);
+
+        LocalDateTime previousLoginAt = LocalDateTime.of(2026, 9, 14, 9, 0);
+
+        LocalDateTime lastLoginAt = LocalDateTime.of(2026, 9, 15, 9, 0);
+
+        account.setCreatedAt(createdAt);
+        account.setUpdatedAt(updatedAt);
+        account.setPreviousLoginAt(previousLoginAt);
+        account.setLastLoginAt(lastLoginAt);
+
+        when(adminAccountRepository.findById(1L))
+                .thenReturn(Optional.of(account));
+
+        AdminAccountService service = createService();
+
+        AdminAccountInfo result = service.getAccountInfo(1L);
+
+        assertEquals("admin1", result.username());
+        assertEquals(createdAt, result.createdAt());
+        assertEquals(updatedAt, result.updatedAt());
+        assertEquals(previousLoginAt, result.previousLoginAt());
+        assertEquals(lastLoginAt, result.lastLoginAt());
+    }
+
+    @Test
+    void changePasswordChangesPasswordAndUpdatedAt() {
+
+        AdminAccount account = createAccount(
+                "admin1",
+                "encoded-current-password",
+                true);
+
+        LocalDateTime oldUpdatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        LocalDateTime previousLoginAt = LocalDateTime.of(2026, 9, 14, 9, 0);
+
+        LocalDateTime lastLoginAt = LocalDateTime.of(2026, 9, 15, 9, 0);
+
+        account.setUpdatedAt(oldUpdatedAt);
+        account.setPreviousLoginAt(previousLoginAt);
+        account.setLastLoginAt(lastLoginAt);
+
+        when(adminAccountRepository.findById(1L))
+                .thenReturn(Optional.of(account));
+
+        when(passwordEncoder.matches(
+                "current-password",
+                "encoded-current-password"))
+                .thenReturn(true);
+
+        when(passwordEncoder.matches(
+                "new-password",
+                "encoded-current-password"))
+                .thenReturn(false);
+
+        when(passwordEncoder.encode("new-password"))
+                .thenReturn("encoded-new-password");
+
+        AdminAccountService service = createService();
+
+        service.changePassword(
+                1L,
+                "current-password",
+                "new-password");
+
+        assertEquals(
+                "encoded-new-password",
+                account.getPassword());
+
+        assertTrue(
+                account.getUpdatedAt().isAfter(oldUpdatedAt));
+
+        assertEquals(
+                previousLoginAt,
+                account.getPreviousLoginAt());
+
+        assertEquals(
+                lastLoginAt,
+                account.getLastLoginAt());
+    }
+
+    @Test
+    void changePasswordRejectsIncorrectCurrentPassword() {
+
+        AdminAccount account = createAccount(
+                "admin1",
+                "encoded-current-password",
+                true);
+
+        when(adminAccountRepository.findById(1L))
+                .thenReturn(Optional.of(account));
+
+        when(passwordEncoder.matches(
+                "wrong-password",
+                "encoded-current-password"))
+                .thenReturn(false);
+
+        AdminAccountService service = createService();
+
+        assertThrows(
+                IncorrectCurrentPasswordException.class,
+                () -> service.changePassword(
+                        1L,
+                        "wrong-password",
+                        "new-password"));
+
+        assertEquals(
+                "encoded-current-password",
+                account.getPassword());
+
+        verify(passwordEncoder, never())
+                .encode(any());
+    }
+
+    @Test
+    void changePasswordRejectsSameAsCurrentPassword() {
+
+        AdminAccount account = createAccount(
+                "admin1",
+                "encoded-current-password",
+                true);
+
+        when(adminAccountRepository.findById(1L))
+                .thenReturn(Optional.of(account));
+
+        when(passwordEncoder.matches(
+                "current-password",
+                "encoded-current-password"))
+                .thenReturn(true);
+
+        when(passwordEncoder.matches(
+                "same-password",
+                "encoded-current-password"))
+                .thenReturn(true);
+
+        AdminAccountService service = createService();
+
+        assertThrows(
+                SameAsCurrentPasswordException.class,
+                () -> service.changePassword(
+                        1L,
+                        "current-password",
+                        "same-password"));
+
+        assertEquals(
+                "encoded-current-password",
+                account.getPassword());
+
+        verify(passwordEncoder, never())
+                .encode(any());
+    }
+
+    @Test
+    void changePasswordUsesSpecifiedAdminAccountId() {
+
+        AdminAccount account = createAccount(
+                "admin2",
+                "encoded-current-password",
+                true);
+
+        when(adminAccountRepository.findById(2L))
+                .thenReturn(Optional.of(account));
+
+        when(passwordEncoder.matches(
+                "current-password",
+                "encoded-current-password"))
+                .thenReturn(true);
+
+        when(passwordEncoder.matches(
+                "new-password",
+                "encoded-current-password"))
+                .thenReturn(false);
+
+        when(passwordEncoder.encode("new-password"))
+                .thenReturn("encoded-new-password");
+
+        AdminAccountService service = createService();
+
+        service.changePassword(
+                2L,
+                "current-password",
+                "new-password");
+
+        verify(adminAccountRepository)
+                .findById(2L);
     }
 
 }

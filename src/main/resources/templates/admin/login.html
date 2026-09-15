@@ -7,38 +7,48 @@
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
-<body>
+<body class="auth-page">
 
-    <main>
+    <main class="auth-container">
+
         <h1>管理者ログイン</h1>
 
-        <p th:if="${param.error}">
+        <p th:if="${param.error}" class="message-error">
             ユーザー名またはパスワードが正しくありません。
         </p>
 
-        <p th:if="${param.logout}">
+        <p th:if="${param.logout}" class="message-success">
             ログアウトしました。
         </p>
 
-        <form th:action="@{/admin/login}" method="post">
+        <form th:action="@{/admin/login}" method="post" class="form-card">
 
-            <div>
-                <label for="username">ユーザー名</label>
-                <input type="text" id="username" name="username" required autofocus>
+            <div class="form-group">
+
+                <label for="username">
+                    ユーザー名
+                </label>
+
+                <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+
             </div>
 
-            <div>
-                <label for="password">パスワード</label>
-                <input type="password" id="password" name="password" required>
+            <div class="form-group">
+
+                <label for="password">
+                    パスワード
+                </label>
+
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+
             </div>
 
-            <div>
-                <button type="submit">
-                    ログイン
-                </button>
-            </div>
+            <button type="submit" class="button-primary">
+                ログイン
+            </button>
 
         </form>
+
     </main>
 
 </body>

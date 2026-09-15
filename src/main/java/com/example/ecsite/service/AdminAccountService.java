@@ -8,7 +8,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.ecsite.dto.AdminAccountInfo;
 import com.example.ecsite.entity.AdminAccount;
+import com.example.ecsite.exception.IncorrectCurrentPasswordException;
+import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.form.AdminAccountCreateForm;
 import com.example.ecsite.form.AdminAccountEditForm;
 import com.example.ecsite.repository.AdminAccountRepository;
@@ -41,6 +44,26 @@ public class AdminAccountService {
     public List<AdminAccount> findAllEnabled() {
         return adminAccountRepository.findByEnabledTrueOrderByUsernameAsc();
     }
+   
+    @Transactional(readOnly = true)
+    public List<AdminAccount> findAllOrderByUsernameAsc() {
+        return adminAccountRepository.findAllByOrderByUsernameAsc();
+    }
+
+    
+    @Transactional(readOnly = true)
+    public AdminAccountInfo getAccountInfo(Long adminAccountId) {
+
+        AdminAccount adminAccount = findById(adminAccountId);
+
+        return new AdminAccountInfo(
+                adminAccount.getUsername(),
+                adminAccount.getCreatedAt(),
+                adminAccount.getUpdatedAt(),
+                adminAccount.getPreviousLoginAt(),
+                adminAccount.getLastLoginAt());
+    }
+
 
     @Transactional(readOnly = true)
     public boolean usernameExists(String username) {
@@ -125,9 +148,32 @@ public class AdminAccountService {
         adminAccount.setLastLoginAt(now);
     }
 
-    @Transactional(readOnly = true)
-    public List<AdminAccount> findAllOrderByUsernameAsc() {
-        return adminAccountRepository.findAllByOrderByUsernameAsc();
+    @Transactional
+    public void changePassword(
+            Long adminAccountId,
+            String currentPassword,
+            String newPassword) {
+
+        AdminAccount adminAccount = findById(adminAccountId);
+
+        if (!passwordEncoder.matches(
+                currentPassword,
+                adminAccount.getPassword())) {
+
+            throw new IncorrectCurrentPasswordException();
+        }
+
+        if (passwordEncoder.matches(
+                newPassword,
+                adminAccount.getPassword())) {
+
+            throw new SameAsCurrentPasswordException();
+        }
+
+        adminAccount.setPassword(
+                passwordEncoder.encode(newPassword));
+
+        adminAccount.setUpdatedAt(LocalDateTime.now());
     }
 
     private String normalizeUsername(String username) {
