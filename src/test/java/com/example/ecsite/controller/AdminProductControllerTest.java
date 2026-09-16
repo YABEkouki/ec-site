@@ -71,12 +71,8 @@ class AdminProductControllerTest {
     void stockDisplaysStockAdjustmentForm() {
 
         Long productId = 1L;
-        Long categoryId = 2L;
 
         Category category = mock(Category.class);
-
-        when(category.getId())
-                .thenReturn(categoryId);
 
         Product product = new Product();
         product.setId(productId);
