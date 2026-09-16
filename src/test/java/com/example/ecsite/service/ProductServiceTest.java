@@ -15,606 +15,887 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.mock.web.MockMultipartFile;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.CategoryNotFoundException;
 import com.example.ecsite.form.ProductForm;
+import com.example.ecsite.form.ProductSearchForm;
 import com.example.ecsite.repository.ProductRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ProductServiceTest {
 
-        @Mock
-        private ProductRepository productRepository;
+    @Mock
+    private ProductRepository productRepository;
 
-        @Mock
-        private CategoryService categoryService;
+    @Mock
+    private CategoryService categoryService;
 
-        @Mock
-        private ProductImageService productImageService;
+    @Mock
+    private ProductImageService productImageService;
 
-        @Test
-        void findLowStockProductsUsesSpecifiedThreshold() {
+    @Mock
+    private ProductSearchKeywordService productSearchKeywordService;
 
-                int threshold = 5;
+    @Test
+    void findLowStockProductsUsesSpecifiedThreshold() {
 
-                Product product1 = new Product();
-                Product product2 = new Product();
+        int threshold = 5;
 
-                List<Product> expectedProducts = List.of(product1, product2);
+        Product product1 = new Product();
+        Product product2 = new Product();
 
-                when(productRepository
-                                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
-                                                threshold))
-                                .thenReturn(expectedProducts);
+        List<Product> expectedProducts = List.of(product1, product2);
 
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
+        when(productRepository
+                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
+                        threshold))
+                .thenReturn(expectedProducts);
 
-                List<Product> actualProducts = productService.findLowStockProducts(
-                                threshold);
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
 
-                assertSame(
-                                expectedProducts,
-                                actualProducts);
+        List<Product> actualProducts = productService.findLowStockProducts(
+                threshold);
 
-                verify(productRepository)
-                                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
-                                                threshold);
-        }
+        assertSame(
+                expectedProducts,
+                actualProducts);
 
-        @Test
-        void deleteUsesLockedProductAndMakesItInactive() {
+        verify(productRepository)
+                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
+                        threshold);
+    }
 
-                Long productId = 1L;
+    @Test
+    void deleteUsesLockedProductAndMakesItInactive() {
 
-                Product product = mock(Product.class);
+        Long productId = 1L;
 
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
+        Product product = mock(Product.class);
 
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
+        when(productRepository
+                .findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
 
-                productService.delete(productId);
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
 
-                verify(productRepository)
-                                .findByIdForUpdate(productId);
+        productService.delete(productId);
 
-                verify(product)
-                                .setActive(false);
-        }
+        verify(productRepository)
+                .findByIdForUpdate(productId);
 
-        @Test
-        void restoreUsesLockedInactiveProductAndMakesItActive() {
+        verify(product)
+                .setActive(false);
+    }
 
-                Long productId = 1L;
+    @Test
+    void restoreUsesLockedInactiveProductAndMakesItActive() {
 
-                Product product = mock(Product.class);
+        Long productId = 1L;
 
-                when(productRepository
-                                .findInactiveByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
+        Product product = mock(Product.class);
 
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
+        when(productRepository
+                .findInactiveByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
 
-                productService.restore(productId);
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
 
-                verify(productRepository)
-                                .findInactiveByIdForUpdate(productId);
+        productService.restore(productId);
 
-                verify(product)
-                                .setActive(true);
-        }
+        verify(productRepository)
+                .findInactiveByIdForUpdate(productId);
 
-        @Test
-        void searchWithoutConditionsFindsAllActiveProducts() {
+        verify(product)
+                .setActive(true);
+    }
 
-                Page<Product> expected = new PageImpl<>(List.of(new Product()));
+    @Test
+    void searchWithoutConditionsFindsAllActiveProducts() {
 
-                when(productRepository.findByActiveTrue(
-                                any(Pageable.class)))
-                                .thenReturn(expected);
+        Page<Product> expected = new PageImpl<>(List.of(new Product()));
+
+        when(productRepository.findByActiveTrue(
+                any(Pageable.class)))
+                .thenReturn(expected);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Page<Product> actual = productService.search(
+                null,
+                null,
+                0,
+                10,
+                "newest");
+
+        assertSame(expected, actual);
+
+        verify(productRepository)
+                .findByActiveTrue(
+                        any(Pageable.class));
+    }
+
+    @Test
+    void searchWithKeywordUsesKeywordQuery() {
+
+        Page<Product> expected = new PageImpl<>(List.of(new Product()));
+
+        when(productRepository
+                .findByNameContainingIgnoreCaseAndActiveTrue(
+                        eq("商品"),
+                        any(Pageable.class)))
+                .thenReturn(expected);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Page<Product> actual = productService.search(
+                "  商品  ",
+                null,
+                0,
+                10,
+                "newest");
+
+        assertSame(expected, actual);
+
+        verify(productRepository)
+                .findByNameContainingIgnoreCaseAndActiveTrue(
+                        eq("商品"),
+                        any(Pageable.class));
+    }
+
+    @Test
+    void searchWithCategoryUsesCategoryQuery() {
+
+        Page<Product> expected = new PageImpl<>(List.of(new Product()));
+
+        when(productRepository
+                .findByCategory_IdAndActiveTrue(
+                        eq(2L),
+                        any(Pageable.class)))
+                .thenReturn(expected);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Page<Product> actual = productService.search(
+                null,
+                2L,
+                0,
+                10,
+                "newest");
+
+        assertSame(expected, actual);
+
+        verify(productRepository)
+                .findByCategory_IdAndActiveTrue(
+                        eq(2L),
+                        any(Pageable.class));
+    }
+
+    @Test
+    void searchWithKeywordAndCategoryUsesCombinedQuery() {
+
+        Page<Product> expected = new PageImpl<>(List.of(new Product()));
+
+        when(productRepository
+                .findByNameContainingIgnoreCaseAndCategory_IdAndActiveTrue(
+                        eq("商品"),
+                        eq(2L),
+                        any(Pageable.class)))
+                .thenReturn(expected);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Page<Product> actual = productService.search(
+                "  商品  ",
+                2L,
+                0,
+                10,
+                "priceAsc");
+
+        assertSame(expected, actual);
+
+        verify(productRepository)
+                .findByNameContainingIgnoreCaseAndCategory_IdAndActiveTrue(
+                        eq("商品"),
+                        eq(2L),
+                        any(Pageable.class));
+    }
+
+    @Test
+    void updateAllowsKeepingCurrentInactiveCategory() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Product product = mock(Product.class);
+        Category currentCategory = mock(Category.class);
+
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("更新後の説明");
+        form.setCategoryId(categoryId);
+
+        when(productRepository
+                .findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
+
+        when(product.getCategory())
+                .thenReturn(currentCategory);
+
+        when(currentCategory.getId())
+                .thenReturn(categoryId);
+
+        when(categoryService.findById(categoryId))
+                .thenReturn(currentCategory);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Product result = productService.update(
+                productId,
+                form);
+
+        assertSame(product, result);
+
+        verify(categoryService)
+                .findById(categoryId);
+
+        verify(categoryService, never())
+                .findActiveById(categoryId);
+
+        verify(product)
+                .setCategory(currentCategory);
+    }
+
+    @Test
+    void updateAllowsChangingToActiveCategory() {
+
+        Long productId = 1L;
+        Long currentCategoryId = 2L;
+        Long requestedCategoryId = 3L;
+
+        Product product = mock(Product.class);
+        Category currentCategory = mock(Category.class);
+        Category requestedCategory = mock(Category.class);
+
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("更新後の説明");
+        form.setCategoryId(requestedCategoryId);
+
+        when(productRepository
+                .findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
+
+        when(product.getCategory())
+                .thenReturn(currentCategory);
+
+        when(currentCategory.getId())
+                .thenReturn(currentCategoryId);
+
+        when(categoryService
+                .findActiveById(requestedCategoryId))
+                .thenReturn(requestedCategory);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Product result = productService.update(
+                productId,
+                form);
+
+        assertSame(product, result);
+
+        verify(categoryService)
+                .findActiveById(
+                        requestedCategoryId);
+
+        verify(categoryService, never())
+                .findById(requestedCategoryId);
+
+        verify(product)
+                .setCategory(requestedCategory);
+    }
+
+    @Test
+    void updateRejectsChangingToInactiveCategory() {
+
+        Long productId = 1L;
+        Long currentCategoryId = 2L;
+        Long requestedCategoryId = 3L;
+
+        Product product = mock(Product.class);
+        Category currentCategory = mock(Category.class);
+
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("更新後の説明");
+        form.setCategoryId(requestedCategoryId);
+
+        when(productRepository
+                .findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
+
+        when(product.getCategory())
+                .thenReturn(currentCategory);
+
+        when(currentCategory.getId())
+                .thenReturn(currentCategoryId);
+
+        when(categoryService
+                .findActiveById(requestedCategoryId))
+                .thenThrow(
+                        new CategoryNotFoundException(
+                                requestedCategoryId));
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        assertThrows(
+                CategoryNotFoundException.class,
+                () -> productService.update(
+                        productId,
+                        form));
+
+        verify(categoryService)
+                .findActiveById(
+                        requestedCategoryId);
+
+        verify(categoryService, never())
+                .findById(requestedCategoryId);
+
+        verify(product, never())
+                .setName(any());
+
+        verify(product, never())
+                .setCategory(any());
+    }
+
+    @Test
+    void createSavesProductImageAndSetsImagePath() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Category category = new Category();
+
+        ProductForm form = new ProductForm();
+        form.setName("テスト商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("説明");
+        form.setCategoryId(categoryId);
+
+        MockMultipartFile imageFile = new MockMultipartFile(
+                "imageFile",
+                "product.jpg",
+                "image/jpeg",
+                "test image".getBytes());
+
+        form.setImageFile(imageFile);
+
+        when(categoryService.findActiveById(categoryId))
+                .thenReturn(category);
+
+        when(productRepository.save(any(Product.class)))
+                .thenAnswer(invocation -> {
+                    Product product = invocation.getArgument(0);
+                    product.setId(productId);
+                    return product;
+                });
+
+        when(productImageService.saveImage(productId, imageFile))
+                .thenReturn("1/test.jpg");
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Product result = productService.create(form);
 
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                Page<Product> actual = productService.search(
-                                null,
-                                null,
-                                0,
-                                10,
-                                "newest");
-
-                assertSame(expected, actual);
-
-                verify(productRepository)
-                                .findByActiveTrue(
-                                                any(Pageable.class));
-        }
-
-        @Test
-        void searchWithKeywordUsesKeywordQuery() {
-
-                Page<Product> expected = new PageImpl<>(List.of(new Product()));
-
-                when(productRepository
-                                .findByNameContainingIgnoreCaseAndActiveTrue(
-                                                eq("商品"),
-                                                any(Pageable.class)))
-                                .thenReturn(expected);
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                Page<Product> actual = productService.search(
-                                "  商品  ",
-                                null,
-                                0,
-                                10,
-                                "newest");
-
-                assertSame(expected, actual);
-
-                verify(productRepository)
-                                .findByNameContainingIgnoreCaseAndActiveTrue(
-                                                eq("商品"),
-                                                any(Pageable.class));
-        }
-
-        @Test
-        void searchWithCategoryUsesCategoryQuery() {
-
-                Page<Product> expected = new PageImpl<>(List.of(new Product()));
-
-                when(productRepository
-                                .findByCategory_IdAndActiveTrue(
-                                                eq(2L),
-                                                any(Pageable.class)))
-                                .thenReturn(expected);
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                Page<Product> actual = productService.search(
-                                null,
-                                2L,
-                                0,
-                                10,
-                                "newest");
-
-                assertSame(expected, actual);
-
-                verify(productRepository)
-                                .findByCategory_IdAndActiveTrue(
-                                                eq(2L),
-                                                any(Pageable.class));
-        }
-
-        @Test
-        void searchWithKeywordAndCategoryUsesCombinedQuery() {
-
-                Page<Product> expected = new PageImpl<>(List.of(new Product()));
-
-                when(productRepository
-                                .findByNameContainingIgnoreCaseAndCategory_IdAndActiveTrue(
-                                                eq("商品"),
-                                                eq(2L),
-                                                any(Pageable.class)))
-                                .thenReturn(expected);
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                Page<Product> actual = productService.search(
-                                "  商品  ",
-                                2L,
-                                0,
-                                10,
-                                "priceAsc");
-
-                assertSame(expected, actual);
-
-                verify(productRepository)
-                                .findByNameContainingIgnoreCaseAndCategory_IdAndActiveTrue(
-                                                eq("商品"),
-                                                eq(2L),
-                                                any(Pageable.class));
-        }
-
-        @Test
-        void updateAllowsKeepingCurrentInactiveCategory() {
-
-                Long productId = 1L;
-                Long categoryId = 2L;
-
-                Product product = mock(Product.class);
-                Category currentCategory = mock(Category.class);
-
-                ProductForm form = new ProductForm();
-                form.setName("更新商品");
-                form.setPrice(1000);
-                form.setStock(5);
-                form.setDescription("更新後の説明");
-                form.setCategoryId(categoryId);
-
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
-
-                when(product.getCategory())
-                                .thenReturn(currentCategory);
-
-                when(currentCategory.getId())
-                                .thenReturn(categoryId);
-
-                when(categoryService.findById(categoryId))
-                                .thenReturn(currentCategory);
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                Product result = productService.update(
-                                productId,
-                                form);
-
-                assertSame(product, result);
-
-                verify(categoryService)
-                                .findById(categoryId);
-
-                verify(categoryService, never())
-                                .findActiveById(categoryId);
-
-                verify(product)
-                                .setCategory(currentCategory);
-        }
-
-        @Test
-        void updateAllowsChangingToActiveCategory() {
-
-                Long productId = 1L;
-                Long currentCategoryId = 2L;
-                Long requestedCategoryId = 3L;
-
-                Product product = mock(Product.class);
-                Category currentCategory = mock(Category.class);
-                Category requestedCategory = mock(Category.class);
-
-                ProductForm form = new ProductForm();
-                form.setName("更新商品");
-                form.setPrice(1000);
-                form.setStock(5);
-                form.setDescription("更新後の説明");
-                form.setCategoryId(requestedCategoryId);
-
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
-
-                when(product.getCategory())
-                                .thenReturn(currentCategory);
-
-                when(currentCategory.getId())
-                                .thenReturn(currentCategoryId);
-
-                when(categoryService
-                                .findActiveById(requestedCategoryId))
-                                .thenReturn(requestedCategory);
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                Product result = productService.update(
-                                productId,
-                                form);
-
-                assertSame(product, result);
-
-                verify(categoryService)
-                                .findActiveById(
-                                                requestedCategoryId);
-
-                verify(categoryService, never())
-                                .findById(requestedCategoryId);
-
-                verify(product)
-                                .setCategory(requestedCategory);
-        }
-
-        @Test
-        void updateRejectsChangingToInactiveCategory() {
-
-                Long productId = 1L;
-                Long currentCategoryId = 2L;
-                Long requestedCategoryId = 3L;
-
-                Product product = mock(Product.class);
-                Category currentCategory = mock(Category.class);
-
-                ProductForm form = new ProductForm();
-                form.setName("更新商品");
-                form.setPrice(1000);
-                form.setStock(5);
-                form.setDescription("更新後の説明");
-                form.setCategoryId(requestedCategoryId);
-
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
-
-                when(product.getCategory())
-                                .thenReturn(currentCategory);
-
-                when(currentCategory.getId())
-                                .thenReturn(currentCategoryId);
-
-                when(categoryService
-                                .findActiveById(requestedCategoryId))
-                                .thenThrow(
-                                                new CategoryNotFoundException(
-                                                                requestedCategoryId));
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                assertThrows(
-                                CategoryNotFoundException.class,
-                                () -> productService.update(
-                                                productId,
-                                                form));
-
-                verify(categoryService)
-                                .findActiveById(
-                                                requestedCategoryId);
-
-                verify(categoryService, never())
-                                .findById(requestedCategoryId);
+        verify(productImageService)
+                .saveImage(productId, imageFile);
 
-                verify(product, never())
-                                .setName(any());
+        verify(productRepository)
+                .save(any(Product.class));
 
-                verify(product, never())
-                                .setCategory(any());
-        }
+        assertSame(category, result.getCategory());
+        assertEquals("1/test.jpg", result.getImagePath());
+    }
+
+    @Test
+    void updateReplacesProductImage() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
 
-        @Test
-        void createSavesProductImageAndSetsImagePath() {
-
-                Long productId = 1L;
-                Long categoryId = 2L;
-
-                Category category = new Category();
+        Product product = mock(Product.class);
+        Category category = mock(Category.class);
 
-                ProductForm form = new ProductForm();
-                form.setName("テスト商品");
-                form.setPrice(1000);
-                form.setStock(5);
-                form.setDescription("説明");
-                form.setCategoryId(categoryId);
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("更新後の説明");
+        form.setCategoryId(categoryId);
 
-                MockMultipartFile imageFile = new MockMultipartFile(
-                                "imageFile",
-                                "product.jpg",
-                                "image/jpeg",
-                                "test image".getBytes());
+        MockMultipartFile imageFile = new MockMultipartFile(
+                "imageFile",
+                "new-image.jpg",
+                "image/jpeg",
+                "new image".getBytes());
 
-                form.setImageFile(imageFile);
+        form.setImageFile(imageFile);
 
-                when(categoryService.findActiveById(categoryId))
-                                .thenReturn(category);
+        when(productRepository.findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
 
-                when(productRepository.save(any(Product.class)))
-                                .thenAnswer(invocation -> {
-                                        Product product = invocation.getArgument(0);
-                                        product.setId(productId);
-                                        return product;
-                                });
+        when(product.getId())
+                .thenReturn(productId);
 
-                when(productImageService.saveImage(productId, imageFile))
-                                .thenReturn("1/test.jpg");
+        when(product.getCategory())
+                .thenReturn(category);
 
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
+        when(category.getId())
+                .thenReturn(categoryId);
 
-                Product result = productService.create(form);
+        when(categoryService.findById(categoryId))
+                .thenReturn(category);
 
-                verify(productImageService)
-                                .saveImage(productId, imageFile);
+        when(product.getImagePath())
+                .thenReturn("1/old-image.jpg");
 
-                verify(productRepository)
-                                .save(any(Product.class));
+        when(productImageService.saveImage(productId, imageFile))
+                .thenReturn("1/new-image.jpg");
 
-                assertSame(category, result.getCategory());
-                assertEquals("1/test.jpg", result.getImagePath());
-        }
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
 
-        @Test
-        void updateReplacesProductImage() {
+        Product result = productService.update(
+                productId,
+                form);
 
-                Long productId = 1L;
-                Long categoryId = 2L;
+        assertSame(product, result);
 
-                Product product = mock(Product.class);
-                Category category = mock(Category.class);
+        verify(productImageService)
+                .saveImage(productId, imageFile);
 
-                ProductForm form = new ProductForm();
-                form.setName("更新商品");
-                form.setPrice(1000);
-                form.setStock(5);
-                form.setDescription("更新後の説明");
-                form.setCategoryId(categoryId);
+        verify(product)
+                .setImagePath("1/new-image.jpg");
 
-                MockMultipartFile imageFile = new MockMultipartFile(
-                                "imageFile",
-                                "new-image.jpg",
-                                "image/jpeg",
-                                "new image".getBytes());
+        verify(productImageService)
+                .deleteImage("1/old-image.jpg");
+    }
 
-                form.setImageFile(imageFile);
+    @Test
+    void updateKeepsExistingImageWhenNewImageIsNotSelected() {
 
-                when(productRepository.findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
+        Long productId = 1L;
+        Long categoryId = 2L;
 
-                when(product.getId())
-                                .thenReturn(productId);
+        Product product = mock(Product.class);
+        Category category = mock(Category.class);
 
-                when(product.getCategory())
-                                .thenReturn(category);
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("更新後の説明");
+        form.setCategoryId(categoryId);
 
-                when(category.getId())
-                                .thenReturn(categoryId);
+        when(productRepository.findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
 
-                when(categoryService.findById(categoryId))
-                                .thenReturn(category);
+        when(product.getCategory())
+                .thenReturn(category);
 
-                when(product.getImagePath())
-                                .thenReturn("1/old-image.jpg");
+        when(category.getId())
+                .thenReturn(categoryId);
+
+        when(categoryService.findById(categoryId))
+                .thenReturn(category);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Product result = productService.update(
+                productId,
+                form);
 
-                when(productImageService.saveImage(productId, imageFile))
-                                .thenReturn("1/new-image.jpg");
+        assertSame(product, result);
+
+        verify(productImageService, never())
+                .saveImage(any(), any());
 
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
+        verify(product, never())
+                .setImagePath(any());
 
-                Product result = productService.update(
-                                productId,
-                                form);
+        verify(productImageService, never())
+                .deleteImage(any());
+    }
+
+    @Test
+    void updateDoesNotOverwriteStock() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Product product = mock(Product.class);
+        Category category = mock(Category.class);
 
-                assertSame(product, result);
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(999);
+        form.setDescription("更新後の説明");
+        form.setCategoryId(categoryId);
 
-                verify(productImageService)
-                                .saveImage(productId, imageFile);
+        when(productRepository
+                .findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
+
+        when(product.getCategory())
+                .thenReturn(category);
+
+        when(category.getId())
+                .thenReturn(categoryId);
+
+        when(categoryService.findById(categoryId))
+                .thenReturn(category);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        productService.update(
+                productId,
+                form);
 
-                verify(product)
-                                .setImagePath("1/new-image.jpg");
+        verify(product, never())
+                .setStock(any());
+    }
 
-                verify(productImageService)
-                                .deleteImage("1/old-image.jpg");
-        }
+    @Test
+    void createSyncsSearchKeywords() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
 
-        @Test
-        void updateKeepsExistingImageWhenNewImageIsNotSelected() {
+        Category category = new Category();
 
-                Long productId = 1L;
-                Long categoryId = 2L;
+        ProductForm form = new ProductForm();
+        form.setName("テスト商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("説明");
+        form.setCategoryId(categoryId);
+        form.setSearchKeywords(
+                List.of("キャンプ", "軽量"));
 
-                Product product = mock(Product.class);
-                Category category = mock(Category.class);
+        when(categoryService.findActiveById(categoryId))
+                .thenReturn(category);
 
-                ProductForm form = new ProductForm();
-                form.setName("更新商品");
-                form.setPrice(1000);
-                form.setStock(5);
-                form.setDescription("更新後の説明");
-                form.setCategoryId(categoryId);
+        when(productRepository.save(any(Product.class)))
+                .thenAnswer(invocation -> {
+                    Product product = invocation.getArgument(0);
+                    product.setId(productId);
+                    return product;
+                });
 
-                when(productRepository.findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
 
-                when(product.getCategory())
-                                .thenReturn(category);
+        Product result = productService.create(form);
+
+        verify(productSearchKeywordService)
+                .syncKeywords(
+                        result,
+                        form.getSearchKeywords());
+    }
 
-                when(category.getId())
-                                .thenReturn(categoryId);
+    @Test
+    void updateSyncsSearchKeywords() {
 
-                when(categoryService.findById(categoryId))
-                                .thenReturn(category);
+        Long productId = 1L;
+        Long categoryId = 2L;
 
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
+        Product product = mock(Product.class);
+        Category category = mock(Category.class);
 
-                Product result = productService.update(
-                                productId,
-                                form);
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setDescription("更新後の説明");
+        form.setCategoryId(categoryId);
+        form.setSearchKeywords(
+                List.of("アウトドア", "防水"));
 
-                assertSame(product, result);
+        when(productRepository.findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
 
-                verify(productImageService, never())
-                                .saveImage(any(), any());
+        when(product.getCategory())
+                .thenReturn(category);
 
-                verify(product, never())
-                                .setImagePath(any());
+        when(category.getId())
+                .thenReturn(categoryId);
 
-                verify(productImageService, never())
-                                .deleteImage(any());
-        }
+        when(categoryService.findById(categoryId))
+                .thenReturn(category);
 
-        @Test
-        void updateDoesNotOverwriteStock() {
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
 
-                Long productId = 1L;
-                Long categoryId = 2L;
+        Product result = productService.update(
+                productId,
+                form);
 
-                Product product = mock(Product.class);
-                Category category = mock(Category.class);
+        verify(productSearchKeywordService)
+                .syncKeywords(
+                        result,
+                        form.getSearchKeywords());
+    }
 
-                ProductForm form = new ProductForm();
-                form.setName("更新商品");
-                form.setPrice(1000);
-                form.setStock(999);
-                form.setDescription("更新後の説明");
-                form.setCategoryId(categoryId);
+    @Test
+    void findSearchKeywordsDelegatesToProductSearchKeywordService() {
 
-                when(productRepository
-                                .findByIdForUpdate(productId))
-                                .thenReturn(Optional.of(product));
+        Long productId = 1L;
 
-                when(product.getCategory())
-                                .thenReturn(category);
+        List<String> expected = List.of("キャンプ", "軽量");
 
-                when(category.getId())
-                                .thenReturn(categoryId);
+        when(productSearchKeywordService.findKeywords(productId))
+                .thenReturn(expected);
 
-                when(categoryService.findById(categoryId))
-                                .thenReturn(category);
-
-                ProductService productService = new ProductService(
-                                productRepository,
-                                categoryService,
-                                productImageService);
-
-                productService.update(
-                                productId,
-                                form);
-
-                verify(product, never())
-                                .setStock(any());
-        }
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        List<String> actual = productService.findSearchKeywords(productId);
+
+        assertSame(expected, actual);
+
+        verify(productSearchKeywordService)
+                .findKeywords(productId);
+    }
+
+    @Test
+    void searchForUserUsesAllSearchConditions() {
+
+        ProductSearchForm form = new ProductSearchForm();
+        form.setKeyword("キャンプ 軽量");
+        form.setCategoryId(10L);
+        form.setMinPrice(1000);
+        form.setMaxPrice(5000);
+        form.setInStockOnly(true);
+        form.setSort("priceAsc");
+
+        Page<Product> expected = new PageImpl<>(List.of());
+
+        when(productRepository.findAll(
+                ArgumentMatchers.<Specification<Product>>any(),
+                any(Pageable.class)))
+                .thenReturn(expected);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        Page<Product> actual = productService.searchForUser(
+                form,
+                2,
+                10);
+
+        assertSame(expected, actual);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+
+        verify(productRepository).findAll(
+                ArgumentMatchers.<Specification<Product>>any(),
+                pageableCaptor.capture());
+
+        Pageable pageable = pageableCaptor.getValue();
+
+        assertEquals(2, pageable.getPageNumber());
+        assertEquals(10, pageable.getPageSize());
+
+        assertEquals(
+                Sort.by(
+                        Sort.Order.asc("price"),
+                        Sort.Order.asc("id")),
+                pageable.getSort());
+    }
+
+    @Test
+    void searchForUserUsesNewestSortByDefault() {
+
+        ProductSearchForm form = new ProductSearchForm();
+        form.setSort("newest");
+
+        when(productRepository.findAll(
+                ArgumentMatchers.<Specification<Product>>any(),
+                any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        productService.searchForUser(
+                form,
+                0,
+                10);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+
+        verify(productRepository).findAll(
+                ArgumentMatchers.<Specification<Product>>any(),
+                pageableCaptor.capture());
+
+        assertEquals(
+                Sort.by(
+                        Sort.Order.desc("createdAt"),
+                        Sort.Order.desc("id")),
+                pageableCaptor.getValue().getSort());
+    }
+
+    @Test
+    void searchForUserUsesNameAscendingSort() {
+
+        assertUserSearchSort(
+                "nameAsc",
+                Sort.by(
+                        Sort.Order.asc("name"),
+                        Sort.Order.asc("id")));
+    }
+
+    @Test
+    void searchForUserUsesPriceDescendingSort() {
+
+        assertUserSearchSort(
+                "priceDesc",
+                Sort.by(
+                        Sort.Order.desc("price"),
+                        Sort.Order.desc("id")));
+    }
+
+    @Test
+    void searchForUserFallsBackToNewestForUnknownSort() {
+
+        assertUserSearchSort(
+                "unknown",
+                Sort.by(
+                        Sort.Order.desc("createdAt"),
+                        Sort.Order.desc("id")));
+    }
+
+    private void assertUserSearchSort(
+            String sort,
+            Sort expectedSort) {
+
+        ProductSearchForm form = new ProductSearchForm();
+        form.setSort(sort);
+
+        when(productRepository.findAll(
+                ArgumentMatchers.<Specification<Product>>any(),
+                any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        productService.searchForUser(
+                form,
+                0,
+                10);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+
+        verify(productRepository).findAll(
+                ArgumentMatchers.<Specification<Product>>any(),
+                pageableCaptor.capture());
+
+        assertEquals(
+                expectedSort,
+                pageableCaptor.getValue().getSort());
+    }
 
 }
