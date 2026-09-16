@@ -13,55 +13,81 @@
 
     <h1>商品一覧</h1>
 
-    <form th:action="@{/products}" method="get">
+    <form th:action="@{/products}" th:object="${searchForm}" method="get">
 
-        <label for="keyword">商品名</label>
-        <input type="text" id="keyword" name="keyword" th:value="${keyword}" placeholder="商品名を入力">
+        <div th:if="${#fields.hasErrors('*')}" class="message-error">
+            <p th:each="error : ${#fields.errors('*')}" th:text="${error}">
+            </p>
+        </div>
+
+        <label for="keyword">
+            キーワード
+        </label>
+
+        <input type="text" id="keyword" th:field="*{keyword}" placeholder="商品名・説明・検索キーワード">
 
         <label for="categoryId">
             カテゴリ
         </label>
-        <select id="categoryId" name="categoryId">
 
+        <select id="categoryId" th:field="*{categoryId}">
             <option value="">
                 すべて
             </option>
 
-            <option th:each="category : ${categories}" th:value="${category.id}" th:text="${category.name}"
-                th:selected="${category.id == categoryId}">
+            <option th:each="category : ${categories}" th:value="${category.id}" th:text="${category.name}">
             </option>
-
         </select>
 
-        <label for="sort">並び順</label>
-        <select id="sort" name="sort">
+        <label for="minPrice">
+            最低価格
+        </label>
 
-            <option value="newest" th:selected="${sort == 'newest'}">
+        <input type="number" id="minPrice" th:field="*{minPrice}" min="0" placeholder="0">
+
+        <span>円 ～</span>
+
+        <label for="maxPrice">
+            最高価格
+        </label>
+
+        <input type="number" id="maxPrice" th:field="*{maxPrice}" min="0" placeholder="上限なし">
+
+        <span>円</span>
+
+        <label>
+            <input type="checkbox" th:field="*{inStockOnly}">
+            在庫ありのみ
+        </label>
+
+        <label for="sort">
+            並び順
+        </label>
+
+        <select id="sort" th:field="*{sort}">
+            <option value="newest">
                 新着順
             </option>
-
-            <option value="nameAsc" th:selected="${sort == 'nameAsc'}">
+            <option value="nameAsc">
                 商品名順
             </option>
-
-            <option value="priceAsc" th:selected="${sort == 'priceAsc'}">
+            <option value="priceAsc">
                 価格の安い順
             </option>
-
-            <option value="priceDesc" th:selected="${sort == 'priceDesc'}">
+            <option value="priceDesc">
                 価格の高い順
             </option>
-
         </select>
 
-        <button type="submit" class="button-secondary">検索</button>
+        <button type="submit" class="button-secondary">
+            検索
+        </button>
+
         <a th:href="@{/products}" class="button button-secondary">
             クリア
         </a>
 
     </form>
-
-
 
     <p th:if="${message}" th:text="${message}" class="message-success">
     </p>
@@ -72,7 +98,7 @@
 
     <p>
         件数：
-        <span th:text="${products.size()}"></span>
+        <span th:text="${productPage.totalElements}"></span>
     </p>
 
     <table th:unless="${#lists.isEmpty(products)}">
@@ -125,38 +151,47 @@
     <div th:if="${productPage.totalPages > 0}">
 
         <a th:if="${productPage.hasPrevious()}" th:href="@{/products(
-            keyword=${keyword},
-            categoryId=${categoryId},
-            sort=${sort},
-            page=${productPage.number - 1}
+           keyword=${searchForm.keyword},
+           categoryId=${searchForm.categoryId},
+           minPrice=${searchForm.minPrice},
+           maxPrice=${searchForm.maxPrice},
+           inStockOnly=${searchForm.inStockOnly},
+           sort=${searchForm.sort},
+           page=${productPage.number - 1}
        )}" class="button button-secondary">
             前へ
         </a>
 
         <span th:each="pageNumber :
-                  ${#numbers.sequence(
-                      0,
-                      productPage.totalPages - 1)}">
+              ${#numbers.sequence(
+                  0,
+                  productPage.totalPages - 1)}">
 
             <span th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}"
                 class="button button-secondary">
             </span>
 
             <a th:unless="${pageNumber == productPage.number}" th:href="@{/products(
-                keyword=${keyword},
-                categoryId=${categoryId},
-                sort=${sort},
-                page=${pageNumber}
+               keyword=${searchForm.keyword},
+               categoryId=${searchForm.categoryId},
+               minPrice=${searchForm.minPrice},
+               maxPrice=${searchForm.maxPrice},
+               inStockOnly=${searchForm.inStockOnly},
+               sort=${searchForm.sort},
+               page=${pageNumber}
            )}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
 
         </span>
 
         <a th:if="${productPage.hasNext()}" th:href="@{/products(
-            keyword=${keyword},
-            categoryId=${categoryId},
-            sort=${sort},
-            page=${productPage.number + 1}
+           keyword=${searchForm.keyword},
+           categoryId=${searchForm.categoryId},
+           minPrice=${searchForm.minPrice},
+           maxPrice=${searchForm.maxPrice},
+           inStockOnly=${searchForm.inStockOnly},
+           sort=${searchForm.sort},
+           page=${productPage.number + 1}
        )}" class="button button-secondary">
             次へ
         </a>

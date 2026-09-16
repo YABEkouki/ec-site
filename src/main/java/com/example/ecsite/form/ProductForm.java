@@ -1,5 +1,9 @@
 package com.example.ecsite.form;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.constraints.Min;
@@ -25,6 +29,8 @@ public class ProductForm {
 
     @NotNull(message = "カテゴリを選択してください。")
     private Long categoryId;
+
+    private List<String> searchKeywords = new ArrayList<>(Collections.nCopies(10, ""));
 
     private MultipartFile imageFile;
 
@@ -68,6 +74,22 @@ public class ProductForm {
         this.categoryId = categoryId;
     }
 
+    public List<String> getSearchKeywords() {
+        return searchKeywords;
+    }
+
+    public void setSearchKeywords(List<String> searchKeywords) {
+        this.searchKeywords = new ArrayList<>();
+
+        if (searchKeywords != null) {
+            this.searchKeywords.addAll(searchKeywords);
+        }
+
+        while (this.searchKeywords.size() < 10) {
+            this.searchKeywords.add("");
+        }
+    }
+
     public MultipartFile getImageFile() {
         return imageFile;
     }
@@ -75,4 +97,5 @@ public class ProductForm {
     public void setImageFile(MultipartFile imageFile) {
         this.imageFile = imageFile;
     }
+
 }

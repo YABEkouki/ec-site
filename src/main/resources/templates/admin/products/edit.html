@@ -101,6 +101,28 @@
 
         <div class="form-group">
 
+            <label>
+                検索キーワード
+            </label>
+
+            <small>
+                商品検索に使用するキーワードを最大10件まで登録できます。
+                各キーワードは50文字以内で入力してください。
+            </small>
+
+            <div th:each="i : ${#numbers.sequence(0, 9)}">
+                <input type="text" th:field="*{searchKeywords[__${i}__]}" maxlength="50"
+                    th:placeholder="${'検索キーワード ' + (i + 1)}">
+            </div>
+
+            <span th:if="${#fields.hasGlobalErrors()}" th:each="err : ${#fields.globalErrors()}" th:text="${err}"
+                class="field-error">
+            </span>
+
+        </div>
+
+        <div class="form-group">
+
             <label for="imageFile">
                 商品画像
             </label>

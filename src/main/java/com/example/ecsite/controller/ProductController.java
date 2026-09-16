@@ -4,22 +4,28 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.Review;
+import com.example.ecsite.form.ProductSearchForm;
 import com.example.ecsite.form.ReviewForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.FavoriteService;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.service.ReviewService;
+
+import jakarta.validation.Valid;
 
 @Controller
 public class ProductController {
@@ -57,24 +63,33 @@ public class ProductController {
 
     @GetMapping("/products")
     public String list(
-            @RequestParam(name = "keyword", required = false) String keyword,
-            @RequestParam(name = "categoryId", required = false) Long categoryId,
+            @Valid @ModelAttribute("searchForm") ProductSearchForm searchForm,
+            BindingResult bindingResult,
             @RequestParam(name = "page", defaultValue = "0") int page,
-            @RequestParam(name = "sort", defaultValue = "newest") String sort,
             Model model) {
 
         int size = 10; // Number of products per page
 
-        Page<Product> productPage = productService.search(keyword, categoryId, page, size, sort);
+        Page<Product> productPage;
+
+        if (bindingResult.hasErrors()) {
+
+            productPage = Page.empty(
+                    PageRequest.of(page, size));
+
+        } else {
+
+            productPage = productService.searchForUser(
+                    searchForm,
+                    page,
+                    size);
+        }
 
         model.addAttribute("products", productPage.getContent());
         model.addAttribute("productPage", productPage);
-        model.addAttribute("keyword", keyword);
-        model.addAttribute("categoryId", categoryId);
         model.addAttribute(
                 "categories",
                 categoryService.findActiveCategories());
-        model.addAttribute("sort", sort);
 
         return "products/list";
     }

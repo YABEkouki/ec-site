@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,8 +14,10 @@ import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ProductForm;
+import com.example.ecsite.form.ProductSearchForm;
 import com.example.ecsite.mapper.ProductMapper;
 import com.example.ecsite.repository.ProductRepository;
+import com.example.ecsite.specification.ProductSpecification;
 
 @Service
 @Transactional
@@ -23,15 +26,18 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryService categoryService;
     private final ProductImageService productImageService;
+    private final ProductSearchKeywordService productSearchKeywordService;
 
     public ProductService(
             ProductRepository productRepository,
             CategoryService categoryService,
-            ProductImageService productImageService) {
+            ProductImageService productImageService,
+            ProductSearchKeywordService productSearchKeywordService) {
 
         this.productRepository = productRepository;
         this.categoryService = categoryService;
         this.productImageService = productImageService;
+        this.productSearchKeywordService = productSearchKeywordService;
     }
 
     public List<Product> findAll() {
@@ -51,11 +57,24 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
+    public List<String> findSearchKeywords(Long productId) {
+        return productSearchKeywordService.findKeywords(productId);
+    }
+
+    @Transactional(readOnly = true)
     public Page<Product> findInactiveProducts(int page, int size) {
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Product::getId).descending());
 
         return productRepository.findByActiveFalse(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Product> findLowStockProducts(int threshold) {
+
+        return productRepository
+                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
+                        threshold);
     }
 
     public Product create(ProductForm productForm) {
@@ -71,6 +90,10 @@ public class ProductService {
                 productForm.getImageFile());
 
         product.setImagePath(imagePath);
+
+        productSearchKeywordService.syncKeywords(
+                product,
+                productForm.getSearchKeywords());
 
         return product;
     }
@@ -115,6 +138,11 @@ public class ProductService {
 
             productImageService.deleteImage(oldImagePath);
         }
+
+        productSearchKeywordService.syncKeywords(
+                product,
+                productForm.getSearchKeywords());
+
         return product;
     }
 
@@ -193,6 +221,42 @@ public class ProductService {
                 .findByActiveTrue(pageable);
     }
 
+    @Transactional(readOnly = true)
+    public Page<Product> searchForUser(
+            ProductSearchForm form,
+            int page,
+            int size) {
+
+        Specification<Product> specification = Specification.where(
+                ProductSpecification.isActive())
+                .and(
+                        ProductSpecification.containsKeywords(
+                                form.getKeyword()))
+                .and(
+                        ProductSpecification.hasCategory(
+                                form.getCategoryId()))
+                .and(
+                        ProductSpecification
+                                .priceGreaterThanOrEqualTo(
+                                        form.getMinPrice()))
+                .and(
+                        ProductSpecification
+                                .priceLessThanOrEqualTo(
+                                        form.getMaxPrice()))
+                .and(
+                        ProductSpecification.inStockOnly(
+                                form.isInStockOnly()));
+
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                createUserSearchSort(form.getSort()));
+
+        return productRepository.findAll(
+                specification,
+                pageable);
+    }
+
     private Sort createSort(String sort) {
 
         return switch (sort) {
@@ -208,6 +272,31 @@ public class ProductService {
         };
     }
 
+    private Sort createUserSearchSort(String sort) {
+
+        if ("nameAsc".equals(sort)) {
+            return Sort.by(
+                    Sort.Order.asc("name"),
+                    Sort.Order.asc("id"));
+        }
+
+        if ("priceAsc".equals(sort)) {
+            return Sort.by(
+                    Sort.Order.asc("price"),
+                    Sort.Order.asc("id"));
+        }
+
+        if ("priceDesc".equals(sort)) {
+            return Sort.by(
+                    Sort.Order.desc("price"),
+                    Sort.Order.desc("id"));
+        }
+
+        return Sort.by(
+                Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id"));
+    }
+
     public void restore(Long id) {
 
         Product product = productRepository
@@ -215,14 +304,6 @@ public class ProductService {
                 .orElseThrow(() -> new ProductNotFoundException(id));
 
         product.setActive(true);
-    }
-
-    @Transactional(readOnly = true)
-    public List<Product> findLowStockProducts(int threshold) {
-
-        return productRepository
-                .findByActiveTrueAndStockLessThanEqualOrderByStockAsc(
-                        threshold);
     }
 
 }

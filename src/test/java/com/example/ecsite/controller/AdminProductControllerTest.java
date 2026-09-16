@@ -3,6 +3,7 @@ package com.example.ecsite.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -23,10 +24,13 @@ import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
 import com.example.ecsite.entity.StockMovementType;
+import com.example.ecsite.exception.InvalidProductSearchKeywordException;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
+import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.form.StockAdjustmentForm;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.CategoryService;
@@ -37,381 +41,499 @@ import com.example.ecsite.service.StockMovementService;
 @ExtendWith(MockitoExtension.class)
 class AdminProductControllerTest {
 
-        @Mock
-        private ProductService productService;
+    @Mock
+    private ProductService productService;
 
-        @Mock
-        private CategoryService categoryService;
+    @Mock
+    private CategoryService categoryService;
 
-        @Mock
-        private Model model;
+    @Mock
+    private Model model;
 
-        @Mock
-        private InventoryService inventoryService;
-        @Mock
-        private StockMovementService stockMovementService;
-
-        private AdminProductController adminProductController;
+    @Mock
+    private InventoryService inventoryService;
+    @Mock
+    private StockMovementService stockMovementService;
 
-        @BeforeEach
-        void setUp() {
+    private AdminProductController adminProductController;
 
-                adminProductController = new AdminProductController(
-                                productService,
-                                categoryService,
-                                inventoryService,
-                                stockMovementService);
-        }
+    @BeforeEach
+    void setUp() {
 
-        @Test
-        void stockDisplaysStockAdjustmentForm() {
+        adminProductController = new AdminProductController(
+                productService,
+                categoryService,
+                inventoryService,
+                stockMovementService);
+    }
 
-                Long productId = 1L;
+    @Test
+    void stockDisplaysStockAdjustmentForm() {
 
-                Product product = new Product();
-                product.setId(productId);
-                product.setName("テスト商品");
-                product.setStock(10);
+        Long productId = 1L;
+        Long categoryId = 2L;
 
-                when(productService.findById(productId))
-                                .thenReturn(product);
+        Category category = mock(Category.class);
 
-                String viewName = adminProductController.stock(
-                                productId,
-                                null,
-                                model);
+        when(category.getId())
+                .thenReturn(categoryId);
 
-                assertEquals(
-                                "admin/products/stock",
-                                viewName);
+        Product product = new Product();
+        product.setId(productId);
+        product.setCategory(category);
+        product.setName("テスト商品");
+        product.setStock(10);
 
-                verify(productService)
-                                .findById(productId);
+        when(productService.findById(productId))
+                .thenReturn(product);
 
-                verify(model)
-                                .addAttribute(
-                                                "product",
-                                                product);
+        String viewName = adminProductController.stock(
+                productId,
+                null,
+                model);
 
-                verify(model)
-                                .addAttribute(
-                                                org.mockito.ArgumentMatchers.eq("stockAdjustmentForm"),
-                                                any(StockAdjustmentForm.class));
-        }
-
-        @Test
-        void adjustStockUpdatesStockAndRedirectsToStockPage() {
+        assertEquals(
+                "admin/products/stock",
+                viewName);
 
-                Long productId = 1L;
+        verify(productService)
+                .findById(productId);
 
-                StockAdjustmentForm form = new StockAdjustmentForm();
-                form.setQuantity(-3);
+        verify(model)
+                .addAttribute(
+                        "product",
+                        product);
 
-                RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+        verify(model)
+                .addAttribute(
+                        org.mockito.ArgumentMatchers.eq("stockAdjustmentForm"),
+                        any(StockAdjustmentForm.class));
+    }
 
-                BindingResult bindingResult = mock(BindingResult.class);
+    @Test
+    void adjustStockUpdatesStockAndRedirectsToStockPage() {
 
-                when(bindingResult.hasErrors())
-                                .thenReturn(false);
+        Long productId = 1L;
 
-                AdminUserDetails userDetails = mock(AdminUserDetails.class);
+        StockAdjustmentForm form = new StockAdjustmentForm();
+        form.setQuantity(-3);
 
-                when(userDetails.getId())
-                                .thenReturn(1L);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-                when(userDetails.getUsername())
-                                .thenReturn("admin");
+        BindingResult bindingResult = mock(BindingResult.class);
 
-                String viewName = adminProductController.adjustStock(
-                                productId,
-                                form,
-                                bindingResult,
-                                model,
-                                redirectAttributes,
-                                userDetails,
-                                null);
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
 
-                assertEquals(
-                                "redirect:/admin/products/" + productId + "/stock",
-                                viewName);
+        AdminUserDetails userDetails = mock(AdminUserDetails.class);
 
-                verify(inventoryService)
-                                .adjustByAdmin(
-                                                1L,
-                                                -3,
-                                                1L,
-                                                "admin",
-                                                null);
-                verify(redirectAttributes)
-                                .addFlashAttribute(
-                                                "successMessage",
-                                                "在庫を調整しました。");
-        }
-
-        @Test
-        void adjustStockReturnsStockPageWhenValidationFails() {
-
-                Long productId = 1L;
-
-                Product product = new Product();
-                product.setId(productId);
-                product.setName("テスト商品");
-                product.setStock(10);
-
-                StockAdjustmentForm form = new StockAdjustmentForm();
-
-                BindingResult bindingResult = mock(BindingResult.class);
-
-                when(bindingResult.hasErrors())
-                                .thenReturn(true);
-
-                when(productService.findById(productId))
-                                .thenReturn(product);
-
-                AdminUserDetails userDetails = mock(AdminUserDetails.class);
-
-                String viewName = adminProductController.adjustStock(
-                                productId,
-                                form,
-                                bindingResult,
-                                model,
-                                mock(RedirectAttributes.class),
-                                userDetails,
-                                null);
-
-                assertEquals(
-                                "admin/products/stock",
-                                viewName);
-
-                verify(inventoryService, never())
-                                .adjustByAdmin(
-                                                any(),
-                                                anyInt(),
-                                                any(),
-                                                any(),
-                                                any());
-
-                verify(productService)
-                                .findById(productId);
-
-                verify(model)
-                                .addAttribute(
-                                                "product",
-                                                product);
-        }
-
-        @Test
-        void adjustStockDisplaysErrorWhenAdjustmentIsInvalid() {
-
-                Long productId = 1L;
-
-                Product product = new Product();
-                product.setId(productId);
-                product.setName("テスト商品");
-                product.setStock(2);
-
-                StockAdjustmentForm form = new StockAdjustmentForm();
-                form.setQuantity(-3);
-
-                BindingResult bindingResult = mock(BindingResult.class);
-
-                AdminUserDetails userDetails = mock(AdminUserDetails.class);
-
-                when(bindingResult.hasErrors())
-                                .thenReturn(false);
-
-                when(productService.findById(productId))
-                                .thenReturn(product);
-
-                doThrow(new InvalidStockAdjustmentException(
-                                "在庫数を0未満にはできません。"))
-                                .when(inventoryService)
-                                .adjustByAdmin(
-                                                productId,
-                                                -3,
-                                                1L,
-                                                "admin",
-                                                null);
-
-                when(userDetails.getId())
-                                .thenReturn(1L);
-
-                when(userDetails.getUsername())
-                                .thenReturn("admin");
-
-                String viewName = adminProductController.adjustStock(
-                                productId,
-                                form,
-                                bindingResult,
-                                model,
-                                mock(RedirectAttributes.class),
-                                userDetails,
-                                null);
-
-                assertEquals(
-                                "admin/products/stock",
-                                viewName);
-
-                verify(inventoryService)
-                                .adjustByAdmin(
-                                                1L,
-                                                -3,
-                                                1L,
-                                                "admin",
-                                                null);
-
-                verify(productService)
-                                .findById(productId);
-
-                verify(model)
-                                .addAttribute(
-                                                "product",
-                                                product);
-
-                verify(model)
-                                .addAttribute(
-                                                "errorMessage",
-                                                "在庫数を0未満にはできません。");
-        }
-
-        @Test
-        void adjustStockReturnsToStockPageAndKeepsEditReturnDestination() {
-
-                Long productId = 1L;
-
-                StockAdjustmentForm form = new StockAdjustmentForm();
-                form.setQuantity(5);
-
-                BindingResult bindingResult = mock(BindingResult.class);
-                RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
-
-                when(bindingResult.hasErrors())
-                                .thenReturn(false);
-
-                AdminUserDetails userDetails = mock(AdminUserDetails.class);
-
-                when(userDetails.getId())
-                                .thenReturn(1L);
-
-                when(userDetails.getUsername())
-                                .thenReturn("admin");
-
-                String viewName = adminProductController.adjustStock(
-                                productId,
-                                form,
-                                bindingResult,
-                                model,
-                                redirectAttributes,
-                                userDetails,
-                                "edit");
-
-                assertEquals(
-                                "redirect:/admin/products/" + productId + "/stock?returnTo=edit",
-                                viewName);
-
-                verify(inventoryService)
-                                .adjustByAdmin(
-                                                1L,
-                                                5,
-                                                1L,
-                                                "admin",
-                                                null);
-
-                verify(redirectAttributes)
-                                .addFlashAttribute(
-                                                "successMessage",
-                                                "在庫を調整しました。");
-        }
-
-        @Test
-        void stockHistoryDisplaysProductAndMovements() {
-
-                Long productId = 1L;
-
-                Product product = new Product();
-                product.setId(productId);
-                product.setName("テスト商品");
-                product.setStock(10);
-
-                LocalDate from = LocalDate.of(2026, 8, 1);
-
-                LocalDate to = LocalDate.of(2026, 8, 27);
-
-                Page<StockMovement> movementPage = new PageImpl<>(List.of());
-
-                when(productService.findById(productId))
-                                .thenReturn(product);
-
-                when(stockMovementService.search(
-                                productId,
-                                from,
-                                to,
-                                "admin",
-                                StockMovementType.ORDER_PLACEMENT,
-                                0,
-                                20))
-                                .thenReturn(movementPage);
-
-                String viewName = adminProductController.stockHistory(
-                                productId,
-                                from,
-                                to,
-                                "admin",
-                                StockMovementType.ORDER_PLACEMENT,
-                                0,
-                                model);
-
-                assertEquals(
-                                "admin/products/stock-history",
-                                viewName);
-
-                verify(productService)
-                                .findById(productId);
-
-                verify(stockMovementService)
-                                .search(
-                                                productId,
-                                                from,
-                                                to,
-                                                "admin",
-                                                StockMovementType.ORDER_PLACEMENT,
-                                                0,
-                                                20);
-
-                verify(model)
-                                .addAttribute(
-                                                "product",
-                                                product);
-
-                verify(model)
-                                .addAttribute(
-                                                "movementPage",
-                                                movementPage);
-
-                verify(model)
-                                .addAttribute(
-                                                "movements",
-                                                movementPage.getContent());
-
-                verify(model)
-                                .addAttribute(
-                                                "from",
-                                                from);
-
-                verify(model)
-                                .addAttribute(
-                                                "to",
-                                                to);
-
-                verify(model)
-                                .addAttribute(
-                                                "username",
-                                                "admin");
-
-                verify(model)
-                                .addAttribute(
-                                                "movementType",
-                                                StockMovementType.ORDER_PLACEMENT);
-        }
+        when(userDetails.getId())
+                .thenReturn(1L);
+
+        when(userDetails.getUsername())
+                .thenReturn("admin");
+
+        String viewName = adminProductController.adjustStock(
+                productId,
+                form,
+                bindingResult,
+                model,
+                redirectAttributes,
+                userDetails,
+                null);
+
+        assertEquals(
+                "redirect:/admin/products/" + productId + "/stock",
+                viewName);
+
+        verify(inventoryService)
+                .adjustByAdmin(
+                        1L,
+                        -3,
+                        1L,
+                        "admin",
+                        null);
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "在庫を調整しました。");
+    }
+
+    @Test
+    void adjustStockReturnsStockPageWhenValidationFails() {
+
+        Long productId = 1L;
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setName("テスト商品");
+        product.setStock(10);
+
+        StockAdjustmentForm form = new StockAdjustmentForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        AdminUserDetails userDetails = mock(AdminUserDetails.class);
+
+        String viewName = adminProductController.adjustStock(
+                productId,
+                form,
+                bindingResult,
+                model,
+                mock(RedirectAttributes.class),
+                userDetails,
+                null);
+
+        assertEquals(
+                "admin/products/stock",
+                viewName);
+
+        verify(inventoryService, never())
+                .adjustByAdmin(
+                        any(),
+                        anyInt(),
+                        any(),
+                        any(),
+                        any());
+
+        verify(productService)
+                .findById(productId);
+
+        verify(model)
+                .addAttribute(
+                        "product",
+                        product);
+    }
+
+    @Test
+    void adjustStockDisplaysErrorWhenAdjustmentIsInvalid() {
+
+        Long productId = 1L;
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setName("テスト商品");
+        product.setStock(2);
+
+        StockAdjustmentForm form = new StockAdjustmentForm();
+        form.setQuantity(-3);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        AdminUserDetails userDetails = mock(AdminUserDetails.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        doThrow(new InvalidStockAdjustmentException(
+                "在庫数を0未満にはできません。"))
+                .when(inventoryService)
+                .adjustByAdmin(
+                        productId,
+                        -3,
+                        1L,
+                        "admin",
+                        null);
+
+        when(userDetails.getId())
+                .thenReturn(1L);
+
+        when(userDetails.getUsername())
+                .thenReturn("admin");
+
+        String viewName = adminProductController.adjustStock(
+                productId,
+                form,
+                bindingResult,
+                model,
+                mock(RedirectAttributes.class),
+                userDetails,
+                null);
+
+        assertEquals(
+                "admin/products/stock",
+                viewName);
+
+        verify(inventoryService)
+                .adjustByAdmin(
+                        1L,
+                        -3,
+                        1L,
+                        "admin",
+                        null);
+
+        verify(productService)
+                .findById(productId);
+
+        verify(model)
+                .addAttribute(
+                        "product",
+                        product);
+
+        verify(model)
+                .addAttribute(
+                        "errorMessage",
+                        "在庫数を0未満にはできません。");
+    }
+
+    @Test
+    void adjustStockReturnsToStockPageAndKeepsEditReturnDestination() {
+
+        Long productId = 1L;
+
+        StockAdjustmentForm form = new StockAdjustmentForm();
+        form.setQuantity(5);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        AdminUserDetails userDetails = mock(AdminUserDetails.class);
+
+        when(userDetails.getId())
+                .thenReturn(1L);
+
+        when(userDetails.getUsername())
+                .thenReturn("admin");
+
+        String viewName = adminProductController.adjustStock(
+                productId,
+                form,
+                bindingResult,
+                model,
+                redirectAttributes,
+                userDetails,
+                "edit");
+
+        assertEquals(
+                "redirect:/admin/products/" + productId + "/stock?returnTo=edit",
+                viewName);
+
+        verify(inventoryService)
+                .adjustByAdmin(
+                        1L,
+                        5,
+                        1L,
+                        "admin",
+                        null);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "在庫を調整しました。");
+    }
+
+    @Test
+    void stockHistoryDisplaysProductAndMovements() {
+
+        Long productId = 1L;
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setName("テスト商品");
+        product.setStock(10);
+
+        LocalDate from = LocalDate.of(2026, 8, 1);
+
+        LocalDate to = LocalDate.of(2026, 8, 27);
+
+        Page<StockMovement> movementPage = new PageImpl<>(List.of());
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(stockMovementService.search(
+                productId,
+                from,
+                to,
+                "admin",
+                StockMovementType.ORDER_PLACEMENT,
+                0,
+                20))
+                .thenReturn(movementPage);
+
+        String viewName = adminProductController.stockHistory(
+                productId,
+                from,
+                to,
+                "admin",
+                StockMovementType.ORDER_PLACEMENT,
+                0,
+                model);
+
+        assertEquals(
+                "admin/products/stock-history",
+                viewName);
+
+        verify(productService)
+                .findById(productId);
+
+        verify(stockMovementService)
+                .search(
+                        productId,
+                        from,
+                        to,
+                        "admin",
+                        StockMovementType.ORDER_PLACEMENT,
+                        0,
+                        20);
+
+        verify(model)
+                .addAttribute(
+                        "product",
+                        product);
+
+        verify(model)
+                .addAttribute(
+                        "movementPage",
+                        movementPage);
+
+        verify(model)
+                .addAttribute(
+                        "movements",
+                        movementPage.getContent());
+
+        verify(model)
+                .addAttribute(
+                        "from",
+                        from);
+
+        verify(model)
+                .addAttribute(
+                        "to",
+                        to);
+
+        verify(model)
+                .addAttribute(
+                        "username",
+                        "admin");
+
+        verify(model)
+                .addAttribute(
+                        "movementType",
+                        StockMovementType.ORDER_PLACEMENT);
+    }
+
+    @Test
+    void editLoadsExistingSearchKeywordsIntoProductForm() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Category category = mock(Category.class);
+
+        when(category.getId())
+                .thenReturn(categoryId);
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setName("テスト商品");
+        product.setPrice(1000);
+        product.setStock(5);
+        product.setDescription("説明");
+        product.setCategory(category);
+
+        List<String> searchKeywords = List.of("キャンプ", "軽量");
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(productService.findSearchKeywords(productId))
+                .thenReturn(searchKeywords);
+
+        when(categoryService.findCategoriesForProductEdit(categoryId))
+                .thenReturn(List.of(category));
+
+        String viewName = adminProductController.edit(
+                productId,
+                model);
+
+        assertEquals(
+                "admin/products/edit",
+                viewName);
+
+        verify(productService)
+                .findSearchKeywords(productId);
+
+        verify(model)
+                .addAttribute(
+                        eq("productForm"),
+                        any(ProductForm.class));
+    }
+
+    @Test
+    void updateReturnsEditWhenSearchKeywordsAreInvalid() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Category category = mock(Category.class);
+
+        when(category.getId())
+                .thenReturn(categoryId);
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setCategory(category);
+
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setCategoryId(categoryId);
+        form.setSearchKeywords(
+                List.of("Camp", "camp"));
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        doThrow(new InvalidProductSearchKeywordException(
+                "同じ検索キーワードが複数入力されています。"))
+                .when(productService)
+                .update(productId, form);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(categoryService.findCategoriesForProductEdit(categoryId))
+                .thenReturn(List.of(category));
+
+        String viewName = adminProductController.update(
+                productId,
+                form,
+                bindingResult,
+                model,
+                mock(RedirectAttributes.class));
+
+        assertEquals(
+                "admin/products/edit",
+                viewName);
+
+        verify(bindingResult)
+                .reject(
+                        "invalidSearchKeywords",
+                        "同じ検索キーワードが複数入力されています。");
+
+        verify(productService)
+                .findById(productId);
+
+        verify(model)
+                .addAttribute(
+                        "product",
+                        product);
+    }
 
 }
