@@ -1,5 +1,8 @@
 package com.example.ecsite.service;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -7,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Announcement;
+import com.example.ecsite.exception.AnnouncementNotFoundException;
 import com.example.ecsite.form.AdminAnnouncementForm;
 import com.example.ecsite.repository.AnnouncementRepository;
 
@@ -29,8 +33,7 @@ public class AnnouncementService {
     @Transactional(readOnly = true)
     public Announcement findById(Long id) {
         return announcementRepository.findById(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("お知らせが見つかりません: " + id));
+                .orElseThrow(() -> new IllegalArgumentException("お知らせが見つかりません: " + id));
     }
 
     public Announcement create(AdminAnnouncementForm form) {
@@ -66,6 +69,38 @@ public class AnnouncementService {
         return form;
     }
 
+    @Transactional(readOnly = true)
+    public Page<Announcement> findPublished(
+            int page,
+            int size) {
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        return announcementRepository.findPublishedAnnouncements(
+                LocalDateTime.now(),
+                pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Announcement> findLatestPublished(int limit) {
+
+        Pageable pageable = PageRequest.of(0, limit);
+
+        return announcementRepository.findPublishedAnnouncements(
+                LocalDateTime.now(),
+                pageable)
+                .getContent();
+    }
+
+    @Transactional(readOnly = true)
+    public Announcement findPublishedById(Long id) {
+
+        return announcementRepository.findPublishedById(
+                id,
+                LocalDateTime.now())
+                .orElseThrow(() -> new AnnouncementNotFoundException(id));
+    }
+
     private void applyForm(
             Announcement announcement,
             AdminAnnouncementForm form) {
@@ -84,4 +119,5 @@ public class AnnouncementService {
                     "公開する場合は公開日時を入力してください");
         }
     }
+
 }

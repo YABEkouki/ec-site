@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お知らせ詳細</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>お知らせ</h1>
+
+    <article class="announcement-detail">
+
+        <div class="announcement-meta">
+            <span class="announcement-importance"
+                th:classappend="' importance-' + ${#strings.toLowerCase(announcement.importance.name())}"
+                th:text="${announcement.importance.displayName}">
+            </span>
+
+            <span class="announcement-type" th:text="${announcement.type.displayName}">
+            </span>
+
+            <time th:text="${#temporals.format(
+                announcement.publishedAt,
+                'yyyy/MM/dd HH:mm')}">
+            </time>
+        </div>
+
+        <h2 th:text="${announcement.title}">
+        </h2>
+
+        <div class="announcement-content" th:text="${announcement.content}">
+        </div>
+
+    </article>
+
+    <p>
+        <a th:href="@{/announcements}" class="button button-secondary">
+            お知らせ一覧へ戻る
+        </a>
+    </p>
+
+</body>
+
+</html>

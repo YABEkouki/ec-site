@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="ja" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<html lang="ja" xmlns:th="http://www.thymeleaf.org"
+    xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 
 <head>
     <meta charset="UTF-8">
@@ -12,6 +13,51 @@
     </header>
 
     <h1>ECサイト</h1>
+
+    <section class="announcement-section">
+        <div class="announcement-section-header">
+            <h2>お知らせ</h2>
+
+            <a th:href="@{/announcements}">
+                お知らせ一覧へ
+            </a>
+        </div>
+
+        <p th:if="${#lists.isEmpty(announcements)}">
+            現在お知らせはありません。
+        </p>
+
+        <div th:unless="${#lists.isEmpty(announcements)}"
+            class="announcement-list">
+
+            <div th:each="announcement : ${announcements}"
+                class="announcement-item">
+
+                <div class="announcement-meta">
+                    <span class="announcement-importance"
+                        th:classappend="' importance-' + ${#strings.toLowerCase(announcement.importance.name())}"
+                        th:text="${announcement.importance.displayName}">
+                    </span>
+
+                    <span class="announcement-type"
+                        th:text="${announcement.type.displayName}">
+                    </span>
+
+                    <time th:text="${#temporals.format(
+                        announcement.publishedAt,
+                        'yyyy/MM/dd HH:mm')}">
+                    </time>
+                </div>
+
+                <a th:href="@{/announcements/{id}(id=${announcement.id})}"
+                    th:text="${announcement.title}"
+                    class="announcement-title">
+                </a>
+
+            </div>
+        </div>
+    </section>
+
 </body>
 
 </html>
