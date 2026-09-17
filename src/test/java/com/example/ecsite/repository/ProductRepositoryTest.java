@@ -3,6 +3,9 @@ package com.example.ecsite.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -12,8 +15,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 
 import com.example.ecsite.entity.Category;
+import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderItem;
+import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.ProductSearchKeyword;
+import com.example.ecsite.entity.User;
 import com.example.ecsite.specification.ProductSpecification;
 
 import jakarta.persistence.EntityManager;
@@ -30,6 +37,12 @@ class ProductRepositoryTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     @Test
     void searchMatchesProductName() {
@@ -494,6 +507,259 @@ class ProductRepositoryTest {
                 .containsExactly(availableProduct.getId());
     }
 
+    @Test
+    void findPopularProductsRanksByQuantityOrderCountAndProductId() {
+
+        User user = createUser("popular-ranking-user");
+
+        Category category = createCategory("人気商品ランキングカテゴリ");
+
+        Product quantityFirst = createProduct(
+                "販売数量1位",
+                1000,
+                10,
+                "商品説明",
+                true,
+                category);
+
+        Product orderCountFirst = createProduct(
+                "注文件数優先",
+                2000,
+                10,
+                "商品説明",
+                true,
+                category);
+
+        Product orderCountSecond = createProduct(
+                "注文件数劣後",
+                3000,
+                10,
+                "商品説明",
+                true,
+                category);
+
+        Product idTieFirst = createProduct(
+                "ID同率先",
+                4000,
+                10,
+                "商品説明",
+                true,
+                category);
+
+        Product idTieSecond = createProduct(
+                "ID同率後",
+                5000,
+                10,
+                "商品説明",
+                true,
+                category);
+
+        // 販売数量 6
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 10, 10, 0),
+                quantityFirst,
+                6,
+                OrderStatus.PAID);
+
+        // 販売数量 5、注文件数 2
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 11, 10, 0),
+                orderCountFirst,
+                2,
+                OrderStatus.PAID);
+
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 12, 10, 0),
+                orderCountFirst,
+                3,
+                OrderStatus.SHIPPED);
+
+        // 販売数量 5、注文件数 1
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 13, 10, 0),
+                orderCountSecond,
+                5,
+                OrderStatus.PAID);
+
+        // 以下2商品は販売数量・注文件数とも同じ
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 14, 10, 0),
+                idTieFirst,
+                4,
+                OrderStatus.PAID);
+
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 14, 11, 0),
+                idTieSecond,
+                4,
+                OrderStatus.PAID);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Product> result = productRepository.findPopularProducts(
+                LocalDateTime.of(2026, 8, 19, 0, 0),
+                LocalDateTime.of(2026, 9, 18, 0, 0),
+                PageRequest.of(0, 10));
+
+        assertThat(result)
+                .extracting(Product::getId)
+                .containsExactly(
+                        quantityFirst.getId(),
+                        orderCountFirst.getId(),
+                        orderCountSecond.getId(),
+                        idTieSecond.getId(),
+                        idTieFirst.getId());
+    }
+
+    @Test
+    void findPopularProductsUsesOnlyEligibleOrdersAndProducts() {
+
+        User user = createUser("popular-eligible-user");
+
+        Category category = createCategory("人気商品対象条件カテゴリ");
+
+        Product target = createProduct(
+                "対象商品",
+                1000,
+                10,
+                "商品説明",
+                true,
+                category);
+
+        Product inactive = createProduct(
+                "非公開商品",
+                2000,
+                10,
+                "商品説明",
+                false,
+                category);
+
+        Product outOfStock = createProduct(
+                "在庫なし商品",
+                3000,
+                0,
+                "商品説明",
+                true,
+                category);
+
+        // from 境界は対象
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 19, 0, 0),
+                target,
+                1,
+                OrderStatus.PAID);
+
+        // SHIPPEDも対象
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 17, 23, 59),
+                target,
+                1,
+                OrderStatus.SHIPPED);
+
+        // 期間外
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 8, 18, 23, 59),
+                target,
+                100,
+                OrderStatus.PAID);
+
+        // toExclusive境界は対象外
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 18, 0, 0),
+                target,
+                100,
+                OrderStatus.PAID);
+
+        // 未払い
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 10, 10, 0),
+                target,
+                100,
+                OrderStatus.ORDERED);
+
+        // キャンセル
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 10, 11, 0),
+                target,
+                100,
+                OrderStatus.CANCELLED);
+
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 10, 12, 0),
+                inactive,
+                100,
+                OrderStatus.PAID);
+
+        createOrderWithItem(
+                user.getId(),
+                LocalDateTime.of(2026, 9, 10, 13, 0),
+                outOfStock,
+                100,
+                OrderStatus.PAID);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Product> result = productRepository.findPopularProducts(
+                LocalDateTime.of(2026, 8, 19, 0, 0),
+                LocalDateTime.of(2026, 9, 18, 0, 0),
+                PageRequest.of(0, 10));
+
+        assertThat(result)
+                .extracting(Product::getId)
+                .containsExactly(target.getId());
+    }
+
+    @Test
+    void findPopularProductsLimitsResultsByPageable() {
+
+        User user = createUser("popular-limit-user");
+
+        Category category = createCategory("人気商品件数制限カテゴリ");
+
+        for (int i = 1; i <= 6; i++) {
+
+            Product product = createProduct(
+                    "人気商品" + i,
+                    1000 * i,
+                    10,
+                    "商品説明",
+                    true,
+                    category);
+
+            createOrderWithItem(
+                    user.getId(),
+                    LocalDateTime.of(2026, 9, 10, 10, i),
+                    product,
+                    i,
+                    OrderStatus.PAID);
+        }
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Product> result = productRepository.findPopularProducts(
+                LocalDateTime.of(2026, 8, 19, 0, 0),
+                LocalDateTime.of(2026, 9, 18, 0, 0),
+                PageRequest.of(0, 5));
+
+        assertThat(result).hasSize(5);
+    }
+
     private Page<Product> search(String keyword) {
 
         Specification<Product> specification = Specification.where(
@@ -545,4 +811,60 @@ class ProductRepositoryTest {
         entityManager.flush();
         entityManager.clear();
     }
+
+    private Order createOrderWithItem(
+            Long userId,
+            LocalDateTime orderedAt,
+            Product product,
+            int quantity,
+            OrderStatus status) {
+
+        OrderItem item = new OrderItem(
+                product.getId(),
+                product.getName(),
+                product.getCategory().getId(),
+                product.getCategory().getName(),
+                product.getPrice(),
+                quantity);
+
+        Order order = new Order(
+                userId,
+                item.getSubtotal());
+
+        order.setOrderedAt(orderedAt);
+        order.addItem(item);
+
+        if (status == OrderStatus.PAID) {
+            order.markAsPaid();
+        } else if (status == OrderStatus.SHIPPED) {
+            order.markAsPaid();
+            order.markAsShipped();
+        } else if (status == OrderStatus.CANCELLED) {
+            order.cancel();
+        }
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private User createUser(String username) {
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword("password");
+        user.setEnabled(true);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
+        User saved = userRepository.save(user);
+        entityManager.flush();
+
+        return saved;
+    }
+
 }

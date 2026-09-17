@@ -45,6 +45,10 @@ public class HomeController {
                 productService.findLatestAvailableProducts(5));
 
         model.addAttribute(
+                "popularProducts",
+                productService.findPopularProducts(5));
+
+        model.addAttribute(
                 "categories",
                 categoryService.findHomeCategories());
 

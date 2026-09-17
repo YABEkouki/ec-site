@@ -43,6 +43,9 @@ class HomeControllerTest {
         Product product = new Product();
         List<Product> latestProducts = List.of(product);
 
+        Product popularProduct = new Product();
+        List<Product> popularProducts = List.of(popularProduct);
+
         Category category = new Category("食品");
         List<Category> categories = List.of(category);
 
@@ -51,6 +54,9 @@ class HomeControllerTest {
 
         when(productService.findLatestAvailableProducts(5))
                 .thenReturn(latestProducts);
+
+        when(productService.findPopularProducts(5))
+                .thenReturn(popularProducts);
 
         when(categoryService.findHomeCategories())
                 .thenReturn(categories);
@@ -84,6 +90,10 @@ class HomeControllerTest {
                 model.getAttribute("latestProducts"));
 
         assertEquals(
+                popularProducts,
+                model.getAttribute("popularProducts"));
+
+        assertEquals(
                 categories,
                 model.getAttribute("categories"));
 
@@ -92,6 +102,9 @@ class HomeControllerTest {
 
         verify(productService)
                 .findLatestAvailableProducts(5);
+
+        verify(productService)
+                .findPopularProducts(5);
 
         verify(categoryService)
                 .findHomeCategories();

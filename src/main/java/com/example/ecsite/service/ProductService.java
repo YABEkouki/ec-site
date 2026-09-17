@@ -1,7 +1,12 @@
 package com.example.ecsite.service;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -27,17 +32,35 @@ public class ProductService {
     private final CategoryService categoryService;
     private final ProductImageService productImageService;
     private final ProductSearchKeywordService productSearchKeywordService;
+    private final Clock clock;
 
+    @Autowired
     public ProductService(
             ProductRepository productRepository,
             CategoryService categoryService,
             ProductImageService productImageService,
             ProductSearchKeywordService productSearchKeywordService) {
 
+        this(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService,
+                Clock.system(ZoneId.of("Asia/Tokyo")));
+    }
+
+    public ProductService(
+            ProductRepository productRepository,
+            CategoryService categoryService,
+            ProductImageService productImageService,
+            ProductSearchKeywordService productSearchKeywordService,
+            Clock clock) {
+
         this.productRepository = productRepository;
         this.categoryService = categoryService;
         this.productImageService = productImageService;
         this.productSearchKeywordService = productSearchKeywordService;
+        this.clock = clock;
     }
 
     public List<Product> findAll() {
@@ -92,6 +115,25 @@ public class ProductService {
                         0,
                         pageable)
                 .getContent();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Product> findPopularProducts(int limit) {
+
+        LocalDate today = LocalDate.now(clock);
+
+        LocalDateTime from = today
+                .minusDays(29)
+                .atStartOfDay();
+
+        LocalDateTime toExclusive = today
+                .plusDays(1)
+                .atStartOfDay();
+
+        return productRepository.findPopularProducts(
+                from,
+                toExclusive,
+                PageRequest.of(0, limit));
     }
 
     public Product create(ProductForm productForm) {
