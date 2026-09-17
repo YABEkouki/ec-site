@@ -10,6 +10,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -950,6 +954,60 @@ class ProductServiceTest {
         assertEquals(
                 expectedSort,
                 pageableCaptor.getValue().getSort());
+    }
+
+    @Test
+    void findPopularProductsUsesRecentThirtyDaysAndSpecifiedLimit() {
+
+        ZoneId zoneId = ZoneId.of("Asia/Tokyo");
+
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-09-17T03:00:00Z"),
+                zoneId);
+
+        Product product1 = new Product();
+        Product product2 = new Product();
+
+        List<Product> expected = List.of(
+                product1,
+                product2);
+
+        when(productRepository.findPopularProducts(
+                eq(LocalDateTime.of(
+                        2026, 8, 19, 0, 0)),
+                eq(LocalDateTime.of(
+                        2026, 9, 18, 0, 0)),
+                any(Pageable.class)))
+                .thenReturn(expected);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService,
+                clock);
+
+        List<Product> actual = productService
+                .findPopularProducts(5);
+
+        assertSame(expected, actual);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+
+        verify(productRepository).findPopularProducts(
+                eq(LocalDateTime.of(
+                        2026, 8, 19, 0, 0)),
+                eq(LocalDateTime.of(
+                        2026, 9, 18, 0, 0)),
+                pageableCaptor.capture());
+
+        assertEquals(
+                5,
+                pageableCaptor.getValue().getPageSize());
+
+        assertEquals(
+                0,
+                pageableCaptor.getValue().getPageNumber());
     }
 
 }

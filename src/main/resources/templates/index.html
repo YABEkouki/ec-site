@@ -97,6 +97,50 @@
         </div>
     </section>
 
+    <section class="new-arrival-section">
+        <div class="new-arrival-section-header">
+            <h2>人気商品</h2>
+
+            <a th:href="@{/products}" class="button button-secondary">
+                商品一覧へ
+            </a>
+        </div>
+
+        <p th:if="${#lists.isEmpty(popularProducts)}">
+            現在表示できる人気商品はありません。
+        </p>
+
+        <div th:unless="${#lists.isEmpty(popularProducts)}" class="new-arrival-list">
+
+            <div th:each="product : ${popularProducts}" class="new-arrival-item">
+
+                <a th:href="@{/products/{id}(id=${product.id})}">
+
+                    <img th:if="${product.imagePath != null}"
+                        th:src="@{/product-images/{path}(path=${product.imagePath})}" th:alt="${product.name}"
+                        style="max-width: 160px; height: auto;">
+
+                    <div th:if="${product.imagePath == null}">
+                        画像なし
+                    </div>
+
+                </a>
+
+                <div>
+                    <a th:href="@{/products/{id}(id=${product.id})}" th:text="${product.name}">
+                    </a>
+                </div>
+
+                <div>
+                    <span th:text="${#numbers.formatInteger(
+                    product.price, 1, 'COMMA')}">
+                    </span>円
+                </div>
+
+            </div>
+        </div>
+    </section>
+
     <section class="category-section">
         <div class="category-section-header">
             <h2>カテゴリから探す</h2>
