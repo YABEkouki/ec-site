@@ -49,6 +49,13 @@ public class CategoryService {
     }
 
     @Transactional(readOnly = true)
+    public List<Category> findHomeCategories() {
+
+        return categoryRepository
+                .findByActiveTrueAndSystemCategoryFalseOrderByDisplayOrderAscNameAsc();
+    }
+
+    @Transactional(readOnly = true)
     public Category findById(Long id) {
 
         return categoryRepository

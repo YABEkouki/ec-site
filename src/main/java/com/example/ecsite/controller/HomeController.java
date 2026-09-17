@@ -7,6 +7,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
 import com.example.ecsite.service.AnnouncementService;
+import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
 
 @Controller
@@ -14,13 +15,16 @@ public class HomeController {
 
     private final AnnouncementService announcementService;
     private final ProductService productService;
+    private final CategoryService categoryService;
 
     public HomeController(
             AnnouncementService announcementService,
-            ProductService productService) {
+            ProductService productService,
+            CategoryService categoryService) {
 
         this.announcementService = announcementService;
         this.productService = productService;
+        this.categoryService = categoryService;
     }
 
     @GetMapping("/")
@@ -39,6 +43,10 @@ public class HomeController {
         model.addAttribute(
                 "latestProducts",
                 productService.findLatestAvailableProducts(5));
+
+        model.addAttribute(
+                "categories",
+                categoryService.findHomeCategories());
 
         return "index";
     }

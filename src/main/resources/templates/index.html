@@ -97,6 +97,28 @@
         </div>
     </section>
 
+    <section class="category-section">
+        <div class="category-section-header">
+            <h2>カテゴリから探す</h2>
+
+            <a th:href="@{/products}" class="button button-secondary">
+                すべての商品を見る
+            </a>
+        </div>
+
+        <p th:if="${#lists.isEmpty(categories)}">
+            現在表示できるカテゴリはありません。
+        </p>
+
+        <div th:unless="${#lists.isEmpty(categories)}" class="category-list">
+
+            <a th:each="category : ${categories}" th:href="@{/products(categoryId=${category.id})}"
+                th:text="${category.name}" class="button button-secondary">
+            </a>
+
+        </div>
+    </section>
+
 </body>
 
 </html>

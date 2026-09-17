@@ -16,8 +16,10 @@ import org.springframework.ui.ConcurrentModel;
 import org.springframework.ui.Model;
 
 import com.example.ecsite.entity.Announcement;
+import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.service.AnnouncementService;
+import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,6 +31,9 @@ class HomeControllerTest {
     @Mock
     private ProductService productService;
 
+    @Mock
+    private CategoryService categoryService;
+
     @Test
     void indexAddsLatestAnnouncementsForAuthenticatedUser() {
 
@@ -38,15 +43,22 @@ class HomeControllerTest {
         Product product = new Product();
         List<Product> latestProducts = List.of(product);
 
+        Category category = new Category("食品");
+        List<Category> categories = List.of(category);
+
         when(announcementService.findLatestPublished(5))
                 .thenReturn(announcements);
 
         when(productService.findLatestAvailableProducts(5))
                 .thenReturn(latestProducts);
 
+        when(categoryService.findHomeCategories())
+                .thenReturn(categories);
+
         HomeController controller = new HomeController(
                 announcementService,
-                productService);
+                productService,
+                categoryService);
 
         UserDetails userDetails = User.withUsername("user1")
                 .password("password")
@@ -71,11 +83,19 @@ class HomeControllerTest {
                 latestProducts,
                 model.getAttribute("latestProducts"));
 
+        assertEquals(
+                categories,
+                model.getAttribute("categories"));
+
         verify(announcementService)
                 .findLatestPublished(5);
 
         verify(productService)
                 .findLatestAvailableProducts(5);
+
+        verify(categoryService)
+                .findHomeCategories();
+
     }
 
 }
