@@ -864,6 +864,60 @@ class ProductServiceTest {
                         Sort.Order.desc("id")));
     }
 
+    @Test
+    void findLatestAvailableProductsUsesAvailableConditionAndNewestSort() {
+
+        int limit = 5;
+
+        Product product1 = new Product();
+        Product product2 = new Product();
+
+        Page<Product> page = new PageImpl<>(
+                List.of(product1, product2));
+
+        when(productRepository
+                .findByActiveTrueAndStockGreaterThan(
+                        eq(0),
+                        any(Pageable.class)))
+                .thenReturn(page);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService);
+
+        List<Product> result = productService.findLatestAvailableProducts(limit);
+
+        assertEquals(
+                List.of(product1, product2),
+                result);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+
+        verify(productRepository)
+                .findByActiveTrueAndStockGreaterThan(
+                        eq(0),
+                        pageableCaptor.capture());
+
+        Pageable pageable = pageableCaptor.getValue();
+
+        assertEquals(0, pageable.getPageNumber());
+        assertEquals(limit, pageable.getPageSize());
+
+        assertEquals(
+                Sort.Direction.DESC,
+                pageable.getSort()
+                        .getOrderFor("createdAt")
+                        .getDirection());
+
+        assertEquals(
+                Sort.Direction.DESC,
+                pageable.getSort()
+                        .getOrderFor("id")
+                        .getDirection());
+    }
+
     private void assertUserSearchSort(
             String sort,
             Sort expectedSort) {

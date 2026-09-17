@@ -91,4 +91,9 @@ public interface ProductRepository
             Long categoryId,
             Pageable pageable);
 
+    @EntityGraph(attributePaths = "category")
+    Page<Product> findByActiveTrueAndStockGreaterThan(
+            int stock,
+            Pageable pageable);
+
 }

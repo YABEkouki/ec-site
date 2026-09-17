@@ -77,6 +77,23 @@ public class ProductService {
                         threshold);
     }
 
+    @Transactional(readOnly = true)
+    public List<Product> findLatestAvailableProducts(int limit) {
+
+        Pageable pageable = PageRequest.of(
+                0,
+                limit,
+                Sort.by(
+                        Sort.Order.desc("createdAt"),
+                        Sort.Order.desc("id")));
+
+        return productRepository
+                .findByActiveTrueAndStockGreaterThan(
+                        0,
+                        pageable)
+                .getContent();
+    }
+
     public Product create(ProductForm productForm) {
 
         Product product = ProductMapper.toEntity(productForm);
