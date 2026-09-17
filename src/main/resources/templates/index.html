@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" xmlns:th="http://www.thymeleaf.org"
-    xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<html lang="ja" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 
 <head>
     <meta charset="UTF-8">
@@ -27,11 +26,9 @@
             現在お知らせはありません。
         </p>
 
-        <div th:unless="${#lists.isEmpty(announcements)}"
-            class="announcement-list">
+        <div th:unless="${#lists.isEmpty(announcements)}" class="announcement-list">
 
-            <div th:each="announcement : ${announcements}"
-                class="announcement-item">
+            <div th:each="announcement : ${announcements}" class="announcement-item">
 
                 <div class="announcement-meta">
                     <span class="announcement-importance"
@@ -39,8 +36,7 @@
                         th:text="${announcement.importance.displayName}">
                     </span>
 
-                    <span class="announcement-type"
-                        th:text="${announcement.type.displayName}">
+                    <span class="announcement-type" th:text="${announcement.type.displayName}">
                     </span>
 
                     <time th:text="${#temporals.format(
@@ -49,10 +45,53 @@
                     </time>
                 </div>
 
-                <a th:href="@{/announcements/{id}(id=${announcement.id})}"
-                    th:text="${announcement.title}"
+                <a th:href="@{/announcements/{id}(id=${announcement.id})}" th:text="${announcement.title}"
                     class="announcement-title">
                 </a>
+
+            </div>
+        </div>
+    </section>
+
+    <section class="new-arrival-section">
+        <div class="new-arrival-section-header">
+            <h2>新着商品</h2>
+
+            <a th:href="@{/products}" class="button button-secondary">
+                商品一覧へ
+            </a>
+        </div>
+
+        <p th:if="${#lists.isEmpty(latestProducts)}">
+            現在表示できる商品はありません。
+        </p>
+
+        <div th:unless="${#lists.isEmpty(latestProducts)}" class="new-arrival-list">
+
+            <div th:each="product : ${latestProducts}" class="new-arrival-item">
+
+                <a th:href="@{/products/{id}(id=${product.id})}">
+
+                    <img th:if="${product.imagePath != null}"
+                        th:src="@{/product-images/{path}(path=${product.imagePath})}" th:alt="${product.name}"
+                        style="max-width: 160px; height: auto;">
+
+                    <div th:if="${product.imagePath == null}">
+                        画像なし
+                    </div>
+
+                </a>
+
+                <div>
+                    <a th:href="@{/products/{id}(id=${product.id})}" th:text="${product.name}">
+                    </a>
+                </div>
+
+                <div>
+                    <span th:text="${#numbers.formatInteger(
+                    product.price, 1, 'COMMA')}">
+                    </span>円
+                </div>
 
             </div>
         </div>

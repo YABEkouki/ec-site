@@ -455,6 +455,45 @@ class ProductRepositoryTest {
                 foundProduct.getCategory().getName());
     }
 
+    @Test
+    void findAvailableProductsExcludesOutOfStockAndInactiveProducts() {
+
+        Category category = createCategory("新着商品カテゴリ");
+
+        Product availableProduct = createProduct(
+                "公開在庫あり商品",
+                1000,
+                5,
+                "商品説明",
+                true,
+                category);
+
+        createProduct(
+                "公開在庫なし商品",
+                2000,
+                0,
+                "商品説明",
+                true,
+                category);
+
+        createProduct(
+                "非公開在庫あり商品",
+                3000,
+                5,
+                "商品説明",
+                false,
+                category);
+
+        Page<Product> result = productRepository
+                .findByActiveTrueAndStockGreaterThan(
+                        0,
+                        PageRequest.of(0, 10));
+
+        assertThat(result.getContent())
+                .extracting(Product::getId)
+                .containsExactly(availableProduct.getId());
+    }
+
     private Page<Product> search(String keyword) {
 
         Specification<Product> specification = Specification.where(
