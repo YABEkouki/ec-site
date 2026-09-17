@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
+import com.example.ecsite.exception.AnnouncementNotFoundException;
 import com.example.ecsite.exception.CustomerNotFoundException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.ProductNotFoundException;
@@ -25,7 +26,7 @@ public class GlobalExceptionHandler {
 
         model.addAttribute("message", e.getMessage());
 
-        return "error/not-found";
+        return "error/product_not_found";
     }
 
     @ExceptionHandler(OrderNotFoundException.class)
@@ -52,6 +53,13 @@ public class GlobalExceptionHandler {
                 e.getMessage());
 
         return "error/customer_not_found";
+    }
+
+    @ExceptionHandler(AnnouncementNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public String handleAnnouncementNotFound(AnnouncementNotFoundException e) {
+
+        return "error/not_found";
     }
 
     @ExceptionHandler(Exception.class)

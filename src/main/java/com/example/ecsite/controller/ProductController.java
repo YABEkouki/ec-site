@@ -6,7 +6,6 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -45,20 +44,6 @@ public class ProductController {
         this.categoryService = categoryService;
         this.reviewService = reviewService;
         this.favoriteService = favoriteService;
-    }
-
-    @GetMapping("/")
-    public String index(
-            @AuthenticationPrincipal UserDetails userDetails,
-            Model model) {
-
-        if (userDetails != null) {
-            model.addAttribute("username", userDetails.getUsername());
-        } else {
-            model.addAttribute("username", "ゲスト");
-        }
-
-        return "index";
     }
 
     @GetMapping("/products")

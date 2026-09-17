@@ -68,7 +68,6 @@ public class SecurityConfig {
                                 passwordEncoder))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/",
                                 "/login",
                                 "/signup",
                                 "/403",

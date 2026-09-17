@@ -175,4 +175,24 @@ class SecurityConfigTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void unauthenticatedUserIsRedirectedToCustomerLoginForHomePage()
+            throws Exception {
+
+        mockMvc.perform(get("/"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl(
+                        "/login"));
+    }
+
+    @Test
+    void unauthenticatedUserIsRedirectedToCustomerLoginForAnnouncementPage()
+            throws Exception {
+
+        mockMvc.perform(get("/announcements"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl(
+                        "/login"));
+    }
+
 }
