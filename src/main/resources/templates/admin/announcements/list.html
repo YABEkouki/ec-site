@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お知らせ管理</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>お知らせ管理</h1>
+
+    <div th:if="${successMessage}">
+        <p th:text="${successMessage}"></p>
+    </div>
+
+    <p>
+        <a th:href="@{/admin/announcements/new}" class="button button-secondary">
+            お知らせを登録
+        </a>
+    </p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>種別</th>
+                <th>重要度</th>
+                <th>タイトル</th>
+                <th>公開状態</th>
+                <th>公開日時</th>
+                <th>更新日時</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="announcement : ${announcementPage.content}">
+                <td th:text="${announcement.id}"></td>
+
+                <td th:text="${announcement.type.displayName}"></td>
+
+                <td th:text="${announcement.importance.displayName}"></td>
+
+                <td th:text="${announcement.title}"></td>
+
+                <td>
+                    <span th:if="${!announcement.published}">
+                        非公開
+                    </span>
+
+                    <span th:if="${announcement.published
+                              and announcement.scheduled}">
+                        公開予定
+                    </span>
+
+                    <span th:if="${announcement.currentlyPublished}">
+                        公開中
+                    </span>
+                </td>
+
+                <td th:text="${announcement.publishedAt != null
+                    ? #temporals.format(
+                        announcement.publishedAt,
+                        'yyyy/MM/dd HH:mm')
+                    : '-'}">
+                </td>
+
+                <td th:text="${#temporals.format(
+                    announcement.updatedAt,
+                    'yyyy/MM/dd HH:mm')}">
+                </td>
+
+                <td>
+                    <a th:href="@{/admin/announcements/{id}/edit(
+                        id=${announcement.id})}" class="button button-secondary">
+                        編集
+                    </a>
+                </td>
+            </tr>
+
+            <tr th:if="${announcementPage.empty}">
+                <td colspan="8">
+                    お知らせはありません。
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div th:if="${announcementPage.totalPages > 1}">
+        <a th:if="${announcementPage.hasPrevious()}"
+            th:href="@{/admin/announcements(page=${announcementPage.number - 1})}">
+            前へ
+        </a>
+
+        <span th:text="${announcementPage.number + 1}"></span>
+        /
+        <span th:text="${announcementPage.totalPages}"></span>
+
+        <a th:if="${announcementPage.hasNext()}" th:href="@{/admin/announcements(page=${announcementPage.number + 1})}">
+            次へ
+        </a>
+    </div>
+
+    <div class="actions">
+        <a th:href="@{/admin}" class="button button-secondary">
+            管理者トップへ戻る
+        </a>
+    </div>
+
+</body>
+
+</html>
