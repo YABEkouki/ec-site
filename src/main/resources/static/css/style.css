@@ -480,3 +480,19 @@ nav strong {
     color: #b3261e;
     font-weight: bold;
 }
+
+.announcement-content-field {
+    margin-top: 8px;
+}
+
+.announcement-content-field label {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.announcement-content-field textarea {
+    display: block;
+    width: 600px;
+    max-width: 100%;
+    box-sizing: border-box;
+}

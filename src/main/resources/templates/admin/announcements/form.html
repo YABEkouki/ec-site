@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お知らせ登録編集</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1 th:text="${announcementId == null
+        ? 'お知らせ登録'
+        : 'お知らせ編集'}">
+    </h1>
+
+    <form method="post" th:object="${adminAnnouncementForm}" th:action="${announcementId == null
+          ? '/admin/announcements'
+          : '/admin/announcements/' + announcementId}">
+
+        <div>
+            <label for="type">種別</label>
+
+            <select id="type" th:field="*{type}">
+                <option value="">選択してください</option>
+
+                <option th:each="type : ${announcementTypes}" th:value="${type}" th:text="${type.displayName}">
+                </option>
+            </select>
+
+            <div th:if="${#fields.hasErrors('type')}" th:errors="*{type}">
+            </div>
+        </div>
+
+        <div>
+            <label for="importance">重要度</label>
+
+            <select id="importance" th:field="*{importance}">
+                <option value="">選択してください</option>
+
+                <option th:each="importance : ${announcementImportances}" th:value="${importance}"
+                    th:text="${importance.displayName}">
+                </option>
+            </select>
+
+            <div th:if="${#fields.hasErrors('importance')}" th:errors="*{importance}">
+            </div>
+        </div>
+
+        <div>
+            <label for="title">タイトル</label>
+
+            <input id="title" type="text" th:field="*{title}" maxlength="200">
+
+            <div th:if="${#fields.hasErrors('title')}" th:errors="*{title}">
+            </div>
+        </div>
+
+        <div class="announcement-content-field">
+            <label for="content">本文</label>
+
+            <textarea id="content" th:field="*{content}" maxlength="5000" rows="12"></textarea>
+
+            <div th:if="${#fields.hasErrors('content')}" th:errors="*{content}">
+            </div>
+        </div>
+
+        <div>
+            <label>
+                <input type="checkbox" th:field="*{published}">
+                公開する
+            </label>
+        </div>
+
+        <div>
+            <label for="publishedAt">公開日時</label>
+
+            <input id="publishedAt" type="datetime-local" th:field="*{publishedAt}">
+
+            <div th:if="${#fields.hasErrors('publishedAt')}" th:errors="*{publishedAt}">
+            </div>
+        </div>
+
+        <button type="submit" th:text="${announcementId == null ? '登録' : '更新'}">
+        </button>
+
+        <a th:href="@{/admin/announcements}" class="button button-secondary">
+            戻る
+        </a>
+
+    </form>
+
+    <div class="actions">
+        <a th:href="@{/admin}" class="button button-secondary">
+            管理者トップへ戻る
+        </a>
+    </div>
+
+</body>
+
+</html>
