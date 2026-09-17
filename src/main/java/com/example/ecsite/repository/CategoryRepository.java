@@ -18,6 +18,8 @@ public interface CategoryRepository
 
     List<Category> findByActiveTrueOrIdOrderByDisplayOrderAscNameAsc(Long id);
 
+    List<Category> findByActiveTrueAndSystemCategoryFalseOrderByDisplayOrderAscNameAsc();
+
     boolean existsByNameIgnoreCase(String name);
 
     boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
