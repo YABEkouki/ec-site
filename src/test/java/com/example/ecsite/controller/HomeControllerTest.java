@@ -4,23 +4,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.ui.ConcurrentModel;
 import org.springframework.ui.Model;
 
 import com.example.ecsite.entity.Announcement;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.AnnouncementService;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.ProductViewHistoryService;
 
 @ExtendWith(MockitoExtension.class)
 class HomeControllerTest {
@@ -34,6 +35,9 @@ class HomeControllerTest {
     @Mock
     private CategoryService categoryService;
 
+    @Mock
+    private ProductViewHistoryService productViewHistoryService;
+
     @Test
     void indexAddsLatestAnnouncementsForAuthenticatedUser() {
 
@@ -45,6 +49,9 @@ class HomeControllerTest {
 
         Product popularProduct = new Product();
         List<Product> popularProducts = List.of(popularProduct);
+
+        Product recentlyViewedProduct = new Product();
+        List<Product> recentlyViewedProducts = List.of(recentlyViewedProduct);
 
         Category category = new Category("食品");
         List<Category> categories = List.of(category);
@@ -58,18 +65,25 @@ class HomeControllerTest {
         when(productService.findPopularProducts(5))
                 .thenReturn(popularProducts);
 
+        when(productViewHistoryService
+                .findRecentAvailableProducts(1L, 5))
+                .thenReturn(recentlyViewedProducts);
+
         when(categoryService.findHomeCategories())
                 .thenReturn(categories);
 
         HomeController controller = new HomeController(
                 announcementService,
                 productService,
-                categoryService);
+                categoryService,
+                productViewHistoryService);
 
-        UserDetails userDetails = User.withUsername("user1")
-                .password("password")
-                .roles("USER")
-                .build();
+        CustomUserDetails userDetails = new CustomUserDetails(
+                1L,
+                "user1",
+                "password",
+                true,
+                Collections.emptyList());
 
         Model model = new ConcurrentModel();
 
@@ -97,6 +111,10 @@ class HomeControllerTest {
                 categories,
                 model.getAttribute("categories"));
 
+        assertEquals(
+                recentlyViewedProducts,
+                model.getAttribute("recentlyViewedProducts"));
+
         verify(announcementService)
                 .findLatestPublished(5);
 
@@ -108,6 +126,9 @@ class HomeControllerTest {
 
         verify(categoryService)
                 .findHomeCategories();
+
+        verify(productViewHistoryService)
+                .findRecentAvailableProducts(1L, 5);
 
     }
 

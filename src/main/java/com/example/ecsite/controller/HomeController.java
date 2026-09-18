@@ -1,14 +1,15 @@
 package com.example.ecsite.controller;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
+import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.AnnouncementService;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.ProductViewHistoryService;
 
 @Controller
 public class HomeController {
@@ -16,20 +17,23 @@ public class HomeController {
     private final AnnouncementService announcementService;
     private final ProductService productService;
     private final CategoryService categoryService;
+    private final ProductViewHistoryService productViewHistoryService;
 
     public HomeController(
             AnnouncementService announcementService,
             ProductService productService,
-            CategoryService categoryService) {
+            CategoryService categoryService,
+            ProductViewHistoryService productViewHistoryService) {
 
         this.announcementService = announcementService;
         this.productService = productService;
         this.categoryService = categoryService;
+        this.productViewHistoryService = productViewHistoryService;
     }
 
     @GetMapping("/")
     public String index(
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal CustomUserDetails userDetails,
             Model model) {
 
         model.addAttribute(
@@ -47,6 +51,12 @@ public class HomeController {
         model.addAttribute(
                 "popularProducts",
                 productService.findPopularProducts(5));
+
+        model.addAttribute(
+                "recentlyViewedProducts",
+                productViewHistoryService.findRecentAvailableProducts(
+                        userDetails.getId(),
+                        5));
 
         model.addAttribute(
                 "categories",

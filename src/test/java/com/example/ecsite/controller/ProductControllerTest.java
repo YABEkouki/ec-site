@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -24,9 +25,11 @@ import org.springframework.validation.BindingResult;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.form.ProductSearchForm;
+import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.FavoriteService;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.ProductViewHistoryService;
 import com.example.ecsite.service.ReviewService;
 
 @ExtendWith(MockitoExtension.class)
@@ -43,6 +46,9 @@ class ProductControllerTest {
 
     @Mock
     private FavoriteService favoriteService;
+
+    @Mock
+    private ProductViewHistoryService productViewHistoryService;
 
     @Test
     void listSearchesProductsAndAddsResultsToModel() {
@@ -78,7 +84,8 @@ class ProductControllerTest {
                 productService,
                 categoryService,
                 reviewService,
-                favoriteService);
+                favoriteService,
+                productViewHistoryService);
 
         Model model = new ConcurrentModel();
 
@@ -124,7 +131,8 @@ class ProductControllerTest {
                 productService,
                 categoryService,
                 reviewService,
-                favoriteService);
+                favoriteService,
+                productViewHistoryService);
 
         Model model = new ConcurrentModel();
 
@@ -152,4 +160,56 @@ class ProductControllerTest {
         verify(categoryService)
                 .findActiveCategories();
     }
+
+    @Test
+    void detailRecordsProductViewForAuthenticatedUser() {
+
+        Long productId = 10L;
+        Long userId = 20L;
+
+        Product product = new Product();
+        product.setId(productId);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(reviewService.findByProductId(productId))
+                .thenReturn(List.of());
+
+        when(reviewService.countByProductId(productId))
+                .thenReturn(0L);
+
+        when(reviewService.getAverageRating(productId))
+                .thenReturn(0.0);
+
+        CustomUserDetails userDetails = new CustomUserDetails(
+                userId,
+                "user1",
+                "password",
+                true,
+                Collections.emptyList());
+
+        ProductController controller = new ProductController(
+                productService,
+                categoryService,
+                reviewService,
+                favoriteService,
+                productViewHistoryService);
+
+        Model model = new ConcurrentModel();
+
+        String view = controller.detail(
+                productId,
+                userDetails,
+                model);
+
+        assertEquals("products/detail", view);
+        assertSame(
+                product,
+                model.getAttribute("product"));
+
+        verify(productViewHistoryService)
+                .recordView(userId, product);
+    }
+
 }
