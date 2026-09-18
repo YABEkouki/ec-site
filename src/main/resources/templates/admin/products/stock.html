@@ -84,17 +84,20 @@
                     在庫変更履歴を見る
                 </a>
 
-                <a th:if="${returnTo == 'edit'}" th:href="@{/admin/products/{id}/edit(id=${product.id})}"
+                <a th:if="${returnTo == 'edit'}"
+                    th:href="@{/admin/products/{id}/edit(id=${product.id}, returnUrl=${returnUrl})}"
                     class="button button-secondary">
                     商品編集へ戻る
                 </a>
 
-                <a th:unless="${returnTo == 'edit'}" th:href="@{/admin/products}" class="button button-secondary">
+                <a th:unless="${returnTo == 'edit'}" th:href="${returnUrl}" class="button button-secondary">
                     商品一覧へ戻る
                 </a>
             </div>
 
             <input th:if="${returnTo != null}" type="hidden" name="returnTo" th:value="${returnTo}">
+
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
 
         </form>
 
