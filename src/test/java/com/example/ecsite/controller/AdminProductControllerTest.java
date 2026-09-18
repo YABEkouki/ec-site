@@ -31,6 +31,7 @@ import com.example.ecsite.entity.StockMovementType;
 import com.example.ecsite.exception.InvalidProductSearchKeywordException;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
+import com.example.ecsite.form.ProductSearchForm;
 import com.example.ecsite.form.StockAdjustmentForm;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.CategoryService;
@@ -530,6 +531,116 @@ class AdminProductControllerTest {
                 .addAttribute(
                         "product",
                         product);
+    }
+
+    @Test
+    void listSearchesProductsWithSpecifiedSearchConditions() {
+
+        ProductSearchForm searchForm = new ProductSearchForm();
+        searchForm.setKeyword("キャンプ");
+        searchForm.setCategoryId(2L);
+        searchForm.setMinPrice(1000);
+        searchForm.setMaxPrice(5000);
+        searchForm.setInStockOnly(true);
+        searchForm.setSort("priceAsc");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        Page<Product> productPage = new PageImpl<>(List.of());
+
+        when(productService.searchForUser(
+                searchForm,
+                1,
+                10))
+                .thenReturn(productPage);
+
+        List<Category> categories = List.of();
+
+        when(categoryService.findActiveCategories())
+                .thenReturn(categories);
+
+        String viewName = adminProductController.list(
+                searchForm,
+                bindingResult,
+                1,
+                model);
+
+        assertEquals(
+                "admin/products/list",
+                viewName);
+
+        verify(productService)
+                .searchForUser(
+                        searchForm,
+                        1,
+                        10);
+
+        verify(model)
+                .addAttribute(
+                        "products",
+                        productPage.getContent());
+
+        verify(model)
+                .addAttribute(
+                        "productPage",
+                        productPage);
+
+        verify(model)
+                .addAttribute(
+                        "categories",
+                        categories);
+    }
+
+    @Test
+    void listDoesNotSearchProductsWhenSearchConditionsAreInvalid() {
+
+        ProductSearchForm searchForm = new ProductSearchForm();
+        searchForm.setMinPrice(5000);
+        searchForm.setMaxPrice(1000);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        List<Category> categories = List.of();
+
+        when(categoryService.findActiveCategories())
+                .thenReturn(categories);
+
+        String viewName = adminProductController.list(
+                searchForm,
+                bindingResult,
+                0,
+                model);
+
+        assertEquals(
+                "admin/products/list",
+                viewName);
+
+        verify(productService, never())
+                .searchForUser(
+                        any(ProductSearchForm.class),
+                        anyInt(),
+                        anyInt());
+
+        verify(model)
+                .addAttribute(
+                        eq("products"),
+                        any());
+
+        verify(model)
+                .addAttribute(
+                        eq("productPage"),
+                        any());
+
+        verify(model)
+                .addAttribute(
+                        "categories",
+                        categories);
     }
 
 }
