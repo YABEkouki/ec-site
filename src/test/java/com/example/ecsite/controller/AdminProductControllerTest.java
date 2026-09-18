@@ -87,6 +87,7 @@ class AdminProductControllerTest {
         String viewName = adminProductController.stock(
                 productId,
                 null,
+                null,
                 model);
 
         assertEquals(
@@ -105,6 +106,45 @@ class AdminProductControllerTest {
                 .addAttribute(
                         org.mockito.ArgumentMatchers.eq("stockAdjustmentForm"),
                         any(StockAdjustmentForm.class));
+    }
+
+    @Test
+    void stockKeepsProductListReturnUrl() {
+
+        Long productId = 1L;
+
+        Category category = mock(Category.class);
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setCategory(category);
+        product.setName("テスト商品");
+        product.setStock(10);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        String returnUrl = "/admin/products?keyword=camp&page=2";
+
+        String viewName = adminProductController.stock(
+                productId,
+                "edit",
+                returnUrl,
+                model);
+
+        assertEquals(
+                "admin/products/stock",
+                viewName);
+
+        verify(model)
+                .addAttribute(
+                        "returnTo",
+                        "edit");
+
+        verify(model)
+                .addAttribute(
+                        "returnUrl",
+                        returnUrl);
     }
 
     @Test
@@ -137,10 +177,11 @@ class AdminProductControllerTest {
                 model,
                 redirectAttributes,
                 userDetails,
+                null,
                 null);
 
         assertEquals(
-                "redirect:/admin/products/" + productId + "/stock",
+                "redirect:/admin/products/" + productId + "/stock?returnUrl=%2Fadmin%2Fproducts",
                 viewName);
 
         verify(inventoryService)
@@ -185,6 +226,7 @@ class AdminProductControllerTest {
                 model,
                 mock(RedirectAttributes.class),
                 userDetails,
+                null,
                 null);
 
         assertEquals(
@@ -254,6 +296,7 @@ class AdminProductControllerTest {
                 model,
                 mock(RedirectAttributes.class),
                 userDetails,
+                null,
                 null);
 
         assertEquals(
@@ -311,10 +354,65 @@ class AdminProductControllerTest {
                 model,
                 redirectAttributes,
                 userDetails,
-                "edit");
+                "edit",
+                null);
 
         assertEquals(
-                "redirect:/admin/products/" + productId + "/stock?returnTo=edit",
+                "redirect:/admin/products/" + productId + "/stock?returnUrl=%2Fadmin%2Fproducts&returnTo=edit",
+                viewName);
+
+        verify(inventoryService)
+                .adjustByAdmin(
+                        1L,
+                        5,
+                        1L,
+                        "admin",
+                        null);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "在庫を調整しました。");
+    }
+
+    @Test
+    void adjustStockKeepsProductListReturnUrlAfterRedirect() {
+
+        Long productId = 1L;
+
+        StockAdjustmentForm form = new StockAdjustmentForm();
+        form.setQuantity(5);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        AdminUserDetails userDetails = mock(AdminUserDetails.class);
+
+        when(userDetails.getId())
+                .thenReturn(1L);
+
+        when(userDetails.getUsername())
+                .thenReturn("admin");
+
+        String returnUrl = "/admin/products?keyword=camp&page=2";
+
+        String viewName = adminProductController.adjustStock(
+                productId,
+                form,
+                bindingResult,
+                model,
+                redirectAttributes,
+                userDetails,
+                "edit",
+                returnUrl);
+
+        assertEquals(
+                "redirect:/admin/products/" + productId
+                        + "/stock?returnUrl=%2Fadmin%2Fproducts%3Fkeyword%3Dcamp%26page%3D2"
+                        + "&returnTo=edit",
                 viewName);
 
         verify(inventoryService)
@@ -454,6 +552,7 @@ class AdminProductControllerTest {
 
         String viewName = adminProductController.edit(
                 productId,
+                null,
                 model);
 
         assertEquals(
@@ -467,6 +566,128 @@ class AdminProductControllerTest {
                 .addAttribute(
                         eq("productForm"),
                         any(ProductForm.class));
+    }
+
+    @Test
+    void editKeepsProductListReturnUrl() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Category category = mock(Category.class);
+
+        when(category.getId())
+                .thenReturn(categoryId);
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setCategory(category);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(productService.findSearchKeywords(productId))
+                .thenReturn(List.of());
+
+        when(categoryService.findCategoriesForProductEdit(categoryId))
+                .thenReturn(List.of(category));
+
+        String returnUrl = "/admin/products?keyword=camp&page=2";
+
+        String viewName = adminProductController.edit(
+                productId,
+                returnUrl,
+                model);
+
+        assertEquals(
+                "admin/products/edit",
+                viewName);
+
+        verify(model)
+                .addAttribute(
+                        "returnUrl",
+                        returnUrl);
+    }
+
+    @Test
+    void editFallsBackToProductListWhenReturnUrlIsInvalid() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Category category = mock(Category.class);
+
+        when(category.getId())
+                .thenReturn(categoryId);
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setCategory(category);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(productService.findSearchKeywords(productId))
+                .thenReturn(List.of());
+
+        when(categoryService.findCategoriesForProductEdit(categoryId))
+                .thenReturn(List.of(category));
+
+        String viewName = adminProductController.edit(
+                productId,
+                "https://example.com",
+                model);
+
+        assertEquals(
+                "admin/products/edit",
+                viewName);
+
+        verify(model)
+                .addAttribute(
+                        "returnUrl",
+                        "/admin/products");
+    }
+
+    @Test
+    void updateRedirectsToProductListReturnUrl() {
+
+        Long productId = 1L;
+
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String returnUrl = "/admin/products?keyword=camp&page=2";
+
+        String viewName = adminProductController.update(
+                productId,
+                form,
+                bindingResult,
+                returnUrl,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:" + returnUrl,
+                viewName);
+
+        verify(productService)
+                .update(
+                        productId,
+                        form);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "message",
+                        "商品を更新しました。");
     }
 
     @Test
@@ -512,6 +733,7 @@ class AdminProductControllerTest {
                 productId,
                 form,
                 bindingResult,
+                null,
                 model,
                 mock(RedirectAttributes.class));
 
@@ -531,6 +753,65 @@ class AdminProductControllerTest {
                 .addAttribute(
                         "product",
                         product);
+    }
+
+    @Test
+    void updateKeepsProductListReturnUrlWhenSearchKeywordsAreInvalid() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+
+        Category category = mock(Category.class);
+
+        when(category.getId())
+                .thenReturn(categoryId);
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setCategory(category);
+
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(1000);
+        form.setStock(5);
+        form.setCategoryId(categoryId);
+        form.setSearchKeywords(
+                List.of("Camp", "camp"));
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        doThrow(new InvalidProductSearchKeywordException(
+                "同じ検索キーワードが複数入力されています。"))
+                .when(productService)
+                .update(productId, form);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(categoryService.findCategoriesForProductEdit(categoryId))
+                .thenReturn(List.of(category));
+
+        String returnUrl = "/admin/products?keyword=camp&page=2";
+
+        String viewName = adminProductController.update(
+                productId,
+                form,
+                bindingResult,
+                returnUrl,
+                model,
+                mock(RedirectAttributes.class));
+
+        assertEquals(
+                "admin/products/edit",
+                viewName);
+
+        verify(model)
+                .addAttribute(
+                        "returnUrl",
+                        returnUrl);
     }
 
     @Test

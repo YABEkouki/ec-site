@@ -79,7 +79,7 @@
                 個
             </p>
 
-            <a th:href="@{/admin/products/{id}/stock(id=${productId}, returnTo='edit')}"
+            <a th:href="@{/admin/products/{id}/stock(id=${productId}, returnTo='edit', returnUrl=${returnUrl})}"
                 class="button button-secondary">
                 在庫を調整
             </a>
@@ -155,11 +155,13 @@
                 更新
             </button>
 
-            <a th:href="@{/admin/products}" class="button button-secondary">
+            <a th:href="${returnUrl}" class="button button-secondary">
                 商品一覧へ戻る
             </a>
 
         </div>
+
+        <input type="hidden" name="returnUrl" th:value="${returnUrl}">
 
     </form>
 

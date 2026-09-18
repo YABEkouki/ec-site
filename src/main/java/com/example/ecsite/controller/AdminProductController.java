@@ -1,5 +1,7 @@
 package com.example.ecsite.controller;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 
 import org.springframework.data.domain.Page;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
@@ -32,6 +35,7 @@ import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.InventoryService;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.service.StockMovementService;
+import com.example.ecsite.util.AdminReturnUrlHelper;
 
 import jakarta.validation.Valid;
 
@@ -87,6 +91,11 @@ public class AdminProductController {
         model.addAttribute(
                 "productPage",
                 productPage);
+
+        String returnUrl = buildProductListReturnUrl(searchForm, page);
+        model.addAttribute(
+                "returnUrl",
+                returnUrl);
 
         model.addAttribute(
                 "categories",
@@ -152,6 +161,7 @@ public class AdminProductController {
     @GetMapping("/{id}/edit")
     public String edit(
             @PathVariable Long id,
+            @RequestParam(required = false) String returnUrl,
             Model model) {
 
         Product product = productService.findById(id);
@@ -176,6 +186,8 @@ public class AdminProductController {
 
         model.addAttribute("product", product);
 
+        model.addAttribute("returnUrl", AdminReturnUrlHelper.resolveProductListReturnUrl(returnUrl));
+
         return "admin/products/edit";
     }
 
@@ -184,8 +196,11 @@ public class AdminProductController {
             @PathVariable Long id,
             @Valid @ModelAttribute("productForm") ProductForm productForm,
             BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
             Model model,
             RedirectAttributes redirectAttributes) {
+
+        String resolvedReturnUrl = AdminReturnUrlHelper.resolveProductListReturnUrl(returnUrl);
 
         if (bindingResult.hasErrors()) {
 
@@ -200,6 +215,8 @@ public class AdminProductController {
                     categoryService
                             .findCategoriesForProductEdit(
                                     product.getCategory().getId()));
+
+            model.addAttribute("returnUrl", resolvedReturnUrl);
 
             return "admin/products/edit";
         }
@@ -222,6 +239,8 @@ public class AdminProductController {
                     categoryService.findCategoriesForProductEdit(
                             product.getCategory().getId()));
 
+            model.addAttribute("returnUrl", resolvedReturnUrl);
+
             return "admin/products/edit";
 
         } catch (InvalidProductImageException e) {
@@ -240,6 +259,8 @@ public class AdminProductController {
                     categoryService.findCategoriesForProductEdit(
                             product.getCategory().getId()));
 
+            model.addAttribute("returnUrl", resolvedReturnUrl);
+
             return "admin/products/edit";
         }
 
@@ -247,7 +268,8 @@ public class AdminProductController {
                 "message",
                 "商品を更新しました。");
 
-        return "redirect:/admin/products";
+        return "redirect:" + resolvedReturnUrl;
+
     }
 
     @PostMapping("/{id}/delete")
@@ -303,6 +325,7 @@ public class AdminProductController {
     public String stock(
             @PathVariable Long id,
             @RequestParam(required = false) String returnTo,
+            @RequestParam(required = false) String returnUrl,
             Model model) {
 
         Product product = productService.findById(id);
@@ -319,6 +342,9 @@ public class AdminProductController {
                 "returnTo",
                 returnTo);
 
+        String resolvedReturnUrl = AdminReturnUrlHelper.resolveProductListReturnUrl(returnUrl);
+        model.addAttribute("returnUrl", resolvedReturnUrl);
+
         return "admin/products/stock";
     }
 
@@ -330,7 +356,10 @@ public class AdminProductController {
             Model model,
             RedirectAttributes redirectAttributes,
             @AuthenticationPrincipal AdminUserDetails userDetails,
-            @RequestParam(required = false) String returnTo) {
+            @RequestParam(required = false) String returnTo,
+            @RequestParam(required = false) String returnUrl) {
+
+        String resolvedReturnUrl = AdminReturnUrlHelper.resolveProductListReturnUrl(returnUrl);
 
         if (bindingResult.hasErrors()) {
 
@@ -342,6 +371,8 @@ public class AdminProductController {
             model.addAttribute(
                     "returnTo",
                     returnTo);
+
+            model.addAttribute("returnUrl", resolvedReturnUrl);
 
             return "admin/products/stock";
         }
@@ -369,6 +400,8 @@ public class AdminProductController {
                     "returnTo",
                     returnTo);
 
+            model.addAttribute("returnUrl", resolvedReturnUrl);
+
             return "admin/products/stock";
         }
 
@@ -376,11 +409,18 @@ public class AdminProductController {
                 "successMessage",
                 "在庫を調整しました。");
 
+        String encodedReturnUrl = URLEncoder.encode(
+                resolvedReturnUrl,
+                StandardCharsets.UTF_8);
+
+        String redirectUrl = "/admin/products/" + id
+                + "/stock?returnUrl=" + encodedReturnUrl;
+
         if ("edit".equals(returnTo)) {
-            return "redirect:/admin/products/" + id + "/stock?returnTo=edit";
+            redirectUrl += "&returnTo=edit";
         }
 
-        return "redirect:/admin/products/" + id + "/stock";
+        return "redirect:" + redirectUrl;
     }
 
     @GetMapping("/{id}/stock/history")
@@ -423,4 +463,43 @@ public class AdminProductController {
                 "categories",
                 categoryService.findActiveCategories());
     }
+
+    private String buildProductListReturnUrl(ProductSearchForm searchForm, int page) {
+        UriComponentsBuilder builder = UriComponentsBuilder
+                .fromPath("/admin/products");
+
+        if (searchForm.getKeyword() != null && !searchForm.getKeyword().isBlank()) {
+            builder.queryParam("keyword", searchForm.getKeyword());
+        }
+
+        if (searchForm.getCategoryId() != null) {
+            builder.queryParam("categoryId", searchForm.getCategoryId());
+        }
+
+        if (searchForm.getMinPrice() != null) {
+            builder.queryParam("minPrice", searchForm.getMinPrice());
+        }
+
+        if (searchForm.getMaxPrice() != null) {
+            builder.queryParam("maxPrice", searchForm.getMaxPrice());
+        }
+
+        if (searchForm.isInStockOnly()) {
+            builder.queryParam("inStockOnly", true);
+        }
+
+        if (searchForm.getSort() != null && !searchForm.getSort().isBlank()) {
+            builder.queryParam("sort", searchForm.getSort());
+        }
+
+        if (page > 0) {
+            builder.queryParam("page", page);
+        }
+
+        return builder
+                .build()
+                .encode()
+                .toUriString();
+    }
+
 }
