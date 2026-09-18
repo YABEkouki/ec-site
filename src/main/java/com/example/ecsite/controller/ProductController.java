@@ -22,6 +22,7 @@ import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.FavoriteService;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.ProductViewHistoryService;
 import com.example.ecsite.service.ReviewService;
 
 import jakarta.validation.Valid;
@@ -33,17 +34,20 @@ public class ProductController {
     private final CategoryService categoryService;
     private final ReviewService reviewService;
     private final FavoriteService favoriteService;
+    private final ProductViewHistoryService productViewHistoryService;
 
     public ProductController(
             ProductService productService,
             CategoryService categoryService,
             ReviewService reviewService,
-            FavoriteService favoriteService) {
+            FavoriteService favoriteService,
+            ProductViewHistoryService productViewHistoryService) {
 
         this.productService = productService;
         this.categoryService = categoryService;
         this.reviewService = reviewService;
         this.favoriteService = favoriteService;
+        this.productViewHistoryService = productViewHistoryService;
     }
 
     @GetMapping("/products")
@@ -85,6 +89,12 @@ public class ProductController {
             Model model) {
 
         Product product = productService.findById(id);
+
+        if (userDetails != null) {
+            productViewHistoryService.recordView(
+                    userDetails.getId(),
+                    product);
+        }
 
         List<Review> reviews = reviewService.findByProductId(id);
 
