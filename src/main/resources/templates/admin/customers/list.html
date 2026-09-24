@@ -145,7 +145,7 @@
                 customerPage.totalPages - 1)}">
 
             <strong th:if="${pageNumber == customerPage.number}" th:text="${pageNumber + 1}"
-                class="button button-secondary">
+                class="button pagination-current">
             </strong>
 
             <a th:unless="${pageNumber == customerPage.number}" th:href="@{/admin/customers(

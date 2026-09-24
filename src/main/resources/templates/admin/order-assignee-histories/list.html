@@ -159,7 +159,7 @@
         </tbody>
     </table>
 
-    <div th:if="${historyPage.totalPages > 1}">
+    <nav th:if="${historyPage.totalPages > 1}">
 
         <a th:if="${historyPage.hasPrevious()}" th:href="@{/admin/order-assignee-histories/list(
                page=${historyPage.number - 1},
@@ -171,16 +171,33 @@
                toAdminAccountId=${searchForm.toAdminAccountId},
                changedByUsername=${searchForm.changedByUsername},
                from=${searchForm.from},
-               to=${searchForm.to})}">
+               to=${searchForm.to})}" class="button button-secondary">
             前へ
         </a>
 
-        <span th:text="${historyPage.number + 1}">
-        </span>
-        /
-        <span th:text="${historyPage.totalPages}">
-        </span>
+        <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                historyPage.totalPages - 1)}">
 
+            <strong th:if="${pageNumber == historyPage.number}" th:text="${pageNumber + 1}"
+                class="button pagination-current">
+            </strong>
+
+            <a th:unless="${pageNumber == historyPage.number}" th:href="@{/admin/order-assignee-histories/list(
+            page=${pageNumber},
+            size=${historyPage.size},
+            orderId=${searchForm.orderId},
+            fromAssigneeFilter=${searchForm.fromAssigneeFilter},
+            fromAdminAccountId=${searchForm.fromAdminAccountId},
+            toAssigneeFilter=${searchForm.toAssigneeFilter},
+            toAdminAccountId=${searchForm.toAdminAccountId},
+            changedByUsername=${searchForm.changedByUsername},
+            from=${searchForm.from},
+            to=${searchForm.to})}" th:text="${pageNumber + 1}" class="button button-secondary">
+            </a>
+
+        </span>
         <a th:if="${historyPage.hasNext()}" th:href="@{/admin/order-assignee-histories/list(
                page=${historyPage.number + 1},
                size=${historyPage.size},
@@ -191,11 +208,11 @@
                toAdminAccountId=${searchForm.toAdminAccountId},
                changedByUsername=${searchForm.changedByUsername},
                from=${searchForm.from},
-               to=${searchForm.to})}">
+               to=${searchForm.to})}" class="button button-secondary">
             次へ
         </a>
 
-    </div>
+    </nav>
 
     <script>
         function updateAssigneeSelectState() {

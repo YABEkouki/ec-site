@@ -179,7 +179,7 @@
         <span th:each="pageNumber : ${#numbers.sequence(0, productPage.totalPages - 1)}">
 
             <strong th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}"
-                class="button button-secondary">
+                class="button pagination-current">
             </strong>
 
             <a th:unless="${pageNumber == productPage.number}" th:href="@{/admin/products(

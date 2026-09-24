@@ -97,6 +97,13 @@ form {
     border-color: #9aa7b2;
 }
 
+.pagination-current {
+    color: #fff;
+    background-color: #1769aa;
+    border-color: #1769aa;
+    cursor: default;
+}
+
 .button-danger {
     color: #fff;
     background-color: #b3261e;

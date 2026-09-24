@@ -65,7 +65,7 @@
             <div class="order-search-field">
                 <label for="assigneeFilter">担当者</label>
 
-                <select id="assigneeFilter" th:field="*{assigneeFilter}">
+                <select id="assigneeFilter" th:field="*{assigneeFilter}" onchange="updateAssignedAdminSelectState()">
                     <option th:each="assigneeFilter : ${assigneeFilters}" th:value="${assigneeFilter}"
                         th:text="${assigneeFilter.displayName}">
                     </option>
@@ -220,7 +220,7 @@
             orderPage.totalPages - 1)}">
 
             <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
-                class="button button-secondary">
+                class="button pagination-current">
             </strong>
 
             <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders(
@@ -253,6 +253,25 @@
         </a>
 
     </nav>
+
+    <script>
+        function updateAssignedAdminSelectState() {
+
+            const assigneeFilter =
+                document.getElementById("assigneeFilter");
+
+            const assignedAdmin =
+                document.getElementById("assignedAdminAccountId");
+
+            assignedAdmin.disabled =
+                assigneeFilter.value !== "SPECIFIC";
+        }
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            updateAssignedAdminSelectState);
+    </script>
+
 </body>
 
 </html>

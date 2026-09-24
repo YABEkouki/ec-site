@@ -21,6 +21,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.example.ecsite.entity.Category;
@@ -190,6 +194,43 @@ class CategoryServiceTest {
 
         verify(categoryRepository, never())
                 .saveAndFlush(any());
+    }
+
+    @Test
+    void findCategoryPageUsesPageSizeAndSortOrder() {
+
+        Category category = new Category("食品");
+
+        Page<Category> categoryPage = new PageImpl<>(List.of(category));
+
+        when(categoryRepository.findAll(any(Pageable.class)))
+                .thenReturn(categoryPage);
+
+        Page<Category> result = categoryService.findCategoryPage(2);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+
+        verify(categoryRepository)
+                .findAll(captor.capture());
+
+        Pageable pageable = captor.getValue();
+
+        assertEquals(2, pageable.getPageNumber());
+        assertEquals(10, pageable.getPageSize());
+
+        assertEquals(
+                Sort.Direction.ASC,
+                pageable.getSort()
+                        .getOrderFor("displayOrder")
+                        .getDirection());
+
+        assertEquals(
+                Sort.Direction.ASC,
+                pageable.getSort()
+                        .getOrderFor("name")
+                        .getDirection());
+
+        assertSame(categoryPage, result);
     }
 
     @Test

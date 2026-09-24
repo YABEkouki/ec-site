@@ -22,11 +22,11 @@
         </a>
     </p>
 
-    <p th:if="${#lists.isEmpty(adminAccounts)}">
+    <p th:if="${adminAccountPage.empty}">
         管理者アカウントはありません。
     </p>
 
-    <table th:unless="${#lists.isEmpty(adminAccounts)}">
+    <table th:unless="${adminAccountPage.empty}">
         <thead>
             <tr>
                 <th>ID</th>
@@ -39,7 +39,7 @@
         </thead>
 
         <tbody>
-            <tr th:each="adminAccount : ${adminAccounts}">
+            <tr th:each="adminAccount : ${adminAccountPage.content}">
                 <td th:text="${adminAccount.id}">
                 </td>
 
@@ -76,6 +76,33 @@
             </tr>
         </tbody>
     </table>
+
+    <nav th:if="${adminAccountPage.totalPages > 1}">
+        <a th:if="${adminAccountPage.hasPrevious()}" th:href="@{/admin/accounts(page=${adminAccountPage.number - 1})}"
+            class="button button-secondary">
+            前へ
+        </a>
+
+        <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                adminAccountPage.totalPages - 1)}">
+
+            <strong th:if="${pageNumber == adminAccountPage.number}" th:text="${pageNumber + 1}"
+                class="button pagination-current">
+            </strong>
+
+            <a th:unless="${pageNumber == adminAccountPage.number}" th:href="@{/admin/accounts(page=${pageNumber})}"
+                th:text="${pageNumber + 1}" class="button button-secondary">
+            </a>
+        </span>
+
+        <a th:if="${adminAccountPage.hasNext()}" th:href="@{/admin/accounts(page=${adminAccountPage.number + 1})}"
+            class="button button-secondary">
+            次へ
+        </a>
+    </nav>
+
 </body>
 
 </html>
