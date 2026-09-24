@@ -91,20 +91,36 @@
         </tbody>
     </table>
 
-    <div th:if="${announcementPage.totalPages > 1}">
+    <nav th:if="${announcementPage.totalPages > 1}">
+
         <a th:if="${announcementPage.hasPrevious()}"
-            th:href="@{/admin/announcements(page=${announcementPage.number - 1})}">
+            th:href="@{/admin/announcements(page=${announcementPage.number - 1})}" class="button button-secondary">
             前へ
         </a>
 
-        <span th:text="${announcementPage.number + 1}"></span>
-        /
-        <span th:text="${announcementPage.totalPages}"></span>
+        <span th:each="pageNumber :
+        ${#numbers.sequence(
+            0,
+            announcementPage.totalPages - 1)}">
 
-        <a th:if="${announcementPage.hasNext()}" th:href="@{/admin/announcements(page=${announcementPage.number + 1})}">
+            <strong th:if="${pageNumber == announcementPage.number}" th:text="${pageNumber + 1}"
+                class="button pagination-current">
+            </strong>
+
+            <a th:unless="${pageNumber == announcementPage.number}"
+                th:href="@{/admin/announcements(page=${pageNumber})}" th:text="${pageNumber + 1}"
+                class="button button-secondary">
+            </a>
+
+        </span>
+
+        <a th:if="${announcementPage.hasNext()}" th:href="@{/admin/announcements(page=${announcementPage.number + 1})}"
+            class="button button-secondary">
             次へ
         </a>
-    </div>
+
+    </nav>
+
 </body>
 
 </html>

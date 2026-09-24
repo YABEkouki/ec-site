@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Category;
@@ -22,185 +23,189 @@ import jakarta.validation.Valid;
 @RequestMapping("/admin/categories")
 public class AdminCategoryController {
 
-        private final CategoryService categoryService;
+    private final CategoryService categoryService;
 
-        public AdminCategoryController(
-                        CategoryService categoryService) {
+    public AdminCategoryController(
+            CategoryService categoryService) {
 
-                this.categoryService = categoryService;
+        this.categoryService = categoryService;
+    }
+
+    @GetMapping
+    public String list(
+            @RequestParam(defaultValue = "0") int page,
+            Model model) {
+
+        if (!model.containsAttribute(
+                "categoryForm")) {
+
+            model.addAttribute(
+                    "categoryForm",
+                    new CategoryForm());
         }
 
-        @GetMapping
-        public String list(Model model) {
+        addCategories(model, page);
 
-                if (!model.containsAttribute(
-                                "categoryForm")) {
+        return "admin/categories/list";
+    }
 
-                        model.addAttribute(
-                                        "categoryForm",
-                                        new CategoryForm());
-                }
+    @GetMapping("/{id}/edit")
+    public String edit(
+            @PathVariable Long id,
+            Model model) {
 
-                addCategories(model);
+        Category category = categoryService.findById(id);
 
-                return "admin/categories/list";
+        CategoryForm categoryForm = new CategoryForm();
+
+        categoryForm.setName(category.getName());
+
+        categoryForm.setDisplayOrder(category.getDisplayOrder());
+
+        model.addAttribute(
+                "category",
+                category);
+
+        model.addAttribute(
+                "categoryForm",
+                categoryForm);
+
+        return "admin/categories/edit";
+    }
+
+    @PostMapping("/{id}/update")
+    public String update(
+            @PathVariable Long id,
+            @Valid @ModelAttribute("categoryForm") CategoryForm categoryForm,
+            BindingResult bindingResult,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+
+            model.addAttribute(
+                    "category",
+                    categoryService.findById(id));
+
+            return "admin/categories/edit";
         }
 
-        @GetMapping("/{id}/edit")
-        public String edit(
-                        @PathVariable Long id,
-                        Model model) {
+        try {
+            categoryService.update(
+                    id,
+                    categoryForm);
 
-                Category category = categoryService.findById(id);
+        } catch (CategoryAlreadyExistsException e) {
 
-                CategoryForm categoryForm = new CategoryForm();
+            bindingResult.rejectValue(
+                    "name",
+                    "category.duplicate",
+                    "このカテゴリ名は既に使用されています。");
 
-                categoryForm.setName(category.getName());
+            model.addAttribute(
+                    "category",
+                    categoryService.findById(id));
 
-                categoryForm.setDisplayOrder(category.getDisplayOrder());
+            return "admin/categories/edit";
+        } catch (ProtectedCategoryException e) {
 
-                model.addAttribute(
-                                "category",
-                                category);
+            bindingResult.rejectValue(
+                    "name",
+                    "category.protected",
+                    "「未分類」カテゴリの名前は変更できません。");
 
-                model.addAttribute(
-                                "categoryForm",
-                                categoryForm);
+            model.addAttribute(
+                    "category",
+                    categoryService.findById(id));
 
-                return "admin/categories/edit";
+            return "admin/categories/edit";
         }
 
-        @PostMapping("/{id}/update")
-        public String update(
-                        @PathVariable Long id,
-                        @Valid @ModelAttribute("categoryForm") CategoryForm categoryForm,
-                        BindingResult bindingResult,
-                        Model model,
-                        RedirectAttributes redirectAttributes) {
+        redirectAttributes.addFlashAttribute("successMessage", "カテゴリを更新しました。");
 
-                if (bindingResult.hasErrors()) {
+        return "redirect:/admin/categories";
 
-                        model.addAttribute(
-                                        "category",
-                                        categoryService.findById(id));
+    }
 
-                        return "admin/categories/edit";
-                }
+    @PostMapping
+    public String create(
+            @Valid @ModelAttribute("categoryForm") CategoryForm categoryForm,
+            BindingResult bindingResult,
+            Model model,
+            RedirectAttributes redirectAttributes) {
 
-                try {
-                        categoryService.update(
-                                        id,
-                                        categoryForm);
+        if (bindingResult.hasErrors()) {
+            addCategories(model, 0);
 
-                } catch (CategoryAlreadyExistsException e) {
-
-                        bindingResult.rejectValue(
-                                        "name",
-                                        "category.duplicate",
-                                        "このカテゴリ名は既に使用されています。");
-
-                        model.addAttribute(
-                                        "category",
-                                        categoryService.findById(id));
-
-                        return "admin/categories/edit";
-                } catch (ProtectedCategoryException e) {
-
-                        bindingResult.rejectValue(
-                                        "name",
-                                        "category.protected",
-                                        "「未分類」カテゴリの名前は変更できません。");
-
-                        model.addAttribute(
-                                        "category",
-                                        categoryService.findById(id));
-
-                        return "admin/categories/edit";
-                }
-
-                redirectAttributes.addFlashAttribute("successMessage", "カテゴリを更新しました。");
-
-                return "redirect:/admin/categories";
-
+            return "admin/categories/list";
         }
 
-        @PostMapping
-        public String create(
-                        @Valid @ModelAttribute("categoryForm") CategoryForm categoryForm,
-                        BindingResult bindingResult,
-                        Model model,
-                        RedirectAttributes redirectAttributes) {
+        try {
+            categoryService.create(categoryForm);
 
-                if (bindingResult.hasErrors()) {
-                        addCategories(model);
+        } catch (CategoryAlreadyExistsException e) {
 
-                        return "admin/categories/list";
-                }
+            bindingResult.rejectValue(
+                    "name",
+                    "category.duplicate",
+                    "このカテゴリ名は既に使用されています。");
 
-                try {
-                        categoryService.create(categoryForm);
+            addCategories(model, 0);
 
-                } catch (CategoryAlreadyExistsException e) {
-
-                        bindingResult.rejectValue(
-                                        "name",
-                                        "category.duplicate",
-                                        "このカテゴリ名は既に使用されています。");
-
-                        addCategories(model);
-
-                        return "admin/categories/list";
-                }
-
-                redirectAttributes.addFlashAttribute(
-                                "successMessage",
-                                "カテゴリを登録しました。");
-
-                return "redirect:/admin/categories";
+            return "admin/categories/list";
         }
 
-        private void addCategories(Model model) {
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "カテゴリを登録しました。");
 
-                model.addAttribute(
-                                "categories",
-                                categoryService.findAllCategories());
+        return "redirect:/admin/categories";
+    }
+
+    private void addCategories(
+            Model model,
+            int page) {
+
+        model.addAttribute(
+                "categoryPage",
+                categoryService.findCategoryPage(page));
+    }
+
+    @PostMapping("/{id}/deactivate")
+    public String deactivate(
+            @PathVariable Long id,
+            RedirectAttributes redirectAttributes) {
+
+        try {
+            categoryService.deactivate(id);
+
+        } catch (ProtectedCategoryException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "「未分類」カテゴリは無効化できません。");
+
+            return "redirect:/admin/categories";
         }
 
-        @PostMapping("/{id}/deactivate")
-        public String deactivate(
-                        @PathVariable Long id,
-                        RedirectAttributes redirectAttributes) {
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "カテゴリを無効化しました。");
 
-                try {
-                        categoryService.deactivate(id);
+        return "redirect:/admin/categories";
+    }
 
-                } catch (ProtectedCategoryException e) {
+    @PostMapping("/{id}/activate")
+    public String activate(
+            @PathVariable Long id,
+            RedirectAttributes redirectAttributes) {
 
-                        redirectAttributes.addFlashAttribute(
-                                        "errorMessage",
-                                        "「未分類」カテゴリは無効化できません。");
+        categoryService.activate(id);
 
-                        return "redirect:/admin/categories";
-                }
+        redirectAttributes.addFlashAttribute(
+                "successMessage",
+                "カテゴリを有効化しました。");
 
-                redirectAttributes.addFlashAttribute(
-                                "successMessage",
-                                "カテゴリを無効化しました。");
-
-                return "redirect:/admin/categories";
-        }
-
-        @PostMapping("/{id}/activate")
-        public String activate(
-                        @PathVariable Long id,
-                        RedirectAttributes redirectAttributes) {
-
-                categoryService.activate(id);
-
-                redirectAttributes.addFlashAttribute(
-                                "successMessage",
-                                "カテゴリを有効化しました。");
-
-                return "redirect:/admin/categories";
-        }
+        return "redirect:/admin/categories";
+    }
 }

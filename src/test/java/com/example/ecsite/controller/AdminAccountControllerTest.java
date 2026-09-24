@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.ui.Model;
@@ -60,14 +62,17 @@ class AdminAccountControllerTest {
                 "admin1",
                 true);
 
-        when(adminAccountService.findAll())
-                .thenReturn(List.of(account));
+        Page<AdminAccount> adminAccountPage = new PageImpl<>(List.of(account));
+
+        when(adminAccountService.findPage(0))
+                .thenReturn(adminAccountPage);
 
         when(loginUser.getId())
                 .thenReturn(1L);
 
         String viewName = adminAccountController.list(
                 loginUser,
+                0,
                 model);
 
         assertEquals(
@@ -75,8 +80,8 @@ class AdminAccountControllerTest {
                 viewName);
 
         verify(model).addAttribute(
-                "adminAccounts",
-                List.of(account));
+                "adminAccountPage",
+                adminAccountPage);
 
         verify(model).addAttribute(
                 "loginAdminId",
@@ -470,6 +475,34 @@ class AdminAccountControllerTest {
                 eq(1L),
                 argThat(updatedForm -> updatedForm.isEnabled()),
                 eq(1L));
+    }
+
+    @Test
+    void listUsesSpecifiedPage() {
+
+        Page<AdminAccount> adminAccountPage = new PageImpl<>(List.of());
+
+        when(adminAccountService.findPage(2))
+                .thenReturn(adminAccountPage);
+
+        when(loginUser.getId())
+                .thenReturn(1L);
+
+        String viewName = adminAccountController.list(
+                loginUser,
+                2,
+                model);
+
+        assertEquals(
+                "admin/accounts/list",
+                viewName);
+
+        verify(adminAccountService)
+                .findPage(2);
+
+        verify(model).addAttribute(
+                "adminAccountPage",
+                adminAccountPage);
     }
 
 }

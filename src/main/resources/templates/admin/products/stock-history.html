@@ -208,7 +208,7 @@
                 movementPage.totalPages - 1)}">
 
             <strong th:if="${pageNumber == movementPage.number}" th:text="${pageNumber + 1}"
-                class="button button-secondary">
+                class="button pagination-current">
             </strong>
 
             <a th:unless="${pageNumber == movementPage.number}" th:href="@{/admin/products/{id}/stock/history(

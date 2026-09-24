@@ -4,6 +4,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +38,15 @@ public class AdminAccountService {
     }
 
     @Transactional(readOnly = true)
+    public Page<AdminAccount> findPage(int page) {
+        return adminAccountRepository.findAll(
+                PageRequest.of(
+                        page,
+                        10,
+                        Sort.by(Sort.Direction.ASC, "id")));
+    }
+
+    @Transactional(readOnly = true)
     public AdminAccount findById(Long id) {
         return adminAccountRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException(
@@ -44,13 +56,12 @@ public class AdminAccountService {
     public List<AdminAccount> findAllEnabled() {
         return adminAccountRepository.findByEnabledTrueOrderByUsernameAsc();
     }
-   
+
     @Transactional(readOnly = true)
     public List<AdminAccount> findAllOrderByUsernameAsc() {
         return adminAccountRepository.findAllByOrderByUsernameAsc();
     }
 
-    
     @Transactional(readOnly = true)
     public AdminAccountInfo getAccountInfo(Long adminAccountId) {
 
@@ -63,7 +74,6 @@ public class AdminAccountService {
                 adminAccount.getPreviousLoginAt(),
                 adminAccount.getLastLoginAt());
     }
-
 
     @Transactional(readOnly = true)
     public boolean usernameExists(String username) {

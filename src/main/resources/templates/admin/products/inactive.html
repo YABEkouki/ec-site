@@ -70,7 +70,8 @@
 
         <a th:if="${productPage.hasPrevious()}" th:href="@{/admin/products/inactive(
            page=${productPage.number - 1},
-           size=${productPage.size})}">
+           size=${productPage.size})}"
+           class="button button-secondary">
             前へ
         </a>
 
@@ -79,19 +80,22 @@
                 0,
                 productPage.totalPages - 1)}">
 
-            <strong th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}">
+            <strong th:if="${pageNumber == productPage.number}" th:text="${pageNumber + 1}"
+                class="button pagination-current">
             </strong>
 
             <a th:unless="${pageNumber == productPage.number}" th:href="@{/admin/products/inactive(
                page=${pageNumber},
-               size=${productPage.size})}" th:text="${pageNumber + 1}">
+               size=${productPage.size})}" th:text="${pageNumber + 1}"
+               class="button button-secondary">
             </a>
 
         </span>
 
         <a th:if="${productPage.hasNext()}" th:href="@{/admin/products/inactive(
            page=${productPage.number + 1},
-           size=${productPage.size})}">
+           size=${productPage.size})}"
+           class="button button-secondary">
             次へ
         </a>
 

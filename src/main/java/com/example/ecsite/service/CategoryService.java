@@ -3,6 +3,9 @@ package com.example.ecsite.service;
 import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +49,18 @@ public class CategoryService {
 
         return categoryRepository
                 .findAllByOrderByDisplayOrderAscNameAsc();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Category> findCategoryPage(int page) {
+
+        return categoryRepository.findAll(
+                PageRequest.of(
+                        page,
+                        10,
+                        Sort.by(
+                                Sort.Order.asc("displayOrder"),
+                                Sort.Order.asc("name"))));
     }
 
     @Transactional(readOnly = true)

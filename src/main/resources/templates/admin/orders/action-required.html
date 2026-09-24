@@ -149,7 +149,7 @@
             orderPage.totalPages - 1)}">
 
             <strong th:if="${pageNumber == orderPage.number}" th:text="${pageNumber + 1}"
-                class="button button-secondary">
+                class="button pagination-current">
             </strong>
 
             <a th:unless="${pageNumber == orderPage.number}" th:href="@{/admin/orders/action-required(
