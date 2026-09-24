@@ -157,6 +157,8 @@
             対応状況・担当者を変更
         </button>
 
+        <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+
     </form>
 
     <h3>対応状況変更履歴</h3>
@@ -256,6 +258,8 @@
                 キャンセル
             </button>
 
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+
         </form>
 
     </div>
@@ -277,6 +281,8 @@
             <button type="submit" class="button-primary" onclick="return confirm('この注文を発送済みにしますか？');">
                 発送済みにする
             </button>
+
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
 
         </form>
 
@@ -353,6 +359,9 @@
             <div>
                 <button type="submit">メモを登録</button>
             </div>
+
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+
         </form>
 
         <div th:if="${#lists.isEmpty(orderNotes)}">
@@ -454,7 +463,7 @@
     </table>
 
     <p>
-        <a th:href="@{/admin/orders}" class="button button-secondary">
+        <a th:href="${returnUrl}" class="button button-secondary">
             注文一覧へ戻る
         </a>
     </p>

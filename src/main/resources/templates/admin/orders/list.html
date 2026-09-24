@@ -188,7 +188,8 @@
 
                 <td>
                     <a th:href="@{/admin/orders/{id}(
-                    id=${order.id})}" class="button button-secondary">
+                        id=${order.id},
+                        returnUrl=${returnUrl})}" class="button button-secondary">
                         詳細
                     </a>
                 </td>
