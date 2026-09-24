@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 
+import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.service.UserService;
@@ -55,6 +56,13 @@ public class UserController {
                     "このユーザー名は既に使用されています。");
         }
 
+        if (userService.emailExists(userForm.getEmail())) {
+            bindingResult.rejectValue(
+                    "email",
+                    "email.duplicate",
+                    "このメールアドレスは既に使用されています。");
+        }
+
         if (bindingResult.hasErrors()) {
             return "users/signup";
         }
@@ -68,6 +76,14 @@ public class UserController {
                     "username",
                     "username.duplicate",
                     "このユーザー名は既に使用されています。");
+
+            return "users/signup";
+        } catch (EmailAlreadyExistsException e) {
+
+            bindingResult.rejectValue(
+                    "email",
+                    "email.duplicate",
+                    "このメールアドレスは既に使用されています。");
 
             return "users/signup";
         }

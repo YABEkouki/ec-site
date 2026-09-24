@@ -28,6 +28,18 @@
             </span>
         </div>
 
+        <div class="form-group">
+            <label for="email">
+                メールアドレス
+                <span class="required">必須</span>
+            </label>
+
+            <input type="email" th:field="*{email}" maxlength="254" autocomplete="email" required>
+
+            <span th:if="${#fields.hasErrors('email')}" th:errors="*{email}" class="field-error">
+            </span>
+        </div>
+
         <div class="actions">
             <button type="submit" class="button-primary">
                 保存

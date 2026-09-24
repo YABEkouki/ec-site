@@ -26,6 +26,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import com.example.ecsite.dto.UserAccountInfo;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.entity.UserProfile;
+import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
@@ -73,6 +74,8 @@ class MyPageControllerTest {
 
         UserAccountInfo accountInfo = new UserAccountInfo(
                 "user1",
+                "user1@example.com",
+                null,
                 LocalDateTime.of(2026, 9, 1, 10, 0),
                 LocalDateTime.of(2026, 9, 10, 12, 0),
                 LocalDateTime.of(2026, 9, 14, 9, 0),
@@ -496,6 +499,7 @@ class MyPageControllerTest {
 
         UserAccountEditForm form = new UserAccountEditForm();
         form.setUsername("user1");
+        form.setEmail("user1@example.com");
 
         when(userService.createAccountEditForm(10L))
                 .thenReturn(form);
@@ -538,15 +542,17 @@ class MyPageControllerTest {
         try {
             UserAccountEditForm form = new UserAccountEditForm();
             form.setUsername(" user2 ");
+            form.setEmail("user1@example.com");
 
             BindingResult bindingResult = mock(BindingResult.class);
             when(bindingResult.hasErrors()).thenReturn(false);
 
             RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-            when(userService.updateUsername(
+            when(userService.updateAccount(
                     10L,
-                    " user2 "))
+                    " user2 ",
+                    "user1@example.com"))
                     .thenReturn("user2");
 
             String viewName = controller.updateAccount(
@@ -560,9 +566,10 @@ class MyPageControllerTest {
                     viewName);
 
             verify(userService)
-                    .updateUsername(
+                    .updateAccount(
                             10L,
-                            " user2 ");
+                            " user2 ",
+                            "user1@example.com");
 
             verify(redirectAttributes)
                     .addFlashAttribute(
@@ -611,15 +618,17 @@ class MyPageControllerTest {
         try {
             UserAccountEditForm form = new UserAccountEditForm();
             form.setUsername(" user1 ");
+            form.setEmail("user1@example.com");
 
             BindingResult bindingResult = mock(BindingResult.class);
             when(bindingResult.hasErrors()).thenReturn(false);
 
             RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-            when(userService.updateUsername(
+            when(userService.updateAccount(
                     10L,
-                    " user1 "))
+                    " user1 ",
+                    "user1@example.com"))
                     .thenReturn("user1");
 
             String viewName = controller.updateAccount(
@@ -672,15 +681,17 @@ class MyPageControllerTest {
 
         UserAccountEditForm form = new UserAccountEditForm();
         form.setUsername("user2");
+        form.setEmail("user1@example.com");
 
         BindingResult bindingResult = mock(BindingResult.class);
         when(bindingResult.hasErrors()).thenReturn(false);
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-        when(userService.updateUsername(
+        when(userService.updateAccount(
                 10L,
-                "user2"))
+                "user2",
+                "user1@example.com"))
                 .thenThrow(
                         new UsernameAlreadyExistsException(
                                 "user2",
@@ -701,6 +712,47 @@ class MyPageControllerTest {
                         "username",
                         "duplicate",
                         "ユーザー名は既に使用されています。");
+    }
+
+    @Test
+    void updateAccountReturnsFormWhenEmailAlreadyExists() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+        when(loginUser.getId()).thenReturn(10L);
+
+        UserAccountEditForm form = new UserAccountEditForm();
+        form.setUsername("user1");
+        form.setEmail("used@example.com");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        when(bindingResult.hasErrors()).thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(userService.updateAccount(
+                10L,
+                "user1",
+                "used@example.com"))
+                .thenThrow(
+                        new EmailAlreadyExistsException(
+                                "used@example.com",
+                                null));
+
+        String viewName = controller.updateAccount(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "mypage/account-form",
+                viewName);
+
+        verify(bindingResult)
+                .rejectValue(
+                        "email",
+                        "duplicate",
+                        "メールアドレスは既に使用されています。");
     }
 
 }

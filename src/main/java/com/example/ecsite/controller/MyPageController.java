@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
@@ -92,14 +93,23 @@ public class MyPageController {
         String updatedUsername;
 
         try {
-            updatedUsername = userService.updateUsername(
+            updatedUsername = userService.updateAccount(
                     loginUser.getId(),
-                    userAccountEditForm.getUsername());
+                    userAccountEditForm.getUsername(),
+                    userAccountEditForm.getEmail());
         } catch (UsernameAlreadyExistsException e) {
+
             bindingResult.rejectValue(
                     "username",
                     "duplicate",
                     "ユーザー名は既に使用されています。");
+            return "mypage/account-form";
+        } catch (EmailAlreadyExistsException e) {
+
+            bindingResult.rejectValue(
+                    "email",
+                    "duplicate",
+                    "メールアドレスは既に使用されています。");
             return "mypage/account-form";
         }
 
