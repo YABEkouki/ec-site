@@ -1,5 +1,6 @@
 package com.example.ecsite.form;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -8,6 +9,11 @@ public class UserForm {
     @NotBlank(message = "ユーザ名を入力してください。")
     @Size(max = 100, message = "ユーザ名は100文字以内で入力してください。")
     private String username;
+
+    @NotBlank(message = "メールアドレスを入力してください。")
+    @Email(message = "メールアドレスの形式が正しくありません。")
+    @Size(max = 254, message = "メールアドレスは254文字以内で入力してください。")
+    private String email;
 
     @NotBlank(message = "パスワードを入力してください。")
     @Size(min = 8, max = 100, message = "パスワードは8文字以上100文字以内で入力してください。")
@@ -23,6 +29,14 @@ public class UserForm {
 
     public void setUsername(String username) {
         this.username = username;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public String getPassword() {

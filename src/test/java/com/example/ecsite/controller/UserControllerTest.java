@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 
+import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
 import com.example.ecsite.service.UserService;
@@ -43,6 +44,9 @@ class UserControllerTest {
                 .thenReturn(true);
 
         when(userService.usernameExists("user1"))
+                .thenReturn(false);
+
+        when(userService.emailExists("user1@example.com"))
                 .thenReturn(false);
 
         String view = controller.signup(
@@ -159,11 +163,74 @@ class UserControllerTest {
         verify(userService).register(userForm);
     }
 
+    @Test
+    void signupReturnsFormWhenEmailAlreadyExists() {
+
+        UserForm userForm = createUserForm();
+        BindingResult bindingResult = createBindingResult(userForm);
+
+        when(userService.passwordsMatch(userForm))
+                .thenReturn(true);
+
+        when(userService.usernameExists("user1"))
+                .thenReturn(false);
+
+        when(userService.emailExists("user1@example.com"))
+                .thenReturn(true);
+
+        String view = controller.signup(
+                userForm,
+                bindingResult);
+
+        assertEquals("users/signup", view);
+
+        assertTrue(
+                bindingResult.hasFieldErrors("email"));
+
+        verify(userService, never())
+                .register(userForm);
+    }
+
+    @Test
+    void signupHandlesDuplicateEmailDetectedDuringRegistration() {
+
+        UserForm userForm = createUserForm();
+        BindingResult bindingResult = createBindingResult(userForm);
+
+        when(userService.passwordsMatch(userForm))
+                .thenReturn(true);
+
+        when(userService.usernameExists("user1"))
+                .thenReturn(false);
+
+        when(userService.emailExists("user1@example.com"))
+                .thenReturn(false);
+
+        doThrow(new EmailAlreadyExistsException(
+                "user1@example.com",
+                new RuntimeException("テスト用の原因例外")))
+                .when(userService)
+                .register(userForm);
+
+        String view = controller.signup(
+                userForm,
+                bindingResult);
+
+        assertEquals("users/signup", view);
+
+        assertTrue(
+                bindingResult.hasFieldErrors("email"));
+
+        verify(userService)
+                .register(userForm);
+    }
+
     private UserForm createUserForm() {
 
         UserForm userForm = new UserForm();
 
         userForm.setUsername("user1");
+        userForm.setEmail("user1@example.com");
         userForm.setPassword("password123");
         userForm.setConfirmPassword("password123");
 

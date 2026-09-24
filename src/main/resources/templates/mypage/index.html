@@ -28,6 +28,18 @@
                 </tr>
 
                 <tr>
+                    <th>メールアドレス</th>
+                    <td th:text="${account.email != null ? account.email : '未登録'}"></td>
+                </tr>
+
+                <tr>
+                    <th>メール確認状態</th>
+                    <td th:text="${account.email == null
+                        ? '-'
+                        : (account.emailVerifiedAt != null ? '確認済み' : '未確認')}"></td>
+                </tr>
+
+                <tr>
                     <th>登録日時</th>
                     <td th:text="${#temporals.format(account.createdAt, 'yyyy/MM/dd HH:mm')}"></td>
                 </tr>

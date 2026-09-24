@@ -24,6 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.example.ecsite.dto.UserAccountInfo;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
@@ -46,6 +47,7 @@ class UserServiceTest {
         UserForm userForm = new UserForm();
 
         userForm.setUsername(" user1 ");
+        userForm.setEmail("user1@example.com");
         userForm.setPassword("password123");
         userForm.setConfirmPassword("password123");
 
@@ -86,6 +88,12 @@ class UserServiceTest {
         assertNull(savedUser.getPreviousLoginAt());
         assertNull(savedUser.getLastLoginAt());
 
+        assertEquals(
+                "user1@example.com",
+                savedUser.getEmail());
+
+        assertNull(savedUser.getEmailVerifiedAt());
+
         verify(passwordEncoder)
                 .encode("password123");
     }
@@ -116,6 +124,7 @@ class UserServiceTest {
         UserForm userForm = new UserForm();
 
         userForm.setUsername("user1");
+        userForm.setEmail("user1@example.com");
         userForm.setPassword("password123");
         userForm.setConfirmPassword("password123");
 
@@ -142,15 +151,15 @@ class UserServiceTest {
     void getAccountInfoReturnsAccountInformation() {
 
         LocalDateTime createdAt = LocalDateTime.of(2026, 9, 1, 10, 0);
-
         LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 10, 12, 0);
-
         LocalDateTime previousLoginAt = LocalDateTime.of(2026, 9, 14, 9, 0);
-
         LocalDateTime lastLoginAt = LocalDateTime.of(2026, 9, 15, 9, 0);
+        LocalDateTime emailVerifiedAt = LocalDateTime.of(2026, 9, 12, 15, 0);
 
         User user = new User();
         user.setUsername("user1");
+        user.setEmail("user1@example.com");
+        user.setEmailVerifiedAt(emailVerifiedAt);
         user.setCreatedAt(createdAt);
         user.setUpdatedAt(updatedAt);
         user.setPreviousLoginAt(previousLoginAt);
@@ -172,6 +181,13 @@ class UserServiceTest {
                 previousLoginAt,
                 accountInfo.previousLoginAt());
         assertEquals(lastLoginAt, accountInfo.lastLoginAt());
+        assertEquals(
+                "user1@example.com",
+                accountInfo.email());
+
+        assertEquals(
+                emailVerifiedAt,
+                accountInfo.emailVerifiedAt());
     }
 
     @Test
@@ -364,10 +380,11 @@ class UserServiceTest {
     }
 
     @Test
-    void createAccountEditFormReturnsCurrentUsername() {
+    void createAccountEditFormReturnsCurrentAccountInformation() {
 
         User user = new User();
         user.setUsername("user1");
+        user.setEmail("user1@example.com");
 
         when(userRepository.findById(10L))
                 .thenReturn(Optional.of(user));
@@ -379,10 +396,11 @@ class UserServiceTest {
         UserAccountEditForm form = userService.createAccountEditForm(10L);
 
         assertEquals("user1", form.getUsername());
+        assertEquals("user1@example.com", form.getEmail());
     }
 
     @Test
-    void updateUsernameNormalizesUsernameAndUpdatesUpdatedAt() {
+    void updateAccountNormalizesUsernameAndUpdatesUpdatedAt() {
 
         LocalDateTime oldUpdatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
 
@@ -392,6 +410,7 @@ class UserServiceTest {
 
         User user = new User();
         user.setUsername("user1");
+        user.setEmail("user1@example.com");
         user.setUpdatedAt(oldUpdatedAt);
         user.setPreviousLoginAt(previousLoginAt);
         user.setLastLoginAt(lastLoginAt);
@@ -406,7 +425,10 @@ class UserServiceTest {
                 userRepository,
                 passwordEncoder);
 
-        String result = userService.updateUsername(10L, " user2 ");
+        String result = userService.updateAccount(
+                10L,
+                " user2 ",
+                "user1@example.com");
 
         assertEquals("user2", result);
         assertEquals("user2", user.getUsername());
@@ -428,12 +450,13 @@ class UserServiceTest {
     }
 
     @Test
-    void updateUsernameDoesNothingWhenNormalizedUsernameIsUnchanged() {
+    void updateAccountDoesNothingWhenNormalizedUsernameIsUnchanged() {
 
         LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
 
         User user = new User();
         user.setUsername("user1");
+        user.setEmail("user1@example.com");
         user.setUpdatedAt(updatedAt);
 
         when(userRepository.findById(10L))
@@ -443,7 +466,10 @@ class UserServiceTest {
                 userRepository,
                 passwordEncoder);
 
-        String result = userService.updateUsername(10L, " user1 ");
+        String result = userService.updateAccount(
+                10L,
+                " user1 ",
+                "user1@example.com");
 
         assertEquals("user1", result);
         assertEquals(updatedAt, user.getUpdatedAt());
@@ -456,10 +482,11 @@ class UserServiceTest {
     }
 
     @Test
-    void updateUsernameRejectsExistingUsername() {
+    void updateAccountRejectsExistingUsername() {
 
         User user = new User();
         user.setUsername("user1");
+        user.setEmail("user1@example.com");
 
         when(userRepository.findById(10L))
                 .thenReturn(Optional.of(user));
@@ -473,9 +500,10 @@ class UserServiceTest {
 
         assertThrows(
                 UsernameAlreadyExistsException.class,
-                () -> userService.updateUsername(
+                () -> userService.updateAccount(
                         10L,
-                        "user2"));
+                        "user2",
+                        "user1@example.com"));
 
         assertEquals("user1", user.getUsername());
 
@@ -484,7 +512,7 @@ class UserServiceTest {
     }
 
     @Test
-    void updateUsernameConvertsDatabaseDuplicateException() {
+    void updateAccountConvertsDatabaseDuplicateException() {
 
         User user = new User();
         user.setUsername("user1");
@@ -506,9 +534,197 @@ class UserServiceTest {
 
         assertThrows(
                 UsernameAlreadyExistsException.class,
-                () -> userService.updateUsername(
+                () -> userService.updateAccount(
                         10L,
-                        "user2"));
+                        "user2",
+                        "user1@example.com"));
+    }
+
+    @Test
+    void emailExistsUsesNormalizedEmail() {
+
+        when(userRepository
+                .existsByEmail("user1@example.com"))
+                .thenReturn(true);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        boolean result = userService.emailExists(
+                " User1@Example.COM ");
+
+        assertTrue(result);
+
+        verify(userRepository)
+                .existsByEmail("user1@example.com");
+    }
+
+    @Test
+    void updateAccountNormalizesEmailAndResetsVerification() {
+
+        LocalDateTime oldUpdatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        LocalDateTime verifiedAt = LocalDateTime.of(2026, 9, 10, 12, 0);
+
+        User user = new User();
+        user.setUsername("user1");
+        user.setEmail("old@example.com");
+        user.setEmailVerifiedAt(verifiedAt);
+        user.setUpdatedAt(oldUpdatedAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(userRepository.existsByEmail("new@example.com"))
+                .thenReturn(false);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        String result = userService.updateAccount(
+                10L,
+                "user1",
+                " New@Example.COM ");
+
+        assertEquals("user1", result);
+        assertEquals("new@example.com", user.getEmail());
+        assertNull(user.getEmailVerifiedAt());
+
+        assertTrue(
+                user.getUpdatedAt()
+                        .isAfter(oldUpdatedAt));
+
+        verify(userRepository)
+                .saveAndFlush(user);
+    }
+
+    @Test
+    void updateAccountKeepsVerificationWhenEmailIsUnchanged() {
+
+        LocalDateTime updatedAt = LocalDateTime.of(2026, 9, 1, 10, 0);
+
+        LocalDateTime verifiedAt = LocalDateTime.of(2026, 9, 10, 12, 0);
+
+        User user = new User();
+        user.setUsername("user1");
+        user.setEmail("user1@example.com");
+        user.setEmailVerifiedAt(verifiedAt);
+        user.setUpdatedAt(updatedAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        String result = userService.updateAccount(
+                10L,
+                " user1 ",
+                " User1@Example.COM ");
+
+        assertEquals("user1", result);
+        assertEquals(
+                verifiedAt,
+                user.getEmailVerifiedAt());
+
+        assertEquals(updatedAt, user.getUpdatedAt());
+
+        verify(userRepository, never())
+                .saveAndFlush(any(User.class));
+    }
+
+    @Test
+    void updateAccountRejectsExistingEmail() {
+
+        User user = new User();
+        user.setUsername("user1");
+        user.setEmail("old@example.com");
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(userRepository.existsByEmail("used@example.com"))
+                .thenReturn(true);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        assertThrows(
+                EmailAlreadyExistsException.class,
+                () -> userService.updateAccount(
+                        10L,
+                        "user1",
+                        " Used@Example.COM "));
+
+        assertEquals("old@example.com", user.getEmail());
+
+        verify(userRepository, never())
+                .saveAndFlush(any(User.class));
+    }
+
+    @Test
+    void registerConvertsDatabaseEmailDuplicateException() {
+
+        UserForm userForm = new UserForm();
+        userForm.setUsername("user1");
+        userForm.setEmail("user1@example.com");
+        userForm.setPassword("password123");
+        userForm.setConfirmPassword("password123");
+
+        when(passwordEncoder.encode("password123"))
+                .thenReturn("encodedPassword");
+
+        when(userRepository.existsByEmail("user1@example.com"))
+                .thenReturn(false);
+
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(
+                "duplicate key value violates unique constraint \"uq_users_email\"");
+
+        when(userRepository.saveAndFlush(any(User.class)))
+                .thenThrow(exception);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        assertThrows(
+                EmailAlreadyExistsException.class,
+                () -> userService.register(userForm));
+    }
+
+    @Test
+    void updateAccountConvertsDatabaseEmailDuplicateException() {
+
+        User user = new User();
+        user.setUsername("user1");
+        user.setEmail("old@example.com");
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(userRepository.existsByEmail("new@example.com"))
+                .thenReturn(false);
+
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(
+                "duplicate key value violates unique constraint \"uq_users_email\"");
+
+        when(userRepository.saveAndFlush(user))
+                .thenThrow(exception);
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        assertThrows(
+                EmailAlreadyExistsException.class,
+                () -> userService.updateAccount(
+                        10L,
+                        "user1",
+                        "new@example.com"));
     }
 
 }

@@ -1,6 +1,7 @@
 package com.example.ecsite.service;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -9,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.dto.UserAccountInfo;
 import com.example.ecsite.entity.User;
+import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
@@ -32,10 +34,12 @@ public class UserService {
     public void register(UserForm userForm) {
 
         String username = normalizeUsername(userForm.getUsername());
+        String email = normalizeEmail(userForm.getEmail());
 
         User user = new User();
 
         user.setUsername(username);
+        user.setEmail(email);
         user.setPassword(passwordEncoder.encode(userForm.getPassword()));
         user.setEnabled(true);
 
@@ -44,10 +48,18 @@ public class UserService {
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
 
+        if (userRepository.existsByEmail(email)) {
+            throw new EmailAlreadyExistsException(email, null);
+        }
+
         try {
             userRepository.saveAndFlush(user);
 
         } catch (DataIntegrityViolationException e) {
+
+            if (isConstraintViolation(e, "uq_users_email")) {
+                throw new EmailAlreadyExistsException(email, e);
+            }
 
             throw new UsernameAlreadyExistsException(username, e);
         }
@@ -62,6 +74,10 @@ public class UserService {
         return userRepository.existsByUsername(normalizeUsername(username));
     }
 
+    public boolean emailExists(String email) {
+        return userRepository.existsByEmail(normalizeEmail(email));
+    }
+
     public User findById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException(
@@ -74,6 +90,8 @@ public class UserService {
 
         return new UserAccountInfo(
                 user.getUsername(),
+                user.getEmail(),
+                user.getEmailVerifiedAt(),
                 user.getCreatedAt(),
                 user.getUpdatedAt(),
                 user.getPreviousLoginAt(),
@@ -124,30 +142,63 @@ public class UserService {
 
         UserAccountEditForm form = new UserAccountEditForm();
         form.setUsername(user.getUsername());
+        form.setEmail(user.getEmail());
 
         return form;
     }
 
     @Transactional
-    public String updateUsername(Long userId, String username) {
-        User user = findById(userId);
-        String normalizedUsername = normalizeUsername(username);
+    public String updateAccount(
+            Long userId,
+            String username,
+            String email) {
 
-        if (user.getUsername().equals(normalizedUsername)) {
+        User user = findById(userId);
+
+        String normalizedUsername = normalizeUsername(username);
+        String normalizedEmail = normalizeEmail(email);
+
+        boolean usernameChanged = !user.getUsername().equals(normalizedUsername);
+
+        boolean emailChanged = user.getEmail() == null
+                || !user.getEmail().equals(normalizedEmail);
+
+        if (usernameChanged
+                && userRepository.existsByUsername(normalizedUsername)) {
+            throw new UsernameAlreadyExistsException(
+                    normalizedUsername, null);
+        }
+
+        if (emailChanged
+                && userRepository.existsByEmail(normalizedEmail)) {
+            throw new EmailAlreadyExistsException(
+                    normalizedEmail, null);
+        }
+
+        if (!usernameChanged && !emailChanged) {
             return normalizedUsername;
         }
 
-        if (userRepository.existsByUsername(normalizedUsername)) {
-            throw new UsernameAlreadyExistsException(normalizedUsername,null);
+        user.setUsername(normalizedUsername);
+
+        if (emailChanged) {
+            user.setEmail(normalizedEmail);
+            user.setEmailVerifiedAt(null);
         }
 
-        user.setUsername(normalizedUsername);
         user.setUpdatedAt(LocalDateTime.now());
 
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
-            throw new UsernameAlreadyExistsException(normalizedUsername, e);
+
+            if (isConstraintViolation(e, "uq_users_email")) {
+                throw new EmailAlreadyExistsException(
+                        normalizedEmail, e);
+            }
+
+            throw new UsernameAlreadyExistsException(
+                    normalizedUsername, e);
         }
 
         return normalizedUsername;
@@ -157,4 +208,30 @@ public class UserService {
 
         return username.trim();
     }
+
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean isConstraintViolation(
+            DataIntegrityViolationException exception,
+            String constraintName) {
+
+        Throwable cause = exception;
+
+        while (cause != null) {
+
+            String message = cause.getMessage();
+
+            if (message != null
+                    && message.contains(constraintName)) {
+                return true;
+            }
+
+            cause = cause.getCause();
+        }
+
+        return false;
+    }
+
 }
