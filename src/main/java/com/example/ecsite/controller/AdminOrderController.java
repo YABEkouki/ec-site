@@ -1,5 +1,7 @@
 package com.example.ecsite.controller;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.springframework.data.domain.Page;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.AdminAccount;
@@ -38,6 +41,7 @@ import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
+import com.example.ecsite.util.AdminReturnUrlHelper;
 
 import jakarta.validation.Valid;
 
@@ -88,6 +92,57 @@ public class AdminOrderController {
                 safePage,
                 safeSize);
 
+        UriComponentsBuilder returnUrlBuilder = UriComponentsBuilder.fromPath("/admin/orders");
+
+        if (searchForm.getOrderId() != null) {
+            returnUrlBuilder.queryParam("orderId", searchForm.getOrderId());
+        }
+
+        if (searchForm.getUserId() != null) {
+            returnUrlBuilder.queryParam("userId", searchForm.getUserId());
+        }
+
+        if (searchForm.getFrom() != null) {
+            returnUrlBuilder.queryParam("from", searchForm.getFrom());
+        }
+
+        if (searchForm.getTo() != null) {
+            returnUrlBuilder.queryParam("to", searchForm.getTo());
+        }
+
+        if (searchForm.getStatus() != null) {
+            returnUrlBuilder.queryParam("status", searchForm.getStatus());
+        }
+
+        if (searchForm.getHandlingStatus() != null) {
+            returnUrlBuilder.queryParam(
+                    "handlingStatus",
+                    searchForm.getHandlingStatus());
+        }
+
+        if (searchForm.getAssigneeFilter() != null) {
+            returnUrlBuilder.queryParam(
+                    "assigneeFilter",
+                    searchForm.getAssigneeFilter());
+        }
+
+        if (searchForm.getAssignedAdminAccountId() != null) {
+            returnUrlBuilder.queryParam(
+                    "assignedAdminAccountId",
+                    searchForm.getAssignedAdminAccountId());
+        }
+
+        if (safePage > 0) {
+            returnUrlBuilder.queryParam("page", safePage);
+        }
+
+        returnUrlBuilder.queryParam("size", safeSize);
+
+        String returnUrl = returnUrlBuilder
+                .build()
+                .encode()
+                .toUriString();
+
         model.addAttribute(
                 "orders",
                 orderPage.getContent());
@@ -112,13 +167,20 @@ public class AdminOrderController {
                 "adminAccounts",
                 adminAccountService.findAll());
 
+        model.addAttribute(
+                "returnUrl",
+                returnUrl);
+
         return "admin/orders/list";
     }
 
     @GetMapping("/{id}")
     public String detail(
             @PathVariable Long id,
+            @RequestParam(required = false) String returnUrl,
             Model model) {
+
+        String safeReturnUrl = AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl);
 
         Order order = orderService.findOrderWithItems(id);
 
@@ -149,6 +211,10 @@ public class AdminOrderController {
         model.addAttribute(
                 "assigneeHistories",
                 orderAssigneeHistoryService.findByOrderId(id));
+
+        model.addAttribute(
+                "returnUrl",
+                safeReturnUrl);
 
         AdminOrderHandlingStatusForm handlingStatusForm = new AdminOrderHandlingStatusForm();
 
@@ -190,6 +256,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderStatusChangeForm form,
             BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
             @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
@@ -198,7 +265,9 @@ public class AdminOrderController {
                     "errorMessage",
                     "変更理由・備考は500文字以内で入力してください。");
 
-            return "redirect:/admin/orders/" + id;
+            return redirectToDetail(
+                    id,
+                    returnUrl);
         }
 
         try {
@@ -218,7 +287,9 @@ public class AdminOrderController {
                     e.getMessage());
         }
 
-        return "redirect:/admin/orders/" + id;
+        return redirectToDetail(
+                id,
+                returnUrl);
     }
 
     @PostMapping("/{id}/ship")
@@ -226,6 +297,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderStatusChangeForm form,
             BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
             @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
@@ -234,7 +306,9 @@ public class AdminOrderController {
                     "errorMessage",
                     "変更理由・備考は500文字以内で入力してください。");
 
-            return "redirect:/admin/orders/" + id;
+            return redirectToDetail(
+                    id,
+                    returnUrl);
         }
 
         try {
@@ -254,7 +328,9 @@ public class AdminOrderController {
                     e.getMessage());
         }
 
-        return "redirect:/admin/orders/" + id;
+        return redirectToDetail(
+                id,
+                returnUrl);
     }
 
     @PostMapping("/{id}/cancel")
@@ -262,6 +338,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderStatusChangeForm form,
             BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
             @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
@@ -270,7 +347,9 @@ public class AdminOrderController {
                     "errorMessage",
                     "変更理由・備考は500文字以内で入力してください。");
 
-            return "redirect:/admin/orders/" + id;
+            return redirectToDetail(
+                    id,
+                    returnUrl);
         }
 
         try {
@@ -290,7 +369,9 @@ public class AdminOrderController {
                     e.getMessage());
         }
 
-        return "redirect:/admin/orders/" + id;
+        return redirectToDetail(
+                id,
+                returnUrl);
     }
 
     @GetMapping("/csv")
@@ -319,6 +400,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderNoteForm form,
             BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
             @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
@@ -332,7 +414,9 @@ public class AdminOrderController {
                     "errorMessage",
                     errorMessage);
 
-            return "redirect:/admin/orders/" + id;
+            return redirectToDetail(
+                    id,
+                    returnUrl);
         }
 
         orderNoteService.addNote(
@@ -345,7 +429,9 @@ public class AdminOrderController {
                 "successMessage",
                 "注文メモを登録しました。");
 
-        return "redirect:/admin/orders/" + id;
+        return redirectToDetail(
+                id,
+                returnUrl);
     }
 
     @PostMapping("/{id}/handling-status")
@@ -353,6 +439,7 @@ public class AdminOrderController {
             @PathVariable Long id,
             @Valid @ModelAttribute AdminOrderHandlingStatusForm form,
             BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
             @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
@@ -361,7 +448,9 @@ public class AdminOrderController {
                     "errorMessage",
                     "対応状況を選択してください。");
 
-            return "redirect:/admin/orders/" + id;
+            return redirectToDetail(
+                    id,
+                    returnUrl);
         }
 
         try {
@@ -390,7 +479,9 @@ public class AdminOrderController {
                     e.getMessage());
         }
 
-        return "redirect:/admin/orders/" + id;
+        return redirectToDetail(
+                id,
+                returnUrl);
     }
 
     @GetMapping("/action-required")
@@ -512,6 +603,22 @@ public class AdminOrderController {
                 ActionRequiredOrderSort.values());
 
         return "admin/orders/unassigned";
+    }
+
+    private String redirectToDetail(
+            Long orderId,
+            String returnUrl) {
+
+        String safeReturnUrl = AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl);
+
+        String encodedReturnUrl = URLEncoder.encode(
+                safeReturnUrl,
+                StandardCharsets.UTF_8);
+
+        return "redirect:/admin/orders/"
+                + orderId
+                + "?returnUrl="
+                + encodedReturnUrl;
     }
 
 }

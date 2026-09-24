@@ -263,6 +263,7 @@ class AdminOrderControllerTest {
 
         String viewName = adminOrderController.detail(
                 orderId,
+                null,
                 model);
 
         assertEquals(
@@ -327,6 +328,11 @@ class AdminOrderControllerTest {
                 .addAttribute(
                         "assignableAdmins",
                         List.of(assignableAdmin));
+
+        verify(model)
+                .addAttribute(
+                        "returnUrl",
+                        "/admin/orders");
     }
 
     @Test
@@ -350,11 +356,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderService)
@@ -391,11 +399,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderService)
@@ -433,11 +443,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderService)
@@ -485,11 +497,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(redirectAttributes)
@@ -530,11 +544,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(redirectAttributes)
@@ -575,11 +591,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(redirectAttributes)
@@ -699,11 +717,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderService, org.mockito.Mockito.never())
@@ -737,11 +757,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderService, org.mockito.Mockito.never())
@@ -775,11 +797,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderService, org.mockito.Mockito.never())
@@ -816,11 +840,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderNoteService)
@@ -861,11 +887,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderNoteService, org.mockito.Mockito.never())
@@ -919,11 +947,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(orderService)
@@ -976,11 +1006,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(redirectAttributes)
@@ -1164,11 +1196,13 @@ class AdminOrderControllerTest {
                 orderId,
                 form,
                 bindingResult,
+                null,
                 loginUser,
                 redirectAttributes);
 
         assertEquals(
-                "redirect:/admin/orders/" + orderId,
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
         verify(redirectAttributes)
@@ -1347,6 +1381,241 @@ class AdminOrderControllerTest {
                 searchForm,
                 0,
                 100);
+    }
+
+    @Test
+    void listAddsReturnUrlToModel() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        Page<Order> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchOrders(
+                searchForm,
+                ADMIN_ID,
+                2,
+                20))
+                .thenReturn(orderPage);
+
+        adminOrderController.list(
+                searchForm,
+                loginUser,
+                2,
+                20,
+                model);
+
+        verify(model).addAttribute(
+                "returnUrl",
+                "/admin/orders?assigneeFilter=ALL&page=2&size=20");
+    }
+
+    @Test
+    void listAddsSearchConditionsToReturnUrl() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
+
+        searchForm.setOrderId(100L);
+        searchForm.setUserId(200L);
+        searchForm.setStatus(OrderStatus.PAID);
+        searchForm.setHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
+        searchForm.setAssigneeFilter(AdminOrderAssigneeFilter.SPECIFIC);
+        searchForm.setAssignedAdminAccountId(30L);
+
+        Page<Order> orderPage = new PageImpl<>(List.of());
+
+        when(orderService.searchOrders(
+                searchForm,
+                ADMIN_ID,
+                1,
+                10))
+                .thenReturn(orderPage);
+
+        adminOrderController.list(
+                searchForm,
+                loginUser,
+                1,
+                10,
+                model);
+
+        verify(model).addAttribute(
+                "returnUrl",
+                "/admin/orders?orderId=100"
+                        + "&userId=200"
+                        + "&status=PAID"
+                        + "&handlingStatus=IN_PROGRESS"
+                        + "&assigneeFilter=SPECIFIC"
+                        + "&assignedAdminAccountId=30"
+                        + "&page=1"
+                        + "&size=10");
+    }
+
+    @Test
+    void markAsPaidPreservesReturnUrl() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String returnUrl = "/admin/orders?status=PAID&page=2&size=20";
+
+        String viewName = adminOrderController.markAsPaid(
+                orderId,
+                form,
+                bindingResult,
+                returnUrl,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/1"
+                        + "?returnUrl=%2Fadmin%2Forders%3Fstatus%3DPAID%26page%3D2%26size%3D20",
+                viewName);
+
+        verify(orderService)
+                .markAsPaid(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME,
+                        null);
+    }
+
+    @Test
+    void markAsShippedPreservesReturnUrl() {
+
+        when(loginUser.getId()).thenReturn(ADMIN_ID);
+        when(loginUser.getUsername()).thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String returnUrl = "/admin/orders?status=PAID&page=2&size=20";
+
+        String viewName = adminOrderController.markAsShipped(
+                orderId,
+                form,
+                bindingResult,
+                returnUrl,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/1"
+                        + "?returnUrl=%2Fadmin%2Forders%3Fstatus%3DPAID%26page%3D2%26size%3D20",
+                viewName);
+    }
+
+    @Test
+    void cancelPreservesReturnUrl() {
+
+        when(loginUser.getId()).thenReturn(ADMIN_ID);
+        when(loginUser.getUsername()).thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String returnUrl = "/admin/orders?page=3&size=10";
+
+        String viewName = adminOrderController.cancel(
+                orderId,
+                form,
+                bindingResult,
+                returnUrl,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/1"
+                        + "?returnUrl=%2Fadmin%2Forders%3Fpage%3D3%26size%3D10",
+                viewName);
+    }
+
+    @Test
+    void addNotePreservesReturnUrl() {
+
+        when(loginUser.getId()).thenReturn(ADMIN_ID);
+        when(loginUser.getUsername()).thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+
+        AdminOrderNoteForm form = new AdminOrderNoteForm();
+        form.setNote("確認メモ");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String returnUrl = "/admin/orders?handlingStatus=NEEDS_ACTION&page=1&size=10";
+
+        String viewName = adminOrderController.addNote(
+                orderId,
+                form,
+                bindingResult,
+                returnUrl,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/1"
+                        + "?returnUrl=%2Fadmin%2Forders%3FhandlingStatus%3DNEEDS_ACTION%26page%3D1%26size%3D10",
+                viewName);
+    }
+
+    @Test
+    void changeHandlingStatusPreservesReturnUrl() {
+
+        Long orderId = 1L;
+
+        AdminOrderHandlingStatusForm form = new AdminOrderHandlingStatusForm();
+
+        form.setHandlingStatus(OrderHandlingStatus.NEEDS_ACTION);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(loginUser.getId()).thenReturn(ADMIN_ID);
+        when(loginUser.getUsername()).thenReturn(ADMIN_USERNAME);
+
+        when(orderService.changeHandlingStatus(
+                orderId,
+                OrderHandlingStatus.NEEDS_ACTION,
+                null,
+                ADMIN_ID,
+                ADMIN_USERNAME))
+                .thenReturn(true);
+
+        String returnUrl = "/admin/orders?assigneeFilter=ME&page=2&size=20";
+
+        String viewName = adminOrderController.changeHandlingStatus(
+                orderId,
+                form,
+                bindingResult,
+                returnUrl,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/1"
+                        + "?returnUrl=%2Fadmin%2Forders%3FassigneeFilter%3DME%26page%3D2%26size%3D20",
+                viewName);
     }
 
 }
