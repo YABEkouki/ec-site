@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ユーザーアカウント状態変更履歴</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <h1>ユーザーアカウント状態変更履歴</h1>
+
+    <form th:action="@{/admin/user-enabled-histories}" th:object="${searchForm}" method="get">
+
+        <div>
+            <label for="userId">顧客ID</label>
+            <input type="number" id="userId" th:field="*{userId}">
+        </div>
+
+        <div>
+            <label for="username">ユーザー名</label>
+            <input type="text" id="username" th:field="*{username}">
+        </div>
+
+        <div>
+            <label for="toEnabled">変更内容</label>
+            <select id="toEnabled" th:field="*{toEnabled}">
+                <option value="">すべて</option>
+                <option value="true">有効化</option>
+                <option value="false">無効化</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="changedByUsername">操作管理者ユーザー名</label>
+            <input type="text" id="changedByUsername" th:field="*{changedByUsername}">
+        </div>
+
+        <div>
+            <label for="from">変更日 From</label>
+            <input type="date" id="from" th:field="*{from}">
+        </div>
+
+        <div>
+            <label for="to">変更日 To</label>
+            <input type="date" id="to" th:field="*{to}">
+        </div>
+
+        <button type="submit">検索</button>
+
+        <button type="button" onclick="location.href='/admin/user-enabled-histories'">
+            条件クリア
+        </button>
+
+        <button type="submit" th:formaction="@{/admin/user-enabled-histories/csv}" formmethod="get">
+            CSV出力
+        </button>
+    </form>
+
+    <hr>
+
+    <table>
+        <thead>
+            <tr>
+                <th>変更日時</th>
+                <th>顧客ID</th>
+                <th>ユーザー名</th>
+                <th>変更前</th>
+                <th>変更後</th>
+                <th>操作管理者ID</th>
+                <th>操作管理者ユーザー名</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="history : ${histories}">
+                <td th:text="${#temporals.format(history.changedAt, 'yyyy-MM-dd HH:mm:ss')}">
+                </td>
+
+                <td>
+                    <a th:href="@{/admin/customers/{id}(id=${history.user.id})}" th:text="${history.user.id}">
+                    </a>
+                </td>
+
+                <td th:text="${history.user.username}">
+                </td>
+
+                <td th:text="${history.fromEnabled ? '有効' : '無効'}">
+                </td>
+
+                <td th:text="${history.toEnabled ? '有効' : '無効'}">
+                </td>
+
+                <td th:text="${history.changedByAccountId}">
+                </td>
+
+                <td th:text="${history.changedByUsername}">
+                </td>
+            </tr>
+
+            <tr th:if="${#lists.isEmpty(histories)}">
+                <td colspan="7">
+                    アカウント状態変更履歴はありません。
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <nav th:if="${historyPage.totalPages > 1}">
+        <a th:if="${historyPage.hasPrevious()}" th:href="@{/admin/user-enabled-histories(
+                page=${historyPage.number - 1},
+                size=${historyPage.size},
+                userId=${searchForm.userId},
+                username=${searchForm.username},
+                toEnabled=${searchForm.toEnabled},
+                changedByUsername=${searchForm.changedByUsername},
+                from=${searchForm.from},
+                to=${searchForm.to})}" class="button button-secondary">
+            前へ
+        </a>
+
+        <span th:each="pageNumber :
+            ${#numbers.sequence(
+                0,
+                historyPage.totalPages - 1)}">
+
+            <strong th:if="${pageNumber == historyPage.number}" th:text="${pageNumber + 1}"
+                class="button pagination-current">
+            </strong>
+
+            <a th:unless="${pageNumber == historyPage.number}" th:href="@{/admin/user-enabled-histories(
+                    page=${pageNumber},
+                    size=${historyPage.size},
+                    userId=${searchForm.userId},
+                    username=${searchForm.username},
+                    toEnabled=${searchForm.toEnabled},
+                    changedByUsername=${searchForm.changedByUsername},
+                    from=${searchForm.from},
+                    to=${searchForm.to})}" th:text="${pageNumber + 1}" class="button button-secondary">
+            </a>
+
+        </span>
+
+        <a th:if="${historyPage.hasNext()}" th:href="@{/admin/user-enabled-histories(
+                page=${historyPage.number + 1},
+                size=${historyPage.size},
+                userId=${searchForm.userId},
+                username=${searchForm.username},
+                toEnabled=${searchForm.toEnabled},
+                changedByUsername=${searchForm.changedByUsername},
+                from=${searchForm.from},
+                to=${searchForm.to})}" class="button button-secondary">
+            次へ
+        </a>
+    </nav>
+
+</body>
+
+</html>
