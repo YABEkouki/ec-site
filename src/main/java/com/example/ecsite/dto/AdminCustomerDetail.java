@@ -5,6 +5,7 @@ import java.util.List;
 public record AdminCustomerDetail(
         Long userId,
         String username,
+        String email,
         boolean enabled,
         String name,
         String postalCode,
