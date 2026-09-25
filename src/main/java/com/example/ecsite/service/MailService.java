@@ -26,8 +26,7 @@ public class MailService {
             String toAddress,
             String rawToken) {
 
-        String verificationUrl =
-                baseUrl + "/email/verify?token=" + rawToken;
+        String verificationUrl = baseUrl + "/email/verify?token=" + rawToken;
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
@@ -48,4 +47,33 @@ public class MailService {
 
         mailSender.send(message);
     }
+
+    public void sendPasswordReset(
+            String toAddress,
+            String rawToken) {
+
+        String resetUrl = baseUrl + "/password/reset?token=" + rawToken;
+
+        SimpleMailMessage message = new SimpleMailMessage();
+
+        message.setFrom(fromAddress);
+        message.setTo(toAddress);
+        message.setSubject("パスワード再設定");
+
+        message.setText("""
+                パスワード再設定のリクエストを受け付けました。
+
+                以下のURLからパスワードを再設定してください。
+
+                %s
+
+                このURLの有効期限は1時間です。
+
+                このメールに心当たりがない場合は、
+                このメールを破棄してください。
+                """.formatted(resetUrl));
+
+        mailSender.send(message);
+    }
+
 }

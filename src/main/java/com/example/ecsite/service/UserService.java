@@ -221,6 +221,24 @@ public class UserService {
         return username.trim();
     }
 
+    public User findByEmail(String email) {
+        return userRepository.findByEmail(normalizeEmail(email))
+                .orElse(null);
+    }
+
+    @Transactional
+    public void resetPassword(
+            Long userId,
+            String newPassword) {
+
+        User user = findById(userId);
+
+        user.setPassword(
+                passwordEncoder.encode(newPassword));
+
+        user.setUpdatedAt(LocalDateTime.now());
+    }
+
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }

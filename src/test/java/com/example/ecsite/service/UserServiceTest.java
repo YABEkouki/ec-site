@@ -757,4 +757,63 @@ class UserServiceTest {
                         "new@example.com"));
     }
 
+    @Test
+    void findByEmailUsesNormalizedEmail() {
+
+        User user = new User();
+        user.setEmail("user1@example.com");
+
+        when(userRepository
+                .findByEmail("user1@example.com"))
+                .thenReturn(Optional.of(user));
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        User result = userService.findByEmail(
+                " User1@Example.COM ");
+
+        assertEquals(user, result);
+
+        verify(userRepository)
+                .findByEmail("user1@example.com");
+    }
+
+    @Test
+    void resetPasswordChangesPasswordAndUpdatedAt() {
+
+        LocalDateTime oldUpdatedAt = LocalDateTime.of(
+                2026, 9, 1, 10, 0);
+
+        User user = new User();
+        user.setPassword("encoded-old-password");
+        user.setUpdatedAt(oldUpdatedAt);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        when(passwordEncoder.encode("new-password"))
+                .thenReturn("encoded-new-password");
+
+        UserService userService = new UserService(
+                userRepository,
+                passwordEncoder);
+
+        userService.resetPassword(
+                10L,
+                "new-password");
+
+        assertEquals(
+                "encoded-new-password",
+                user.getPassword());
+
+        assertTrue(
+                user.getUpdatedAt()
+                        .isAfter(oldUpdatedAt));
+
+        verify(passwordEncoder)
+                .encode("new-password");
+    }
+
 }

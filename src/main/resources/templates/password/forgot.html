@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>パスワード再設定</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body class="auth-page">
+
+    <main class="auth-container">
+
+        <h1>パスワード再設定</h1>
+
+        <p>
+            登録しているメールアドレスを入力してください。
+        </p>
+
+        <form th:action="@{/password/forgot}" th:object="${passwordForgotForm}" method="post" class="form-card">
+
+            <div class="form-group">
+                <label for="email">
+                    メールアドレス
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="email" th:field="*{email}" maxlength="254" autocomplete="email" autofocus required>
+
+                <span th:if="${#fields.hasErrors('email')}" th:errors="*{email}" class="field-error">
+                </span>
+            </div>
+
+            <button type="submit" class="button-primary">
+                再設定メールを送信
+            </button>
+
+        </form>
+
+        <p class="auth-links">
+            <a th:href="@{/login}">
+                ログイン画面へ戻る
+            </a>
+        </p>
+
+    </main>
+
+</body>
+
+</html>
