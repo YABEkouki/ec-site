@@ -30,8 +30,7 @@ class MailServiceTest {
                 "user@example.com",
                 "test-token");
 
-        ArgumentCaptor<SimpleMailMessage> captor =
-                ArgumentCaptor.forClass(SimpleMailMessage.class);
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
 
         verify(mailSender).send(captor.capture());
 
@@ -52,8 +51,7 @@ class MailServiceTest {
 
         assertNotNull(message.getText());
 
-        String expectedUrl =
-                "http://localhost:8080/email/verify?token=test-token";
+        String expectedUrl = "http://localhost:8080/email/verify?token=test-token";
 
         org.junit.jupiter.api.Assertions.assertTrue(
                 message.getText().contains(expectedUrl));
@@ -61,4 +59,49 @@ class MailServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 message.getText().contains("24時間"));
     }
+
+    @Test
+    void sendPasswordResetSendsPasswordResetMail() {
+
+        MailService service = new MailService(
+                mailSender,
+                "no-reply@ec-site.local",
+                "http://localhost:8080");
+
+        service.sendPasswordReset(
+                "user@example.com",
+                "test-reset-token");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+
+        verify(mailSender).send(captor.capture());
+
+        SimpleMailMessage message = captor.getValue();
+
+        assertEquals(
+                "no-reply@ec-site.local",
+                message.getFrom());
+
+        assertNotNull(message.getTo());
+
+        assertEquals(
+                "user@example.com",
+                message.getTo()[0]);
+
+        assertEquals(
+                "パスワード再設定",
+                message.getSubject());
+
+        assertNotNull(message.getText());
+
+        String expectedUrl = "http://localhost:8080/password/reset"
+                + "?token=test-reset-token";
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                message.getText().contains(expectedUrl));
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                message.getText().contains("1時間"));
+    }
+
 }

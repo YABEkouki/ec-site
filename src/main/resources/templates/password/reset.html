@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>パスワード再設定</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body class="auth-page">
+
+    <main class="auth-container">
+
+        <h1>新しいパスワードの設定</h1>
+
+        <form th:action="@{/password/reset(token=${token})}" th:object="${passwordResetForm}" method="post"
+            class="form-card">
+
+            <div class="form-group">
+                <label for="newPassword">
+                    新しいパスワード
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="password" th:field="*{newPassword}" minlength="8" maxlength="72"
+                    autocomplete="new-password" autofocus required>
+
+                <span th:if="${#fields.hasErrors('newPassword')}" th:errors="*{newPassword}" class="field-error">
+                </span>
+            </div>
+
+            <div class="form-group">
+                <label for="confirmPassword">
+                    新しいパスワード（確認）
+                    <span class="required">必須</span>
+                </label>
+
+                <input type="password" th:field="*{confirmPassword}" autocomplete="new-password" required>
+
+                <span th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}"
+                    class="field-error">
+                </span>
+            </div>
+
+            <button type="submit" class="button-primary">
+                パスワードを再設定
+            </button>
+
+        </form>
+
+    </main>
+
+</body>
+
+</html>

@@ -1,12 +1,6 @@
 package com.example.ecsite.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -22,19 +16,20 @@ import com.example.ecsite.repository.EmailVerificationTokenRepository;
 @Service
 public class EmailVerificationService {
 
-    private static final int TOKEN_BYTE_LENGTH = 32;
     private static final int TOKEN_VALID_HOURS = 24;
     private static final int RESEND_COOLDOWN_SECONDS = 60;
 
     private final EmailVerificationTokenRepository tokenRepository;
     private final UserService userService;
-    private final SecureRandom secureRandom = new SecureRandom();
+    private final SecureTokenService secureTokenService;
 
     public EmailVerificationService(
             EmailVerificationTokenRepository tokenRepository,
-            UserService userService) {
+            UserService userService,
+            SecureTokenService secureTokenService) {
         this.tokenRepository = tokenRepository;
         this.userService = userService;
+        this.secureTokenService = secureTokenService;
     }
 
     @Transactional
@@ -64,8 +59,8 @@ public class EmailVerificationService {
 
         invalidateUnusedTokens(userId, now);
 
-        String rawToken = generateRawToken();
-        String tokenHash = hashToken(rawToken);
+        String rawToken = secureTokenService.generateRawToken();
+        String tokenHash = secureTokenService.hashToken(rawToken);
 
         EmailVerificationToken token = new EmailVerificationToken();
 
@@ -87,7 +82,7 @@ public class EmailVerificationService {
             return EmailVerificationResult.INVALID;
         }
 
-        String tokenHash = hashToken(rawToken);
+        String tokenHash = secureTokenService.hashToken(rawToken);
 
         EmailVerificationToken token = tokenRepository.findByTokenHash(tokenHash)
                 .orElse(null);
@@ -140,29 +135,4 @@ public class EmailVerificationService {
         }
     }
 
-    private String generateRawToken() {
-
-        byte[] bytes = new byte[TOKEN_BYTE_LENGTH];
-        secureRandom.nextBytes(bytes);
-
-        return Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(bytes);
-    }
-
-    private String hashToken(String rawToken) {
-
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-
-            byte[] hash = digest.digest(
-                    rawToken.getBytes(StandardCharsets.UTF_8));
-
-            return HexFormat.of().formatHex(hash);
-
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(
-                    "SHA-256を利用できません。", e);
-        }
-    }
 }

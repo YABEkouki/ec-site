@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>パスワード再設定</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body class="auth-page">
+
+    <main class="auth-container">
+
+        <h1>パスワード再設定</h1>
+
+        <p th:text="${errorMessage}" class="message-error">
+        </p>
+
+        <p class="auth-links">
+            <a th:href="@{/password/forgot}">
+                パスワード再設定をやり直す
+            </a>
+        </p>
+
+        <p class="auth-links">
+            <a th:href="@{/login}">
+                ログイン画面へ戻る
+            </a>
+        </p>
+
+    </main>
+
+</body>
+
+</html>

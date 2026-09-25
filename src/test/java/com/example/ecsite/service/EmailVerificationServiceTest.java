@@ -53,7 +53,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         LocalDateTime before = LocalDateTime.now();
 
@@ -120,7 +121,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         LocalDateTime before = LocalDateTime.now();
 
@@ -157,7 +159,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         String first = service.issueToken(10L);
         String second = service.issueToken(10L);
@@ -175,7 +178,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         assertThrows(
                 EmailNotRegisteredException.class,
@@ -196,7 +200,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         assertThrows(
                 EmailAlreadyVerifiedException.class,
@@ -232,7 +237,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         EmailVerificationResult result = service.verify("raw-token");
 
@@ -257,7 +263,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         EmailVerificationResult result = service.verify("unknown-token");
 
@@ -284,7 +291,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         EmailVerificationResult result = service.verify("expired-token");
 
@@ -316,7 +324,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         EmailVerificationResult result = service.verify("used-token");
 
@@ -346,7 +355,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         EmailVerificationResult result = service.verify("old-email-token");
 
@@ -380,7 +390,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         EmailVerificationResult result = service.verify("verified-token");
 
@@ -421,7 +432,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         assertThrows(
                 EmailVerificationTooSoonException.class,
@@ -464,7 +476,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         String rawToken = service.issueToken(user.getId());
 
@@ -510,7 +523,8 @@ class EmailVerificationServiceTest {
 
         EmailVerificationService service = new EmailVerificationService(
                 tokenRepository,
-                userService);
+                userService,
+                new SecureTokenService());
 
         String rawToken = service.issueToken(user.getId());
 
