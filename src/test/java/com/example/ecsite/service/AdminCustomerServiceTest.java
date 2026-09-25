@@ -277,6 +277,7 @@ class AdminCustomerServiceTest {
         ReflectionTestUtils.setField(user, "id", 10L);
         user.setUsername("customer01");
         user.setEmail("customer01@example.com");
+        user.setEmailVerifiedAt(LocalDateTime.of(2026, 9, 25, 10, 30));
         user.setEnabled(true);
 
         UserProfile profile = new UserProfile();
@@ -322,6 +323,7 @@ class AdminCustomerServiceTest {
         assertEquals(10L, result.userId());
         assertEquals("customer01", result.username());
         assertEquals("customer01@example.com", result.email());
+        assertEquals(LocalDateTime.of(2026, 9, 25, 10, 30), result.emailVerifiedAt());
         assertTrue(result.enabled());
 
         assertEquals("山田太郎", result.name());
@@ -373,6 +375,8 @@ class AdminCustomerServiceTest {
         assertEquals("no-profile", result.username());
 
         assertNull(result.name());
+        assertNull(result.email());
+        assertNull(result.emailVerifiedAt());
         assertNull(result.postalCode());
         assertNull(result.prefecture());
         assertNull(result.city());
