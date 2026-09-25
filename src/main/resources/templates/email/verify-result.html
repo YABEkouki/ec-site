@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>メールアドレスの確認</title>
+</head>
+
+<body>
+
+    <h1>メールアドレスの確認</h1>
+
+    <div th:if="${result.name() == 'VERIFIED'}">
+        <p>メールアドレスの確認が完了しました。</p>
+        <p>ご登録いただいたメールアドレスを確認済みにしました。</p>
+    </div>
+
+    <div th:if="${result.name() == 'ALREADY_VERIFIED'}">
+        <p>このメールアドレスはすでに確認済みです。</p>
+    </div>
+
+    <div th:if="${result.name() == 'EXPIRED'}">
+        <p>この確認リンクの有効期限が切れています。</p>
+        <p>ログイン後、アカウント画面から確認メールを再送してください。</p>
+    </div>
+
+    <div th:if="${result.name() == 'USED'}">
+        <p>この確認リンクはすでに使用されています。</p>
+        <p>必要な場合は、ログイン後にアカウント画面から確認メールを再送してください。</p>
+    </div>
+
+    <div th:if="${result.name() == 'EMAIL_CHANGED'}">
+        <p>この確認リンクは現在登録されているメールアドレスには使用できません。</p>
+        <p>ログイン後、アカウント画面から新しい確認メールを送信してください。</p>
+    </div>
+
+    <div th:if="${result.name() == 'INVALID'}">
+        <p>この確認リンクは無効です。</p>
+        <p>URLが正しいことを確認してください。</p>
+    </div>
+
+    <p>
+        <a th:href="@{/login}">ログイン画面へ</a>
+    </p>
+
+</body>
+
+</html>

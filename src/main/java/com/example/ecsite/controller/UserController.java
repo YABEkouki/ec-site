@@ -1,15 +1,20 @@
 package com.example.ecsite.controller;
 
+import org.springframework.mail.MailException;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.UserRegistrationResult;
 import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
+import com.example.ecsite.service.EmailVerificationService;
+import com.example.ecsite.service.MailService;
 import com.example.ecsite.service.UserService;
 
 import jakarta.validation.Valid;
@@ -18,9 +23,17 @@ import jakarta.validation.Valid;
 public class UserController {
 
     private final UserService userService;
+    private final EmailVerificationService emailVerificationService;
+    private final MailService mailService;
 
-    public UserController(UserService userService) {
+    public UserController(
+            UserService userService,
+            EmailVerificationService emailVerificationService,
+            MailService mailService) {
+
         this.userService = userService;
+        this.emailVerificationService = emailVerificationService;
+        this.mailService = mailService;
     }
 
     @GetMapping("/signup")
@@ -34,7 +47,8 @@ public class UserController {
     @PostMapping("/signup")
     public String signup(
             @Valid @ModelAttribute("userForm") UserForm userForm,
-            BindingResult bindingResult) {
+            BindingResult bindingResult,
+            RedirectAttributes redirectAttributes) {
 
         if (bindingResult.hasErrors()) {
             return "users/signup";
@@ -67,8 +81,10 @@ public class UserController {
             return "users/signup";
         }
 
+        UserRegistrationResult registrationResult;
+
         try {
-            userService.register(userForm);
+            registrationResult = userService.register(userForm);
 
         } catch (UsernameAlreadyExistsException e) {
 
@@ -78,6 +94,7 @@ public class UserController {
                     "このユーザー名は既に使用されています。");
 
             return "users/signup";
+
         } catch (EmailAlreadyExistsException e) {
 
             bindingResult.rejectValue(
@@ -86,6 +103,20 @@ public class UserController {
                     "このメールアドレスは既に使用されています。");
 
             return "users/signup";
+        }
+
+        try {
+            String rawToken = emailVerificationService.issueToken(
+                    registrationResult.userId());
+
+            mailService.sendEmailVerification(
+                    registrationResult.email(),
+                    rawToken);
+
+        } catch (MailException e) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "会員登録は完了しましたが、確認メールの送信に失敗しました。ログイン後、マイページから再送してください。");
         }
 
         return "redirect:/login?registered";

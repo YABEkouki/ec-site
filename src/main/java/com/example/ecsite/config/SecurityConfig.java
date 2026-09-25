@@ -70,6 +70,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/login",
                                 "/signup",
+                                "/email/verify",
                                 "/403",
                                 "/css/**",
                                 "/product-images/**")

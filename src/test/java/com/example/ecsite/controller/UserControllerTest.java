@@ -15,10 +15,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.UserRegistrationResult;
 import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
 import com.example.ecsite.form.UserForm;
+import com.example.ecsite.service.EmailVerificationService;
+import com.example.ecsite.service.MailService;
 import com.example.ecsite.service.UserService;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,11 +31,23 @@ class UserControllerTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private EmailVerificationService emailVerificationService;
+
+    @Mock
+    private MailService mailService;
+
+    @Mock
+    private RedirectAttributes redirectAttributes;
+
     private UserController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new UserController(userService);
+        controller = new UserController(
+                userService,
+                emailVerificationService,
+                mailService);
     }
 
     @Test
@@ -49,9 +65,19 @@ class UserControllerTest {
         when(userService.emailExists("user1@example.com"))
                 .thenReturn(false);
 
+        when(userService.register(userForm))
+                .thenReturn(
+                        new UserRegistrationResult(
+                                100L,
+                                "user1@example.com"));
+
+        when(emailVerificationService.issueToken(100L))
+                .thenReturn("raw-token");
+
         String view = controller.signup(
                 userForm,
-                bindingResult);
+                bindingResult,
+                redirectAttributes);
 
         assertEquals(
                 "redirect:/login?registered",
@@ -60,6 +86,19 @@ class UserControllerTest {
         assertTrue(!bindingResult.hasErrors());
 
         verify(userService).register(userForm);
+
+        verify(emailVerificationService)
+                .issueToken(100L);
+
+        verify(mailService)
+                .sendEmailVerification(
+                        "user1@example.com",
+                        "raw-token");
+
+        verify(redirectAttributes, never())
+                .addFlashAttribute(
+                        org.mockito.ArgumentMatchers.eq("errorMessage"),
+                        org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -75,7 +114,8 @@ class UserControllerTest {
 
         String view = controller.signup(
                 userForm,
-                bindingResult);
+                bindingResult,
+                redirectAttributes);
 
         assertEquals("users/signup", view);
 
@@ -93,7 +133,8 @@ class UserControllerTest {
 
         String view = controller.signup(
                 userForm,
-                bindingResult);
+                bindingResult,
+                redirectAttributes);
 
         assertEquals("users/signup", view);
 
@@ -122,7 +163,8 @@ class UserControllerTest {
 
         String view = controller.signup(
                 userForm,
-                bindingResult);
+                bindingResult,
+                redirectAttributes);
 
         assertEquals("users/signup", view);
 
@@ -153,7 +195,8 @@ class UserControllerTest {
 
         String view = controller.signup(
                 userForm,
-                bindingResult);
+                bindingResult,
+                redirectAttributes);
 
         assertEquals("users/signup", view);
 
@@ -180,7 +223,8 @@ class UserControllerTest {
 
         String view = controller.signup(
                 userForm,
-                bindingResult);
+                bindingResult,
+                redirectAttributes);
 
         assertEquals("users/signup", view);
 
@@ -214,7 +258,8 @@ class UserControllerTest {
 
         String view = controller.signup(
                 userForm,
-                bindingResult);
+                bindingResult,
+                redirectAttributes);
 
         assertEquals("users/signup", view);
 
@@ -223,6 +268,65 @@ class UserControllerTest {
 
         verify(userService)
                 .register(userForm);
+    }
+
+    @Test
+    void signupKeepsRegistrationSuccessWhenVerificationMailFails() {
+
+        UserForm userForm = createUserForm();
+        BindingResult bindingResult = createBindingResult(userForm);
+
+        when(userService.passwordsMatch(userForm))
+                .thenReturn(true);
+
+        when(userService.usernameExists("user1"))
+                .thenReturn(false);
+
+        when(userService.emailExists("user1@example.com"))
+                .thenReturn(false);
+
+        when(userService.register(userForm))
+                .thenReturn(
+                        new UserRegistrationResult(
+                                100L,
+                                "user1@example.com"));
+
+        when(emailVerificationService.issueToken(100L))
+                .thenReturn("raw-token");
+
+        doThrow(new org.springframework.mail.MailSendException(
+                "mail send failed"))
+                .when(mailService)
+                .sendEmailVerification(
+                        "user1@example.com",
+                        "raw-token");
+
+        String view = controller.signup(
+                userForm,
+                bindingResult,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/login?registered",
+                view);
+
+        assertTrue(!bindingResult.hasErrors());
+
+        verify(userService)
+                .register(userForm);
+
+        verify(emailVerificationService)
+                .issueToken(100L);
+
+        verify(mailService)
+                .sendEmailVerification(
+                        "user1@example.com",
+                        "raw-token");
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "会員登録は完了しましたが、確認メールの送信に失敗しました。ログイン後、マイページから再送してください。");
     }
 
     private UserForm createUserForm() {

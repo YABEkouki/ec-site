@@ -16,5 +16,12 @@ services:
       timeout: 5s
       retries: 10
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ec-site-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
 volumes:
   ec-site-postgres-data:

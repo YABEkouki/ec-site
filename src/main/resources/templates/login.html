@@ -25,6 +25,9 @@
             ユーザー登録が完了しました。ログインしてください。
         </p>
 
+        <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
+        </p>
+
         <form th:action="@{/login}" method="post" class="form-card">
 
             <div class="form-group">
