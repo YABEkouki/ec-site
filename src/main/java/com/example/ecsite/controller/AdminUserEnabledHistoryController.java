@@ -37,6 +37,7 @@ public class AdminUserEnabledHistoryController {
     @GetMapping
     public String list(
             @ModelAttribute("searchForm") AdminUserEnabledHistorySearchForm searchForm,
+            @RequestParam(required = false) String returnTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             Model model) {
@@ -50,6 +51,8 @@ public class AdminUserEnabledHistoryController {
                 searchForm,
                 safePage,
                 safeSize);
+
+        model.addAttribute("returnTo", returnTo);
 
         model.addAttribute(
                 "histories",

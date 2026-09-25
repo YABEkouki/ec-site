@@ -59,6 +59,9 @@
         <button type="submit" th:formaction="@{/admin/user-enabled-histories/csv}" formmethod="get">
             CSV出力
         </button>
+
+        <input type="hidden" name="returnTo" th:if="${returnTo != null}" th:value="${returnTo}">
+
     </form>
 
     <hr>
@@ -119,6 +122,7 @@
                 toEnabled=${searchForm.toEnabled},
                 changedByUsername=${searchForm.changedByUsername},
                 from=${searchForm.from},
+                returnTo=${returnTo},
                 to=${searchForm.to})}" class="button button-secondary">
             前へ
         </a>
@@ -140,7 +144,8 @@
                     toEnabled=${searchForm.toEnabled},
                     changedByUsername=${searchForm.changedByUsername},
                     from=${searchForm.from},
-                    to=${searchForm.to})}" th:text="${pageNumber + 1}" class="button button-secondary">
+                    to=${searchForm.to},
+                    returnTo=${returnTo})}" th:text="${pageNumber + 1}" class="button button-secondary">
             </a>
 
         </span>
@@ -153,10 +158,17 @@
                 toEnabled=${searchForm.toEnabled},
                 changedByUsername=${searchForm.changedByUsername},
                 from=${searchForm.from},
-                to=${searchForm.to})}" class="button button-secondary">
+                to=${searchForm.to},
+                returnTo=${returnTo})}" class="button button-secondary">
             次へ
         </a>
     </nav>
+
+    <p th:if="${returnTo == 'customer' and searchForm.userId != null}">
+        <a th:href="@{/admin/customers/{id}(id=${searchForm.userId})}" class="button button-secondary">
+            顧客詳細へ戻る
+        </a>
+    </p>
 
 </body>
 

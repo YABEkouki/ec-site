@@ -20,33 +20,60 @@
         <p th:if="${errorMessage != null}" th:text="${errorMessage}" class="error">
         </p>
 
-        <section>
-            <h2>アカウント情報</h2>
+        <section class="detail-section">
+            <h2>アカウント管理</h2>
 
             <table>
-                <tbody>
-                    <tr>
-                        <th>顧客ID</th>
-                        <td th:text="${customer.userId}"></td>
-                    </tr>
-                    <tr>
-                        <th>ユーザー名</th>
-                        <td th:text="${customer.username}"></td>
-                    </tr>
-                    <tr>
-                        <th>メールアドレス</th>
-                        <td th:text="${customer.email != null ? customer.email : '-'}"></td>
-                    </tr>
-                    <tr>
-                        <th>会員状態</th>
-                        <td th:text="${customer.enabled ? '有効' : '無効'}"></td>
-                    </tr>
-                </tbody>
+                <tr>
+                    <th>顧客ID</th>
+                    <td th:text="${customer.userId}"></td>
+                </tr>
+                <tr>
+                    <th>ユーザー名</th>
+                    <td th:text="${customer.username}"></td>
+                </tr>
+                <tr>
+                    <th>アカウント状態</th>
+                    <td th:text="${customer.enabled ? '有効' : '無効'}"></td>
+                </tr>
+                <tr>
+                    <th>メールアドレス</th>
+                    <td th:text="${customer.email != null and !customer.email.isBlank() ? customer.email : '-'}"></td>
+                </tr>
+                <tr>
+                    <th>メールアドレス所有確認</th>
+                    <td th:text="${customer.email == null or customer.email.isBlank()
+                    ? 'メールアドレス未登録'
+                    : (customer.emailVerifiedAt != null ? '確認済み' : '未確認')}">
+                    </td>
+                </tr>
             </table>
+
+            <p>
+                <a th:href="@{/admin/customers/{id}/enabled(id=${customer.userId}, enabled=${!customer.enabled})}"
+                    th:text="${customer.enabled ? 'アカウントを無効化する' : 'アカウントを有効化する'}" class="button button-secondary">
+                </a>
+            </p>
+
+            <p th:if="${customer.enabled and customer.email != null and !customer.email.isBlank()}">
+                <a th:href="@{/admin/customers/{id}/password-reset(id=${customer.userId})}" class="button button-secondary">
+                    パスワード再設定メールを送信する
+                </a>
+            </p>
+
+            <p>
+                <a th:href="@{/admin/user-enabled-histories(userId=${customer.userId},returnTo='customer')}" class="button button-secondary">
+                    アカウント状態変更履歴を見る
+                </a>
+            </p>
         </section>
 
         <section>
-            <h2>プロフィール</h2>
+            <h2>プロフィール（参照専用）</h2>
+
+            <p>
+                この情報は顧客が登録した情報です。管理画面からは変更できません。
+            </p>
 
             <div th:if="${customer.name == null}">
                 <p>プロフィールは登録されていません。</p>
@@ -83,7 +110,11 @@
         </section>
 
         <section>
-            <h2>配送先</h2>
+            <h2>配送先（参照専用）</h2>
+
+            <p>
+                この情報は顧客が登録した情報です。管理画面からは変更できません。
+            </p>
 
             <p th:if="${#lists.isEmpty(customer.shippingAddresses)}">
                 配送先は登録されていません。
@@ -147,20 +178,6 @@
                 購入総額は支払済み・発送済みの注文を集計しています。
             </p>
         </section>
-
-        <p>
-            <a th:href="@{/admin/customers/{id}/enabled(id=${customer.userId}, enabled=${!customer.enabled})}"
-                class="button button-secondary" th:text="${customer.enabled ? 'アカウントを無効にする' : 'アカウントを有効にする'}">
-            </a>
-        </p>
-
-        <p>
-            <a th:if="${customer.enabled and customer.email != null and !customer.email.isBlank()}"
-                th:href="@{/admin/customers/{id}/password-reset(id=${customer.userId})}"
-                class="button button-secondary">
-                パスワード再設定メールを送信
-            </a>
-        </p>
 
         <p>
             <a th:href="@{/admin/customers/{id}/orders(id=${customer.userId})}" class="button button-secondary">

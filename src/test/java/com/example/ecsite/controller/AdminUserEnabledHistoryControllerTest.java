@@ -49,15 +49,12 @@ class AdminUserEnabledHistoryControllerTest {
     @Test
     void listDisplaysHistoriesUsingSearchForm() {
 
-        AdminUserEnabledHistorySearchForm searchForm =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm searchForm = new AdminUserEnabledHistorySearchForm();
 
-        UserEnabledHistory history =
-                org.mockito.Mockito.mock(
-                        UserEnabledHistory.class);
+        UserEnabledHistory history = org.mockito.Mockito.mock(
+                UserEnabledHistory.class);
 
-        Page<UserEnabledHistory> historyPage =
-                new PageImpl<>(List.of(history));
+        Page<UserEnabledHistory> historyPage = new PageImpl<>(List.of(history));
 
         when(userEnabledHistoryService.search(
                 searchForm,
@@ -67,6 +64,7 @@ class AdminUserEnabledHistoryControllerTest {
 
         String viewName = controller.list(
                 searchForm,
+                null,
                 0,
                 10,
                 model);
@@ -92,16 +90,14 @@ class AdminUserEnabledHistoryControllerTest {
     @Test
     void listPassesSearchConditionsToService() {
 
-        AdminUserEnabledHistorySearchForm searchForm =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm searchForm = new AdminUserEnabledHistorySearchForm();
 
         searchForm.setUserId(10L);
         searchForm.setUsername("customer");
         searchForm.setToEnabled(false);
         searchForm.setChangedByUsername("AdminUser");
 
-        Page<UserEnabledHistory> historyPage =
-                new PageImpl<>(List.of());
+        Page<UserEnabledHistory> historyPage = new PageImpl<>(List.of());
 
         when(userEnabledHistoryService.search(
                 searchForm,
@@ -111,6 +107,7 @@ class AdminUserEnabledHistoryControllerTest {
 
         String viewName = controller.list(
                 searchForm,
+                null,
                 2,
                 20,
                 model);
@@ -128,11 +125,9 @@ class AdminUserEnabledHistoryControllerTest {
     @Test
     void listSanitizesPageAndSize() {
 
-        AdminUserEnabledHistorySearchForm searchForm =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm searchForm = new AdminUserEnabledHistorySearchForm();
 
-        Page<UserEnabledHistory> historyPage =
-                new PageImpl<>(List.of());
+        Page<UserEnabledHistory> historyPage = new PageImpl<>(List.of());
 
         when(userEnabledHistoryService.search(
                 searchForm,
@@ -142,6 +137,7 @@ class AdminUserEnabledHistoryControllerTest {
 
         String viewName = controller.list(
                 searchForm,
+                null,
                 -1,
                 999,
                 model);
@@ -159,11 +155,9 @@ class AdminUserEnabledHistoryControllerTest {
     @Test
     void listSanitizesSizeLessThanOne() {
 
-        AdminUserEnabledHistorySearchForm searchForm =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm searchForm = new AdminUserEnabledHistorySearchForm();
 
-        Page<UserEnabledHistory> historyPage =
-                new PageImpl<>(List.of());
+        Page<UserEnabledHistory> historyPage = new PageImpl<>(List.of());
 
         when(userEnabledHistoryService.search(
                 searchForm,
@@ -173,6 +167,7 @@ class AdminUserEnabledHistoryControllerTest {
 
         String viewName = controller.list(
                 searchForm,
+                null,
                 0,
                 0,
                 model);
@@ -190,23 +185,19 @@ class AdminUserEnabledHistoryControllerTest {
     @Test
     void csvExportsAllHistoriesMatchingSearchConditions() {
 
-        AdminUserEnabledHistorySearchForm searchForm =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm searchForm = new AdminUserEnabledHistorySearchForm();
 
         searchForm.setUserId(10L);
         searchForm.setUsername("customer");
         searchForm.setToEnabled(true);
         searchForm.setChangedByUsername("AdminUser");
 
-        UserEnabledHistory history =
-                org.mockito.Mockito.mock(
-                        UserEnabledHistory.class);
+        UserEnabledHistory history = org.mockito.Mockito.mock(
+                UserEnabledHistory.class);
 
-        List<UserEnabledHistory> histories =
-                List.of(history);
+        List<UserEnabledHistory> histories = List.of(history);
 
-        byte[] csvBytes =
-                new byte[] { 1, 2, 3 };
+        byte[] csvBytes = new byte[] { 1, 2, 3 };
 
         when(userEnabledHistoryService.searchAll(searchForm))
                 .thenReturn(histories);
@@ -214,8 +205,7 @@ class AdminUserEnabledHistoryControllerTest {
         when(userEnabledHistoryCsvService.createCsv(histories))
                 .thenReturn(csvBytes);
 
-        ResponseEntity<byte[]> response =
-                controller.csv(searchForm);
+        ResponseEntity<byte[]> response = controller.csv(searchForm);
 
         assertEquals(
                 HttpStatus.OK,
@@ -240,5 +230,36 @@ class AdminUserEnabledHistoryControllerTest {
 
         verify(userEnabledHistoryCsvService)
                 .createCsv(histories);
+    }
+
+    @Test
+    void listAddsReturnToCustomerToModel() {
+
+        AdminUserEnabledHistorySearchForm searchForm = new AdminUserEnabledHistorySearchForm();
+
+        searchForm.setUserId(14L);
+
+        Page<UserEnabledHistory> historyPage = new PageImpl<>(List.of());
+
+        when(userEnabledHistoryService.search(
+                searchForm,
+                0,
+                10))
+                .thenReturn(historyPage);
+
+        String viewName = controller.list(
+                searchForm,
+                "customer",
+                0,
+                10,
+                model);
+
+        assertEquals(
+                "admin/user-enabled-histories/list",
+                viewName);
+
+        verify(model).addAttribute(
+                "returnTo",
+                "customer");
     }
 }
