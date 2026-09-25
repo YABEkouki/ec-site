@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,9 +25,14 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.dto.UserAccountInfo;
+import com.example.ecsite.dto.UserAccountUpdateResult;
 import com.example.ecsite.entity.ShippingAddress;
+import com.example.ecsite.entity.User;
 import com.example.ecsite.entity.UserProfile;
 import com.example.ecsite.exception.EmailAlreadyExistsException;
+import com.example.ecsite.exception.EmailAlreadyVerifiedException;
+import com.example.ecsite.exception.EmailNotRegisteredException;
+import com.example.ecsite.exception.EmailVerificationTooSoonException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
@@ -35,6 +41,8 @@ import com.example.ecsite.form.ShippingAddressForm;
 import com.example.ecsite.form.UserAccountEditForm;
 import com.example.ecsite.form.UserProfileForm;
 import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.service.EmailVerificationService;
+import com.example.ecsite.service.MailService;
 import com.example.ecsite.service.ShippingAddressService;
 import com.example.ecsite.service.UserProfileService;
 import com.example.ecsite.service.UserService;
@@ -54,6 +62,12 @@ class MyPageControllerTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private EmailVerificationService emailVerificationService;
+
+    @Mock
+    private MailService mailService;
+
     private MyPageController controller;
 
     @BeforeEach
@@ -62,7 +76,9 @@ class MyPageControllerTest {
         controller = new MyPageController(
                 userProfileService,
                 shippingAddressService,
-                userService);
+                userService,
+                emailVerificationService,
+                mailService);
     }
 
     @Test
@@ -553,7 +569,11 @@ class MyPageControllerTest {
                     10L,
                     " user2 ",
                     "user1@example.com"))
-                    .thenReturn("user2");
+                    .thenReturn(
+                            new UserAccountUpdateResult(
+                                    "user2",
+                                    "user1@example.com",
+                                    false));
 
             String viewName = controller.updateAccount(
                     form,
@@ -629,7 +649,11 @@ class MyPageControllerTest {
                     10L,
                     " user1 ",
                     "user1@example.com"))
-                    .thenReturn("user1");
+                    .thenReturn(
+                            new UserAccountUpdateResult(
+                                    "user1",
+                                    "user1@example.com",
+                                    false));
 
             String viewName = controller.updateAccount(
                     form,
@@ -753,6 +777,331 @@ class MyPageControllerTest {
                         "email",
                         "duplicate",
                         "メールアドレスは既に使用されています。");
+    }
+
+    @Test
+    void updateAccountSendsVerificationMailWhenEmailChanges() {
+
+        CustomUserDetails loginUser = new CustomUserDetails(
+                10L,
+                "user1",
+                "encoded-password",
+                true,
+                List.of());
+
+        UserAccountEditForm form = new UserAccountEditForm();
+        form.setUsername("user1");
+        form.setEmail("new@example.com");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(userService.updateAccount(
+                10L,
+                "user1",
+                "new@example.com"))
+                .thenReturn(
+                        new UserAccountUpdateResult(
+                                "user1",
+                                "new@example.com",
+                                true));
+
+        when(emailVerificationService.issueToken(10L))
+                .thenReturn("raw-token");
+
+        String viewName = controller.updateAccount(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(emailVerificationService)
+                .issueToken(10L);
+
+        verify(mailService)
+                .sendEmailVerification(
+                        "new@example.com",
+                        "raw-token");
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "アカウント情報を更新しました。");
+    }
+
+    @Test
+    void updateAccountKeepsUpdateWhenVerificationMailSendingFails() {
+
+        CustomUserDetails loginUser = new CustomUserDetails(
+                10L,
+                "user1",
+                "encoded-password",
+                true,
+                List.of());
+
+        UserAccountEditForm form = new UserAccountEditForm();
+        form.setUsername("user1");
+        form.setEmail("new@example.com");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(userService.updateAccount(
+                10L,
+                "user1",
+                "new@example.com"))
+                .thenReturn(
+                        new UserAccountUpdateResult(
+                                "user1",
+                                "new@example.com",
+                                true));
+
+        when(emailVerificationService.issueToken(10L))
+                .thenReturn("raw-token");
+
+        doThrow(new org.springframework.mail.MailSendException(
+                "mail send failed"))
+                .when(mailService)
+                .sendEmailVerification(
+                        "new@example.com",
+                        "raw-token");
+
+        String viewName = controller.updateAccount(
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(userService)
+                .updateAccount(
+                        10L,
+                        "user1",
+                        "new@example.com");
+
+        verify(emailVerificationService)
+                .issueToken(10L);
+
+        verify(mailService)
+                .sendEmailVerification(
+                        "new@example.com",
+                        "raw-token");
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "アカウント情報を更新しました。");
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "確認メールの送信に失敗しました。時間をおいて再送してください。");
+    }
+
+    @Test
+    void resendEmailVerificationSendsVerificationMail() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        when(loginUser.getId())
+                .thenReturn(10L);
+
+        User user = new User();
+        user.setEmail("user@example.com");
+
+        when(emailVerificationService.issueToken(10L))
+                .thenReturn("raw-token");
+
+        when(userService.findById(10L))
+                .thenReturn(user);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = controller.resendEmailVerification(
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(emailVerificationService)
+                .issueToken(10L);
+
+        verify(userService)
+                .findById(10L);
+
+        verify(mailService)
+                .sendEmailVerification(
+                        "user@example.com",
+                        "raw-token");
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "確認メールを送信しました。");
+    }
+
+    @Test
+    void resendEmailVerificationReturnsErrorWhenEmailIsNotRegistered() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        when(loginUser.getId())
+                .thenReturn(10L);
+
+        when(emailVerificationService.issueToken(10L))
+                .thenThrow(new EmailNotRegisteredException());
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = controller.resendEmailVerification(
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "メールアドレスが登録されていません。");
+
+        verify(mailService, never())
+                .sendEmailVerification(any(), any());
+    }
+
+    @Test
+    void resendEmailVerificationReturnsErrorWhenEmailIsAlreadyVerified() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        when(loginUser.getId())
+                .thenReturn(10L);
+
+        when(emailVerificationService.issueToken(10L))
+                .thenThrow(new EmailAlreadyVerifiedException());
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = controller.resendEmailVerification(
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "メールアドレスはすでに確認済みです。");
+
+        verify(mailService, never())
+                .sendEmailVerification(any(), any());
+    }
+
+    @Test
+    void resendEmailVerificationReturnsErrorWithinCooldown() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        when(loginUser.getId())
+                .thenReturn(10L);
+
+        when(emailVerificationService.issueToken(10L))
+                .thenThrow(
+                        new EmailVerificationTooSoonException());
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = controller.resendEmailVerification(
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "確認メールを再送するまで、しばらくお待ちください。");
+
+        verify(mailService, never())
+                .sendEmailVerification(any(), any());
+    }
+
+    @Test
+    void resendEmailVerificationReturnsErrorWhenMailSendingFails() {
+
+        CustomUserDetails loginUser = mock(CustomUserDetails.class);
+
+        when(loginUser.getId())
+                .thenReturn(10L);
+
+        User user = new User();
+        user.setEmail("user@example.com");
+
+        when(emailVerificationService.issueToken(10L))
+                .thenReturn("raw-token");
+
+        when(userService.findById(10L))
+                .thenReturn(user);
+
+        doThrow(new org.springframework.mail.MailSendException(
+                "mail send failed"))
+                .when(mailService)
+                .sendEmailVerification(
+                        "user@example.com",
+                        "raw-token");
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = controller.resendEmailVerification(
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/mypage",
+                viewName);
+
+        verify(emailVerificationService)
+                .issueToken(10L);
+
+        verify(userService)
+                .findById(10L);
+
+        verify(mailService)
+                .sendEmailVerification(
+                        "user@example.com",
+                        "raw-token");
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "確認メールの送信に失敗しました。時間をおいて再送してください。");
+
+        verify(redirectAttributes, never())
+                .addFlashAttribute(
+                        eq("successMessage"),
+                        any());
     }
 
 }

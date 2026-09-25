@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.dto.UserAccountInfo;
+import com.example.ecsite.dto.UserAccountUpdateResult;
+import com.example.ecsite.dto.UserRegistrationResult;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
@@ -31,7 +33,7 @@ public class UserService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public void register(UserForm userForm) {
+    public UserRegistrationResult register(UserForm userForm) {
 
         String username = normalizeUsername(userForm.getUsername());
         String email = normalizeEmail(userForm.getEmail());
@@ -63,6 +65,10 @@ public class UserService {
 
             throw new UsernameAlreadyExistsException(username, e);
         }
+
+        return new UserRegistrationResult(
+                user.getId(),
+                email);
     }
 
     public boolean passwordsMatch(UserForm userForm) {
@@ -148,7 +154,7 @@ public class UserService {
     }
 
     @Transactional
-    public String updateAccount(
+    public UserAccountUpdateResult updateAccount(
             Long userId,
             String username,
             String email) {
@@ -176,7 +182,10 @@ public class UserService {
         }
 
         if (!usernameChanged && !emailChanged) {
-            return normalizedUsername;
+            return new UserAccountUpdateResult(
+                    normalizedUsername,
+                    normalizedEmail,
+                    false);
         }
 
         user.setUsername(normalizedUsername);
@@ -201,7 +210,10 @@ public class UserService {
                     normalizedUsername, e);
         }
 
-        return normalizedUsername;
+        return new UserAccountUpdateResult(
+                normalizedUsername,
+                normalizedEmail,
+                emailChanged);
     }
 
     private String normalizeUsername(String username) {

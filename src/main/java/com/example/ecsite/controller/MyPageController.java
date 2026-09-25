@@ -1,5 +1,6 @@
 package com.example.ecsite.controller;
 
+import org.springframework.mail.MailException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -13,7 +14,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.UserAccountUpdateResult;
 import com.example.ecsite.exception.EmailAlreadyExistsException;
+import com.example.ecsite.exception.EmailAlreadyVerifiedException;
+import com.example.ecsite.exception.EmailNotRegisteredException;
+import com.example.ecsite.exception.EmailVerificationTooSoonException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
 import com.example.ecsite.exception.SameAsCurrentPasswordException;
 import com.example.ecsite.exception.UsernameAlreadyExistsException;
@@ -22,6 +27,8 @@ import com.example.ecsite.form.ShippingAddressForm;
 import com.example.ecsite.form.UserAccountEditForm;
 import com.example.ecsite.form.UserProfileForm;
 import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.service.EmailVerificationService;
+import com.example.ecsite.service.MailService;
 import com.example.ecsite.service.ShippingAddressService;
 import com.example.ecsite.service.UserProfileService;
 import com.example.ecsite.service.UserService;
@@ -34,15 +41,21 @@ public class MyPageController {
     private final UserProfileService userProfileService;
     private final ShippingAddressService shippingAddressService;
     private final UserService userService;
+    private final EmailVerificationService emailVerificationService;
+    private final MailService mailService;
 
     public MyPageController(
             UserProfileService userProfileService,
             ShippingAddressService shippingAddressService,
-            UserService userService) {
+            UserService userService,
+            EmailVerificationService emailVerificationService,
+            MailService mailService) {
 
         this.userProfileService = userProfileService;
         this.shippingAddressService = shippingAddressService;
         this.userService = userService;
+        this.emailVerificationService = emailVerificationService;
+        this.mailService = mailService;
     }
 
     @GetMapping("/mypage")
@@ -90,10 +103,10 @@ public class MyPageController {
             return "mypage/account-form";
         }
 
-        String updatedUsername;
+        UserAccountUpdateResult updateResult;
 
         try {
-            updatedUsername = userService.updateAccount(
+            updateResult = userService.updateAccount(
                     loginUser.getId(),
                     userAccountEditForm.getUsername(),
                     userAccountEditForm.getEmail());
@@ -113,11 +126,29 @@ public class MyPageController {
             return "mypage/account-form";
         }
 
-        refreshAuthenticationUsername(loginUser, updatedUsername);
+        refreshAuthenticationUsername(
+                loginUser,
+                updateResult.username());
 
         redirectAttributes.addFlashAttribute(
                 "successMessage",
                 "アカウント情報を更新しました。");
+
+        if (updateResult.emailChanged()) {
+            try {
+                String rawToken = emailVerificationService.issueToken(
+                        loginUser.getId());
+
+                mailService.sendEmailVerification(
+                        updateResult.email(),
+                        rawToken);
+
+            } catch (MailException e) {
+                redirectAttributes.addFlashAttribute(
+                        "errorMessage",
+                        "確認メールの送信に失敗しました。時間をおいて再送してください。");
+            }
+        }
 
         return "redirect:/mypage";
     }
@@ -300,6 +331,53 @@ public class MyPageController {
         redirectAttributes.addFlashAttribute(
                 "successMessage",
                 "配送先を更新しました。");
+
+        return "redirect:/mypage";
+    }
+
+    @PostMapping("/mypage/email-verification/resend")
+    public String resendEmailVerification(
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        Long userId = loginUser.getId();
+
+        try {
+            String rawToken = emailVerificationService.issueToken(userId);
+
+            String email = userService.findById(userId).getEmail();
+
+            mailService.sendEmailVerification(
+                    email,
+                    rawToken);
+
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "確認メールを送信しました。");
+
+        } catch (EmailNotRegisteredException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "メールアドレスが登録されていません。");
+
+        } catch (EmailAlreadyVerifiedException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "メールアドレスはすでに確認済みです。");
+
+        } catch (EmailVerificationTooSoonException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "確認メールを再送するまで、しばらくお待ちください。");
+        } catch (MailException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "確認メールの送信に失敗しました。時間をおいて再送してください。");
+        }
 
         return "redirect:/mypage";
     }

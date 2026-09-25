@@ -17,6 +17,9 @@
     <p th:if="${successMessage}" th:text="${successMessage}" class="message-success">
     </p>
 
+    <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
+    </p>
+
     <section>
         <h2>アカウント情報</h2>
 
@@ -37,6 +40,17 @@
                     <td th:text="${account.email == null
                         ? '-'
                         : (account.emailVerifiedAt != null ? '確認済み' : '未確認')}"></td>
+                </tr>
+
+                <tr th:if="${account.email != null and account.emailVerifiedAt == null}">
+                    <th>メール確認</th>
+                    <td>
+                        <form th:action="@{/mypage/email-verification/resend}" method="post">
+                            <button type="submit" class="button button-secondary">
+                                確認メールを再送
+                            </button>
+                        </form>
+                    </td>
                 </tr>
 
                 <tr>

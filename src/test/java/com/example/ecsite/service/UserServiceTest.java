@@ -21,8 +21,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.example.ecsite.dto.UserAccountInfo;
+import com.example.ecsite.dto.UserAccountUpdateResult;
+import com.example.ecsite.dto.UserRegistrationResult;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.exception.EmailAlreadyExistsException;
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
@@ -58,7 +61,19 @@ class UserServiceTest {
                 userRepository,
                 passwordEncoder);
 
-        userService.register(userForm);
+        when(userRepository.saveAndFlush(any(User.class)))
+                .thenAnswer(invocation -> {
+                    User user = invocation.getArgument(0);
+
+                    ReflectionTestUtils.setField(
+                            user,
+                            "id",
+                            100L);
+
+                    return user;
+                });
+
+        UserRegistrationResult result = userService.register(userForm);
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
 
@@ -93,6 +108,14 @@ class UserServiceTest {
                 savedUser.getEmail());
 
         assertNull(savedUser.getEmailVerifiedAt());
+
+        assertEquals(
+                100L,
+                result.userId());
+
+        assertEquals(
+                "user1@example.com",
+                result.email());
 
         verify(passwordEncoder)
                 .encode("password123");
@@ -425,12 +448,14 @@ class UserServiceTest {
                 userRepository,
                 passwordEncoder);
 
-        String result = userService.updateAccount(
+        UserAccountUpdateResult result = userService.updateAccount(
                 10L,
                 " user2 ",
                 "user1@example.com");
 
-        assertEquals("user2", result);
+        assertEquals("user2", result.username());
+        assertEquals("user1@example.com", result.email());
+        assertFalse(result.emailChanged());
         assertEquals("user2", user.getUsername());
 
         assertTrue(
@@ -466,12 +491,14 @@ class UserServiceTest {
                 userRepository,
                 passwordEncoder);
 
-        String result = userService.updateAccount(
+        UserAccountUpdateResult result = userService.updateAccount(
                 10L,
                 " user1 ",
                 "user1@example.com");
 
-        assertEquals("user1", result);
+        assertEquals("user1", result.username());
+        assertEquals("user1@example.com", result.email());
+        assertFalse(result.emailChanged());
         assertEquals(updatedAt, user.getUpdatedAt());
 
         verify(userRepository, never())
@@ -583,13 +610,14 @@ class UserServiceTest {
                 userRepository,
                 passwordEncoder);
 
-        String result = userService.updateAccount(
+        UserAccountUpdateResult result = userService.updateAccount(
                 10L,
                 "user1",
                 " New@Example.COM ");
 
-        assertEquals("user1", result);
-        assertEquals("new@example.com", user.getEmail());
+        assertEquals("user1", result.username());
+        assertEquals("new@example.com", result.email());
+        assertTrue(result.emailChanged());
         assertNull(user.getEmailVerifiedAt());
 
         assertTrue(
@@ -620,12 +648,14 @@ class UserServiceTest {
                 userRepository,
                 passwordEncoder);
 
-        String result = userService.updateAccount(
+        UserAccountUpdateResult result = userService.updateAccount(
                 10L,
                 " user1 ",
                 " User1@Example.COM ");
 
-        assertEquals("user1", result);
+        assertEquals("user1", result.username());
+        assertEquals("user1@example.com", result.email());
+        assertFalse(result.emailChanged());
         assertEquals(
                 verifiedAt,
                 user.getEmailVerifiedAt());
