@@ -442,6 +442,89 @@ class PasswordResetServiceTest {
         assertNotNull(token.getUsedAt());
     }
 
+    @Test
+    void issueTokenReturnsNullForDisabledUser() {
+
+        User user = createUser(
+                10L,
+                "disabled@example.com");
+
+        user.setEnabled(false);
+
+        when(userService.findByEmail("disabled@example.com"))
+                .thenReturn(user);
+
+        String rawToken = service.issueToken("disabled@example.com");
+
+        assertNull(rawToken);
+
+        verify(tokenRepository, never())
+                .findTopByUserIdOrderByCreatedAtDesc(10L);
+
+        verify(tokenRepository, never())
+                .save(any(PasswordResetToken.class));
+    }
+
+    @Test
+    void validateTokenReturnsInvalidForDisabledUser() {
+
+        User user = createUser(
+                10L,
+                "disabled@example.com");
+
+        user.setEnabled(false);
+
+        String rawToken = "disabled-user-token";
+
+        PasswordResetToken token = createToken(
+                user,
+                secureTokenService.hashToken(rawToken),
+                "disabled@example.com",
+                LocalDateTime.now().minusMinutes(10),
+                LocalDateTime.now().plusMinutes(50));
+
+        when(tokenRepository.findByTokenHash(
+                token.getTokenHash()))
+                .thenReturn(Optional.of(token));
+
+        PasswordResetResult result = service.validateToken(rawToken);
+
+        assertEquals(
+                PasswordResetResult.INVALID,
+                result);
+    }
+
+    @Test
+    void invalidateUnusedTokensMarksAllUnusedTokensAsUsed() {
+
+        User user = createUser(
+                10L,
+                "user@example.com");
+
+        PasswordResetToken token1 = createToken(
+                user,
+                "token-hash-1",
+                "user@example.com",
+                LocalDateTime.now().minusMinutes(10),
+                LocalDateTime.now().plusMinutes(50));
+
+        PasswordResetToken token2 = createToken(
+                user,
+                "token-hash-2",
+                "user@example.com",
+                LocalDateTime.now().minusMinutes(5),
+                LocalDateTime.now().plusMinutes(55));
+
+        when(tokenRepository
+                .findByUserIdAndUsedAtIsNull(10L))
+                .thenReturn(List.of(token1, token2));
+
+        service.invalidateUnusedTokens(10L);
+
+        assertNotNull(token1.getUsedAt());
+        assertNotNull(token2.getUsedAt());
+    }
+
     private User createUser(
             Long id,
             String email) {

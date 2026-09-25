@@ -2,6 +2,7 @@ package com.example.ecsite.controller;
 
 import org.springframework.data.domain.Page;
 import org.springframework.mail.MailException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +18,7 @@ import com.example.ecsite.dto.AdminCustomerListItem;
 import com.example.ecsite.dto.AdminCustomerPurchaseSummary;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.form.AdminCustomerSearchForm;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminCustomerService;
 import com.example.ecsite.service.MailService;
 import com.example.ecsite.service.OrderService;
@@ -90,6 +92,9 @@ public class AdminCustomerController {
 
         AdminCustomerDetail customer = adminCustomerService.findCustomerDetail(id);
 
+        if (!customer.enabled()) {
+            return "redirect:/admin/customers/" + id;
+        }
         model.addAttribute("customer", customer);
 
         return "admin/customers/password-reset";
@@ -101,6 +106,14 @@ public class AdminCustomerController {
             RedirectAttributes redirectAttributes) {
 
         AdminCustomerDetail customer = adminCustomerService.findCustomerDetail(id);
+
+        if (!customer.enabled()) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "無効なユーザーアカウントにはパスワード再設定メールを送信できません。");
+
+            return "redirect:/admin/customers/" + id;
+        }
 
         if (customer.email() == null || customer.email().isBlank()) {
             redirectAttributes.addFlashAttribute(
@@ -135,6 +148,54 @@ public class AdminCustomerController {
         redirectAttributes.addFlashAttribute(
                 "message",
                 "パスワード再設定メールを送信しました。");
+
+        return "redirect:/admin/customers/" + id;
+    }
+
+    @GetMapping("/{id}/enabled")
+    public String enabledConfirmation(
+            @PathVariable Long id,
+            @RequestParam boolean enabled,
+            Model model) {
+
+        AdminCustomerDetail customer = adminCustomerService.findCustomerDetail(id);
+
+        model.addAttribute("customer", customer);
+        model.addAttribute("enabled", enabled);
+
+        return "admin/customers/enabled";
+    }
+
+    @PostMapping("/{id}/enabled")
+    public String changeEnabled(
+            @PathVariable Long id,
+            @RequestParam boolean enabled,
+            @AuthenticationPrincipal AdminUserDetails admin,
+            RedirectAttributes redirectAttributes) {
+
+        AdminCustomerDetail customer = adminCustomerService.findCustomerDetail(id);
+
+        if (customer.enabled() == enabled) {
+            redirectAttributes.addFlashAttribute(
+                    "message",
+                    enabled
+                            ? "このユーザーは既に有効です。"
+                            : "このユーザーは既に無効です。");
+
+            return "redirect:/admin/customers/" + id;
+        }
+
+        adminCustomerService.changeEnabled(
+                id,
+                enabled,
+                admin.getId(),
+                admin.getUsername());
+
+        redirectAttributes.addFlashAttribute(
+                "message",
+                enabled
+                        ? "ユーザーアカウントを有効にしました。"
+                        : "ユーザーアカウントを無効にしました。");
 
         return "redirect:/admin/customers/" + id;
     }

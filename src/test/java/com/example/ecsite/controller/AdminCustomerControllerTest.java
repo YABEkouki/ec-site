@@ -24,6 +24,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.mail.MailSendException;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -34,6 +35,7 @@ import com.example.ecsite.dto.AdminCustomerShippingAddress;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.CustomerNotFoundException;
 import com.example.ecsite.form.AdminCustomerSearchForm;
+import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminCustomerService;
 import com.example.ecsite.service.MailService;
 import com.example.ecsite.service.OrderService;
@@ -668,6 +670,188 @@ class AdminCustomerControllerTest {
                 get("/admin/customers/999999/password-reset")
                         .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void enabledConfirmationReturnsConfirmationView() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        mockMvc.perform(
+                get("/admin/customers/10/enabled")
+                        .param("enabled", "false")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/customers/enabled"))
+                .andExpect(model().attribute("customer", customer))
+                .andExpect(model().attribute("enabled", false));
+
+        verify(adminCustomerService).findCustomerDetail(10L);
+    }
+
+    @Test
+    void changeEnabledDisablesCustomerAndRedirectsToDetail() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        AdminUserDetails admin = new AdminUserDetails(
+                100L,
+                "admin01",
+                "password",
+                true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        mockMvc.perform(
+                post("/admin/customers/10/enabled")
+                        .param("enabled", "false")
+                        .with(user(admin))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"))
+                .andExpect(flash().attribute(
+                        "message",
+                        "ユーザーアカウントを無効にしました。"));
+
+        verify(adminCustomerService).changeEnabled(
+                10L,
+                false,
+                100L,
+                "admin01");
+    }
+
+    @Test
+    void changeEnabledDoesNotCallServiceWhenStateIsAlreadySame() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        AdminUserDetails admin = new AdminUserDetails(
+                100L,
+                "admin01",
+                "password",
+                true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        mockMvc.perform(
+                post("/admin/customers/10/enabled")
+                        .param("enabled", "true")
+                        .with(user(admin))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"))
+                .andExpect(flash().attribute(
+                        "message",
+                        "このユーザーは既に有効です。"));
+
+        verify(adminCustomerService, never())
+                .changeEnabled(
+                        10L,
+                        true,
+                        100L,
+                        "admin01");
+    }
+
+    @Test
+    void passwordResetConfirmationRedirectsForDisabledCustomer() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        mockMvc.perform(
+                get("/admin/customers/10/password-reset")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"));
+    }
+
+    @Test
+    void sendPasswordResetDoesNotSendForDisabledCustomer() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        mockMvc.perform(
+                post("/admin/customers/10/password-reset")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"))
+                .andExpect(flash().attribute(
+                        "errorMessage",
+                        "無効なユーザーアカウントにはパスワード再設定メールを送信できません。"));
+
+        verify(passwordResetService, never())
+                .issueToken(any());
+
+        verify(mailService, never())
+                .sendPasswordReset(any(), any());
     }
 
 }

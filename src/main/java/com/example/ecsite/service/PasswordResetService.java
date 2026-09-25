@@ -39,6 +39,10 @@ public class PasswordResetService {
             return null;
         }
 
+        if (!user.isEnabled()) {
+            return null;
+        }
+
         LocalDateTime now = LocalDateTime.now();
 
         PasswordResetToken latestToken = tokenRepository
@@ -100,6 +104,10 @@ public class PasswordResetService {
 
         User user = token.getUser();
 
+        if (!user.isEnabled()) {
+            return PasswordResetResult.INVALID;
+        }
+
         if (user.getEmail() == null
                 || !user.getEmail().equals(token.getEmail())) {
             return PasswordResetResult.EMAIL_CHANGED;
@@ -150,6 +158,11 @@ public class PasswordResetService {
         tokenRepository.findByTokenHash(tokenHash)
                 .filter(token -> token.getUsedAt() == null)
                 .ifPresent(token -> token.setUsedAt(LocalDateTime.now()));
+    }
+
+    @Transactional
+    public void invalidateUnusedTokens(Long userId) {
+        invalidateUnusedTokens(userId, LocalDateTime.now());
     }
 
     private void invalidateUnusedTokens(

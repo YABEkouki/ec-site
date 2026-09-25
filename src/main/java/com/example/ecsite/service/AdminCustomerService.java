@@ -1,5 +1,6 @@
 package com.example.ecsite.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.data.domain.Page;
@@ -30,16 +31,23 @@ public class AdminCustomerService {
     private final UserProfileRepository userProfileRepository;
     private final ShippingAddressRepository shippingAddressRepository;
     private final OrderRepository orderRepository;
+    private final UserEnabledHistoryService userEnabledHistoryService;
+    private final PasswordResetService passwordResetService;
 
     public AdminCustomerService(
             UserRepository userRepository,
             UserProfileRepository userProfileRepository,
             ShippingAddressRepository shippingAddressRepository,
-            OrderRepository orderRepository) {
+            OrderRepository orderRepository,
+            UserEnabledHistoryService userEnabledHistoryService,
+            PasswordResetService passwordResetService) {
+
         this.userRepository = userRepository;
         this.userProfileRepository = userProfileRepository;
         this.shippingAddressRepository = shippingAddressRepository;
         this.orderRepository = orderRepository;
+        this.userEnabledHistoryService = userEnabledHistoryService;
+        this.passwordResetService = passwordResetService;
     }
 
     public Page<AdminCustomerListItem> searchCustomers(
@@ -115,6 +123,37 @@ public class AdminCustomerService {
                 projection.getOrderCount(),
                 projection.getPurchaseAmount(),
                 projection.getLastOrderedAt());
+    }
+
+    @Transactional
+    public void changeEnabled(
+            Long userId,
+            boolean enabled,
+            Long changedByAccountId,
+            String changedByUsername) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomerNotFoundException(userId));
+
+        boolean fromEnabled = user.isEnabled();
+
+        if (fromEnabled == enabled) {
+            return;
+        }
+
+        user.setEnabled(enabled);
+        user.setUpdatedAt(LocalDateTime.now());
+
+        userEnabledHistoryService.record(
+                user,
+                fromEnabled,
+                enabled,
+                changedByAccountId,
+                changedByUsername);
+
+        if (!enabled) {
+            passwordResetService.invalidateUnusedTokens(userId);
+        }
     }
 
     private String normalize(String value) {
