@@ -2,11 +2,16 @@ package com.example.ecsite.controller;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
@@ -18,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.mail.MailSendException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -29,7 +35,9 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.CustomerNotFoundException;
 import com.example.ecsite.form.AdminCustomerSearchForm;
 import com.example.ecsite.service.AdminCustomerService;
+import com.example.ecsite.service.MailService;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.PasswordResetService;
 
 @WebMvcTest(AdminCustomerController.class)
 class AdminCustomerControllerTest {
@@ -42,6 +50,12 @@ class AdminCustomerControllerTest {
 
     @MockitoBean
     private OrderService orderService;
+
+    @MockitoBean
+    private PasswordResetService passwordResetService;
+
+    @MockitoBean
+    private MailService mailService;
 
     @Test
     void listReturnsCustomerListView() throws Exception {
@@ -223,6 +237,7 @@ class AdminCustomerControllerTest {
         AdminCustomerDetail customer = new AdminCustomerDetail(
                 10L,
                 "customer01",
+                "customer01@example.com",
                 true,
                 "山田太郎",
                 "100-0001",
@@ -280,6 +295,7 @@ class AdminCustomerControllerTest {
         AdminCustomerDetail customer = new AdminCustomerDetail(
                 10L,
                 "customer01",
+                "customer01@example.com",
                 true,
                 null,
                 null,
@@ -333,6 +349,7 @@ class AdminCustomerControllerTest {
         AdminCustomerDetail customer = new AdminCustomerDetail(
                 10L,
                 "customer01",
+                "customer01@example.com",
                 true,
                 null,
                 null,
@@ -365,6 +382,7 @@ class AdminCustomerControllerTest {
         AdminCustomerDetail customer = new AdminCustomerDetail(
                 10L,
                 "customer01",
+                "customer01@example.com",
                 true,
                 null,
                 null,
@@ -427,6 +445,7 @@ class AdminCustomerControllerTest {
         AdminCustomerDetail customer = new AdminCustomerDetail(
                 userId,
                 "user1",
+                "user1@example.com",
                 true,
                 "山田 太郎",
                 "1000001",
@@ -452,6 +471,203 @@ class AdminCustomerControllerTest {
                 .andExpect(view().name("admin/customers/detail"))
                 .andExpect(model().attribute("customer", customer))
                 .andExpect(model().attribute("purchaseSummary", purchaseSummary));
+    }
+
+    @Test
+    void passwordResetConfirmationReturnsConfirmationView() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        mockMvc.perform(
+                get("/admin/customers/10/password-reset")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/customers/password-reset"))
+                .andExpect(model().attribute("customer", customer));
+
+        verify(adminCustomerService).findCustomerDetail(10L);
+    }
+
+    @Test
+    void sendPasswordResetSendsMailAndRedirectsToCustomerDetail() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        when(passwordResetService.issueToken("customer01@example.com"))
+                .thenReturn("raw-token");
+
+        mockMvc.perform(
+                post("/admin/customers/10/password-reset")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"))
+                .andExpect(flash().attribute(
+                        "message",
+                        "パスワード再設定メールを送信しました。"));
+
+        verify(passwordResetService)
+                .issueToken("customer01@example.com");
+
+        verify(mailService)
+                .sendPasswordReset(
+                        "customer01@example.com",
+                        "raw-token");
+    }
+
+    @Test
+    void sendPasswordResetDoesNotSendWhenEmailIsMissing() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                null,
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        mockMvc.perform(
+                post("/admin/customers/10/password-reset")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"))
+                .andExpect(flash().attribute(
+                        "errorMessage",
+                        "メールアドレスが登録されていないため、パスワード再設定メールを送信できません。"));
+
+        verify(passwordResetService, never())
+                .issueToken(any());
+
+        verify(mailService, never())
+                .sendPasswordReset(any(), any());
+    }
+
+    @Test
+    void sendPasswordResetDoesNotSendWhenTokenCannotBeIssued() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        when(passwordResetService.issueToken("customer01@example.com"))
+                .thenReturn(null);
+
+        mockMvc.perform(
+                post("/admin/customers/10/password-reset")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"))
+                .andExpect(flash().attribute(
+                        "errorMessage",
+                        "パスワード再設定メールを送信できませんでした。しばらく待ってから再度お試しください。"));
+
+        verify(mailService, never())
+                .sendPasswordReset(any(), any());
+    }
+
+    @Test
+    void sendPasswordResetInvalidatesTokenWhenMailSendingFails() throws Exception {
+
+        AdminCustomerDetail customer = new AdminCustomerDetail(
+                10L,
+                "customer01",
+                "customer01@example.com",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of());
+
+        when(adminCustomerService.findCustomerDetail(10L))
+                .thenReturn(customer);
+
+        when(passwordResetService.issueToken("customer01@example.com"))
+                .thenReturn("raw-token");
+
+        org.mockito.Mockito.doThrow(new MailSendException("mail error"))
+                .when(mailService)
+                .sendPasswordReset(
+                        "customer01@example.com",
+                        "raw-token");
+
+        mockMvc.perform(
+                post("/admin/customers/10/password-reset")
+                        .with(user("admin").roles("ADMIN"))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/customers/10"))
+                .andExpect(flash().attribute(
+                        "errorMessage",
+                        "パスワード再設定メールの送信に失敗しました。"));
+
+        verify(passwordResetService)
+                .invalidateToken("raw-token");
+    }
+
+    @Test
+    void passwordResetConfirmationReturnsNotFoundWhenCustomerDoesNotExist()
+            throws Exception {
+
+        when(adminCustomerService.findCustomerDetail(999999L))
+                .thenThrow(new CustomerNotFoundException(999999L));
+
+        mockMvc.perform(
+                get("/admin/customers/999999/password-reset")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isNotFound());
     }
 
 }

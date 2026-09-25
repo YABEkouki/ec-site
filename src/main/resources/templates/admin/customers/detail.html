@@ -14,6 +14,12 @@
     <main>
         <h1>顧客詳細</h1>
 
+        <p th:if="${message != null}" th:text="${message}" class="message">
+        </p>
+
+        <p th:if="${errorMessage != null}" th:text="${errorMessage}" class="error">
+        </p>
+
         <section>
             <h2>アカウント情報</h2>
 
@@ -26,6 +32,10 @@
                     <tr>
                         <th>ユーザー名</th>
                         <td th:text="${customer.username}"></td>
+                    </tr>
+                    <tr>
+                        <th>メールアドレス</th>
+                        <td th:text="${customer.email != null ? customer.email : '-'}"></td>
                     </tr>
                     <tr>
                         <th>会員状態</th>
@@ -137,6 +147,14 @@
                 購入総額は支払済み・発送済みの注文を集計しています。
             </p>
         </section>
+
+        <p>
+            <a th:if="${customer.email != null and !customer.email.isBlank()}"
+                th:href="@{/admin/customers/{id}/password-reset(id=${customer.userId})}"
+                class="button button-secondary">
+                パスワード再設定メールを送信
+            </a>
+        </p>
 
         <p>
             <a th:href="@{/admin/customers/{id}/orders(id=${customer.userId})}" class="button button-secondary">

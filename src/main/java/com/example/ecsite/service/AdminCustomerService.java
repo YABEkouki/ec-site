@@ -97,6 +97,7 @@ public class AdminCustomerService {
         return new AdminCustomerDetail(
                 user.getId(),
                 user.getUsername(),
+                user.getEmail(),
                 user.isEnabled(),
                 profile != null ? profile.getName() : null,
                 profile != null ? profile.getPostalCode() : null,

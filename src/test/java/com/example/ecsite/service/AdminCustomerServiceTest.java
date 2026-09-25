@@ -266,6 +266,7 @@ class AdminCustomerServiceTest {
         User user = new User();
         ReflectionTestUtils.setField(user, "id", 10L);
         user.setUsername("customer01");
+        user.setEmail("customer01@example.com");
         user.setEnabled(true);
 
         UserProfile profile = new UserProfile();
@@ -310,6 +311,7 @@ class AdminCustomerServiceTest {
 
         assertEquals(10L, result.userId());
         assertEquals("customer01", result.username());
+        assertEquals("customer01@example.com", result.email());
         assertTrue(result.enabled());
 
         assertEquals("山田太郎", result.name());
