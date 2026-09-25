@@ -149,7 +149,13 @@
         </section>
 
         <p>
-            <a th:if="${customer.email != null and !customer.email.isBlank()}"
+            <a th:href="@{/admin/customers/{id}/enabled(id=${customer.userId}, enabled=${!customer.enabled})}"
+                class="button button-secondary" th:text="${customer.enabled ? 'アカウントを無効にする' : 'アカウントを有効にする'}">
+            </a>
+        </p>
+
+        <p>
+            <a th:if="${customer.enabled and customer.email != null and !customer.email.isBlank()}"
                 th:href="@{/admin/customers/{id}/password-reset(id=${customer.userId})}"
                 class="button button-secondary">
                 パスワード再設定メールを送信

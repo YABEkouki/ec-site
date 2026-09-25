@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ユーザーアカウント状態変更</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}"></header>
+
+    <main>
+        <h1>ユーザーアカウント状態変更</h1>
+
+        <p th:if="${enabled}">
+            以下のユーザーアカウントを有効にします。
+        </p>
+
+        <p th:unless="${enabled}">
+            以下のユーザーアカウントを無効にします。
+        </p>
+
+        <table>
+            <tbody>
+                <tr>
+                    <th>顧客ID</th>
+                    <td th:text="${customer.userId}"></td>
+                </tr>
+                <tr>
+                    <th>ユーザー名</th>
+                    <td th:text="${customer.username}"></td>
+                </tr>
+                <tr>
+                    <th>現在の状態</th>
+                    <td th:text="${customer.enabled ? '有効' : '無効'}"></td>
+                </tr>
+                <tr>
+                    <th>変更後の状態</th>
+                    <td th:text="${enabled ? '有効' : '無効'}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div th:unless="${enabled}">
+            <p class="note">
+                無効化すると、このユーザーは新たにログインできなくなります。
+            </p>
+            <p class="note">
+                ユーザー情報や注文履歴は削除されません。
+            </p>
+            <p class="note">
+                未使用のパスワード再設定URLは無効になります。
+            </p>
+        </div>
+
+        <div th:if="${enabled}">
+            <p class="note">
+                有効化すると、このユーザーは再びログインできるようになります。
+            </p>
+        </div>
+
+        <form th:action="@{/admin/customers/{id}/enabled(id=${customer.userId})}" method="post">
+            <input type="hidden" name="enabled" th:value="${enabled}">
+
+            <button type="submit" class="button">
+                <span th:text="${enabled ? '有効にする' : '無効にする'}"></span>
+            </button>
+        </form>
+
+        <p>
+            <a th:href="@{/admin/customers/{id}(id=${customer.userId})}"
+                class="button button-secondary">
+                キャンセル
+            </a>
+        </p>
+    </main>
+
+</body>
+
+</html>

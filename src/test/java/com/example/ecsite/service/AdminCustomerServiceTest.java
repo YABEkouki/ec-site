@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,6 +59,12 @@ class AdminCustomerServiceTest {
     @Mock
     private ShippingAddressRepository shippingAddressRepository;
 
+    @Mock
+    private UserEnabledHistoryService userEnabledHistoryService;
+
+    @Mock
+    private PasswordResetService passwordResetService;
+
     private AdminCustomerService adminCustomerService;
 
     @BeforeEach
@@ -66,7 +74,9 @@ class AdminCustomerServiceTest {
                 userRepository,
                 userProfileRepository,
                 shippingAddressRepository,
-                orderRepository);
+                orderRepository,
+                userEnabledHistoryService,
+                passwordResetService);
     }
 
     @Test
@@ -455,6 +465,124 @@ class AdminCustomerServiceTest {
         assertThat(summary.purchaseAmount()).isEqualTo(5000L);
         assertThat(summary.lastOrderedAt())
                 .isEqualTo(LocalDateTime.of(2026, 9, 4, 13, 0));
+    }
+
+    @Test
+    void changeEnabledDisablesUserAndRecordsHistoryAndInvalidatesPasswordResetTokens() {
+
+        User user = new User();
+        ReflectionTestUtils.setField(user, "id", 10L);
+        user.setUsername("customer01");
+        user.setEnabled(true);
+
+        when(userRepository.findById(10L))
+                .thenReturn(Optional.of(user));
+
+        adminCustomerService.changeEnabled(
+                10L,
+                false,
+                100L,
+                "admin01");
+
+        assertFalse(user.isEnabled());
+        assertThat(user.getUpdatedAt()).isNotNull();
+
+        verify(userEnabledHistoryService).record(
+                user,
+                true,
+                false,
+                100L,
+                "admin01");
+
+        verify(passwordResetService).invalidateUnusedTokens(10L);
+    }
+
+    @Test
+    void changeEnabledEnablesUserAndRecordsHistoryWithoutInvalidatingPasswordResetTokens() {
+
+        User user = new User();
+        ReflectionTestUtils.setField(user, "id", 20L);
+        user.setUsername("customer02");
+        user.setEnabled(false);
+
+        when(userRepository.findById(20L))
+                .thenReturn(Optional.of(user));
+
+        adminCustomerService.changeEnabled(
+                20L,
+                true,
+                100L,
+                "admin01");
+
+        assertTrue(user.isEnabled());
+        assertThat(user.getUpdatedAt()).isNotNull();
+
+        verify(userEnabledHistoryService).record(
+                user,
+                false,
+                true,
+                100L,
+                "admin01");
+
+        verify(passwordResetService, never())
+                .invalidateUnusedTokens(20L);
+    }
+
+    @Test
+    void changeEnabledDoesNothingWhenStateIsAlreadySame() {
+
+        User user = new User();
+        ReflectionTestUtils.setField(user, "id", 30L);
+        user.setUsername("customer03");
+        user.setEnabled(true);
+
+        when(userRepository.findById(30L))
+                .thenReturn(Optional.of(user));
+
+        adminCustomerService.changeEnabled(
+                30L,
+                true,
+                100L,
+                "admin01");
+
+        assertTrue(user.isEnabled());
+
+        verify(userEnabledHistoryService, never())
+                .record(
+                        any(User.class),
+                        any(Boolean.class),
+                        any(Boolean.class),
+                        any(Long.class),
+                        any(String.class));
+
+        verify(passwordResetService, never())
+                .invalidateUnusedTokens(30L);
+    }
+
+    @Test
+    void changeEnabledThrowsNotFoundWhenCustomerDoesNotExist() {
+
+        when(userRepository.findById(999L))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                CustomerNotFoundException.class,
+                () -> adminCustomerService.changeEnabled(
+                        999L,
+                        false,
+                        100L,
+                        "admin01"));
+
+        verify(userEnabledHistoryService, never())
+                .record(
+                        any(User.class),
+                        anyBoolean(),
+                        anyBoolean(),
+                        any(Long.class),
+                        any(String.class));
+
+        verify(passwordResetService, never())
+                .invalidateUnusedTokens(999L);
     }
 
 }
