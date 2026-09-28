@@ -10,6 +10,7 @@ import org.springframework.validation.Validator;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.SessionAttributes;
 import org.springframework.web.bind.support.SessionStatus;
@@ -28,6 +29,7 @@ import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 
 @Controller
+@RequestMapping("/checkout")
 @SessionAttributes({ "cart", "checkoutForm" })
 public class CheckoutController {
 
@@ -55,7 +57,7 @@ public class CheckoutController {
         return new CheckoutForm();
     }
 
-    @GetMapping("/checkout")
+    @GetMapping
     public String input(
             @ModelAttribute("cart") Cart cart,
             @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
@@ -99,11 +101,11 @@ public class CheckoutController {
                             address,
                             checkoutForm));
         }
-        
+
         return "checkout/input";
     }
 
-    @PostMapping("/checkout/confirm")
+    @PostMapping("/confirm")
     public String confirm(
             @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
             BindingResult bindingResult,
@@ -184,7 +186,7 @@ public class CheckoutController {
         return "checkout/confirm";
     }
 
-    @PostMapping("/checkout/order")
+    @PostMapping("/order")
     public String placeOrder(
             @Valid @ModelAttribute("checkoutForm") CheckoutForm checkoutForm,
             BindingResult bindingResult,
@@ -235,7 +237,7 @@ public class CheckoutController {
         }
     }
 
-    @GetMapping("/checkout/complete")
+    @GetMapping("/complete")
     public String complete(Model model) {
 
         if (!model.containsAttribute("orderId")) {
@@ -245,7 +247,7 @@ public class CheckoutController {
         return "checkout/complete";
     }
 
-    @GetMapping("/checkout/confirm")
+    @GetMapping("/confirm")
     public String confirmByGet() {
 
         return "redirect:/checkout";

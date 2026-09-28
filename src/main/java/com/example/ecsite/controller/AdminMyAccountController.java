@@ -7,6 +7,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.exception.IncorrectCurrentPasswordException;
@@ -18,6 +19,7 @@ import com.example.ecsite.service.AdminAccountService;
 import jakarta.validation.Valid;
 
 @Controller
+@RequestMapping("/admin/account")
 public class AdminMyAccountController {
 
     private final AdminAccountService adminAccountService;
@@ -28,7 +30,7 @@ public class AdminMyAccountController {
         this.adminAccountService = adminAccountService;
     }
 
-    @GetMapping("/admin/account")
+    @GetMapping
     public String index(
             @AuthenticationPrincipal AdminUserDetails loginAdmin,
             Model model) {
@@ -40,7 +42,7 @@ public class AdminMyAccountController {
         return "admin/account/index";
     }
 
-    @GetMapping("/admin/account/password/edit")
+    @GetMapping("/password/edit")
     public String editPassword(Model model) {
 
         model.addAttribute(
@@ -50,7 +52,7 @@ public class AdminMyAccountController {
         return "admin/account/password-form";
     }
 
-    @PostMapping("/admin/account/password")
+    @PostMapping("/password")
     public String changePassword(
             @Valid @ModelAttribute("passwordChangeForm") PasswordChangeForm passwordChangeForm,
             BindingResult bindingResult,

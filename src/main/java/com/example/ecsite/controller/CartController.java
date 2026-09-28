@@ -5,6 +5,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.SessionAttributes;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
@@ -13,6 +14,7 @@ import com.example.ecsite.cart.Cart;
 import com.example.ecsite.service.CartService;
 
 @Controller
+@RequestMapping("/cart")
 @SessionAttributes("cart")
 public class CartController {
 
@@ -27,7 +29,7 @@ public class CartController {
         return new Cart();
     }
 
-    @GetMapping("/cart")
+    @GetMapping
     public String showCart(
             @ModelAttribute("cart") Cart cart,
             Model model) {
@@ -37,7 +39,7 @@ public class CartController {
         return "cart/index";
     }
 
-    @PostMapping("/cart/add")
+    @PostMapping("/add")
     public String addToCart(
             @RequestParam("productId") Long productId,
             @RequestParam(value = "quantity", defaultValue = "1") int quantity,
@@ -57,7 +59,7 @@ public class CartController {
         return "redirect:/cart";
     }
 
-    @PostMapping("/cart/update")
+    @PostMapping("/update")
     public String updateCart(
             @RequestParam Long productId,
             @RequestParam int quantity,
@@ -78,7 +80,7 @@ public class CartController {
         return "redirect:/cart";
     }
 
-    @PostMapping("/cart/remove")
+    @PostMapping("/remove")
     public String removeFromCart(
             @RequestParam Long productId,
             @ModelAttribute("cart") Cart cart) {
@@ -88,7 +90,7 @@ public class CartController {
         return "redirect:/cart";
     }
 
-    @PostMapping("/cart/clear")
+    @PostMapping("/clear")
     public String clearCart(
             @ModelAttribute("cart") Cart cart) {
 

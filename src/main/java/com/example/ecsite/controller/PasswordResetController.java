@@ -7,6 +7,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.example.ecsite.entity.User;
@@ -20,6 +21,7 @@ import com.example.ecsite.service.UserService;
 import jakarta.validation.Valid;
 
 @Controller
+@RequestMapping("/password")
 public class PasswordResetController {
 
     private final PasswordResetService passwordResetService;
@@ -36,7 +38,7 @@ public class PasswordResetController {
         this.mailService = mailService;
     }
 
-    @GetMapping("/password/forgot")
+    @GetMapping("/forgot")
     public String showForgotForm(Model model) {
 
         model.addAttribute(
@@ -46,10 +48,9 @@ public class PasswordResetController {
         return "password/forgot";
     }
 
-    @PostMapping("/password/forgot")
+    @PostMapping("/forgot")
     public String requestPasswordReset(
-            @Valid @ModelAttribute("passwordForgotForm")
-            PasswordForgotForm passwordForgotForm,
+            @Valid @ModelAttribute("passwordForgotForm") PasswordForgotForm passwordForgotForm,
             BindingResult bindingResult,
             Model model) {
 
@@ -84,13 +85,12 @@ public class PasswordResetController {
         return "password/forgot-complete";
     }
 
-    @GetMapping("/password/reset")
+    @GetMapping("/reset")
     public String showResetForm(
             @RequestParam("token") String token,
             Model model) {
 
-        PasswordResetResult result =
-                passwordResetService.validateToken(token);
+        PasswordResetResult result = passwordResetService.validateToken(token);
 
         if (result != PasswordResetResult.VALID) {
             model.addAttribute(
@@ -110,16 +110,14 @@ public class PasswordResetController {
         return "password/reset";
     }
 
-    @PostMapping("/password/reset")
+    @PostMapping("/reset")
     public String resetPassword(
             @RequestParam("token") String token,
-            @Valid @ModelAttribute("passwordResetForm")
-            PasswordResetForm passwordResetForm,
+            @Valid @ModelAttribute("passwordResetForm") PasswordResetForm passwordResetForm,
             BindingResult bindingResult,
             Model model) {
 
-        PasswordResetResult validationResult =
-                passwordResetService.validateToken(token);
+        PasswordResetResult validationResult = passwordResetService.validateToken(token);
 
         if (validationResult != PasswordResetResult.VALID) {
             model.addAttribute(
@@ -148,10 +146,9 @@ public class PasswordResetController {
             return "password/reset";
         }
 
-        PasswordResetResult result =
-                passwordResetService.resetPassword(
-                        token,
-                        passwordResetForm.getNewPassword());
+        PasswordResetResult result = passwordResetService.resetPassword(
+                token,
+                passwordResetForm.getNewPassword());
 
         if (result != PasswordResetResult.VALID) {
             model.addAttribute(

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
@@ -23,6 +24,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 @Controller
+@RequestMapping("/admin/accounts")
 public class AdminAccountController {
 
     private final AdminAccountService adminAccountService;
@@ -31,7 +33,7 @@ public class AdminAccountController {
         this.adminAccountService = adminAccountService;
     }
 
-    @GetMapping("/admin/accounts")
+    @GetMapping
     public String list(
             @AuthenticationPrincipal AdminUserDetails loginUser,
             @RequestParam(defaultValue = "0") int page,
@@ -48,13 +50,13 @@ public class AdminAccountController {
         return "admin/accounts/list";
     }
 
-    @GetMapping("/admin/accounts/new")
+    @GetMapping("/new")
     public String newForm(Model model) {
         model.addAttribute("adminAccountCreateForm", new AdminAccountCreateForm());
         return "admin/accounts/new";
     }
 
-    @PostMapping("/admin/accounts")
+    @PostMapping
     public String create(
             @Valid @ModelAttribute AdminAccountCreateForm adminAccountCreateForm,
             BindingResult bindingResult,
@@ -90,7 +92,7 @@ public class AdminAccountController {
         return "redirect:/admin/accounts";
     }
 
-    @GetMapping("/admin/accounts/{id}/edit")
+    @GetMapping("/{id}/edit")
     public String editForm(
             @PathVariable Long id,
             @AuthenticationPrincipal AdminUserDetails loginUser,
@@ -110,7 +112,7 @@ public class AdminAccountController {
         return "admin/accounts/edit";
     }
 
-    @PostMapping("/admin/accounts/{id}/edit")
+    @PostMapping("/{id}/edit")
     public String update(
             @PathVariable Long id,
             @AuthenticationPrincipal AdminUserDetails loginUser,
