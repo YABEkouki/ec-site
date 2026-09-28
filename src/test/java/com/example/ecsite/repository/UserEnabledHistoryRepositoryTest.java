@@ -176,8 +176,7 @@ class UserEnabledHistoryRepositoryTest {
 
         User user = createUser("enabled-history-from-boundary");
 
-        UserEnabledHistory history =
-                saveHistory(user, true, false, 100L, "admin");
+        UserEnabledHistory history = saveHistory(user, true, false, 100L, "admin");
 
         entityManager.refresh(history);
 
@@ -200,8 +199,7 @@ class UserEnabledHistoryRepositoryTest {
 
         User user = createUser("enabled-history-to-boundary");
 
-        UserEnabledHistory history =
-                saveHistory(user, true, false, 100L, "admin");
+        UserEnabledHistory history = saveHistory(user, true, false, 100L, "admin");
 
         entityManager.refresh(history);
 
@@ -217,6 +215,71 @@ class UserEnabledHistoryRepositoryTest {
                 PageRequest.of(0, 10));
 
         assertEquals(0, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithoutDateRangeReturnsHistory() {
+
+        User user = createUser("enabled-history-no-date-range");
+
+        saveHistory(user, true, false, 100L, "admin");
+
+        Page<UserEnabledHistory> result = repository.search(
+                user.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyFromReturnsHistoryAtFromBoundary() {
+
+        User user = createUser("enabled-history-only-from");
+
+        UserEnabledHistory history = saveHistory(user, true, false, 100L, "admin");
+
+        entityManager.refresh(history);
+
+        LocalDateTime changedAt = history.getChangedAt();
+
+        Page<UserEnabledHistory> result = repository.search(
+                user.getId(),
+                null,
+                null,
+                null,
+                changedAt,
+                null,
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyToExclusiveReturnsHistoryBeforeBoundary() {
+
+        User user = createUser("enabled-history-only-to");
+
+        UserEnabledHistory history = saveHistory(user, true, false, 100L, "admin");
+
+        entityManager.refresh(history);
+
+        LocalDateTime changedAt = history.getChangedAt();
+
+        Page<UserEnabledHistory> result = repository.search(
+                user.getId(),
+                null,
+                null,
+                null,
+                null,
+                changedAt.plusSeconds(1),
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
     }
 
     @Test

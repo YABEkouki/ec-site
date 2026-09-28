@@ -432,6 +432,98 @@ class OrderStatusHistoryRepositoryTest {
     }
 
     @Test
+    void searchWithoutDateRangeReturnsHistory() {
+
+        User user = createUser("history-no-date-range-user");
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        saveHistory(
+                order,
+                null,
+                OrderStatus.ORDERED,
+                OrderStatusHistoryActorType.USER,
+                user.getId(),
+                user.getUsername());
+
+        Page<OrderStatusHistory> result = orderStatusHistoryRepository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyFromReturnsHistoryAtFromBoundary() {
+
+        User user = createUser("history-only-from-user");
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderStatusHistory saved = saveHistory(
+                order,
+                null,
+                OrderStatus.ORDERED,
+                OrderStatusHistoryActorType.USER,
+                user.getId(),
+                user.getUsername());
+
+        entityManager.refresh(saved);
+
+        LocalDateTime changedAt = saved.getChangedAt();
+
+        Page<OrderStatusHistory> result = orderStatusHistoryRepository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                changedAt,
+                null,
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyToExclusiveReturnsHistoryBeforeBoundary() {
+
+        User user = createUser("history-only-to-user");
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderStatusHistory saved = saveHistory(
+                order,
+                null,
+                OrderStatus.ORDERED,
+                OrderStatusHistoryActorType.USER,
+                user.getId(),
+                user.getUsername());
+
+        entityManager.refresh(saved);
+
+        LocalDateTime changedAt = saved.getChangedAt();
+
+        Page<OrderStatusHistory> result = orderStatusHistoryRepository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                changedAt.plusSeconds(1),
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
     void searchReturnsEmptyWhenNoHistoryMatches() {
 
         User user = createUser("history-no-match-user");

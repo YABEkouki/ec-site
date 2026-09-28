@@ -48,8 +48,8 @@ public interface OrderAssigneeHistoryRepository
                     COALESCE(:changedByUsername, ''),
                     '%'
                   )
-              AND h.changedAt >= :from
-              AND h.changedAt < :toExclusive
+              AND (CAST(:from AS LocalDateTime) IS NULL OR h.changedAt >= :from)
+              AND (CAST(:toExclusive AS LocalDateTime) IS NULL OR h.changedAt < :toExclusive)
             ORDER BY h.changedAt DESC, h.id DESC
             """)
     Page<OrderAssigneeHistory> search(

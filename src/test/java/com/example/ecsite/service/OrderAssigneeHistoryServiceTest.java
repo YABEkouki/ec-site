@@ -160,8 +160,8 @@ class OrderAssigneeHistoryServiceTest {
                 eq(true),
                 eq(null),
                 eq(null),
-                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
-                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(null),
+                eq(null),
                 eq(PageRequest.of(0, 10))))
                 .thenReturn(expected);
 
@@ -176,8 +176,8 @@ class OrderAssigneeHistoryServiceTest {
                 true,
                 null,
                 null,
-                LocalDateTime.of(2000, 1, 1, 0, 0),
-                LocalDateTime.of(2100, 1, 1, 0, 0),
+                null,
+                null,
                 PageRequest.of(0, 10));
     }
 
@@ -203,8 +203,8 @@ class OrderAssigneeHistoryServiceTest {
                 eq(null),
                 eq(null),
                 eq(null),
-                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
-                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(null),
+                eq(null),
                 eq(PageRequest.of(0, 10))))
                 .thenReturn(expected);
 
@@ -219,8 +219,8 @@ class OrderAssigneeHistoryServiceTest {
                 null,
                 null,
                 null,
-                LocalDateTime.of(2000, 1, 1, 0, 0),
-                LocalDateTime.of(2100, 1, 1, 0, 0),
+                null,
+                null,
                 PageRequest.of(0, 10));
     }
 
@@ -240,8 +240,8 @@ class OrderAssigneeHistoryServiceTest {
                 eq(null),
                 eq(null),
                 eq(null),
-                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
-                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(null),
+                eq(null),
                 eq(PageRequest.of(0, 10))))
                 .thenReturn(expected);
 
@@ -256,8 +256,82 @@ class OrderAssigneeHistoryServiceTest {
                 null,
                 null,
                 null,
-                LocalDateTime.of(2000, 1, 1, 0, 0),
-                LocalDateTime.of(2100, 1, 1, 0, 0),
+                null,
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchUsesOnlyFromWhenToIsNotSpecified() {
+
+        AdminOrderAssigneeHistorySearchForm form = new AdminOrderAssigneeHistorySearchForm();
+
+        form.setFrom(LocalDate.of(2026, 9, 1));
+
+        Page<OrderAssigneeHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
+                eq(null),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<OrderAssigneeHistory> actual = service.search(form, 0, 10);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchUsesOnlyToExclusiveWhenFromIsNotSpecified() {
+
+        AdminOrderAssigneeHistorySearchForm form = new AdminOrderAssigneeHistorySearchForm();
+
+        form.setTo(LocalDate.of(2026, 9, 3));
+
+        Page<OrderAssigneeHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2026, 9, 4, 0, 0)),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<OrderAssigneeHistory> actual = service.search(form, 0, 10);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 9, 4, 0, 0),
                 PageRequest.of(0, 10));
     }
 

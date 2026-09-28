@@ -1,6 +1,5 @@
 package com.example.ecsite.service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -114,11 +113,11 @@ public class OrderStatusHistoryService {
 
         LocalDateTime from = form.getFrom() != null
                 ? form.getFrom().atStartOfDay()
-                : LocalDate.of(2000, 1, 1).atStartOfDay();
+                : null;
 
         LocalDateTime toExclusive = form.getTo() != null
                 ? form.getTo().plusDays(1).atStartOfDay()
-                : LocalDate.of(2100, 1, 1).atStartOfDay();
+                : null;
 
         String changedByUsername = form.getChangedByUsername();
 

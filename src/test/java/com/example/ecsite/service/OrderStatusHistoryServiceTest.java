@@ -148,7 +148,7 @@ class OrderStatusHistoryServiceTest {
     }
 
     @Test
-    void searchUsesDefaultDateRangeWhenDatesAreNotSpecified() {
+    void searchUsesNoDateRangeWhenDatesAreNotSpecified() {
 
         AdminOrderStatusHistorySearchForm form = new AdminOrderStatusHistorySearchForm();
 
@@ -160,8 +160,8 @@ class OrderStatusHistoryServiceTest {
                 eq(null),
                 eq(null),
                 eq(null),
-                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
-                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(null),
+                eq(null),
                 eq(PageRequest.of(0, 10))))
                 .thenReturn(expected);
 
@@ -179,8 +179,86 @@ class OrderStatusHistoryServiceTest {
                 null,
                 null,
                 null,
-                LocalDateTime.of(2000, 1, 1, 0, 0),
-                LocalDateTime.of(2100, 1, 1, 0, 0),
+                null,
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchUsesOnlyFromWhenToIsNotSpecified() {
+
+        AdminOrderStatusHistorySearchForm form = new AdminOrderStatusHistorySearchForm();
+
+        form.setFrom(LocalDate.of(2026, 9, 1));
+
+        Page<OrderStatusHistory> expected = new PageImpl<>(List.of());
+
+        when(orderStatusHistoryRepository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
+                eq(null),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<OrderStatusHistory> actual = orderStatusHistoryService.search(
+                form,
+                0,
+                10);
+
+        org.junit.jupiter.api.Assertions
+                .assertSame(expected, actual);
+
+        verify(orderStatusHistoryRepository).search(
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchUsesOnlyToExclusiveWhenFromIsNotSpecified() {
+
+        AdminOrderStatusHistorySearchForm form = new AdminOrderStatusHistorySearchForm();
+
+        form.setTo(LocalDate.of(2026, 9, 3));
+
+        Page<OrderStatusHistory> expected = new PageImpl<>(List.of());
+
+        when(orderStatusHistoryRepository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2026, 9, 4, 0, 0)),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<OrderStatusHistory> actual = orderStatusHistoryService.search(
+                form,
+                0,
+                10);
+
+        org.junit.jupiter.api.Assertions
+                .assertSame(expected, actual);
+
+        verify(orderStatusHistoryRepository).search(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 9, 4, 0, 0),
                 PageRequest.of(0, 10));
     }
 
@@ -199,8 +277,8 @@ class OrderStatusHistoryServiceTest {
                 eq(null),
                 eq(null),
                 eq(null),
-                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
-                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(null),
+                eq(null),
                 eq(PageRequest.of(0, 10))))
                 .thenReturn(expected);
 
@@ -218,8 +296,8 @@ class OrderStatusHistoryServiceTest {
                 null,
                 null,
                 null,
-                LocalDateTime.of(2000, 1, 1, 0, 0),
-                LocalDateTime.of(2100, 1, 1, 0, 0),
+                null,
+                null,
                 PageRequest.of(0, 10));
     }
 

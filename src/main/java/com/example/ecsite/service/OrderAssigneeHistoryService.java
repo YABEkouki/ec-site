@@ -95,13 +95,13 @@ public class OrderAssigneeHistoryService {
         String changedByUsername = normalizeUsername(
                 form.getChangedByUsername());
 
-        LocalDateTime from = form.getFrom() == null
-                ? LocalDateTime.of(2000, 1, 1, 0, 0)
-                : form.getFrom().atStartOfDay();
+        LocalDateTime from = form.getFrom() != null
+                ? form.getFrom().atStartOfDay()
+                : null;
 
-        LocalDateTime toExclusive = form.getTo() == null
-                ? LocalDateTime.of(2100, 1, 1, 0, 0)
-                : form.getTo().plusDays(1).atStartOfDay();
+        LocalDateTime toExclusive = form.getTo() != null
+                ? form.getTo().plusDays(1).atStartOfDay()
+                : null;
 
         return repository.search(
                 form.getOrderId(),
