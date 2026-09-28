@@ -14,7 +14,7 @@
     <main>
         <h1>顧客詳細</h1>
 
-        <p th:if="${message != null}" th:text="${message}" class="message">
+        <p th:if="${successMessage != null}" th:text="${successMessage}" class="message-success">
         </p>
 
         <p th:if="${errorMessage != null}" th:text="${errorMessage}" class="error">
@@ -56,13 +56,15 @@
             </p>
 
             <p th:if="${customer.enabled and customer.email != null and !customer.email.isBlank()}">
-                <a th:href="@{/admin/customers/{id}/password-reset(id=${customer.userId})}" class="button button-secondary">
+                <a th:href="@{/admin/customers/{id}/password-reset(id=${customer.userId})}"
+                    class="button button-secondary">
                     パスワード再設定メールを送信する
                 </a>
             </p>
 
             <p>
-                <a th:href="@{/admin/user-enabled-histories(userId=${customer.userId},returnTo='customer')}" class="button button-secondary">
+                <a th:href="@{/admin/user-enabled-histories(userId=${customer.userId},returnTo='customer')}"
+                    class="button button-secondary">
                     アカウント状態変更履歴を見る
                 </a>
             </p>

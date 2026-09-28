@@ -265,7 +265,7 @@ public class AdminProductController {
         }
 
         redirectAttributes.addFlashAttribute(
-                "message",
+                "successMessage",
                 "商品を更新しました。");
 
         return "redirect:" + resolvedReturnUrl;
@@ -280,7 +280,7 @@ public class AdminProductController {
         productService.delete(id);
 
         redirectAttributes.addFlashAttribute(
-                "message",
+                "successMessage",
                 "商品を販売終了にしました。");
 
         return "redirect:/admin/products";
