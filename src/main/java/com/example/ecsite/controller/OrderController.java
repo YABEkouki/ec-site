@@ -20,6 +20,7 @@ import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.service.ShippingAddressService;
 
@@ -30,17 +31,20 @@ public class OrderController {
     private final OrderService orderService;
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final ShippingAddressService shippingAddressService;
+    private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
     private final Validator validator;
 
     public OrderController(
             OrderService orderService,
             OrderStatusHistoryService orderStatusHistoryService,
             ShippingAddressService shippingAddressService,
+            OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             Validator validator) {
 
         this.orderService = orderService;
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.shippingAddressService = shippingAddressService;
+        this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
         this.validator = validator;
     }
 
@@ -91,6 +95,10 @@ public class OrderController {
         model.addAttribute(
                 "statusHistories",
                 orderStatusHistoryService.findByOrderId(id));
+
+        model.addAttribute(
+                "shippingAddressHistories",
+                orderShippingAddressHistoryService.findByOrderId(id));
 
         model.addAttribute(
                 "canChangeShippingAddress",
@@ -320,14 +328,17 @@ public class OrderController {
 
         try {
 
-            orderService.changeShippingAddressForUser(
+            boolean changed = orderService.changeShippingAddressForUser(
                     id,
                     loginUser.getId(),
+                    loginUser.getUsername(),
                     form);
 
             redirectAttributes.addFlashAttribute(
                     "successMessage",
-                    "配送先を変更しました。");
+                    changed
+                            ? "配送先を変更しました。"
+                            : "配送先に変更はありません。");
 
         } catch (InvalidOrderStatusException e) {
 

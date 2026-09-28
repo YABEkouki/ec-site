@@ -23,12 +23,14 @@ import org.springframework.validation.Validator;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderShippingAddressHistory;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.service.ShippingAddressService;
 
@@ -51,6 +53,9 @@ class OrderControllerTest {
     private ShippingAddressService shippingAddressService;
 
     @Mock
+    private OrderShippingAddressHistoryService orderShippingAddressHistoryService;
+
+    @Mock
     private Validator validator;
 
     private OrderController orderController;
@@ -61,6 +66,7 @@ class OrderControllerTest {
                 orderService,
                 orderStatusHistoryService,
                 shippingAddressService,
+                orderShippingAddressHistoryService,
                 validator);
     }
 
@@ -128,6 +134,10 @@ class OrderControllerTest {
 
         List<OrderStatusHistory> statusHistories = List.of(history);
 
+        OrderShippingAddressHistory shippingAddressHistory = mock(OrderShippingAddressHistory.class);
+
+        List<OrderShippingAddressHistory> shippingAddressHistories = List.of(shippingAddressHistory);
+
         when(loginUser.getId())
                 .thenReturn(userId);
 
@@ -147,6 +157,9 @@ class OrderControllerTest {
 
         when(orderService.canChangeShippingAddress(order))
                 .thenReturn(true);
+
+        when(orderShippingAddressHistoryService.findByOrderId(orderId))
+                .thenReturn(shippingAddressHistories);
 
         String viewName = orderController.detail(
                 orderId,
@@ -172,6 +185,14 @@ class OrderControllerTest {
                 .addAttribute(
                         "statusHistories",
                         statusHistories);
+
+        verify(orderShippingAddressHistoryService)
+                .findByOrderId(orderId);
+
+        verify(model)
+                .addAttribute(
+                        "shippingAddressHistories",
+                        shippingAddressHistories);
 
         verify(orderService)
                 .isWithinModificationPeriod(order);
@@ -447,6 +468,16 @@ class OrderControllerTest {
         when(bindingResult.hasErrors())
                 .thenReturn(false);
 
+        when(loginUser.getUsername())
+                .thenReturn("testuser");
+
+        when(orderService.changeShippingAddressForUser(
+                orderId,
+                userId,
+                "testuser",
+                form))
+                .thenReturn(true);
+
         String viewName = orderController.changeShippingAddress(
                 orderId,
                 form,
@@ -467,6 +498,7 @@ class OrderControllerTest {
                 .changeShippingAddressForUser(
                         orderId,
                         userId,
+                        "testuser",
                         form);
 
         verify(redirectAttributes)
@@ -493,6 +525,9 @@ class OrderControllerTest {
         when(bindingResult.hasErrors())
                 .thenReturn(false);
 
+        when(loginUser.getUsername())
+                .thenReturn("testuser");
+
         InvalidOrderStatusException exception = new InvalidOrderStatusException(
                 "この注文の変更受付は終了しています。");
 
@@ -501,6 +536,7 @@ class OrderControllerTest {
                 .changeShippingAddressForUser(
                         orderId,
                         userId,
+                        "testuser",
                         form);
 
         String viewName = orderController.changeShippingAddress(
@@ -518,6 +554,63 @@ class OrderControllerTest {
                 .addFlashAttribute(
                         "errorMessage",
                         exception.getMessage());
+    }
+
+    @Test
+    void changeShippingAddressDisplaysNoChangeMessageWhenAddressIsUnchanged() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        OrderShippingAddressForm form = new OrderShippingAddressForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(loginUser.getUsername())
+                .thenReturn("testuser");
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        when(orderService.changeShippingAddressForUser(
+                orderId,
+                userId,
+                "testuser",
+                form))
+                .thenReturn(false);
+
+        String viewName = orderController.changeShippingAddress(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(validator)
+                .validate(
+                        form,
+                        bindingResult);
+
+        verify(orderService)
+                .changeShippingAddressForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "配送先に変更はありません。");
     }
 
     @Test

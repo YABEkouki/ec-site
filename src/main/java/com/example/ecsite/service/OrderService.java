@@ -28,6 +28,7 @@ import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
+import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
@@ -53,8 +54,9 @@ public class OrderService {
     private final InventoryService inventoryService;
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
-    private final AdminAccountService adminAccountService;
+    private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
+    private final AdminAccountService adminAccountService;
     private final OrderDeadlineCalculator orderDeadlineCalculator;
     private final Clock clock;
 
@@ -65,6 +67,7 @@ public class OrderService {
             InventoryService inventoryService,
             OrderStatusHistoryService orderStatusHistoryService,
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService,
             OrderDeadlineCalculator orderDeadlineCalculator) {
@@ -75,6 +78,7 @@ public class OrderService {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderShippingAddressHistoryService,
                 orderAssigneeHistoryService,
                 adminAccountService,
                 orderDeadlineCalculator,
@@ -87,6 +91,7 @@ public class OrderService {
             InventoryService inventoryService,
             OrderStatusHistoryService orderStatusHistoryService,
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService,
             OrderDeadlineCalculator orderDeadlineCalculator,
@@ -97,6 +102,7 @@ public class OrderService {
         this.inventoryService = inventoryService;
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
+        this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.adminAccountService = adminAccountService;
         this.orderDeadlineCalculator = orderDeadlineCalculator;
@@ -870,9 +876,10 @@ public class OrderService {
     }
 
     @Transactional
-    public void changeShippingAddressForUser(
+    public boolean changeShippingAddressForUser(
             Long orderId,
             Long userId,
+            String username,
             OrderShippingAddressForm form) {
 
         Order order = orderRepository
@@ -897,13 +904,63 @@ public class OrderService {
                     "この注文の変更受付は終了しています。");
         }
 
+        String newShippingName = form.getShippingName().trim();
+        String newShippingPostalCode = form.getShippingPostalCode().trim();
+        String newShippingPrefecture = form.getShippingPrefecture().trim();
+        String newShippingCity = form.getShippingCity().trim();
+        String newShippingAddressLine = form.getShippingAddressLine().trim();
+        String newShippingPhone = form.getShippingPhone().trim();
+
+        boolean changed = !java.util.Objects.equals(
+                order.getShippingName(),
+                newShippingName)
+                || !java.util.Objects.equals(
+                        order.getShippingPostalCode(),
+                        newShippingPostalCode)
+                || !java.util.Objects.equals(
+                        order.getShippingPrefecture(),
+                        newShippingPrefecture)
+                || !java.util.Objects.equals(
+                        order.getShippingCity(),
+                        newShippingCity)
+                || !java.util.Objects.equals(
+                        order.getShippingAddressLine(),
+                        newShippingAddressLine)
+                || !java.util.Objects.equals(
+                        order.getShippingPhone(),
+                        newShippingPhone);
+
+        if (!changed) {
+            return false;
+        }
+
+        orderShippingAddressHistoryService.record(
+                order,
+                OrderShippingAddressHistoryActorType.USER,
+                userId,
+                username,
+                order.getShippingName(),
+                order.getShippingPostalCode(),
+                order.getShippingPrefecture(),
+                order.getShippingCity(),
+                order.getShippingAddressLine(),
+                order.getShippingPhone(),
+                newShippingName,
+                newShippingPostalCode,
+                newShippingPrefecture,
+                newShippingCity,
+                newShippingAddressLine,
+                newShippingPhone);
+
         order.setShippingAddress(
-                form.getShippingName().trim(),
-                form.getShippingPostalCode().trim(),
-                form.getShippingPrefecture().trim(),
-                form.getShippingCity().trim(),
-                form.getShippingAddressLine().trim(),
-                form.getShippingPhone().trim());
+                newShippingName,
+                newShippingPostalCode,
+                newShippingPrefecture,
+                newShippingCity,
+                newShippingAddressLine,
+                newShippingPhone);
+
+        return true;
     }
 
     @Transactional(readOnly = true)

@@ -40,6 +40,7 @@ import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.util.AdminReturnUrlHelper;
 
@@ -54,6 +55,7 @@ public class AdminOrderController {
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderNoteService orderNoteService;
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
+    private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
     private final AdminAccountService adminAccountService;
 
@@ -63,6 +65,7 @@ public class AdminOrderController {
             OrderStatusHistoryService orderStatusHistoryService,
             OrderNoteService orderNoteService,
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService) {
 
@@ -71,6 +74,7 @@ public class AdminOrderController {
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.orderNoteService = orderNoteService;
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
+        this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.adminAccountService = adminAccountService;
     }
@@ -207,6 +211,10 @@ public class AdminOrderController {
         model.addAttribute(
                 "handlingStatusHistories",
                 orderHandlingStatusHistoryService.findByOrderId(id));
+
+        model.addAttribute(
+                "shippingAddressHistories",
+                orderShippingAddressHistoryService.findByOrderId(id));
 
         model.addAttribute(
                 "assigneeHistories",

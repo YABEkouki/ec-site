@@ -1,9 +1,11 @@
 package com.example.ecsite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -43,6 +45,7 @@ import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
+import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
@@ -78,6 +81,9 @@ class OrderServiceTest {
 
     @Mock
     private OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
+
+    @Mock
+    private OrderShippingAddressHistoryService orderShippingAddressHistoryService;
 
     @Mock
     private AdminAccountService adminAccountService;
@@ -2637,11 +2643,20 @@ class OrderServiceTest {
                 userId))
                 .thenReturn(Optional.of(order));
 
+        order.setShippingAddress(
+                "山田 太郎",
+                "100-0001",
+                "東京都",
+                "千代田区",
+                "千代田1-1",
+                "090-1111-2222");
+
         OrderShippingAddressForm form = createOrderShippingAddressForm();
 
-        orderService.changeShippingAddressForUser(
+        boolean changed = orderService.changeShippingAddressForUser(
                 orderId,
                 userId,
+                "testuser",
                 form);
 
         assertEquals(
@@ -2667,6 +2682,27 @@ class OrderServiceTest {
         assertEquals(
                 "080-1234-5678",
                 order.getShippingPhone());
+
+        assertTrue(changed);
+
+        verify(orderShippingAddressHistoryService)
+                .record(
+                        order,
+                        OrderShippingAddressHistoryActorType.USER,
+                        userId,
+                        "testuser",
+                        "山田 太郎",
+                        "100-0001",
+                        "東京都",
+                        "千代田区",
+                        "千代田1-1",
+                        "090-1111-2222",
+                        "佐藤 花子",
+                        "150-0001",
+                        "東京都",
+                        "渋谷区",
+                        "神宮前1-2-3",
+                        "080-1234-5678");
     }
 
     @Test
@@ -2691,6 +2727,7 @@ class OrderServiceTest {
         orderService.changeShippingAddressForUser(
                 orderId,
                 userId,
+                "testuser",
                 form);
 
         assertEquals(
@@ -2721,11 +2758,14 @@ class OrderServiceTest {
                 () -> orderService.changeShippingAddressForUser(
                         orderId,
                         userId,
+                        "testuser",
                         createOrderShippingAddressForm()));
 
         assertEquals(
                 "現在の注文状態では配送先を変更できません。",
                 exception.getMessage());
+
+        verifyNoInteractions(orderShippingAddressHistoryService);
     }
 
     @Test
@@ -2750,11 +2790,53 @@ class OrderServiceTest {
                 () -> orderService.changeShippingAddressForUser(
                         orderId,
                         userId,
+                        "testuser",
                         createOrderShippingAddressForm()));
 
         assertEquals(
                 "現在の注文状態では配送先を変更できません。",
                 exception.getMessage());
+
+        verifyNoInteractions(orderShippingAddressHistoryService);
+    }
+
+    @Test
+    void changeShippingAddressForUserDoesNotRecordHistoryWhenAddressIsUnchanged() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        order.setShippingAddress(
+                "佐藤 花子",
+                "150-0001",
+                "東京都",
+                "渋谷区",
+                "神宮前1-2-3",
+                "080-1234-5678");
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        boolean changed = orderService.changeShippingAddressForUser(
+                orderId,
+                userId,
+                "testuser",
+                createOrderShippingAddressForm());
+
+        assertFalse(changed);
+
+        verifyNoInteractions(
+                orderShippingAddressHistoryService);
+
+        assertEquals(
+                "佐藤 花子",
+                order.getShippingName());
     }
 
     private OrderService createOrderService() {
@@ -2764,6 +2846,7 @@ class OrderServiceTest {
                 inventoryService,
                 orderStatusHistoryService,
                 orderHandlingStatusHistoryService,
+                orderShippingAddressHistoryService,
                 orderAssigneeHistoryService,
                 adminAccountService,
                 orderDeadlineCalculator,
@@ -2840,6 +2923,7 @@ class OrderServiceTest {
         orderService.changeShippingAddressForUser(
                 orderId,
                 userId,
+                "testuser",
                 createOrderShippingAddressForm());
 
         assertEquals(
@@ -2876,11 +2960,14 @@ class OrderServiceTest {
                 () -> orderService.changeShippingAddressForUser(
                         orderId,
                         userId,
+                        "testuser",
                         createOrderShippingAddressForm()));
 
         assertEquals(
                 "この注文の変更受付は終了しています。",
                 exception.getMessage());
+
+        verifyNoInteractions(orderShippingAddressHistoryService);
     }
 
     @Test
@@ -2912,11 +2999,14 @@ class OrderServiceTest {
                 () -> orderService.changeShippingAddressForUser(
                         orderId,
                         userId,
+                        "testuser",
                         createOrderShippingAddressForm()));
 
         assertEquals(
                 "この注文の変更受付は終了しています。",
                 exception.getMessage());
+
+        verifyNoInteractions(orderShippingAddressHistoryService);
     }
 
     @Test
@@ -2935,7 +3025,10 @@ class OrderServiceTest {
                 () -> orderService.changeShippingAddressForUser(
                         orderId,
                         userId,
+                        "testuser",
                         createOrderShippingAddressForm()));
+
+        verifyNoInteractions(orderShippingAddressHistoryService);
     }
 
 }
