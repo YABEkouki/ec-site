@@ -23,8 +23,6 @@ import com.example.ecsite.service.OrderStatusHistoryService;
 @RequestMapping("/admin/order-status-histories")
 public class AdminOrderStatusHistoryController {
 
-    private static final int MAX_PAGE_SIZE = 100;
-
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final OrderStatusHistoryCsvService orderStatusHistoryCsvService;
 
@@ -44,9 +42,7 @@ public class AdminOrderStatusHistoryController {
             Model model) {
 
         int safePage = Math.max(page, 0);
-        int safeSize = Math.min(
-                Math.max(size, 1),
-                MAX_PAGE_SIZE);
+        int safeSize = Math.clamp(size, 1, 100);
 
         Page<OrderStatusHistory> historyPage = orderStatusHistoryService.search(
                 searchForm,
