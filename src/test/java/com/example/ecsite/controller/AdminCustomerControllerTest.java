@@ -540,7 +540,7 @@ class AdminCustomerControllerTest {
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/admin/customers/10"))
                 .andExpect(flash().attribute(
-                        "message",
+                        "successMessage",
                         "パスワード再設定メールを送信しました。"));
 
         verify(passwordResetService)
@@ -749,7 +749,7 @@ class AdminCustomerControllerTest {
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/admin/customers/10"))
                 .andExpect(flash().attribute(
-                        "message",
+                        "successMessage",
                         "ユーザーアカウントを無効にしました。"));
 
         verify(adminCustomerService).changeEnabled(
@@ -794,7 +794,7 @@ class AdminCustomerControllerTest {
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/admin/customers/10"))
                 .andExpect(flash().attribute(
-                        "message",
+                        "successMessage",
                         "このユーザーは既に有効です。"));
 
         verify(adminCustomerService, never())

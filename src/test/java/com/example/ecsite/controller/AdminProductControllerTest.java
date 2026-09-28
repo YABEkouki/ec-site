@@ -686,7 +686,7 @@ class AdminProductControllerTest {
 
         verify(redirectAttributes)
                 .addFlashAttribute(
-                        "message",
+                        "successMessage",
                         "商品を更新しました。");
     }
 

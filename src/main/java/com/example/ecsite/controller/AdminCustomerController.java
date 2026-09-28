@@ -146,7 +146,7 @@ public class AdminCustomerController {
         }
 
         redirectAttributes.addFlashAttribute(
-                "message",
+                "successMessage",
                 "パスワード再設定メールを送信しました。");
 
         return "redirect:/admin/customers/" + id;
@@ -177,7 +177,7 @@ public class AdminCustomerController {
 
         if (customer.enabled() == enabled) {
             redirectAttributes.addFlashAttribute(
-                    "message",
+                    "successMessage",
                     enabled
                             ? "このユーザーは既に有効です。"
                             : "このユーザーは既に無効です。");
@@ -192,7 +192,7 @@ public class AdminCustomerController {
                 admin.getUsername());
 
         redirectAttributes.addFlashAttribute(
-                "message",
+                "successMessage",
                 enabled
                         ? "ユーザーアカウントを有効にしました。"
                         : "ユーザーアカウントを無効にしました。");

@@ -28,6 +28,9 @@ public class PasswordResetController {
     private final UserService userService;
     private final MailService mailService;
 
+    private static final String INVALID_RESET_LINK_MESSAGE = "このパスワード再設定リンクは無効または期限切れです。"
+            + "もう一度パスワード再設定を行ってください。";
+
     public PasswordResetController(
             PasswordResetService passwordResetService,
             UserService userService,
@@ -95,8 +98,7 @@ public class PasswordResetController {
         if (result != PasswordResetResult.VALID) {
             model.addAttribute(
                     "errorMessage",
-                    "このパスワード再設定リンクは無効または期限切れです。"
-                            + "もう一度パスワード再設定を行ってください。");
+                    INVALID_RESET_LINK_MESSAGE);
 
             return "password/reset-invalid";
         }
@@ -122,8 +124,7 @@ public class PasswordResetController {
         if (validationResult != PasswordResetResult.VALID) {
             model.addAttribute(
                     "errorMessage",
-                    "このパスワード再設定リンクは無効または期限切れです。"
-                            + "もう一度パスワード再設定を行ってください。");
+                    INVALID_RESET_LINK_MESSAGE);
 
             return "password/reset-invalid";
         }
@@ -153,8 +154,7 @@ public class PasswordResetController {
         if (result != PasswordResetResult.VALID) {
             model.addAttribute(
                     "errorMessage",
-                    "このパスワード再設定リンクは無効または期限切れです。"
-                            + "もう一度パスワード再設定を行ってください。");
+                    INVALID_RESET_LINK_MESSAGE);
 
             return "password/reset-invalid";
         }

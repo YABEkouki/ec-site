@@ -46,6 +46,8 @@ public class MyPageController {
     private final EmailVerificationService emailVerificationService;
     private final MailService mailService;
 
+    private static final String VERIFICATION_MAIL_SEND_FAILURE_MESSAGE = "確認メールの送信に失敗しました。時間をおいて再送してください。";
+
     public MyPageController(
             UserProfileService userProfileService,
             ShippingAddressService shippingAddressService,
@@ -148,7 +150,7 @@ public class MyPageController {
             } catch (MailException e) {
                 redirectAttributes.addFlashAttribute(
                         "errorMessage",
-                        "確認メールの送信に失敗しました。時間をおいて再送してください。");
+                        VERIFICATION_MAIL_SEND_FAILURE_MESSAGE);
             }
         }
 
@@ -378,7 +380,7 @@ public class MyPageController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "確認メールの送信に失敗しました。時間をおいて再送してください。");
+                    VERIFICATION_MAIL_SEND_FAILURE_MESSAGE);
         }
 
         return "redirect:/mypage";
