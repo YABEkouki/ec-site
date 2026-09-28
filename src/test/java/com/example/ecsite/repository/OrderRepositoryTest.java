@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -2355,8 +2356,56 @@ class OrderRepositoryTest {
             LocalDateTime orderedAt,
             int totalAmount) {
 
-        Order order = new Order(userId, totalAmount);
-        order.setOrderedAt(orderedAt);
+        LocalDateTime changeDeadlineAt = orderedAt.toLocalTime().isBefore(LocalTime.of(14, 0))
+                ? orderedAt.toLocalDate()
+                        .atTime(14, 0)
+                : orderedAt.toLocalDate()
+                        .plusDays(1)
+                        .atTime(14, 0);
+
+        Order order = new Order(
+                userId,
+                totalAmount,
+                orderedAt,
+                changeDeadlineAt);
+
+        Order saved = orderRepository.save(order);
+        entityManager.flush();
+
+        return saved;
+    }
+
+    private Order createOrderWithItem(
+            Long userId,
+            LocalDateTime orderedAt,
+            Product product,
+            String productName,
+            int price,
+            int quantity) {
+
+        OrderItem item = new OrderItem(
+                product.getId(),
+                productName,
+                product.getCategory().getId(),
+                product.getCategory().getName(),
+                price,
+                quantity);
+
+        LocalDateTime changeDeadlineAt = orderedAt.toLocalTime()
+                .isBefore(LocalTime.of(14, 0))
+                        ? orderedAt.toLocalDate()
+                                .atTime(14, 0)
+                        : orderedAt.toLocalDate()
+                                .plusDays(1)
+                                .atTime(14, 0);
+
+        Order order = new Order(
+                userId,
+                item.getSubtotal(),
+                orderedAt,
+                changeDeadlineAt);
+
+        order.addItem(item);
 
         Order saved = orderRepository.save(order);
         entityManager.flush();
@@ -2383,35 +2432,6 @@ class OrderRepositoryTest {
         entityManager.flush();
 
         return product;
-    }
-
-    private Order createOrderWithItem(
-            Long userId,
-            LocalDateTime orderedAt,
-            Product product,
-            String productName,
-            int price,
-            int quantity) {
-
-        OrderItem item = new OrderItem(
-                product.getId(),
-                productName,
-                product.getCategory().getId(),
-                product.getCategory().getName(),
-                price,
-                quantity);
-
-        Order order = new Order(
-                userId,
-                item.getSubtotal());
-
-        order.setOrderedAt(orderedAt);
-        order.addItem(item);
-
-        Order saved = orderRepository.save(order);
-        entityManager.flush();
-
-        return saved;
     }
 
     private User createUser(String username) {

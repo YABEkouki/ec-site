@@ -1,7 +1,9 @@
 package com.example.ecsite.service;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,6 +13,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +31,7 @@ import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ProductNotFoundException;
@@ -50,7 +54,10 @@ public class OrderService {
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
     private final AdminAccountService adminAccountService;
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
+    private final OrderDeadlineCalculator orderDeadlineCalculator;
+    private final Clock clock;
 
+    @Autowired
     public OrderService(
             OrderRepository orderRepository,
             ProductService productService,
@@ -58,7 +65,31 @@ public class OrderService {
             OrderStatusHistoryService orderStatusHistoryService,
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
-            AdminAccountService adminAccountService) {
+            AdminAccountService adminAccountService,
+            OrderDeadlineCalculator orderDeadlineCalculator) {
+
+        this(
+                orderRepository,
+                productService,
+                inventoryService,
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
+                adminAccountService,
+                orderDeadlineCalculator,
+                Clock.system(ZoneId.of("Asia/Tokyo")));
+    }
+
+    OrderService(
+            OrderRepository orderRepository,
+            ProductService productService,
+            InventoryService inventoryService,
+            OrderStatusHistoryService orderStatusHistoryService,
+            OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
+            OrderAssigneeHistoryService orderAssigneeHistoryService,
+            AdminAccountService adminAccountService,
+            OrderDeadlineCalculator orderDeadlineCalculator,
+            Clock clock) {
 
         this.orderRepository = orderRepository;
         this.productService = productService;
@@ -67,6 +98,8 @@ public class OrderService {
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.adminAccountService = adminAccountService;
+        this.orderDeadlineCalculator = orderDeadlineCalculator;
+        this.clock = clock;
     }
 
     @Transactional
@@ -81,7 +114,15 @@ public class OrderService {
                     "カートに商品がありません。");
         }
 
-        Order order = new Order(userId, 0);
+        LocalDateTime orderedAt = LocalDateTime.now(clock);
+
+        LocalDateTime changeDeadlineAt = orderDeadlineCalculator.calculate(orderedAt);
+
+        Order order = new Order(
+                userId,
+                0,
+                orderedAt,
+                changeDeadlineAt);
 
         order.setShippingAddress(
                 checkoutForm.getShippingName().trim(),
@@ -806,6 +847,19 @@ public class OrderService {
                 .orElseThrow(() -> new OrderNotFoundException(
                         orderId));
 
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        if (!order.canCancel()) {
+            throw new InvalidOrderStatusException(
+                    "注文受付中の注文だけを"
+                            + "キャンセルできます。");
+        }
+
+        if (!order.isWithinModificationPeriod(now)) {
+            throw new InvalidOrderStatusException(
+                    "この注文の変更受付は終了しています。");
+        }
+
         cancelAndRestoreStock(
                 order,
                 OrderStatusHistoryActorType.USER,
@@ -847,6 +901,16 @@ public class OrderService {
                         projection.getThreeDaysOrMoreCount(),
                         projection.getSevenDaysOrMoreCount()))
                 .toList();
+    }
+
+    public boolean isWithinModificationPeriod(Order order) {
+        return order.isWithinModificationPeriod(
+                LocalDateTime.now(clock));
+    }
+
+    public boolean canCancelByUser(Order order) {
+        return order.canCancelByUser(
+                LocalDateTime.now(clock));
     }
 
     private LocalDateTime resolveFrom(

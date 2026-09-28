@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.LocalDateTime;
+
 import org.junit.jupiter.api.Test;
 
 import com.example.ecsite.exception.InvalidOrderStatusException;
@@ -16,7 +18,7 @@ class OrderTest {
     @Test
     void newOrderStartsWithOrderedStatus() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertEquals(
                 OrderStatus.ORDERED,
@@ -26,7 +28,7 @@ class OrderTest {
     @Test
     void orderCanMoveFromOrderedToPaidToShipped() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         order.markAsPaid();
 
@@ -44,7 +46,7 @@ class OrderTest {
     @Test
     void orderedOrderCannotBeShippedDirectly() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertThrows(
                 InvalidOrderStatusException.class,
@@ -58,7 +60,7 @@ class OrderTest {
     @Test
     void orderedOrderCanBeCancelled() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         order.cancel();
 
@@ -70,7 +72,7 @@ class OrderTest {
     @Test
     void paidOrderCannotBeCancelled() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
         order.markAsPaid();
 
         assertThrows(
@@ -85,7 +87,7 @@ class OrderTest {
     @Test
     void paidAndShippedTimestampsAreRecorded() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertNull(order.getPaidAt());
         assertNull(order.getShippedAt());
@@ -104,7 +106,7 @@ class OrderTest {
     @Test
     void cancelledTimestampIsRecorded() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertNull(order.getCancelledAt());
 
@@ -116,7 +118,7 @@ class OrderTest {
     @Test
     void invalidShippingDoesNotRecordTimestamp() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertThrows(
                 InvalidOrderStatusException.class,
@@ -128,7 +130,7 @@ class OrderTest {
     @Test
     void orderedOrderCanBeCancelledAccordingToStatus() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertTrue(order.canCancel());
     }
@@ -136,7 +138,7 @@ class OrderTest {
     @Test
     void paidOrderCannotBeCancelledAccordingToStatus() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
         order.markAsPaid();
 
         assertFalse(order.canCancel());
@@ -145,7 +147,7 @@ class OrderTest {
     @Test
     void orderedOrderCanBeMarkedAsPaid() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertTrue(order.canMarkAsPaid());
     }
@@ -153,7 +155,7 @@ class OrderTest {
     @Test
     void paidOrderCannotBeMarkedAsPaidAgain() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
         order.markAsPaid();
 
         assertFalse(order.canMarkAsPaid());
@@ -162,7 +164,7 @@ class OrderTest {
     @Test
     void paidOrderCanBeMarkedAsShipped() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
         order.markAsPaid();
 
         assertTrue(order.canMarkAsShipped());
@@ -171,7 +173,7 @@ class OrderTest {
     @Test
     void orderedOrderCannotBeMarkedAsShipped() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertFalse(order.canMarkAsShipped());
     }
@@ -179,7 +181,7 @@ class OrderTest {
     @Test
     void newOrderStartsWithNoneHandlingStatus() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         assertEquals(
                 OrderHandlingStatus.NONE,
@@ -189,7 +191,7 @@ class OrderTest {
     @Test
     void handlingStatusCanBeChanged() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         order.changeHandlingStatus(
                 OrderHandlingStatus.IN_PROGRESS);
@@ -202,7 +204,7 @@ class OrderTest {
     @Test
     void assignedAdminAccountCanBeChanged() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         AdminAccount adminAccount = new AdminAccount();
         adminAccount.setUsername("admin01");
@@ -217,7 +219,7 @@ class OrderTest {
     @Test
     void assignedAdminAccountCanBeCleared() {
 
-        Order order = new Order(1L, 1000);
+        Order order = createOrder();
 
         AdminAccount adminAccount = new AdminAccount();
         adminAccount.setUsername("admin01");
@@ -226,6 +228,84 @@ class OrderTest {
         order.changeAssignedAdminAccount(null);
 
         assertNull(order.getAssignedAdminAccount());
+    }
+
+    @Test
+    void userCanCancelBeforeChangeDeadline() {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+        LocalDateTime changeDeadlineAt = LocalDateTime.of(2026, 9, 28, 14, 0);
+
+        Order order = new Order(
+                1L,
+                1000,
+                orderedAt,
+                changeDeadlineAt);
+
+        assertTrue(order.canCancelByUser(
+                LocalDateTime.of(2026, 9, 28, 13, 59, 59)));
+    }
+
+    @Test
+    void userCannotCancelAtChangeDeadline() {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+        LocalDateTime changeDeadlineAt = LocalDateTime.of(2026, 9, 28, 14, 0);
+
+        Order order = new Order(
+                1L,
+                1000,
+                orderedAt,
+                changeDeadlineAt);
+
+        assertFalse(order.canCancelByUser(
+                LocalDateTime.of(2026, 9, 28, 14, 0)));
+    }
+
+    @Test
+    void userCannotCancelAfterChangeDeadline() {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+        LocalDateTime changeDeadlineAt = LocalDateTime.of(2026, 9, 28, 14, 0);
+
+        Order order = new Order(
+                1L,
+                1000,
+                orderedAt,
+                changeDeadlineAt);
+
+        assertFalse(order.canCancelByUser(
+                LocalDateTime.of(2026, 9, 28, 14, 0, 1)));
+    }
+
+    @Test
+    void userCannotCancelPaidOrderEvenBeforeChangeDeadline() {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+        LocalDateTime changeDeadlineAt = LocalDateTime.of(2026, 9, 28, 14, 0);
+
+        Order order = new Order(
+                1L,
+                1000,
+                orderedAt,
+                changeDeadlineAt);
+
+        order.markAsPaid();
+
+        assertFalse(order.canCancelByUser(
+                LocalDateTime.of(2026, 9, 28, 13, 0)));
+    }
+
+    private Order createOrder() {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+        LocalDateTime changeDeadlineAt = LocalDateTime.of(2026, 9, 28, 14, 0);
+
+        return new Order(
+                1L,
+                1000,
+                orderedAt,
+                changeDeadlineAt);
     }
 
 }

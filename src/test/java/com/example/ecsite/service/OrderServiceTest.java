@@ -13,8 +13,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -83,18 +86,24 @@ class OrderServiceTest {
 
     private OrderService orderService;
 
+    private OrderDeadlineCalculator orderDeadlineCalculator;
+
+    private Clock clock;
+
     private static final List<OrderHandlingStatus> ALL_HANDLING_STATUSES = List.of(OrderHandlingStatus.values());
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+
+        clock = Clock.fixed(
+                LocalDateTime.of(2026, 9, 28, 10, 0)
+                        .atZone(ZoneId.of("Asia/Tokyo"))
+                        .toInstant(),
+                ZoneId.of("Asia/Tokyo"));
+
+        orderDeadlineCalculator = new OrderDeadlineCalculator(LocalTime.of(14, 0));
+
+        orderService = createOrderService();
     }
 
     @Test
@@ -141,6 +150,8 @@ class OrderServiceTest {
         assertEquals(1, order.getItems().size());
         assertEquals(100L, order.getItems().get(0).getCategoryId());
         assertEquals("テストカテゴリ", order.getItems().get(0).getCategoryName());
+        assertEquals(LocalDateTime.of(2026, 9, 28, 10, 0), order.getOrderedAt());
+        assertEquals(LocalDateTime.of(2026, 9, 28, 14, 0), order.getChangeDeadlineAt());
 
         verify(inventoryService)
                 .decreaseForOrder(
@@ -321,8 +332,8 @@ class OrderServiceTest {
 
         Page<Order> expectedPage = new PageImpl<>(
                 List.of(
-                        new Order(userId, 1000),
-                        new Order(userId, 2000)),
+                        createOrder(userId, 1000),
+                        createOrder(userId, 2000)),
                 expectedPageable,
                 5);
 
@@ -332,14 +343,7 @@ class OrderServiceTest {
                         expectedPageable))
                 .thenReturn(expectedPage);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         Page<Order> actualPage = orderService.findOrdersByUserId(
                 userId,
@@ -388,14 +392,7 @@ class OrderServiceTest {
         when(orderItem.getQuantity())
                 .thenReturn(quantity);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         orderService.cancelOrder(
                 orderId,
@@ -433,14 +430,7 @@ class OrderServiceTest {
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.empty());
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         assertThrows(
                 OrderNotFoundException.class,
@@ -461,20 +451,13 @@ class OrderServiceTest {
         Long adminId = 20L;
         String adminUsername = "admin";
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.markAsPaid();
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         assertThrows(
                 InvalidOrderStatusException.class,
@@ -550,14 +533,7 @@ class OrderServiceTest {
                     return order;
                 });
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         Order result = orderService.createOrder(
                 userId,
@@ -588,14 +564,7 @@ class OrderServiceTest {
         when(cart.getItems())
                 .thenReturn(List.of());
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -669,14 +638,7 @@ class OrderServiceTest {
         when(product.getPrice())
                 .thenReturn(1200);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -732,14 +694,7 @@ class OrderServiceTest {
         when(product.getPrice())
                 .thenReturn(1000);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -781,14 +736,7 @@ class OrderServiceTest {
                 .thenThrow(
                         new ProductNotFoundException(productId));
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         OrderValidationException exception = assertThrows(
                 OrderValidationException.class,
@@ -825,14 +773,7 @@ class OrderServiceTest {
                         pageable))
                 .thenReturn(expectedPage);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         Page<Order> actualPage = orderService.findAllOrders(
                 status,
@@ -865,14 +806,7 @@ class OrderServiceTest {
                         pageable))
                 .thenReturn(expectedPage);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         Page<Order> actualPage = orderService.findAllOrders(
                 null,
@@ -921,14 +855,13 @@ class OrderServiceTest {
         when(orderItem.getQuantity())
                 .thenReturn(quantity);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        when(order.canCancel())
+                .thenReturn(true);
+
+        when(order.isWithinModificationPeriod(any(LocalDateTime.class)))
+                .thenReturn(true);
+
+        OrderService orderService = createOrderService();
 
         orderService.cancelOrderForUser(
                 orderId,
@@ -984,14 +917,13 @@ class OrderServiceTest {
         when(orderItem.getQuantity())
                 .thenReturn(quantity);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        when(order.canCancel())
+                .thenReturn(true);
+
+        when(order.isWithinModificationPeriod(any(LocalDateTime.class)))
+                .thenReturn(true);
+
+        OrderService orderService = createOrderService();
 
         orderService.cancelOrderForUser(
                 orderId,
@@ -1008,12 +940,50 @@ class OrderServiceTest {
     }
 
     @Test
+    void cancelOrderForUserRejectsOrderAtOrAfterChangeDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+        String username = "testuser";
+
+        Order order = mock(Order.class);
+
+        when(orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId))
+                .thenReturn(Optional.of(order));
+
+        when(order.canCancel())
+                .thenReturn(true);
+
+        when(order.isWithinModificationPeriod(
+                any(LocalDateTime.class)))
+                .thenReturn(false);
+
+        InvalidOrderStatusException exception = assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.cancelOrderForUser(
+                        orderId,
+                        userId,
+                        username));
+
+        assertEquals(
+                "この注文の変更受付は終了しています。",
+                exception.getMessage());
+
+        verify(order, never()).cancel();
+
+        verifyNoInteractions(inventoryService);
+    }
+
+    @Test
     void findOrderByIdAndUserIdReturnsOwnedOrder() {
 
         Long orderId = 1L;
         Long userId = 10L;
 
-        Order expectedOrder = new Order(userId, 2000);
+        Order expectedOrder = createOrder(userId, 1000);
 
         when(orderRepository
                 .findByIdAndUserIdWithItems(
@@ -1041,14 +1011,7 @@ class OrderServiceTest {
         when(orderRepository.countByStatus(status))
                 .thenReturn(5L);
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         long actualCount = orderService.countOrdersByStatus(status);
 
@@ -1130,14 +1093,7 @@ class OrderServiceTest {
                     return order;
                 });
 
-        OrderService orderService = new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService);
+        OrderService orderService = createOrderService();
 
         Order order = orderService.createOrder(
                 userId,
@@ -1371,8 +1327,8 @@ class OrderServiceTest {
         searchForm.setTo(LocalDate.of(2026, 8, 31));
         searchForm.setStatus(OrderStatus.PAID);
 
-        Order firstOrder = new Order(10L, 1000);
-        Order secondOrder = new Order(10L, 2000);
+        Order firstOrder = createOrder(10L, 1000);
+        Order secondOrder = createOrder(10L, 2000);
 
         Page<Order> expectedPage = new PageImpl<>(
                 List.of(firstOrder, secondOrder));
@@ -1461,7 +1417,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         String internalNote = "入金確認済み";
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
@@ -1495,7 +1451,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         String internalNote = "配送手配完了";
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.markAsPaid();
 
         when(orderRepository.findByIdForUpdate(orderId))
@@ -1529,7 +1485,7 @@ class OrderServiceTest {
         Long adminId = 20L;
         String adminUsername = "admin";
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
@@ -1564,7 +1520,7 @@ class OrderServiceTest {
         Long adminId = 20L;
         String adminUsername = "admin";
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.changeHandlingStatus(
                 OrderHandlingStatus.NEEDS_ACTION);
 
@@ -1599,7 +1555,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         Long assignedAdminId = 30L;
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
 
         AdminAccount assignedAdmin = new AdminAccount();
         assignedAdmin.setUsername("admin02");
@@ -1652,7 +1608,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         Long assignedAdminId = 30L;
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.changeHandlingStatus(
                 OrderHandlingStatus.NEEDS_ACTION);
 
@@ -1711,7 +1667,7 @@ class OrderServiceTest {
         Long adminId = 20L;
         String adminUsername = "admin";
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.changeHandlingStatus(
                 OrderHandlingStatus.IN_PROGRESS);
 
@@ -1791,7 +1747,7 @@ class OrderServiceTest {
                 eq(pageable)))
                 .thenReturn(projectionPage);
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
 
         org.springframework.test.util.ReflectionTestUtils
                 .setField(order, "id", 1L);
@@ -1917,7 +1873,7 @@ class OrderServiceTest {
                 eq(pageable)))
                 .thenReturn(projectionPage);
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
 
         org.springframework.test.util.ReflectionTestUtils
                 .setField(order, "id", 1L);
@@ -2015,7 +1971,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         Long assignedAdminId = 30L;
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.changeHandlingStatus(
                 OrderHandlingStatus.NEEDS_ACTION);
 
@@ -2058,7 +2014,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         Long assignedAdminId = 30L;
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.changeHandlingStatus(
                 OrderHandlingStatus.NEEDS_ACTION);
 
@@ -2114,7 +2070,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         Long assignedAdminId = 30L;
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.changeHandlingStatus(
                 OrderHandlingStatus.IN_PROGRESS);
 
@@ -2161,7 +2117,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         Long assignedAdminId = 30L;
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
         order.changeHandlingStatus(
                 OrderHandlingStatus.IN_PROGRESS);
 
@@ -2334,7 +2290,7 @@ class OrderServiceTest {
         String adminUsername = "admin";
         Long assignedAdminId = 30L;
 
-        Order order = new Order(10L, 1000);
+        Order order = createOrder(10L, 1000);
 
         AdminAccount assignedAdmin = new AdminAccount();
         assignedAdmin.setUsername("admin02");
@@ -2663,6 +2619,34 @@ class OrderServiceTest {
                 .findActionRequiredOrderCountsByAssignee(
                         any(LocalDateTime.class),
                         any(LocalDateTime.class));
+    }
+
+    private OrderService createOrderService() {
+        return new OrderService(
+                orderRepository,
+                productService,
+                inventoryService,
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService,
+                orderAssigneeHistoryService,
+                adminAccountService,
+                orderDeadlineCalculator,
+                clock);
+    }
+
+    private Order createOrder(
+            Long userId,
+            int totalAmount) {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+
+        LocalDateTime changeDeadlineAt = orderDeadlineCalculator.calculate(orderedAt);
+
+        return new Order(
+                userId,
+                totalAmount,
+                orderedAt,
+                changeDeadlineAt);
     }
 
 }

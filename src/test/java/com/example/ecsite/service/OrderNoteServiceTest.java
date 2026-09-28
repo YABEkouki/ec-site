@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -40,14 +41,17 @@ class OrderNoteServiceTest {
     @Test
     void addNoteSavesOrderNote() {
 
-        Long orderId = 10L;
-        Order order = new Order(1L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
-        when(orderRepository.findById(orderId))
+        when(orderRepository.findById(order.getId()))
                 .thenReturn(java.util.Optional.of(order));
 
         orderNoteService.addNote(
-                orderId,
+                order.getId(),
                 "配送前に住所確認",
                 20L,
                 "admin");
@@ -62,14 +66,17 @@ class OrderNoteServiceTest {
     @Test
     void addNoteSavesTrimmedNote() {
 
-        Long orderId = 10L;
-        Order order = new Order(1L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
-        when(orderRepository.findById(orderId))
+        when(orderRepository.findById(order.getId()))
                 .thenReturn(java.util.Optional.of(order));
 
         orderNoteService.addNote(
-                orderId,
+                order.getId(),
                 "  配送前に住所確認  ",
                 20L,
                 "admin");
@@ -92,8 +99,7 @@ class OrderNoteServiceTest {
                 .findByOrderIdOrderByCreatedAtDescIdDesc(orderId))
                 .thenReturn(expected);
 
-        List<OrderNote> actual =
-                orderNoteService.findByOrderId(orderId);
+        List<OrderNote> actual = orderNoteService.findByOrderId(orderId);
 
         assertSame(expected, actual);
 

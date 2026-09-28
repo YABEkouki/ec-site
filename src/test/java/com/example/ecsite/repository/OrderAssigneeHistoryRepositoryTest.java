@@ -44,7 +44,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-test-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         UUID firstEventId = UUID.randomUUID();
 
@@ -111,7 +115,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-clear-test-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         UUID changeEventId = UUID.randomUUID();
 
@@ -148,10 +156,18 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-search-user");
 
         Order firstOrder = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         Order secondOrder = orderRepository.save(
-                new Order(user.getId(), 2000));
+                new Order(
+                        user.getId(),
+                        2000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         repository.save(
                 OrderAssigneeHistory.create(
@@ -202,7 +218,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-from-unassigned-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         repository.save(
                 OrderAssigneeHistory.create(
@@ -251,7 +271,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-to-unassigned-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         repository.save(
                 OrderAssigneeHistory.create(
@@ -300,7 +324,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-to-admin-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         repository.save(
                 OrderAssigneeHistory.create(
@@ -351,7 +379,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-operator-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         repository.save(
                 OrderAssigneeHistory.create(
@@ -402,7 +434,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-date-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderAssigneeHistory before = repository.save(
                 OrderAssigneeHistory.create(
@@ -479,7 +515,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-no-date-range-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderAssigneeHistory history = repository.save(
                 OrderAssigneeHistory.create(
@@ -519,7 +559,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-only-from-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderAssigneeHistory history = repository.save(
                 OrderAssigneeHistory.create(
@@ -559,7 +603,11 @@ class OrderAssigneeHistoryRepositoryTest {
                 "order-assignee-history-only-to-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderAssigneeHistory history = repository.save(
                 OrderAssigneeHistory.create(

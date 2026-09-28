@@ -829,7 +829,9 @@ class ProductRepositoryTest {
 
         Order order = new Order(
                 userId,
-                item.getSubtotal());
+                item.getSubtotal(),
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         order.setOrderedAt(orderedAt);
         order.addItem(item);

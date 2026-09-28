@@ -18,7 +18,11 @@ class OrderCsvServiceTest {
     @Test
     void createCsvOutputsHeaderAndOrderDataWithUtf8Bom() {
 
-        Order order = new Order(10L, 2500);
+        Order order = new Order(
+                10L,
+                2500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
         order.setOrderedAt(
                 LocalDateTime.of(
                         2026,
@@ -76,7 +80,11 @@ class OrderCsvServiceTest {
     @Test
     void createCsvEscapesCommaQuoteAndLineBreak() {
 
-        Order order = new Order(10L, 2500);
+        Order order = new Order(
+                10L,
+                2500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
         order.setOrderedAt(
                 LocalDateTime.of(
                         2026,
