@@ -472,6 +472,126 @@ class OrderAssigneeHistoryRepositoryTest {
                 result.getContent().get(0).getId());
     }
 
+    @Test
+    void searchWithoutDateRangeReturnsHistory() {
+
+        User user = createUser(
+                "order-assignee-history-no-date-range-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderAssigneeHistory history = repository.save(
+                OrderAssigneeHistory.create(
+                        order,
+                        null,
+                        null,
+                        10L,
+                        "admin01",
+                        20L,
+                        "operator",
+                        UUID.randomUUID()));
+
+        entityManager.flush();
+
+        updateChangedAt(
+                history,
+                LocalDateTime.of(1999, 12, 31, 23, 59));
+
+        Page<OrderAssigneeHistory> result = repository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                PageRequest.of(0, 20));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyFromReturnsHistoryAtFromBoundary() {
+
+        User user = createUser(
+                "order-assignee-history-only-from-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderAssigneeHistory history = repository.save(
+                OrderAssigneeHistory.create(
+                        order,
+                        null,
+                        null,
+                        10L,
+                        "admin01",
+                        20L,
+                        "operator",
+                        UUID.randomUUID()));
+
+        entityManager.flush();
+
+        LocalDateTime changedAt = LocalDateTime.of(2026, 9, 10, 0, 0);
+
+        updateChangedAt(history, changedAt);
+
+        Page<OrderAssigneeHistory> result = repository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                changedAt,
+                null,
+                PageRequest.of(0, 20));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyToExclusiveReturnsHistoryBeforeBoundary() {
+
+        User user = createUser(
+                "order-assignee-history-only-to-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderAssigneeHistory history = repository.save(
+                OrderAssigneeHistory.create(
+                        order,
+                        null,
+                        null,
+                        10L,
+                        "admin01",
+                        20L,
+                        "operator",
+                        UUID.randomUUID()));
+
+        entityManager.flush();
+
+        LocalDateTime changedAt = LocalDateTime.of(2026, 9, 10, 12, 0);
+
+        updateChangedAt(history, changedAt);
+
+        Page<OrderAssigneeHistory> result = repository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 9, 11, 0, 0),
+                PageRequest.of(0, 20));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
     private User createUser(String username) {
 
         User user = new User();

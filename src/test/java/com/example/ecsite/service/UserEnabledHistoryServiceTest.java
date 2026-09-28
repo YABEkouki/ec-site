@@ -53,19 +53,17 @@ class UserEnabledHistoryServiceTest {
                 20L,
                 "admin");
 
-        verify(repository).save(argThat(history ->
-                history.getUser() == user
-                        && history.isFromEnabled()
-                        && !history.isToEnabled()
-                        && history.getChangedByAccountId().equals(20L)
-                        && history.getChangedByUsername().equals("admin")));
+        verify(repository).save(argThat(history -> history.getUser() == user
+                && history.isFromEnabled()
+                && !history.isToEnabled()
+                && history.getChangedByAccountId().equals(20L)
+                && history.getChangedByUsername().equals("admin")));
     }
 
     @Test
     void searchConvertsConditionsAndDateRange() {
 
-        AdminUserEnabledHistorySearchForm form =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm form = new AdminUserEnabledHistorySearchForm();
 
         form.setUserId(10L);
         form.setUsername("  customer  ");
@@ -74,8 +72,7 @@ class UserEnabledHistoryServiceTest {
         form.setFrom(LocalDate.of(2026, 9, 1));
         form.setTo(LocalDate.of(2026, 9, 3));
 
-        Page<UserEnabledHistory> expected =
-                new PageImpl<>(List.of());
+        Page<UserEnabledHistory> expected = new PageImpl<>(List.of());
 
         when(repository.search(
                 eq(10L),
@@ -87,8 +84,7 @@ class UserEnabledHistoryServiceTest {
                 eq(PageRequest.of(1, 20))))
                 .thenReturn(expected);
 
-        Page<UserEnabledHistory> actual =
-                service.search(form, 1, 20);
+        Page<UserEnabledHistory> actual = service.search(form, 1, 20);
 
         assertSame(expected, actual);
 
@@ -103,26 +99,23 @@ class UserEnabledHistoryServiceTest {
     }
 
     @Test
-    void searchUsesDefaultDateRangeWhenDatesAreNotSpecified() {
+    void searchUsesNoDateRangeWhenDatesAreNotSpecified() {
 
-        AdminUserEnabledHistorySearchForm form =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm form = new AdminUserEnabledHistorySearchForm();
 
-        Page<UserEnabledHistory> expected =
-                new PageImpl<>(List.of());
+        Page<UserEnabledHistory> expected = new PageImpl<>(List.of());
 
         when(repository.search(
                 eq(null),
                 eq(null),
                 eq(null),
                 eq(null),
-                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
-                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(null),
+                eq(null),
                 eq(PageRequest.of(0, 10))))
                 .thenReturn(expected);
 
-        Page<UserEnabledHistory> actual =
-                service.search(form, 0, 10);
+        Page<UserEnabledHistory> actual = service.search(form, 0, 10);
 
         assertSame(expected, actual);
 
@@ -131,35 +124,98 @@ class UserEnabledHistoryServiceTest {
                 null,
                 null,
                 null,
-                LocalDateTime.of(2000, 1, 1, 0, 0),
-                LocalDateTime.of(2100, 1, 1, 0, 0),
+                null,
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchUsesOnlyFromWhenToIsNotSpecified() {
+
+        AdminUserEnabledHistorySearchForm form = new AdminUserEnabledHistorySearchForm();
+
+        form.setFrom(LocalDate.of(2026, 9, 1));
+
+        Page<UserEnabledHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2026, 9, 1, 0, 0)),
+                eq(null),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<UserEnabledHistory> actual = service.search(form, 0, 10);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                null,
+                PageRequest.of(0, 10));
+    }
+
+    @Test
+    void searchUsesOnlyToExclusiveWhenFromIsNotSpecified() {
+
+        AdminUserEnabledHistorySearchForm form = new AdminUserEnabledHistorySearchForm();
+
+        form.setTo(LocalDate.of(2026, 9, 3));
+
+        Page<UserEnabledHistory> expected = new PageImpl<>(List.of());
+
+        when(repository.search(
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(null),
+                eq(LocalDateTime.of(2026, 9, 4, 0, 0)),
+                eq(PageRequest.of(0, 10))))
+                .thenReturn(expected);
+
+        Page<UserEnabledHistory> actual = service.search(form, 0, 10);
+
+        assertSame(expected, actual);
+
+        verify(repository).search(
+                null,
+                null,
+                null,
+                null,
+                null,
+                LocalDateTime.of(2026, 9, 4, 0, 0),
                 PageRequest.of(0, 10));
     }
 
     @Test
     void searchConvertsBlankUsernamesToNull() {
 
-        AdminUserEnabledHistorySearchForm form =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm form = new AdminUserEnabledHistorySearchForm();
 
         form.setUsername("   ");
         form.setChangedByUsername("   ");
 
-        Page<UserEnabledHistory> expected =
-                new PageImpl<>(List.of());
+        Page<UserEnabledHistory> expected = new PageImpl<>(List.of());
 
         when(repository.search(
                 eq(null),
                 eq(null),
                 eq(null),
                 eq(null),
-                eq(LocalDateTime.of(2000, 1, 1, 0, 0)),
-                eq(LocalDateTime.of(2100, 1, 1, 0, 0)),
+                eq(null),
+                eq(null),
                 eq(PageRequest.of(0, 10))))
                 .thenReturn(expected);
 
-        Page<UserEnabledHistory> actual =
-                service.search(form, 0, 10);
+        Page<UserEnabledHistory> actual = service.search(form, 0, 10);
 
         assertSame(expected, actual);
 
@@ -168,16 +224,15 @@ class UserEnabledHistoryServiceTest {
                 null,
                 null,
                 null,
-                LocalDateTime.of(2000, 1, 1, 0, 0),
-                LocalDateTime.of(2100, 1, 1, 0, 0),
+                null,
+                null,
                 PageRequest.of(0, 10));
     }
 
     @Test
     void searchAllReturnsAllMatchingHistoriesWithoutPaging() {
 
-        AdminUserEnabledHistorySearchForm form =
-                new AdminUserEnabledHistorySearchForm();
+        AdminUserEnabledHistorySearchForm form = new AdminUserEnabledHistorySearchForm();
 
         form.setUserId(10L);
         form.setUsername(" customer ");
@@ -186,16 +241,12 @@ class UserEnabledHistoryServiceTest {
         form.setFrom(LocalDate.of(2026, 9, 1));
         form.setTo(LocalDate.of(2026, 9, 3));
 
-        UserEnabledHistory history1 =
-                mock(UserEnabledHistory.class);
-        UserEnabledHistory history2 =
-                mock(UserEnabledHistory.class);
+        UserEnabledHistory history1 = mock(UserEnabledHistory.class);
+        UserEnabledHistory history2 = mock(UserEnabledHistory.class);
 
-        List<UserEnabledHistory> expected =
-                List.of(history1, history2);
+        List<UserEnabledHistory> expected = List.of(history1, history2);
 
-        Page<UserEnabledHistory> expectedPage =
-                new PageImpl<>(expected);
+        Page<UserEnabledHistory> expectedPage = new PageImpl<>(expected);
 
         when(repository.search(
                 eq(10L),
@@ -207,8 +258,7 @@ class UserEnabledHistoryServiceTest {
                 eq(Pageable.unpaged())))
                 .thenReturn(expectedPage);
 
-        List<UserEnabledHistory> actual =
-                service.searchAll(form);
+        List<UserEnabledHistory> actual = service.searchAll(form);
 
         assertEquals(expected, actual);
 

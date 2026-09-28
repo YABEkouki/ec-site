@@ -25,8 +25,8 @@ public interface OrderHandlingStatusHistoryRepository
               AND (:fromStatus IS NULL OR h.fromStatus = :fromStatus)
               AND (:toStatus IS NULL OR h.toStatus = :toStatus)
               AND h.changedByUsername LIKE CONCAT('%', COALESCE(:changedByUsername, ''), '%')
-              AND h.changedAt >= :from
-              AND h.changedAt < :toExclusive
+              AND (CAST(:from AS LocalDateTime) IS NULL OR h.changedAt >= :from)
+              AND (CAST(:toExclusive AS LocalDateTime) IS NULL OR h.changedAt < :toExclusive)
             ORDER BY h.changedAt DESC, h.id DESC
             """)
     Page<OrderHandlingStatusHistory> search(

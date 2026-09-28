@@ -381,6 +381,98 @@ class OrderHandlingStatusHistoryRepositoryTest {
     }
 
     @Test
+    void searchWithoutDateRangeReturnsHistory() {
+
+        User user = createUser(
+                "handling-history-no-date-range-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        saveHistory(
+                order,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                user.getId(),
+                user.getUsername());
+
+        Page<OrderHandlingStatusHistory> result = repository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyFromReturnsHistoryAtFromBoundary() {
+
+        User user = createUser(
+                "handling-history-only-from-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderHandlingStatusHistory saved = saveHistory(
+                order,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                user.getId(),
+                user.getUsername());
+
+        entityManager.refresh(saved);
+
+        LocalDateTime changedAt = saved.getChangedAt();
+
+        Page<OrderHandlingStatusHistory> result = repository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                changedAt,
+                null,
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
+    void searchWithOnlyToExclusiveReturnsHistoryBeforeBoundary() {
+
+        User user = createUser(
+                "handling-history-only-to-user");
+
+        Order order = orderRepository.save(
+                new Order(user.getId(), 1000));
+
+        OrderHandlingStatusHistory saved = saveHistory(
+                order,
+                OrderHandlingStatus.NONE,
+                OrderHandlingStatus.NEEDS_ACTION,
+                user.getId(),
+                user.getUsername());
+
+        entityManager.refresh(saved);
+
+        LocalDateTime changedAt = saved.getChangedAt();
+
+        Page<OrderHandlingStatusHistory> result = repository.search(
+                order.getId(),
+                null,
+                null,
+                null,
+                null,
+                changedAt.plusSeconds(1),
+                PageRequest.of(0, 10));
+
+        assertEquals(1, result.getTotalElements());
+    }
+
+    @Test
     void searchSupportsPagination() {
 
         User user = createUser(
