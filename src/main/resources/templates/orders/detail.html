@@ -147,6 +147,12 @@
             <span th:text="${order.shippingPhone}"></span>
         </p>
 
+        <p th:if="${canChangeShippingAddress}">
+            <a th:href="@{/orders/{id}/shipping-address(id=${order.id})}" class="button button-secondary">
+                配送先を変更する
+            </a>
+        </p>
+
     </div>
 
     <p th:unless="${order.shippingName != null}">
@@ -234,13 +240,13 @@
     </table>
 
     <p>
-        <a th:href="@{/orders}">
+        <a th:href="@{/orders}" class="button button-secondary">
             注文履歴へ戻る
         </a>
     </p>
 
     <p>
-        <a th:href="@{/}">
+        <a th:href="@{/}" class="button button-secondary">
             トップページへ戻る
         </a>
     </p>

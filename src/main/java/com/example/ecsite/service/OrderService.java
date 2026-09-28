@@ -40,6 +40,7 @@ import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
+import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
@@ -868,6 +869,43 @@ public class OrderService {
                 null);
     }
 
+    @Transactional
+    public void changeShippingAddressForUser(
+            Long orderId,
+            Long userId,
+            OrderShippingAddressForm form) {
+
+        Order order = orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId)
+                .orElseThrow(() -> new OrderNotFoundException(
+                        orderId));
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        if (order.getStatus() != OrderStatus.ORDERED
+                && order.getStatus() != OrderStatus.PAID) {
+
+            throw new InvalidOrderStatusException(
+                    "現在の注文状態では配送先を変更できません。");
+        }
+
+        if (!order.isWithinModificationPeriod(now)) {
+
+            throw new InvalidOrderStatusException(
+                    "この注文の変更受付は終了しています。");
+        }
+
+        order.setShippingAddress(
+                form.getShippingName().trim(),
+                form.getShippingPostalCode().trim(),
+                form.getShippingPrefecture().trim(),
+                form.getShippingCity().trim(),
+                form.getShippingAddressLine().trim(),
+                form.getShippingPhone().trim());
+    }
+
     @Transactional(readOnly = true)
     public long countOrdersByStatus(
             OrderStatus status) {
@@ -941,6 +979,11 @@ public class OrderService {
             case ME -> loginAdminAccountId;
             case SPECIFIC -> selectedAdminAccountId;
         };
+    }
+
+    public boolean canChangeShippingAddress(Order order) {
+        return order.canChangeShippingAddress(
+                LocalDateTime.now(clock));
     }
 
 }

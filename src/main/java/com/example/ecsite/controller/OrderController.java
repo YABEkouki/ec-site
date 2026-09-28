@@ -4,7 +4,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.Validator;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,10 +15,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
+import com.example.ecsite.service.ShippingAddressService;
 
 @Controller
 @RequestMapping("/orders")
@@ -23,13 +29,19 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderStatusHistoryService orderStatusHistoryService;
+    private final ShippingAddressService shippingAddressService;
+    private final Validator validator;
 
     public OrderController(
             OrderService orderService,
-            OrderStatusHistoryService orderStatusHistoryService) {
+            OrderStatusHistoryService orderStatusHistoryService,
+            ShippingAddressService shippingAddressService,
+            Validator validator) {
 
         this.orderService = orderService;
         this.orderStatusHistoryService = orderStatusHistoryService;
+        this.shippingAddressService = shippingAddressService;
+        this.validator = validator;
     }
 
     @GetMapping
@@ -80,6 +92,10 @@ public class OrderController {
                 "statusHistories",
                 orderStatusHistoryService.findByOrderId(id));
 
+        model.addAttribute(
+                "canChangeShippingAddress",
+                orderService.canChangeShippingAddress(order));
+
         return "orders/detail";
     }
 
@@ -106,6 +122,250 @@ public class OrderController {
         }
 
         return "redirect:/orders/" + id;
+    }
+
+    @GetMapping("/{id}/shipping-address")
+    public String shippingAddressInput(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!orderService.canChangeShippingAddress(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文の配送先は変更できません。");
+
+            return "redirect:/orders/" + id;
+        }
+
+        OrderShippingAddressForm form = new OrderShippingAddressForm();
+
+        form.setShippingAddressMode(
+                OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_DIRECT);
+
+        form.setShippingName(
+                order.getShippingName());
+
+        form.setShippingPostalCode(
+                order.getShippingPostalCode());
+
+        form.setShippingPrefecture(
+                order.getShippingPrefecture());
+
+        form.setShippingCity(
+                order.getShippingCity());
+
+        form.setShippingAddressLine(
+                order.getShippingAddressLine());
+
+        form.setShippingPhone(
+                order.getShippingPhone());
+
+        model.addAttribute(
+                "order",
+                order);
+
+        model.addAttribute(
+                "orderShippingAddressForm",
+                form);
+
+        model.addAttribute(
+                "shippingAddresses",
+                shippingAddressService.findAllByUserId(
+                        loginUser.getId()));
+
+        return "orders/shipping-address";
+    }
+
+    @PostMapping("/{id}/shipping-address/confirm")
+    public String shippingAddressConfirm(
+            @PathVariable Long id,
+            @ModelAttribute("orderShippingAddressForm") OrderShippingAddressForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!orderService.canChangeShippingAddress(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文の配送先は変更できません。");
+
+            return "redirect:/orders/" + id;
+        }
+
+        if (OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_REGISTERED
+                .equals(form.getShippingAddressMode())) {
+
+            if (form.getShippingAddressId() == null) {
+
+                bindingResult.rejectValue(
+                        "shippingAddressId",
+                        "required",
+                        "配送先を選択してください。");
+
+            } else {
+
+                ShippingAddress address = shippingAddressService.findByIdAndUserId(
+                        form.getShippingAddressId(),
+                        loginUser.getId());
+
+                copyShippingAddressToOrderForm(
+                        address,
+                        form);
+            }
+
+        } else if (OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_DIRECT
+                .equals(form.getShippingAddressMode())) {
+
+            form.setShippingAddressId(null);
+
+        } else {
+
+            bindingResult.rejectValue(
+                    "shippingAddressMode",
+                    "invalid",
+                    "配送先の指定が正しくありません。");
+        }
+
+        validator.validate(
+                form,
+                bindingResult);
+
+        if (bindingResult.hasErrors()) {
+
+            model.addAttribute(
+                    "order",
+                    order);
+
+            model.addAttribute(
+                    "shippingAddresses",
+                    shippingAddressService.findAllByUserId(
+                            loginUser.getId()));
+
+            return "orders/shipping-address";
+        }
+
+        model.addAttribute(
+                "order",
+                order);
+
+        return "orders/shipping-address-confirm";
+    }
+
+    @PostMapping("/{id}/shipping-address/back")
+    public String shippingAddressBack(
+            @PathVariable Long id,
+            @ModelAttribute("orderShippingAddressForm") OrderShippingAddressForm form,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!orderService.canChangeShippingAddress(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文の配送先は変更できません。");
+
+            return "redirect:/orders/" + id;
+        }
+
+        model.addAttribute(
+                "order",
+                order);
+
+        model.addAttribute(
+                "shippingAddresses",
+                shippingAddressService.findAllByUserId(
+                        loginUser.getId()));
+
+        return "orders/shipping-address";
+    }
+
+    @PostMapping("/{id}/shipping-address")
+    public String changeShippingAddress(
+            @PathVariable Long id,
+            @ModelAttribute("orderShippingAddressForm") OrderShippingAddressForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        validator.validate(
+                form,
+                bindingResult);
+
+        if (bindingResult.hasErrors()) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "配送先情報が正しくありません。もう一度入力してください。");
+
+            return "redirect:/orders/" + id + "/shipping-address";
+        }
+
+        try {
+
+            orderService.changeShippingAddressForUser(
+                    id,
+                    loginUser.getId(),
+                    form);
+
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    "配送先を変更しました。");
+
+        } catch (InvalidOrderStatusException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    e.getMessage());
+        }
+
+        return "redirect:/orders/" + id;
+    }
+
+    private void copyShippingAddressToOrderForm(
+            ShippingAddress address,
+            OrderShippingAddressForm form) {
+
+        form.setShippingAddressId(
+                address.getId());
+
+        form.setShippingAddressMode(
+                OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_REGISTERED);
+
+        form.setShippingName(
+                address.getRecipientName());
+
+        form.setShippingPostalCode(
+                address.getPostalCode());
+
+        form.setShippingPrefecture(
+                address.getPrefecture());
+
+        form.setShippingCity(
+                address.getCity());
+
+        form.setShippingAddressLine(
+                address.getAddressLine());
+
+        form.setShippingPhone(
+                address.getPhone());
     }
 
 }

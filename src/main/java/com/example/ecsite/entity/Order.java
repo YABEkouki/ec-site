@@ -252,6 +252,11 @@ public class Order {
                 && isWithinModificationPeriod(now);
     }
 
+    public boolean canChangeShippingAddress(LocalDateTime now) {
+        return (status == OrderStatus.ORDERED || status == OrderStatus.PAID)
+                && isWithinModificationPeriod(now);
+    }
+
     public boolean canMarkAsPaid() {
         return status == OrderStatus.ORDERED;
     }
