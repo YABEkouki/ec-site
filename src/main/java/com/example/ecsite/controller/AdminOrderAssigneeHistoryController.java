@@ -25,8 +25,6 @@ import com.example.ecsite.service.OrderAssigneeHistoryService;
 @RequestMapping("/admin/order-assignee-histories")
 public class AdminOrderAssigneeHistoryController {
 
-    private static final int MAX_PAGE_SIZE = 100;
-
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
     private final AdminAccountService adminAccountService;
     private final OrderAssigneeHistoryCsvService orderAssigneeHistoryCsvService;
@@ -49,10 +47,7 @@ public class AdminOrderAssigneeHistoryController {
             Model model) {
 
         int safePage = Math.max(page, 0);
-
-        int safeSize = Math.min(
-                Math.max(size, 1),
-                MAX_PAGE_SIZE);
+        int safeSize = Math.clamp(size, 1, 100);
 
         Page<OrderAssigneeHistory> historyPage = orderAssigneeHistoryService.search(
                 searchForm,

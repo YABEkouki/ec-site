@@ -21,8 +21,6 @@ import com.example.ecsite.service.UserEnabledHistoryService;
 @RequestMapping("/admin/user-enabled-histories")
 public class AdminUserEnabledHistoryController {
 
-    private static final int MAX_PAGE_SIZE = 100;
-
     private final UserEnabledHistoryService userEnabledHistoryService;
     private final UserEnabledHistoryCsvService userEnabledHistoryCsvService;
 
@@ -43,9 +41,7 @@ public class AdminUserEnabledHistoryController {
             Model model) {
 
         int safePage = Math.max(page, 0);
-        int safeSize = Math.min(
-                Math.max(size, 1),
-                MAX_PAGE_SIZE);
+        int safeSize = Math.clamp(size, 1, 100);
 
         Page<UserEnabledHistory> historyPage = userEnabledHistoryService.search(
                 searchForm,

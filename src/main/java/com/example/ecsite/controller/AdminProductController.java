@@ -292,9 +292,12 @@ public class AdminProductController {
             @RequestParam(defaultValue = "10") int size,
             Model model) {
 
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.clamp(size, 1, 100);
+
         Page<Product> productPage = productService.findInactiveProducts(
-                page,
-                size);
+                safePage,
+                safeSize);
 
         model.addAttribute(
                 "products",
