@@ -55,6 +55,7 @@ import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
+import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
@@ -2621,6 +2622,141 @@ class OrderServiceTest {
                         any(LocalDateTime.class));
     }
 
+    @Test
+    void changeShippingAddressForUserUpdatesOrderWithinDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderShippingAddressForm form = createOrderShippingAddressForm();
+
+        orderService.changeShippingAddressForUser(
+                orderId,
+                userId,
+                form);
+
+        assertEquals(
+                "佐藤 花子",
+                order.getShippingName());
+
+        assertEquals(
+                "150-0001",
+                order.getShippingPostalCode());
+
+        assertEquals(
+                "東京都",
+                order.getShippingPrefecture());
+
+        assertEquals(
+                "渋谷区",
+                order.getShippingCity());
+
+        assertEquals(
+                "神宮前1-2-3",
+                order.getShippingAddressLine());
+
+        assertEquals(
+                "080-1234-5678",
+                order.getShippingPhone());
+    }
+
+    @Test
+    void changeShippingAddressForUserAllowsPaidOrderWithinDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        order.markAsPaid();
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderShippingAddressForm form = createOrderShippingAddressForm();
+
+        orderService.changeShippingAddressForUser(
+                orderId,
+                userId,
+                form);
+
+        assertEquals(
+                "佐藤 花子",
+                order.getShippingName());
+    }
+
+    @Test
+    void changeShippingAddressForUserRejectsShippedOrder() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        order.markAsPaid();
+        order.markAsShipped();
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        InvalidOrderStatusException exception = assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.changeShippingAddressForUser(
+                        orderId,
+                        userId,
+                        createOrderShippingAddressForm()));
+
+        assertEquals(
+                "現在の注文状態では配送先を変更できません。",
+                exception.getMessage());
+    }
+
+    @Test
+    void changeShippingAddressForUserRejectsCancelledOrder() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        order.cancel();
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        InvalidOrderStatusException exception = assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.changeShippingAddressForUser(
+                        orderId,
+                        userId,
+                        createOrderShippingAddressForm()));
+
+        assertEquals(
+                "現在の注文状態では配送先を変更できません。",
+                exception.getMessage());
+    }
+
     private OrderService createOrderService() {
         return new OrderService(
                 orderRepository,
@@ -2647,6 +2783,159 @@ class OrderServiceTest {
                 totalAmount,
                 orderedAt,
                 changeDeadlineAt);
+    }
+
+    private OrderShippingAddressForm createOrderShippingAddressForm() {
+
+        OrderShippingAddressForm form = new OrderShippingAddressForm();
+
+        form.setShippingAddressMode(
+                OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_DIRECT);
+
+        form.setShippingName(
+                "佐藤 花子");
+
+        form.setShippingPostalCode(
+                "150-0001");
+
+        form.setShippingPrefecture(
+                "東京都");
+
+        form.setShippingCity(
+                "渋谷区");
+
+        form.setShippingAddressLine(
+                "神宮前1-2-3");
+
+        form.setShippingPhone(
+                "080-1234-5678");
+
+        return form;
+    }
+
+    @Test
+    void changeShippingAddressForUserAllowsOneSecondBeforeDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        clock = Clock.fixed(
+                LocalDateTime.of(
+                        2026, 9, 28, 13, 59, 59)
+                        .atZone(ZoneId.of("Asia/Tokyo"))
+                        .toInstant(),
+                ZoneId.of("Asia/Tokyo"));
+
+        orderService = createOrderService();
+
+        orderService.changeShippingAddressForUser(
+                orderId,
+                userId,
+                createOrderShippingAddressForm());
+
+        assertEquals(
+                "佐藤 花子",
+                order.getShippingName());
+    }
+
+    @Test
+    void changeShippingAddressForUserRejectsExactlyAtDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        clock = Clock.fixed(
+                LocalDateTime.of(
+                        2026, 9, 28, 14, 0, 0)
+                        .atZone(ZoneId.of("Asia/Tokyo"))
+                        .toInstant(),
+                ZoneId.of("Asia/Tokyo"));
+
+        orderService = createOrderService();
+
+        InvalidOrderStatusException exception = assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.changeShippingAddressForUser(
+                        orderId,
+                        userId,
+                        createOrderShippingAddressForm()));
+
+        assertEquals(
+                "この注文の変更受付は終了しています。",
+                exception.getMessage());
+    }
+
+    @Test
+    void changeShippingAddressForUserRejectsOneSecondAfterDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrder(
+                userId,
+                1000);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        clock = Clock.fixed(
+                LocalDateTime.of(
+                        2026, 9, 28, 14, 0, 1)
+                        .atZone(ZoneId.of("Asia/Tokyo"))
+                        .toInstant(),
+                ZoneId.of("Asia/Tokyo"));
+
+        orderService = createOrderService();
+
+        InvalidOrderStatusException exception = assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.changeShippingAddressForUser(
+                        orderId,
+                        userId,
+                        createOrderShippingAddressForm()));
+
+        assertEquals(
+                "この注文の変更受付は終了しています。",
+                exception.getMessage());
+    }
+
+    @Test
+    void changeShippingAddressForUserRejectsOrderOwnedByAnotherUser() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                OrderNotFoundException.class,
+                () -> orderService.changeShippingAddressForUser(
+                        orderId,
+                        userId,
+                        createOrderShippingAddressForm()));
     }
 
 }

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>注文配送先変更確認</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>注文配送先変更確認</h1>
+
+    <p>
+        注文番号：
+        <span th:text="${order.id}"></span>
+    </p>
+
+    <p>
+        変更期限：
+        <span th:text="${#temporals.format(
+            order.changeDeadlineAt,
+            'yyyy/MM/dd HH:mm')}">
+        </span>
+    </p>
+
+    <h2>現在の配送先</h2>
+
+    <div>
+        <p>
+            受取人：
+            <span th:text="${order.shippingName}"></span>
+        </p>
+
+        <p>
+            〒
+            <span th:text="${order.shippingPostalCode}"></span>
+        </p>
+
+        <p>
+            <span th:text="${order.shippingPrefecture}"></span>
+            <span th:text="${order.shippingCity}"></span>
+            <span th:text="${order.shippingAddressLine}"></span>
+        </p>
+
+        <p>
+            電話番号：
+            <span th:text="${order.shippingPhone}"></span>
+        </p>
+    </div>
+
+    <h2>変更後の配送先</h2>
+
+    <div>
+        <p>
+            受取人：
+            <span th:text="${orderShippingAddressForm.shippingName}">
+            </span>
+        </p>
+
+        <p>
+            〒
+            <span th:text="${orderShippingAddressForm.shippingPostalCode}">
+            </span>
+        </p>
+
+        <p>
+            <span th:text="${orderShippingAddressForm.shippingPrefecture}">
+            </span>
+            <span th:text="${orderShippingAddressForm.shippingCity}">
+            </span>
+            <span th:text="${orderShippingAddressForm.shippingAddressLine}">
+            </span>
+        </p>
+
+        <p>
+            電話番号：
+            <span th:text="${orderShippingAddressForm.shippingPhone}">
+            </span>
+        </p>
+    </div>
+
+    <form th:action="@{/orders/{id}/shipping-address(id=${order.id})}" th:object="${orderShippingAddressForm}"
+        method="post">
+
+        <input type="hidden" th:field="*{shippingAddressMode}">
+
+        <input type="hidden" th:field="*{shippingAddressId}">
+
+        <input type="hidden" th:field="*{shippingName}">
+
+        <input type="hidden" th:field="*{shippingPostalCode}">
+
+        <input type="hidden" th:field="*{shippingPrefecture}">
+
+        <input type="hidden" th:field="*{shippingCity}">
+
+        <input type="hidden" th:field="*{shippingAddressLine}">
+
+        <input type="hidden" th:field="*{shippingPhone}">
+
+        <div class="actions">
+
+            <button type="submit" class="button-primary">
+                配送先を変更する
+            </button>
+
+        </div>
+
+    </form>
+
+    <form th:action="@{/orders/{id}/shipping-address/back(id=${order.id})}" th:object="${orderShippingAddressForm}"
+        method="post">
+
+        <input type="hidden" th:field="*{shippingAddressMode}">
+
+        <input type="hidden" th:field="*{shippingAddressId}">
+
+        <input type="hidden" th:field="*{shippingName}">
+
+        <input type="hidden" th:field="*{shippingPostalCode}">
+
+        <input type="hidden" th:field="*{shippingPrefecture}">
+
+        <input type="hidden" th:field="*{shippingCity}">
+
+        <input type="hidden" th:field="*{shippingAddressLine}">
+
+        <input type="hidden" th:field="*{shippingPhone}">
+
+        <div class="actions">
+
+            <button type="submit" class="button button-secondary">
+                入力内容を修正する
+            </button>
+
+            <a th:href="@{/orders/{id}(id=${order.id})}" class="button button-secondary">
+                注文詳細へ戻る
+            </a>
+
+        </div>
+
+    </form>
+
+</body>
+
+</html>
