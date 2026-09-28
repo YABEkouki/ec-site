@@ -62,11 +62,19 @@ public class OrderController {
             @AuthenticationPrincipal CustomUserDetails loginUser,
             Model model) {
 
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        model.addAttribute("order", order);
+
         model.addAttribute(
-                "order",
-                orderService.findOrderByIdAndUserId(
-                        id,
-                        loginUser.getId()));
+                "withinModificationPeriod",
+                orderService.isWithinModificationPeriod(order));
+
+        model.addAttribute(
+                "canCancelByUser",
+                orderService.canCancelByUser(order));
 
         model.addAttribute(
                 "statusHistories",

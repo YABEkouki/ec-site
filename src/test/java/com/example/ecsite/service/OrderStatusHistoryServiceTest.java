@@ -43,7 +43,11 @@ class OrderStatusHistoryServiceTest {
     @Test
     void recordSavesOrderStatusHistory() {
 
-        Order order = new Order(10L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         orderStatusHistoryService.record(
                 order,
@@ -62,7 +66,11 @@ class OrderStatusHistoryServiceTest {
     @Test
     void recordSavesTrimmedInternalNote() {
 
-        Order order = new Order(10L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         orderStatusHistoryService.record(
                 order,
@@ -351,7 +359,11 @@ class OrderStatusHistoryServiceTest {
     @Test
     void recordConvertsBlankInternalNoteToNull() {
 
-        Order order = new Order(10L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         orderStatusHistoryService.record(
                 order,
@@ -370,7 +382,11 @@ class OrderStatusHistoryServiceTest {
     @Test
     void recordWithoutInternalNoteSavesNull() {
 
-        Order order = new Order(10L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         orderStatusHistoryService.record(
                 order,

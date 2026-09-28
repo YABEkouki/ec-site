@@ -42,7 +42,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("order-status-history-test-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderStatusHistory ordered = OrderStatusHistory.create(
                 order,
@@ -103,7 +107,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("order-status-history-search-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderStatusHistory ordered = OrderStatusHistory.create(
                 order,
@@ -154,7 +162,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-from-status-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -193,7 +205,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-to-status-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -232,7 +248,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-actor-type-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -271,7 +291,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-username-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -310,7 +334,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-multiple-condition-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -372,7 +400,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-from-boundary-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderStatusHistory saved = saveHistory(
                 order,
@@ -404,7 +436,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-to-boundary-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderStatusHistory saved = saveHistory(
                 order,
@@ -436,7 +472,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-no-date-range-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -464,7 +504,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-only-from-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderStatusHistory saved = saveHistory(
                 order,
@@ -496,7 +540,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-only-to-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderStatusHistory saved = saveHistory(
                 order,
@@ -528,7 +576,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-no-match-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -557,7 +609,11 @@ class OrderStatusHistoryRepositoryTest {
 
         User user = createUser("history-pagination-user");
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         saveHistory(
                 order,
@@ -619,7 +675,11 @@ class OrderStatusHistoryRepositoryTest {
         User user = createUser("history-internal-note-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderStatusHistory history = OrderStatusHistory.create(
                 order,

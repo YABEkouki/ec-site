@@ -734,9 +734,13 @@ class UserRepositoryTest {
             User user,
             OrderStatus status) {
 
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+
         Order order = new Order(
                 user.getId(),
-                1000);
+                1000,
+                orderedAt,
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         if (status == OrderStatus.PAID) {
             order.markAsPaid();

@@ -46,9 +46,16 @@
                 </td>
             </tr>
 
+            <tr>
+                <th>変更期限</th>
+                <td th:text="${#temporals.format(order.changeDeadlineAt, 'yyyy/MM/dd HH:mm')}">
+                </td>
+            </tr>
+
+
             <tr th:if="${order.paidAt != null}">
                 <th>支払日時</th>
-                <td th:text="${#temporals.format( order.paidAt, 'yyyy/MM/dd HH:mm')}">
+                <td th:text="${#temporals.format(order.paidAt, 'yyyy/MM/dd HH:mm')}">
                 </td>
             </tr>
 
@@ -78,7 +85,20 @@
     <section>
         <h2>注文操作</h2>
 
-        <form th:if="${order.canCancel()}" th:action="@{/orders/{id}/cancel(
+        <p th:if="${withinModificationPeriod}">
+            この注文は
+            <span th:text="${#temporals.format(
+        order.changeDeadlineAt,
+        'yyyy/MM/dd HH:mm')}">
+            </span>
+            まで変更できます。
+        </p>
+
+        <p th:unless="${withinModificationPeriod}">
+            この注文の変更受付は終了しました。
+        </p>
+
+        <form th:if="${canCancelByUser}" th:action="@{/orders/{id}/cancel(
               id=${order.id})}" method="post">
 
             <button type="submit" class="button-danger" onclick="return confirm(

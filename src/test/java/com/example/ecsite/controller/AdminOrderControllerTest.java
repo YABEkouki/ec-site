@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -106,7 +107,11 @@ class AdminOrderControllerTest {
 
         AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
 
-        Order order = new Order(10L, 2000);
+        Order order = new Order(
+                10L,
+                2000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
         Page<Order> orderPage = new PageImpl<>(List.of(order));
 
         when(orderService.searchOrders(
@@ -183,7 +188,11 @@ class AdminOrderControllerTest {
         AdminOrderSearchForm searchForm = new AdminOrderSearchForm();
         searchForm.setStatus(OrderStatus.PAID);
 
-        Order order = new Order(10L, 2000);
+        Order order = new Order(
+                10L,
+                2000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
         Page<Order> orderPage = new PageImpl<>(List.of(order));
 
         when(orderService.searchOrders(
@@ -220,7 +229,11 @@ class AdminOrderControllerTest {
 
         Long orderId = 1L;
 
-        Order order = new Order(10L, 2000);
+        Order order = new Order(
+                10L,
+                2000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
         OrderStatusHistory history = mock(OrderStatusHistory.class);
         OrderNote orderNote = mock(OrderNote.class);
         OrderHandlingStatusHistory handlingStatusHistory = mock(OrderHandlingStatusHistory.class);
@@ -649,8 +662,16 @@ class AdminOrderControllerTest {
         searchForm.setUserId(10L);
         searchForm.setStatus(OrderStatus.PAID);
 
-        Order firstOrder = new Order(10L, 1000);
-        Order secondOrder = new Order(10L, 2000);
+        Order firstOrder = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
+        Order secondOrder = new Order(
+                10L,
+                2000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         List<Order> orders = List.of(firstOrder, secondOrder);
 
@@ -1031,7 +1052,11 @@ class AdminOrderControllerTest {
         when(loginUser.getId())
                 .thenReturn(20L);
 
-        Order order = new Order(10L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         AdminActionRequiredOrderDto dto = new AdminActionRequiredOrderDto(
                 order,

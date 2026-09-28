@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -54,7 +55,11 @@ class OrderControllerTest {
 
         Long userId = 10L;
 
-        Order order = new Order(userId, 2000);
+        Order order = new Order(
+                userId,
+                2000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         Page<Order> orderPage = new PageImpl<>(
                 List.of(order));
@@ -99,7 +104,11 @@ class OrderControllerTest {
         Long orderId = 1L;
         Long userId = 10L;
 
-        Order order = new Order(userId, 2000);
+        Order order = new Order(
+                userId,
+                2000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         OrderStatusHistory history = mock(OrderStatusHistory.class);
 
@@ -115,6 +124,12 @@ class OrderControllerTest {
 
         when(orderStatusHistoryService.findByOrderId(orderId))
                 .thenReturn(statusHistories);
+
+        when(orderService.isWithinModificationPeriod(order))
+                .thenReturn(true);
+
+        when(orderService.canCancelByUser(order))
+                .thenReturn(true);
 
         String viewName = orderController.detail(
                 orderId,
@@ -140,6 +155,22 @@ class OrderControllerTest {
                 .addAttribute(
                         "statusHistories",
                         statusHistories);
+
+        verify(orderService)
+                .isWithinModificationPeriod(order);
+
+        verify(model)
+                .addAttribute(
+                        "withinModificationPeriod",
+                        true);
+
+        verify(orderService)
+                .canCancelByUser(order);
+
+        verify(model)
+                .addAttribute(
+                        "canCancelByUser",
+                        true);
     }
 
     @Test

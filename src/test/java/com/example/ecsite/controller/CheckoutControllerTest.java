@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -89,7 +90,11 @@ class CheckoutControllerTest {
 
         Cart cart = createCart();
         CheckoutForm checkoutForm = createCheckoutForm();
-        Order order = new Order(10L, 1000);
+        Order order = new Order(
+                10L,
+                1000,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
 
         when(session.getAttribute("checkoutToken"))
                 .thenReturn(CHECKOUT_TOKEN);

@@ -50,6 +50,9 @@ public class Order {
     @Column(name = "ordered_at", nullable = false)
     private LocalDateTime orderedAt;
 
+    @Column(name = "change_deadline_at", nullable = false)
+    private LocalDateTime changeDeadlineAt;
+
     @Column(name = "shipping_name", length = 100)
     private String shippingName;
 
@@ -74,11 +77,16 @@ public class Order {
     public Order() {
     }
 
-    public Order(Long userId, int totalAmount) {
+    public Order(
+            Long userId,
+            int totalAmount,
+            LocalDateTime orderedAt,
+            LocalDateTime changeDeadlineAt) {
         this.userId = userId;
         this.totalAmount = totalAmount;
         this.status = OrderStatus.ORDERED;
-        this.orderedAt = LocalDateTime.now();
+        this.orderedAt = orderedAt;
+        this.changeDeadlineAt = changeDeadlineAt;
     }
 
     public Long getId() {
@@ -107,6 +115,10 @@ public class Order {
 
     public LocalDateTime getOrderedAt() {
         return orderedAt;
+    }
+
+    public LocalDateTime getChangeDeadlineAt() {
+        return changeDeadlineAt;
     }
 
     public OrderHandlingStatus getHandlingStatus() {
@@ -229,6 +241,15 @@ public class Order {
 
     public boolean canCancel() {
         return status == OrderStatus.ORDERED;
+    }
+
+    public boolean isWithinModificationPeriod(LocalDateTime now) {
+        return now.isBefore(changeDeadlineAt);
+    }
+
+    public boolean canCancelByUser(LocalDateTime now) {
+        return canCancel()
+                && isWithinModificationPeriod(now);
     }
 
     public boolean canMarkAsPaid() {

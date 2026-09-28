@@ -175,7 +175,11 @@ class StockMovementRepositoryTest {
         int stockBefore = product.getStock();
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         stockMovementRepository.save(
                 StockMovement.createAdminAdjustment(

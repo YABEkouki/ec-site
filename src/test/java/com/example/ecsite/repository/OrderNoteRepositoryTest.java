@@ -38,7 +38,11 @@ class OrderNoteRepositoryTest {
         User user = createUser("order-note-test-user");
 
         Order order = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         OrderNote first = OrderNote.create(
                 order,
@@ -76,10 +80,18 @@ class OrderNoteRepositoryTest {
         User user = createUser("order-note-other-order-user");
 
         Order targetOrder = orderRepository.save(
-                new Order(user.getId(), 1000));
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         Order otherOrder = orderRepository.save(
-                new Order(user.getId(), 2000));
+                new Order(
+                        user.getId(),
+                        2000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
         orderNoteRepository.save(OrderNote.create(
                 targetOrder,
