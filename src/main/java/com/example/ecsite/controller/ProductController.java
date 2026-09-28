@@ -12,6 +12,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.example.ecsite.entity.Product;
@@ -28,6 +29,7 @@ import com.example.ecsite.service.ReviewService;
 import jakarta.validation.Valid;
 
 @Controller
+@RequestMapping("/products")
 public class ProductController {
 
     private final ProductService productService;
@@ -50,7 +52,7 @@ public class ProductController {
         this.productViewHistoryService = productViewHistoryService;
     }
 
-    @GetMapping("/products")
+    @GetMapping
     public String list(
             @Valid @ModelAttribute("searchForm") ProductSearchForm searchForm,
             BindingResult bindingResult,
@@ -83,7 +85,7 @@ public class ProductController {
         return "products/list";
     }
 
-    @GetMapping("/products/{id}")
+    @GetMapping("/{id}")
     public String detail(@PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails userDetails,
             Model model) {

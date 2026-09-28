@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.dto.UserAccountUpdateResult;
@@ -36,6 +37,7 @@ import com.example.ecsite.service.UserService;
 import jakarta.validation.Valid;
 
 @Controller
+@RequestMapping("/mypage")
 public class MyPageController {
 
     private final UserProfileService userProfileService;
@@ -58,7 +60,7 @@ public class MyPageController {
         this.mailService = mailService;
     }
 
-    @GetMapping("/mypage")
+    @GetMapping
     public String index(
             @AuthenticationPrincipal CustomUserDetails loginUser,
             Model model) {
@@ -80,7 +82,7 @@ public class MyPageController {
         return "mypage/index";
     }
 
-    @GetMapping("/mypage/account/edit")
+    @GetMapping("/account/edit")
     public String editAccount(
             @AuthenticationPrincipal CustomUserDetails loginUser,
             Model model) {
@@ -92,7 +94,7 @@ public class MyPageController {
         return "mypage/account-form";
     }
 
-    @PostMapping("/mypage/account")
+    @PostMapping("/account")
     public String updateAccount(
             @Valid @ModelAttribute("userAccountEditForm") UserAccountEditForm userAccountEditForm,
             BindingResult bindingResult,
@@ -153,7 +155,7 @@ public class MyPageController {
         return "redirect:/mypage";
     }
 
-    @GetMapping("/mypage/password/edit")
+    @GetMapping("/password/edit")
     public String editPassword(Model model) {
 
         model.addAttribute(
@@ -163,7 +165,7 @@ public class MyPageController {
         return "mypage/password-form";
     }
 
-    @PostMapping("/mypage/password")
+    @PostMapping("/password")
     public String changePassword(
             @Valid @ModelAttribute("passwordChangeForm") PasswordChangeForm passwordChangeForm,
             BindingResult bindingResult,
@@ -221,7 +223,7 @@ public class MyPageController {
 
     }
 
-    @GetMapping("/mypage/profile/edit")
+    @GetMapping("/profile/edit")
     public String editProfile(
             @AuthenticationPrincipal CustomUserDetails loginUser,
             Model model) {
@@ -233,7 +235,7 @@ public class MyPageController {
         return "mypage/profile-form";
     }
 
-    @PostMapping("/mypage/profile")
+    @PostMapping("/profile")
     public String updateProfile(
             @Valid @ModelAttribute("userProfileForm") UserProfileForm userProfileForm,
             BindingResult bindingResult,
@@ -255,7 +257,7 @@ public class MyPageController {
         return "redirect:/mypage";
     }
 
-    @GetMapping("/mypage/addresses/new")
+    @GetMapping("/addresses/new")
     public String newAddress(@AuthenticationPrincipal CustomUserDetails loginUser, Model model) {
 
         model.addAttribute(
@@ -270,7 +272,7 @@ public class MyPageController {
         return "mypage/address-form";
     }
 
-    @PostMapping("/mypage/addresses")
+    @PostMapping("/addresses")
     public String createAddress(
             @Valid @ModelAttribute("shippingAddressForm") ShippingAddressForm shippingAddressForm,
             BindingResult bindingResult,
@@ -292,7 +294,7 @@ public class MyPageController {
         return "redirect:/mypage";
     }
 
-    @GetMapping("/mypage/addresses/{addressId}/edit")
+    @GetMapping("/addresses/{addressId}/edit")
     public String editAddress(
             @PathVariable Long addressId,
             @AuthenticationPrincipal CustomUserDetails loginUser,
@@ -311,7 +313,7 @@ public class MyPageController {
         return "mypage/address-form";
     }
 
-    @PostMapping("/mypage/addresses/{addressId}")
+    @PostMapping("/addresses/{addressId}")
     public String updateAddress(
             @PathVariable Long addressId,
             @Valid @ModelAttribute("shippingAddressForm") ShippingAddressForm shippingAddressForm,
@@ -335,7 +337,7 @@ public class MyPageController {
         return "redirect:/mypage";
     }
 
-    @PostMapping("/mypage/email-verification/resend")
+    @PostMapping("/email-verification/resend")
     public String resendEmailVerification(
             @AuthenticationPrincipal CustomUserDetails loginUser,
             RedirectAttributes redirectAttributes) {

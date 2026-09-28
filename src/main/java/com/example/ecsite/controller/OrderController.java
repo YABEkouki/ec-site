@@ -7,6 +7,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
@@ -17,6 +18,7 @@ import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 
 @Controller
+@RequestMapping("/orders")
 public class OrderController {
 
     private final OrderService orderService;
@@ -30,7 +32,7 @@ public class OrderController {
         this.orderStatusHistoryService = orderStatusHistoryService;
     }
 
-    @GetMapping("/orders")
+    @GetMapping
     public String list(
             @AuthenticationPrincipal CustomUserDetails loginUser,
             @RequestParam(defaultValue = "0") int page,
@@ -54,7 +56,7 @@ public class OrderController {
         return "orders/list";
     }
 
-    @GetMapping("/orders/{id}")
+    @GetMapping("/{id}")
     public String detail(
             @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails loginUser,
@@ -73,7 +75,7 @@ public class OrderController {
         return "orders/detail";
     }
 
-    @PostMapping("/orders/{id}/cancel")
+    @PostMapping("/{id}/cancel")
     public String cancel(
             @PathVariable Long id,
             @AuthenticationPrincipal CustomUserDetails loginUser,

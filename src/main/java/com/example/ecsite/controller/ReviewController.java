@@ -9,6 +9,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.Review;
@@ -21,116 +22,117 @@ import com.example.ecsite.service.ReviewService;
 import jakarta.validation.Valid;
 
 @Controller
+@RequestMapping("/products/{productId}/reviews")
 public class ReviewController {
 
-        private final ReviewService reviewService;
-        private final ProductService productService;
+    private final ReviewService reviewService;
+    private final ProductService productService;
 
-        public ReviewController(ReviewService reviewService, ProductService productService) {
-                this.reviewService = reviewService;
-                this.productService = productService;
+    public ReviewController(ReviewService reviewService, ProductService productService) {
+        this.reviewService = reviewService;
+        this.productService = productService;
+    }
+
+    @PostMapping
+    public String create(
+            @PathVariable Long productId,
+            @Valid @ModelAttribute("reviewForm") ReviewForm reviewForm,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            Model model) {
+
+        if (bindingResult.hasErrors()) {
+
+            addProductDetailAttributes(
+                    productId,
+                    userDetails.getId(),
+                    model);
+
+            return "products/detail";
+        }
+        try {
+
+            reviewService.create(
+                    productId,
+                    userDetails.getId(),
+                    reviewForm);
+
+        } catch (ReviewAlreadyExistsException e) {
+
+            addProductDetailAttributes(
+                    productId,
+                    userDetails.getId(),
+                    model);
+
+            return "products/detail";
         }
 
-        @PostMapping("/products/{productId}/reviews")
-        public String create(
-                        @PathVariable Long productId,
-                        @Valid @ModelAttribute("reviewForm") ReviewForm reviewForm,
-                        BindingResult bindingResult,
-                        @AuthenticationPrincipal CustomUserDetails userDetails,
-                        Model model) {
+        return "redirect:/products/" + productId;
+    }
 
-                if (bindingResult.hasErrors()) {
+    @PostMapping("/{reviewId}/edit")
+    public String update(
+            @PathVariable Long productId,
+            @PathVariable Long reviewId,
+            @Valid @ModelAttribute("editReviewForm") ReviewForm reviewForm,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            Model model) {
 
-                        addProductDetailAttributes(
-                                        productId,
-                                        userDetails.getId(),
-                                        model);
+        if (bindingResult.hasErrors()) {
 
-                        return "products/detail";
-                }
-                try {
+            addProductDetailAttributes(
+                    productId,
+                    userDetails.getId(),
+                    model);
 
-                        reviewService.create(
-                                        productId,
-                                        userDetails.getId(),
-                                        reviewForm);
+            model.addAttribute("reviewForm", new ReviewForm());
 
-                } catch (ReviewAlreadyExistsException e) {
-
-                        addProductDetailAttributes(
-                                        productId,
-                                        userDetails.getId(),
-                                        model);
-
-                        return "products/detail";
-                }
-
-                return "redirect:/products/" + productId;
+            return "products/detail";
         }
 
-        @PostMapping("/products/{productId}/reviews/{reviewId}/edit")
-        public String update(
-                        @PathVariable Long productId,
-                        @PathVariable Long reviewId,
-                        @Valid @ModelAttribute("editReviewForm") ReviewForm reviewForm,
-                        BindingResult bindingResult,
-                        @AuthenticationPrincipal CustomUserDetails userDetails,
-                        Model model) {
+        reviewService.update(
+                reviewId,
+                userDetails.getId(),
+                reviewForm);
 
-                if (bindingResult.hasErrors()) {
+        return "redirect:/products/" + productId;
+    }
 
-                        addProductDetailAttributes(
-                                        productId,
-                                        userDetails.getId(),
-                                        model);
+    @PostMapping("/{reviewId}/delete")
+    public String delete(
+            @PathVariable Long productId,
+            @PathVariable Long reviewId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
 
-                        model.addAttribute("reviewForm", new ReviewForm());
+        reviewService.delete(
+                reviewId,
+                userDetails.getId());
 
-                        return "products/detail";
-                }
+        return "redirect:/products/" + productId;
+    }
 
-                reviewService.update(
-                                reviewId,
-                                userDetails.getId(),
-                                reviewForm);
+    private void addProductDetailAttributes(
+            Long productId,
+            Long userId,
+            Model model) {
 
-                return "redirect:/products/" + productId;
-        }
+        Product product = productService.findById(productId);
 
-        @PostMapping("/products/{productId}/reviews/{reviewId}/delete")
-        public String delete(
-                        @PathVariable Long productId,
-                        @PathVariable Long reviewId,
-                        @AuthenticationPrincipal CustomUserDetails userDetails) {
+        List<Review> reviews = reviewService.findByProductId(productId);
 
-                reviewService.delete(
-                                reviewId,
-                                userDetails.getId());
-
-                return "redirect:/products/" + productId;
-        }
-
-        private void addProductDetailAttributes(
-                        Long productId,
-                        Long userId,
-                        Model model) {
-
-                Product product = productService.findById(productId);
-
-                List<Review> reviews = reviewService.findByProductId(productId);
-
-                model.addAttribute("product", product);
-                model.addAttribute("reviews", reviews);
-                model.addAttribute(
-                                "reviewCount",
-                                reviewService.countByProductId(productId));
-                model.addAttribute(
-                                "averageRating",
-                                reviewService.getAverageRating(productId));
-                model.addAttribute(
-                                "myReview",
-                                reviewService.findByProductIdAndUserId(
-                                                productId,
-                                                userId));
-        }
+        model.addAttribute("product", product);
+        model.addAttribute("reviews", reviews);
+        model.addAttribute(
+                "reviewCount",
+                reviewService.countByProductId(productId));
+        model.addAttribute(
+                "averageRating",
+                reviewService.getAverageRating(productId));
+        model.addAttribute(
+                "myReview",
+                reviewService.findByProductIdAndUserId(
+                        productId,
+                        userId));
+    }
 }
