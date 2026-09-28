@@ -21,6 +21,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.example.ecsite.dto.AdminAccountInfo;
@@ -337,6 +339,29 @@ class AdminAccountServiceTest {
         account.setEnabled(enabled);
 
         return account;
+    }
+
+    @Test
+    void findPageUsesPageSizeAndIdAscendingSort() {
+
+        AdminAccountService service = createService();
+
+        service.findPage(2);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+
+        verify(adminAccountRepository)
+                .findAll(captor.capture());
+
+        Pageable pageable = captor.getValue();
+
+        assertEquals(2, pageable.getPageNumber());
+        assertEquals(10, pageable.getPageSize());
+
+        Sort.Order idOrder = pageable.getSort().getOrderFor("id");
+
+        assertNotNull(idOrder);
+        assertEquals(Sort.Direction.ASC, idOrder.getDirection());
     }
 
     @Test

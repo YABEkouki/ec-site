@@ -107,9 +107,9 @@ public class ProductService {
                 0,
                 limit,
                 Sort.by(
-                        Sort.Order.desc("createdAt"),
-                        Sort.Order.desc("id")));
-
+                        Product::getCreatedAt,
+                        Product::getId)
+                        .descending());
         return productRepository
                 .findByActiveTrueAndStockGreaterThan(
                         0,
@@ -335,25 +335,29 @@ public class ProductService {
 
         if ("nameAsc".equals(sort)) {
             return Sort.by(
-                    Sort.Order.asc("name"),
-                    Sort.Order.asc("id"));
+                    Product::getName,
+                    Product::getId)
+                    .ascending();
         }
 
         if ("priceAsc".equals(sort)) {
             return Sort.by(
-                    Sort.Order.asc("price"),
-                    Sort.Order.asc("id"));
+                    Product::getPrice,
+                    Product::getId)
+                    .ascending();
         }
 
         if ("priceDesc".equals(sort)) {
             return Sort.by(
-                    Sort.Order.desc("price"),
-                    Sort.Order.desc("id"));
+                    Product::getPrice,
+                    Product::getId)
+                    .descending();
         }
 
         return Sort.by(
-                Sort.Order.desc("createdAt"),
-                Sort.Order.desc("id"));
+                Product::getCreatedAt,
+                Product::getId)
+                .descending();
     }
 
     public void restore(Long id) {

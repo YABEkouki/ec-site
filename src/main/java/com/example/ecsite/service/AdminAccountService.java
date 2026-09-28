@@ -43,7 +43,7 @@ public class AdminAccountService {
                 PageRequest.of(
                         page,
                         10,
-                        Sort.by(Sort.Direction.ASC, "id")));
+                        Sort.by(AdminAccount::getId).ascending()));
     }
 
     @Transactional(readOnly = true)

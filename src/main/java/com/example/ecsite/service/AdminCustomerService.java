@@ -62,9 +62,7 @@ public class AdminCustomerService {
         PageRequest pageable = PageRequest.of(
                 page,
                 size,
-                Sort.by(
-                        Sort.Direction.DESC,
-                        "id"));
+                Sort.by(User::getId).descending());
 
         return userRepository.searchCustomers(
                 searchForm.getUserId(),
