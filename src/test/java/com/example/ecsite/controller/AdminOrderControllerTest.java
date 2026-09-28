@@ -33,6 +33,7 @@ import com.example.ecsite.entity.OrderAssigneeHistory;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.OrderNote;
+import com.example.ecsite.entity.OrderShippingAddressHistory;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
@@ -50,6 +51,7 @@ import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
+import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 
 @ExtendWith(MockitoExtension.class)
@@ -77,6 +79,9 @@ class AdminOrderControllerTest {
     private OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
 
     @Mock
+    private OrderShippingAddressHistoryService orderShippingAddressHistoryService;
+
+    @Mock
     private AdminAccountService adminAccountService;
 
     @Mock
@@ -95,6 +100,7 @@ class AdminOrderControllerTest {
                 orderStatusHistoryService,
                 orderNoteService,
                 orderHandlingStatusHistoryService,
+                orderShippingAddressHistoryService,
                 orderAssigneeHistoryService,
                 adminAccountService);
     }
@@ -237,6 +243,7 @@ class AdminOrderControllerTest {
         OrderStatusHistory history = mock(OrderStatusHistory.class);
         OrderNote orderNote = mock(OrderNote.class);
         OrderHandlingStatusHistory handlingStatusHistory = mock(OrderHandlingStatusHistory.class);
+        OrderShippingAddressHistory shippingAddressHistory = mock(OrderShippingAddressHistory.class);
         OrderAssigneeHistory assigneeHistory = mock(OrderAssigneeHistory.class);
 
         order.changeHandlingStatus(OrderHandlingStatus.IN_PROGRESS);
@@ -244,6 +251,7 @@ class AdminOrderControllerTest {
         List<OrderStatusHistory> statusHistories = List.of(history);
         List<OrderNote> orderNotes = List.of(orderNote);
         List<OrderHandlingStatusHistory> handlingStatusHistories = List.of(handlingStatusHistory);
+        List<OrderShippingAddressHistory> shippingAddressHistories = List.of(shippingAddressHistory);
         List<OrderAssigneeHistory> assigneeHistories = List.of(assigneeHistory);
 
         when(orderService.findOrderWithItems(orderId))
@@ -257,6 +265,9 @@ class AdminOrderControllerTest {
 
         when(orderHandlingStatusHistoryService.findByOrderId(orderId))
                 .thenReturn(handlingStatusHistories);
+
+        when(orderShippingAddressHistoryService.findByOrderId(orderId))
+                .thenReturn(shippingAddressHistories);
 
         when(orderAssigneeHistoryService.findByOrderId(orderId))
                 .thenReturn(assigneeHistories);
@@ -288,6 +299,14 @@ class AdminOrderControllerTest {
 
         verify(orderStatusHistoryService)
                 .findByOrderId(orderId);
+
+        verify(orderShippingAddressHistoryService)
+                .findByOrderId(orderId);
+
+        verify(model)
+                .addAttribute(
+                        "shippingAddressHistories",
+                        shippingAddressHistories);
 
         verify(orderNoteService)
                 .findByOrderId(orderId);

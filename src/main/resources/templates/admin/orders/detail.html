@@ -420,6 +420,79 @@
         配送先情報は登録されていません。
     </p>
 
+    <section>
+        <h2>配送先変更履歴</h2>
+
+        <table th:unless="${#lists.isEmpty(shippingAddressHistories)}">
+            <thead>
+                <tr>
+                    <th>変更日時</th>
+                    <th>変更者種別</th>
+                    <th>変更者ID</th>
+                    <th>変更者ユーザー名</th>
+                    <th>変更前</th>
+                    <th>変更後</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr th:each="history : ${shippingAddressHistories}">
+                    <td th:text="${#temporals.format(
+                    history.changedAt,
+                    'yyyy/MM/dd HH:mm')}">
+                    </td>
+
+                    <td th:text="${history.changedByType.displayName}">
+                    </td>
+
+                    <td th:text="${history.changedByAccountId != null
+                    ? history.changedByAccountId
+                    : '-'}">
+                    </td>
+
+                    <td th:text="${history.changedByUsername}">
+                    </td>
+
+                    <td>
+                        <div th:text="${history.oldShippingName}"></div>
+                        <div>
+                            〒<span th:text="${history.oldShippingPostalCode}"></span>
+                        </div>
+                        <div>
+                            <span th:text="${history.oldShippingPrefecture}"></span>
+                            <span th:text="${history.oldShippingCity}"></span>
+                            <span th:text="${history.oldShippingAddressLine}"></span>
+                        </div>
+                        <div>
+                            電話番号：
+                            <span th:text="${history.oldShippingPhone}"></span>
+                        </div>
+                    </td>
+
+                    <td>
+                        <div th:text="${history.newShippingName}"></div>
+                        <div>
+                            〒<span th:text="${history.newShippingPostalCode}"></span>
+                        </div>
+                        <div>
+                            <span th:text="${history.newShippingPrefecture}"></span>
+                            <span th:text="${history.newShippingCity}"></span>
+                            <span th:text="${history.newShippingAddressLine}"></span>
+                        </div>
+                        <div>
+                            電話番号：
+                            <span th:text="${history.newShippingPhone}"></span>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p th:if="${#lists.isEmpty(shippingAddressHistories)}">
+            配送先変更履歴はありません。
+        </p>
+    </section>
+
     <h2>注文明細</h2>
 
     <table>
