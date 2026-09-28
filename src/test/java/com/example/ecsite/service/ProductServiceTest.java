@@ -798,8 +798,9 @@ class ProductServiceTest {
 
         assertEquals(
                 Sort.by(
-                        Sort.Order.asc("price"),
-                        Sort.Order.asc("id")),
+                        Product::getPrice,
+                        Product::getId)
+                        .ascending(),
                 pageable.getSort());
     }
 
@@ -833,8 +834,9 @@ class ProductServiceTest {
 
         assertEquals(
                 Sort.by(
-                        Sort.Order.desc("createdAt"),
-                        Sort.Order.desc("id")),
+                        Product::getCreatedAt,
+                        Product::getId)
+                        .descending(),
                 pageableCaptor.getValue().getSort());
     }
 
@@ -844,8 +846,9 @@ class ProductServiceTest {
         assertUserSearchSort(
                 "nameAsc",
                 Sort.by(
-                        Sort.Order.asc("name"),
-                        Sort.Order.asc("id")));
+                        Product::getName,
+                        Product::getId)
+                        .ascending());
     }
 
     @Test
@@ -854,8 +857,9 @@ class ProductServiceTest {
         assertUserSearchSort(
                 "priceDesc",
                 Sort.by(
-                        Sort.Order.desc("price"),
-                        Sort.Order.desc("id")));
+                        Product::getPrice,
+                        Product::getId)
+                        .descending());
     }
 
     @Test
@@ -864,8 +868,9 @@ class ProductServiceTest {
         assertUserSearchSort(
                 "unknown",
                 Sort.by(
-                        Sort.Order.desc("createdAt"),
-                        Sort.Order.desc("id")));
+                        Product::getCreatedAt,
+                        Product::getId)
+                        .descending());
     }
 
     @Test

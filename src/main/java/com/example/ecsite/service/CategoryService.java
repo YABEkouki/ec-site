@@ -59,8 +59,9 @@ public class CategoryService {
                         page,
                         10,
                         Sort.by(
-                                Sort.Order.asc("displayOrder"),
-                                Sort.Order.asc("name"))));
+                                Category::getDisplayOrder,
+                                Category::getName)
+                                .ascending()));
     }
 
     @Transactional(readOnly = true)
