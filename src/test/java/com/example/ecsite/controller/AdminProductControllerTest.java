@@ -29,6 +29,7 @@ import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
 import com.example.ecsite.entity.StockMovementType;
 import com.example.ecsite.entity.TaxCategory;
+import com.example.ecsite.exception.InvalidProductImageException;
 import com.example.ecsite.exception.InvalidProductSearchKeywordException;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
@@ -554,9 +555,6 @@ class AdminProductControllerTest {
         when(productService.findSearchKeywords(productId))
                 .thenReturn(searchKeywords);
 
-        when(categoryService.findCategoriesForProductEdit(categoryId))
-                .thenReturn(List.of(category));
-
         TaxCategory taxCategory = mock(TaxCategory.class);
 
         when(taxCategory.getId())
@@ -603,9 +601,6 @@ class AdminProductControllerTest {
         when(productService.findSearchKeywords(productId))
                 .thenReturn(List.of());
 
-        when(categoryService.findCategoriesForProductEdit(categoryId))
-                .thenReturn(List.of(category));
-
         TaxCategory taxCategory = mock(TaxCategory.class);
 
         when(taxCategory.getId())
@@ -650,9 +645,6 @@ class AdminProductControllerTest {
 
         when(productService.findSearchKeywords(productId))
                 .thenReturn(List.of());
-
-        when(categoryService.findCategoriesForProductEdit(categoryId))
-                .thenReturn(List.of(category));
 
         TaxCategory taxCategory = mock(TaxCategory.class);
 
@@ -726,9 +718,6 @@ class AdminProductControllerTest {
 
         Category category = mock(Category.class);
 
-        when(category.getId())
-                .thenReturn(categoryId);
-
         Product product = new Product();
         product.setId(productId);
         product.setCategory(category);
@@ -754,8 +743,11 @@ class AdminProductControllerTest {
         when(productService.findById(productId))
                 .thenReturn(product);
 
-        when(categoryService.findCategoriesForProductEdit(categoryId))
-                .thenReturn(List.of(category));
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        when(taxCategoryService
+                .findActiveTaxCategories())
+                .thenReturn(List.of(taxCategory));
 
         String viewName = adminProductController.update(
                 productId,
@@ -781,6 +773,14 @@ class AdminProductControllerTest {
                 .addAttribute(
                         "product",
                         product);
+
+        verify(taxCategoryService)
+                .findActiveTaxCategories();
+
+        verify(model)
+                .addAttribute(
+                        "taxCategories",
+                        List.of(taxCategory));
     }
 
     @Test
@@ -790,9 +790,6 @@ class AdminProductControllerTest {
         Long categoryId = 2L;
 
         Category category = mock(Category.class);
-
-        when(category.getId())
-                .thenReturn(categoryId);
 
         Product product = new Product();
         product.setId(productId);
@@ -818,9 +815,6 @@ class AdminProductControllerTest {
 
         when(productService.findById(productId))
                 .thenReturn(product);
-
-        when(categoryService.findCategoriesForProductEdit(categoryId))
-                .thenReturn(List.of(category));
 
         String returnUrl = "/admin/products?keyword=camp&page=2";
 
@@ -970,6 +964,121 @@ class AdminProductControllerTest {
                 .addAttribute(
                         "taxCategories",
                         taxCategories);
+    }
+
+    @Test
+    void updateReloadsTaxCategoriesWhenValidationFails() {
+
+        Long productId = 1L;
+
+        Category category = mock(Category.class);
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        Product product = new Product();
+        product.setId(productId);
+        product.setCategory(category);
+
+        ProductForm form = new ProductForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(taxCategoryService
+                .findActiveTaxCategories())
+                .thenReturn(List.of(taxCategory));
+
+        String viewName = adminProductController.update(
+                productId,
+                form,
+                bindingResult,
+                null,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "admin/products/edit",
+                viewName);
+
+        verify(taxCategoryService)
+                .findActiveTaxCategories();
+
+        verify(model)
+                .addAttribute(
+                        "taxCategories",
+                        List.of(taxCategory));
+
+        verify(productService, never())
+                .update(
+                        any(),
+                        any());
+    }
+
+    @Test
+    void updateReloadsTaxCategoriesWhenProductImageIsInvalid() {
+
+        Long productId = 1L;
+
+        Product product = new Product();
+        product.setId(productId);
+
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        ProductForm form = new ProductForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        doThrow(new InvalidProductImageException(
+                "商品画像が不正です。"))
+                .when(productService)
+                .update(productId, form);
+
+        when(productService.findById(productId))
+                .thenReturn(product);
+
+        when(taxCategoryService
+                .findActiveTaxCategories())
+                .thenReturn(List.of(taxCategory));
+
+        String viewName = adminProductController.update(
+                productId,
+                form,
+                bindingResult,
+                null,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "admin/products/edit",
+                viewName);
+
+        verify(bindingResult)
+                .rejectValue(
+                        "imageFile",
+                        "invalid",
+                        "商品画像が不正です。");
+
+        verify(productService)
+                .findById(productId);
+
+        verify(taxCategoryService)
+                .findActiveTaxCategories();
+
+        verify(model)
+                .addAttribute(
+                        "taxCategories",
+                        List.of(taxCategory));
     }
 
 }

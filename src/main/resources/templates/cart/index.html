@@ -28,9 +28,9 @@
         <thead>
             <tr>
                 <th>商品名</th>
-                <th>価格</th>
+                <th>価格（税込）</th>
                 <th>数量</th>
-                <th>小計</th>
+                <th>小計（税込）</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -71,7 +71,7 @@
         </p>
 
         <p>
-            合計金額:
+            商品小計（税込）:
             <span th:text="${cart.totalAmount}"></span>
             円
         </p>
