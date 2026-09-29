@@ -71,8 +71,20 @@ public class Order {
     @Column(name = "shipping_phone", length = 20)
     private String shippingPhone;
 
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    @Column(name = "shipped_at")
+    private LocalDateTime shippedAt;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
+
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderCharge> charges = new ArrayList<>();
 
     public Order() {
     }
@@ -133,15 +145,6 @@ public class Order {
         this.orderedAt = orderedAt;
     }
 
-    @Column(name = "paid_at")
-    private LocalDateTime paidAt;
-
-    @Column(name = "shipped_at")
-    private LocalDateTime shippedAt;
-
-    @Column(name = "cancelled_at")
-    private LocalDateTime cancelledAt;
-
     public LocalDateTime getPaidAt() {
         return paidAt;
     }
@@ -161,6 +164,15 @@ public class Order {
 
     public List<OrderItem> getItems() {
         return Collections.unmodifiableList(items);
+    }
+
+    public void addCharge(OrderCharge charge) {
+        charges.add(charge);
+        charge.setOrder(this);
+    }
+
+    public List<OrderCharge> getCharges() {
+        return Collections.unmodifiableList(charges);
     }
 
     public void setShippingAddress(

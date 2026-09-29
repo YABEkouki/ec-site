@@ -3,6 +3,7 @@ package com.example.ecsite.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -18,6 +19,8 @@ import org.springframework.data.domain.PageRequest;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderCharge;
+import com.example.ecsite.entity.OrderChargeType;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.OrderItem;
@@ -2353,6 +2356,53 @@ class OrderRepositoryTest {
         assertThat(summary.getOrderCount()).isZero();
         assertThat(summary.getPurchaseAmount()).isZero();
         assertThat(summary.getLastOrderedAt()).isNull();
+    }
+
+    @Test
+    void savePersistsOrderCharge() {
+
+        User user = createUser("order-charge-user");
+        TaxCategory taxCategory = getStandardTaxCategory();
+
+        Order order = new Order(
+                user.getId(),
+                1550,
+                LocalDateTime.of(2026, 9, 29, 10, 0),
+                LocalDateTime.of(2026, 9, 29, 14, 0));
+
+        OrderCharge charge = new OrderCharge(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                550,
+                taxCategory.getId(),
+                taxCategory.getCode(),
+                taxCategory.getName(),
+                taxCategory.getTaxRate(),
+                10);
+
+        order.addCharge(charge);
+
+        Order saved = orderRepository.save(order);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Order found = orderRepository
+                .findById(saved.getId())
+                .orElseThrow();
+
+        assertEquals(1, found.getCharges().size());
+
+        OrderCharge savedCharge = found.getCharges().get(0);
+
+        assertEquals(OrderChargeType.SHIPPING, savedCharge.getChargeType());
+        assertEquals("送料・梱包料", savedCharge.getName());
+        assertEquals(550, savedCharge.getAmount());
+        assertEquals(taxCategory.getId(), savedCharge.getTaxCategoryId());
+        assertEquals("STANDARD", savedCharge.getTaxCategoryCode());
+        assertEquals("標準税率", savedCharge.getTaxCategoryName());
+        assertEquals(0, new BigDecimal("10.00").compareTo(savedCharge.getTaxRate()));
+        assertEquals(10, savedCharge.getDisplayOrder());
     }
 
     private Order createOrder(
