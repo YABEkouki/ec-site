@@ -15,6 +15,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -49,6 +50,7 @@ import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
@@ -159,6 +161,10 @@ class OrderServiceTest {
         assertEquals("テストカテゴリ", order.getItems().get(0).getCategoryName());
         assertEquals(LocalDateTime.of(2026, 9, 28, 10, 0), order.getOrderedAt());
         assertEquals(LocalDateTime.of(2026, 9, 28, 14, 0), order.getChangeDeadlineAt());
+        assertEquals(200L, order.getItems().get(0).getTaxCategoryId());
+        assertEquals("STANDARD", order.getItems().get(0).getTaxCategoryCode());
+        assertEquals("標準税率", order.getItems().get(0).getTaxCategoryName());
+        assertEquals(0, new BigDecimal("10.00").compareTo(order.getItems().get(0).getTaxRate()));
 
         verify(inventoryService)
                 .decreaseForOrder(
@@ -291,41 +297,6 @@ class OrderServiceTest {
 
         verify(orderRepository, never())
                 .save(any(Order.class));
-    }
-
-    private Product createProduct(
-            Long id,
-            String name,
-            int price,
-            int stock) {
-
-        Category category = new Category("テストカテゴリ");
-
-        org.springframework.test.util.ReflectionTestUtils
-                .setField(category, "id", 100L);
-
-        Product product = new Product();
-        product.setId(id);
-        product.setName(name);
-        product.setPrice(price);
-        product.setStock(stock);
-        product.setCategory(category);
-
-        return product;
-    }
-
-    private CheckoutForm createCheckoutForm() {
-
-        CheckoutForm form = new CheckoutForm();
-
-        form.setShippingName("山田 太郎");
-        form.setShippingPostalCode("123-4567");
-        form.setShippingPrefecture("東京都");
-        form.setShippingCity("千代田区");
-        form.setShippingAddressLine("1-2-3");
-        form.setShippingPhone("090-1234-5678");
-
-        return form;
     }
 
     @Test
@@ -490,6 +461,7 @@ class OrderServiceTest {
         CartItem cartItem = mock(CartItem.class);
         Product product = mock(Product.class);
         Category category = mock(Category.class);
+        TaxCategory taxCategory = mock(TaxCategory.class);
         CheckoutForm checkoutForm = createValidCheckoutForm();
 
         when(cart.getItems())
@@ -527,6 +499,21 @@ class OrderServiceTest {
 
         when(category.getName())
                 .thenReturn("テストカテゴリ");
+
+        when(product.getTaxCategory())
+                .thenReturn(taxCategory);
+
+        when(taxCategory.getId())
+                .thenReturn(200L);
+
+        when(taxCategory.getCode())
+                .thenReturn("STANDARD");
+
+        when(taxCategory.getName())
+                .thenReturn("標準税率");
+
+        when(taxCategory.getTaxRate())
+                .thenReturn(new BigDecimal("10.00"));
 
         Long orderId = 100L;
 
@@ -2839,63 +2826,6 @@ class OrderServiceTest {
                 order.getShippingName());
     }
 
-    private OrderService createOrderService() {
-        return new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderShippingAddressHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService,
-                orderDeadlineCalculator,
-                clock);
-    }
-
-    private Order createOrder(
-            Long userId,
-            int totalAmount) {
-
-        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
-
-        LocalDateTime changeDeadlineAt = orderDeadlineCalculator.calculate(orderedAt);
-
-        return new Order(
-                userId,
-                totalAmount,
-                orderedAt,
-                changeDeadlineAt);
-    }
-
-    private OrderShippingAddressForm createOrderShippingAddressForm() {
-
-        OrderShippingAddressForm form = new OrderShippingAddressForm();
-
-        form.setShippingAddressMode(
-                OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_DIRECT);
-
-        form.setShippingName(
-                "佐藤 花子");
-
-        form.setShippingPostalCode(
-                "150-0001");
-
-        form.setShippingPrefecture(
-                "東京都");
-
-        form.setShippingCity(
-                "渋谷区");
-
-        form.setShippingAddressLine(
-                "神宮前1-2-3");
-
-        form.setShippingPhone(
-                "080-1234-5678");
-
-        return form;
-    }
-
     @Test
     void changeShippingAddressForUserAllowsOneSecondBeforeDeadline() {
 
@@ -3029,6 +2959,110 @@ class OrderServiceTest {
                         createOrderShippingAddressForm()));
 
         verifyNoInteractions(orderShippingAddressHistoryService);
+    }
+
+    private Product createProduct(
+            Long id,
+            String name,
+            int price,
+            int stock) {
+
+        Category category = new Category("テストカテゴリ");
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(category, "id", 100L);
+
+        TaxCategory taxCategory = new TaxCategory();
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(taxCategory, "id", 200L);
+
+        taxCategory.setCode("STANDARD");
+        taxCategory.setName("標準税率");
+        taxCategory.setTaxRate(new BigDecimal("10.00"));
+        taxCategory.setActive(true);
+        taxCategory.setDisplayOrder(10);
+
+        Product product = new Product();
+        product.setId(id);
+        product.setName(name);
+        product.setPrice(price);
+        product.setStock(stock);
+        product.setCategory(category);
+        product.setTaxCategory(taxCategory);
+
+        return product;
+    }
+
+    private CheckoutForm createCheckoutForm() {
+
+        CheckoutForm form = new CheckoutForm();
+
+        form.setShippingName("山田 太郎");
+        form.setShippingPostalCode("123-4567");
+        form.setShippingPrefecture("東京都");
+        form.setShippingCity("千代田区");
+        form.setShippingAddressLine("1-2-3");
+        form.setShippingPhone("090-1234-5678");
+
+        return form;
+    }
+
+    private OrderService createOrderService() {
+        return new OrderService(
+                orderRepository,
+                productService,
+                inventoryService,
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService,
+                orderShippingAddressHistoryService,
+                orderAssigneeHistoryService,
+                adminAccountService,
+                orderDeadlineCalculator,
+                clock);
+    }
+
+    private Order createOrder(
+            Long userId,
+            int totalAmount) {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+
+        LocalDateTime changeDeadlineAt = orderDeadlineCalculator.calculate(orderedAt);
+
+        return new Order(
+                userId,
+                totalAmount,
+                orderedAt,
+                changeDeadlineAt);
+    }
+
+    private OrderShippingAddressForm createOrderShippingAddressForm() {
+
+        OrderShippingAddressForm form = new OrderShippingAddressForm();
+
+        form.setShippingAddressMode(
+                OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_DIRECT);
+
+        form.setShippingName(
+                "佐藤 花子");
+
+        form.setShippingPostalCode(
+                "150-0001");
+
+        form.setShippingPrefecture(
+                "東京都");
+
+        form.setShippingCity(
+                "渋谷区");
+
+        form.setShippingAddressLine(
+                "神宮前1-2-3");
+
+        form.setShippingPhone(
+                "080-1234-5678");
+
+        return form;
     }
 
 }

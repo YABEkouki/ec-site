@@ -835,6 +835,10 @@ class ProductRepositoryTest {
                 product.getName(),
                 product.getCategory().getId(),
                 product.getCategory().getName(),
+                product.getTaxCategory().getId(),
+                product.getTaxCategory().getCode(),
+                product.getTaxCategory().getName(),
+                product.getTaxCategory().getTaxRate(),
                 product.getPrice(),
                 quantity);
 

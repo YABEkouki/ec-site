@@ -32,6 +32,7 @@ import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
@@ -181,11 +182,17 @@ public class OrderService {
                                 + "の在庫が不足しています。");
             }
 
+            TaxCategory taxCategory = product.getTaxCategory();
+
             OrderItem orderItem = new OrderItem(
                     product.getId(),
                     product.getName(),
                     product.getCategory().getId(),
                     product.getCategory().getName(),
+                    taxCategory.getId(),
+                    taxCategory.getCode(),
+                    taxCategory.getName(),
+                    taxCategory.getTaxRate(),
                     product.getPrice(),
                     cartItem.getQuantity());
 
