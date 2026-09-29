@@ -161,4 +161,32 @@ class TaxCalculatorTest {
         assertThat(taxAmount).isEqualTo(130);
     }
 
+    @Test
+    void treatsTaxRatesWithDifferentScalesAsSameTaxRate() {
+
+        OrderPricingContext context = new OrderPricingContext();
+
+        context.addItem(
+                109,
+                1,
+                1L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.0"));
+
+        context.addItem(
+                109,
+                1,
+                1L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"));
+
+        int taxAmount = taxCalculator.calculate(
+                context,
+                List.of());
+
+        assertThat(taxAmount).isEqualTo(19);
+    }
+
 }

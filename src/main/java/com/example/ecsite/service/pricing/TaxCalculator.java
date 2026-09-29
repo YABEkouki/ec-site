@@ -11,20 +11,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class TaxCalculator {
 
-    private static final BigDecimal ONE_HUNDRED =
-            new BigDecimal("100");
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
 
     public int calculate(
             OrderPricingContext context,
             List<OrderChargeAmount> charges) {
 
-        Map<BigDecimal, Integer> grossAmountByTaxRate =
-                new HashMap<>();
+        Map<BigDecimal, Integer> grossAmountByTaxRate = new HashMap<>();
 
         for (OrderPricingContext.Item item : context.getItems()) {
 
             grossAmountByTaxRate.merge(
-                    item.taxRate(),
+                    normalizeTaxRate(item.taxRate()),
                     item.getSubtotal(),
                     Integer::sum);
         }
@@ -32,15 +30,14 @@ public class TaxCalculator {
         for (OrderChargeAmount charge : charges) {
 
             grossAmountByTaxRate.merge(
-                    charge.taxRate(),
+                    normalizeTaxRate(charge.taxRate()),
                     charge.amount(),
                     Integer::sum);
         }
 
         int totalTaxAmount = 0;
 
-        for (Map.Entry<BigDecimal, Integer> entry
-                : grossAmountByTaxRate.entrySet()) {
+        for (Map.Entry<BigDecimal, Integer> entry : grossAmountByTaxRate.entrySet()) {
 
             BigDecimal taxRate = entry.getKey();
             int grossAmount = entry.getValue();
@@ -57,5 +54,11 @@ public class TaxCalculator {
         }
 
         return totalTaxAmount;
+    }
+
+    private BigDecimal normalizeTaxRate(
+            BigDecimal taxRate) {
+
+        return taxRate.stripTrailingZeros();
     }
 }
