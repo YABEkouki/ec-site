@@ -21,6 +21,9 @@ public class ProductForm {
     @Min(value = 0, message = "価格は0円以上で入力してください。")
     private Integer price;
 
+    @NotNull(message = "税区分を選択してください。")
+    private Long taxCategoryId;
+
     @NotNull(message = "在庫数を入力してください。")
     @Min(value = 0, message = "在庫数は0以上で入力してください。")
     private Integer stock;
@@ -48,6 +51,14 @@ public class ProductForm {
 
     public void setPrice(Integer price) {
         this.price = price;
+    }
+
+    public Long getTaxCategoryId() {
+        return taxCategoryId;
+    }
+
+    public void setTaxCategoryId(Long taxCategoryId) {
+        this.taxCategoryId = taxCategoryId;
     }
 
     public Integer getStock() {

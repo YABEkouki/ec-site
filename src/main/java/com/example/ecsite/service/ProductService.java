@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.exception.ProductNotFoundException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.form.ProductSearchForm;
@@ -32,6 +33,7 @@ public class ProductService {
     private final CategoryService categoryService;
     private final ProductImageService productImageService;
     private final ProductSearchKeywordService productSearchKeywordService;
+    private final TaxCategoryService taxCategoryService;
     private final Clock clock;
 
     @Autowired
@@ -39,13 +41,15 @@ public class ProductService {
             ProductRepository productRepository,
             CategoryService categoryService,
             ProductImageService productImageService,
-            ProductSearchKeywordService productSearchKeywordService) {
+            ProductSearchKeywordService productSearchKeywordService,
+            TaxCategoryService taxCategoryService) {
 
         this(
                 productRepository,
                 categoryService,
                 productImageService,
                 productSearchKeywordService,
+                taxCategoryService,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -54,12 +58,14 @@ public class ProductService {
             CategoryService categoryService,
             ProductImageService productImageService,
             ProductSearchKeywordService productSearchKeywordService,
+            TaxCategoryService taxCategoryService,
             Clock clock) {
 
         this.productRepository = productRepository;
         this.categoryService = categoryService;
         this.productImageService = productImageService;
         this.productSearchKeywordService = productSearchKeywordService;
+        this.taxCategoryService = taxCategoryService;
         this.clock = clock;
     }
 
@@ -142,6 +148,8 @@ public class ProductService {
 
         product.setCategory(categoryService.findActiveById(productForm.getCategoryId()));
 
+        product.setTaxCategory(taxCategoryService.findActiveById(productForm.getTaxCategoryId()));
+
         product = productRepository.save(product);
 
         String imagePath = productImageService.saveImage(
@@ -180,9 +188,13 @@ public class ProductService {
                     .findActiveById(requestedCategoryId);
         }
 
+        TaxCategory taxCategory = taxCategoryService.findActiveById(
+                productForm.getTaxCategoryId());
+
         ProductMapper.copyToEntity(productForm, product);
 
         product.setCategory(category);
+        product.setTaxCategory(taxCategory);
 
         if (productForm.getImageFile() != null
                 && !productForm.getImageFile().isEmpty()) {

@@ -14,6 +14,7 @@ public class ProductMapper {
 
         form.setName(product.getName());
         form.setPrice(product.getPrice());
+        form.setTaxCategoryId(product.getTaxCategory().getId());
         form.setStock(product.getStock());
         form.setDescription(product.getDescription());
         form.setCategoryId(product.getCategory().getId());

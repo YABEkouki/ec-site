@@ -28,6 +28,7 @@ import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
 import com.example.ecsite.entity.StockMovementType;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.exception.InvalidProductSearchKeywordException;
 import com.example.ecsite.exception.InvalidStockAdjustmentException;
 import com.example.ecsite.form.ProductForm;
@@ -38,6 +39,7 @@ import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.InventoryService;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.service.StockMovementService;
+import com.example.ecsite.service.TaxCategoryService;
 
 @ExtendWith(MockitoExtension.class)
 class AdminProductControllerTest {
@@ -53,8 +55,12 @@ class AdminProductControllerTest {
 
     @Mock
     private InventoryService inventoryService;
+
     @Mock
     private StockMovementService stockMovementService;
+
+    @Mock
+    private TaxCategoryService taxCategoryService;
 
     private AdminProductController adminProductController;
 
@@ -65,7 +71,8 @@ class AdminProductControllerTest {
                 productService,
                 categoryService,
                 inventoryService,
-                stockMovementService);
+                stockMovementService,
+                taxCategoryService);
     }
 
     @Test
@@ -550,6 +557,13 @@ class AdminProductControllerTest {
         when(categoryService.findCategoriesForProductEdit(categoryId))
                 .thenReturn(List.of(category));
 
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        when(taxCategory.getId())
+                .thenReturn(1L);
+
+        product.setTaxCategory(taxCategory);
+
         String viewName = adminProductController.edit(
                 productId,
                 null,
@@ -592,6 +606,13 @@ class AdminProductControllerTest {
         when(categoryService.findCategoriesForProductEdit(categoryId))
                 .thenReturn(List.of(category));
 
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        when(taxCategory.getId())
+                .thenReturn(1L);
+
+        product.setTaxCategory(taxCategory);
+
         String returnUrl = "/admin/products?keyword=camp&page=2";
 
         String viewName = adminProductController.edit(
@@ -632,6 +653,13 @@ class AdminProductControllerTest {
 
         when(categoryService.findCategoriesForProductEdit(categoryId))
                 .thenReturn(List.of(category));
+
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        when(taxCategory.getId())
+                .thenReturn(1L);
+
+        product.setTaxCategory(taxCategory);
 
         String viewName = adminProductController.edit(
                 productId,
@@ -922,6 +950,26 @@ class AdminProductControllerTest {
                 .addAttribute(
                         "categories",
                         categories);
+    }
+
+    @Test
+    void showCreateFormAddsTaxCategories() {
+
+        List<TaxCategory> taxCategories = List.of(mock(TaxCategory.class));
+
+        when(taxCategoryService.findActiveTaxCategories())
+                .thenReturn(taxCategories);
+
+        String viewName = adminProductController.showCreateForm(model);
+
+        assertEquals(
+                "admin/products/form",
+                viewName);
+
+        verify(model)
+                .addAttribute(
+                        "taxCategories",
+                        taxCategories);
     }
 
 }

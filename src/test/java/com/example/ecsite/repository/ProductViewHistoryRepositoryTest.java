@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.ProductViewHistory;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.entity.User;
 
 import jakarta.persistence.EntityManager;
@@ -37,6 +38,9 @@ class ProductViewHistoryRepositoryTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private TaxCategoryRepository taxCategoryRepository;
+
     @Test
     void findByUserIdAndProductIdReturnsTargetHistory() {
 
@@ -49,8 +53,7 @@ class ProductViewHistoryRepositoryTest {
                 true,
                 category);
 
-        LocalDateTime viewedAt =
-                LocalDateTime.of(2026, 9, 18, 10, 0);
+        LocalDateTime viewedAt = LocalDateTime.of(2026, 9, 18, 10, 0);
 
         createHistory(user, product, viewedAt);
 
@@ -138,10 +141,9 @@ class ProductViewHistoryRepositoryTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<ProductViewHistory> result =
-                productViewHistoryRepository
-                        .findByUserIdOrderByLastViewedAtAsc(
-                                user.getId());
+        List<ProductViewHistory> result = productViewHistoryRepository
+                .findByUserIdOrderByLastViewedAtAsc(
+                        user.getId());
 
         assertThat(result)
                 .extracting(history -> history.getProduct().getId())
@@ -154,13 +156,10 @@ class ProductViewHistoryRepositoryTest {
     @Test
     void findRecentAvailableProductsUsesOnlyTargetUsersAvailableProducts() {
 
-        User targetUser =
-                createUser("view-history-available-target");
-        User otherUser =
-                createUser("view-history-available-other");
+        User targetUser = createUser("view-history-available-target");
+        User otherUser = createUser("view-history-available-other");
 
-        Category category =
-                createCategory("閲覧履歴販売条件カテゴリ");
+        Category category = createCategory("閲覧履歴販売条件カテゴリ");
 
         Product olderAvailable = createProduct(
                 "古い販売可能商品",
@@ -225,11 +224,10 @@ class ProductViewHistoryRepositoryTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<Product> result =
-                productViewHistoryRepository
-                        .findRecentAvailableProducts(
-                                targetUser.getId(),
-                                PageRequest.of(0, 5));
+        List<Product> result = productViewHistoryRepository
+                .findRecentAvailableProducts(
+                        targetUser.getId(),
+                        PageRequest.of(0, 5));
 
         assertThat(result)
                 .extracting(Product::getId)
@@ -242,8 +240,7 @@ class ProductViewHistoryRepositoryTest {
     void findRecentAvailableProductsLimitsResultsByPageable() {
 
         User user = createUser("view-history-limit-user");
-        Category category =
-                createCategory("閲覧履歴件数制限カテゴリ");
+        Category category = createCategory("閲覧履歴件数制限カテゴリ");
 
         for (int i = 1; i <= 6; i++) {
 
@@ -268,11 +265,10 @@ class ProductViewHistoryRepositoryTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<Product> result =
-                productViewHistoryRepository
-                        .findRecentAvailableProducts(
-                                user.getId(),
-                                PageRequest.of(0, 5));
+        List<Product> result = productViewHistoryRepository
+                .findRecentAvailableProducts(
+                        user.getId(),
+                        PageRequest.of(0, 5));
 
         assertThat(result).hasSize(5);
     }
@@ -307,12 +303,19 @@ class ProductViewHistoryRepositoryTest {
         Product product = new Product();
         product.setName(name);
         product.setPrice(price);
+        product.setTaxCategory(getStandardTaxCategory());
         product.setStock(stock);
         product.setDescription("商品説明");
         product.setActive(active);
         product.setCategory(category);
 
         return productRepository.save(product);
+    }
+
+    private TaxCategory getStandardTaxCategory() {
+        return taxCategoryRepository
+                .findByCode("STANDARD")
+                .orElseThrow();
     }
 
     private User createUser(String username) {

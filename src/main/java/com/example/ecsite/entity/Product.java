@@ -30,6 +30,10 @@ public class Product {
     @Column(nullable = false)
     private Integer price;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tax_category_id", nullable = false)
+    private TaxCategory taxCategory;
+
     @Column(nullable = false)
     private Integer stock;
 
@@ -89,6 +93,14 @@ public class Product {
 
     public void setPrice(Integer price) {
         this.price = price;
+    }
+
+    public TaxCategory getTaxCategory() {
+        return taxCategory;
+    }
+
+    public void setTaxCategory(TaxCategory taxCategory) {
+        this.taxCategory = taxCategory;
     }
 
     public Integer getStock() {

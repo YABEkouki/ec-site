@@ -23,6 +23,7 @@ import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
@@ -50,6 +51,9 @@ class OrderRepositoryTest {
 
     @Autowired
     private AdminAccountRepository adminAccountRepository;
+
+    @Autowired
+    private TaxCategoryRepository taxCategoryRepository;
 
     private static final LocalDateTime SEARCH_FROM = LocalDateTime.of(1970, 1, 1, 0, 0);
 
@@ -2425,6 +2429,7 @@ class OrderRepositoryTest {
         Product product = new Product();
         product.setName(name);
         product.setPrice(price);
+        product.setTaxCategory(getStandardTaxCategory());
         product.setStock(100);
         product.setCategory(category);
 
@@ -2432,6 +2437,12 @@ class OrderRepositoryTest {
         entityManager.flush();
 
         return product;
+    }
+
+    private TaxCategory getStandardTaxCategory() {
+        return taxCategoryRepository
+                .findByCode("STANDARD")
+                .orElseThrow();
     }
 
     private User createUser(String username) {
