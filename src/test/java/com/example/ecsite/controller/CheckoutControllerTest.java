@@ -41,6 +41,7 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
+import com.example.ecsite.service.pricing.OrderAmount;
 
 import jakarta.servlet.http.HttpSession;
 
@@ -840,6 +841,58 @@ class CheckoutControllerTest {
 
         verify(shippingAddressService)
                 .findAllByUserId(10L);
+    }
+
+    @Test
+    void confirmAddsOrderAmountToModel() {
+
+        Cart cart = createCart();
+
+        CheckoutForm checkoutForm = createCheckoutForm();
+
+        checkoutForm.setShippingAddressMode(
+                CheckoutForm.SHIPPING_ADDRESS_MODE_DIRECT);
+
+        OrderAmount orderAmount = new OrderAmount(
+                1000,
+                List.of(),
+                550,
+                140,
+                1550);
+
+        when(orderService.calculateOrderAmount(cart))
+                .thenReturn(orderAmount);
+
+        BindingResult bindingResult = new BeanPropertyBindingResult(
+                checkoutForm,
+                "checkoutForm");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        Model model = new ConcurrentModel();
+
+        String view = controller.confirm(
+                checkoutForm,
+                bindingResult,
+                cart,
+                loginUser,
+                redirectAttributes,
+                model,
+                session);
+
+        assertEquals(
+                "checkout/confirm",
+                view);
+
+        assertSame(
+                orderAmount,
+                model.getAttribute("orderAmount"));
+
+        verify(orderService)
+                .validateCart(cart);
+
+        verify(orderService)
+                .calculateOrderAmount(cart);
     }
 
     @Test

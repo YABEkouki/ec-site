@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.cart.Cart;
+import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
@@ -332,6 +333,34 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
+    public OrderAmount calculateOrderAmount(Cart cart) {
+
+        OrderPricingContext pricingContext = new OrderPricingContext();
+
+        for (CartItem cartItem : cart.getItems()) {
+
+            Product product = productService.findById(
+                    cartItem.getProductId());
+
+            TaxCategory taxCategory = product.getTaxCategory();
+
+            pricingContext.addItem(
+                    product.getPrice(),
+                    cartItem.getQuantity(),
+                    taxCategory.getId(),
+                    taxCategory.getCode(),
+                    taxCategory.getName(),
+                    taxCategory.getTaxRate());
+        }
+
+        TaxCategory shippingTaxCategory = taxCategoryService.findStandardTaxCategory();
+
+        return orderAmountCalculator.calculate(
+                pricingContext,
+                shippingTaxCategory);
+    }
+
+    @Transactional(readOnly = true)
     public Page<Order> findAllOrders(
             OrderStatus status,
             int page,
@@ -351,8 +380,15 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Order findOrderWithItems(Long id) {
 
-        return orderRepository.findByIdWithItems(id)
+        Order order = orderRepository
+                .findByIdWithItems(id)
                 .orElseThrow(() -> new OrderNotFoundException(id));
+
+        orderRepository
+                .findByIdWithCharges(id)
+                .orElseThrow(() -> new OrderNotFoundException(id));
+
+        return order;
     }
 
     @Transactional
@@ -883,11 +919,19 @@ public class OrderService {
             Long orderId,
             Long userId) {
 
-        return orderRepository
+        Order order = orderRepository
                 .findByIdAndUserIdWithItems(
                         orderId,
                         userId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        orderRepository
+                .findByIdAndUserIdWithCharges(
+                        orderId,
+                        userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        return order;
     }
 
     @Transactional

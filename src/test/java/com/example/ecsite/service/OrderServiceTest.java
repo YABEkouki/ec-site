@@ -713,6 +713,63 @@ class OrderServiceTest {
         verify(orderRepository).save(order);
     }
 
+    @Test
+    void calculateOrderAmountReturnsPricingResult() {
+
+        Product product = createProduct(
+                1L,
+                "テスト商品",
+                2000,
+                5);
+
+        Cart cart = new Cart();
+
+        cart.addItem(new CartItem(
+                1L,
+                "テスト商品",
+                2000,
+                2));
+
+        when(productService.findById(1L))
+                .thenReturn(product);
+
+        TaxCategory shippingTaxCategory = createTaxCategory(
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"));
+
+        when(taxCategoryService.findStandardTaxCategory())
+                .thenReturn(shippingTaxCategory);
+
+        OrderAmount expected = new OrderAmount(
+                4000,
+                List.of(),
+                550,
+                413,
+                4550);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                same(shippingTaxCategory)))
+                .thenReturn(expected);
+
+        OrderAmount result = orderService.calculateOrderAmount(cart);
+
+        assertSame(expected, result);
+
+        verify(productService)
+                .findById(1L);
+
+        verify(taxCategoryService)
+                .findStandardTaxCategory();
+
+        verify(orderAmountCalculator)
+                .calculate(
+                        any(),
+                        same(shippingTaxCategory));
+    }
+
     private CheckoutForm createValidCheckoutForm() {
 
         CheckoutForm checkoutForm = mock(CheckoutForm.class);
@@ -1120,6 +1177,11 @@ class OrderServiceTest {
                 .findByIdAndUserIdWithItems(
                         orderId,
                         userId))
+                .thenReturn(Optional.of(expectedOrder));
+
+        when(orderRepository.findByIdAndUserIdWithCharges(
+                orderId,
+                userId))
                 .thenReturn(Optional.of(expectedOrder));
 
         Order actualOrder = orderService.findOrderByIdAndUserId(

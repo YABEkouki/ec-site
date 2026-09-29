@@ -24,6 +24,7 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
+import com.example.ecsite.service.pricing.OrderAmount;
 
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -172,6 +173,12 @@ public class CheckoutController {
 
             return "redirect:/cart";
         }
+
+        OrderAmount orderAmount = orderService.calculateOrderAmount(cart);
+
+        model.addAttribute(
+                "orderAmount",
+                orderAmount);
 
         String checkoutToken = UUID.randomUUID().toString();
 

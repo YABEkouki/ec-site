@@ -105,17 +105,46 @@
         </p>
 
         <p>
-            合計金額：
+            商品小計（税込）：
             <strong th:text="${#numbers.formatInteger(
-                cart.totalAmount,
-                1,
-                'COMMA')}">
+            orderAmount.itemSubtotal,
+            1,
+            'COMMA')}">
+            </strong>
+            円
+        </p>
+
+        <p th:each="charge : ${orderAmount.charges}">
+            <span th:text="${charge.name}"></span>（税込）：
+            <strong th:text="${#numbers.formatInteger(
+            charge.amount,
+            1,
+            'COMMA')}">
+            </strong>
+            円
+        </p>
+
+        <p>
+            注文合計（税込）：
+            <strong th:text="${#numbers.formatInteger(
+            orderAmount.totalAmount,
+            1,
+            'COMMA')}">
+            </strong>
+            円
+        </p>
+
+        <p>
+            うち消費税：
+            <strong th:text="${#numbers.formatInteger(
+            orderAmount.taxAmount,
+            1,
+            'COMMA')}">
             </strong>
             円
         </p>
 
     </div>
-
 
     <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
@@ -126,7 +155,7 @@
         <form th:action="@{/checkout/order}" method="post">
 
             <input type="hidden" name="checkoutToken" th:value="${checkoutToken}">
-            
+
             <button type="submit" class="button-primary">
                 注文を確定する
             </button>

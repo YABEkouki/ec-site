@@ -2405,6 +2405,69 @@ class OrderRepositoryTest {
         assertEquals(10, savedCharge.getDisplayOrder());
     }
 
+    @Test
+    void findByIdWithChargesFetchesCharges() {
+
+        User user = createUser(
+                "admin-order-charge-fetch-user");
+
+        TaxCategory taxCategory = getStandardTaxCategory();
+
+        Order order = new Order(
+                user.getId(),
+                1550,
+                LocalDateTime.of(
+                        2026, 9, 29, 10, 0),
+                LocalDateTime.of(
+                        2026, 9, 29, 14, 0));
+
+        OrderCharge charge = new OrderCharge(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                550,
+                taxCategory.getId(),
+                taxCategory.getCode(),
+                taxCategory.getName(),
+                taxCategory.getTaxRate(),
+                10);
+
+        order.addCharge(charge);
+
+        Order saved = orderRepository.save(order);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Order found = orderRepository
+                .findByIdWithCharges(
+                        saved.getId())
+                .orElseThrow();
+
+        /*
+         * Repositoryのトランザクション管理から
+         * 切り離した後でも付帯料金を参照できることを確認する。
+         */
+        entityManager.clear();
+
+        assertEquals(
+                1,
+                found.getCharges().size());
+
+        OrderCharge foundCharge = found.getCharges().get(0);
+
+        assertEquals(
+                OrderChargeType.SHIPPING,
+                foundCharge.getChargeType());
+
+        assertEquals(
+                "送料・梱包料",
+                foundCharge.getName());
+
+        assertEquals(
+                550,
+                foundCharge.getAmount());
+    }
+
     private Order createOrder(
             Long userId,
             LocalDateTime orderedAt,
@@ -2427,6 +2490,70 @@ class OrderRepositoryTest {
         entityManager.flush();
 
         return saved;
+    }
+
+    @Test
+    void findByIdAndUserIdWithChargesFetchesCharges() {
+
+        User user = createUser(
+                "order-charge-fetch-user");
+
+        TaxCategory taxCategory = getStandardTaxCategory();
+
+        Order order = new Order(
+                user.getId(),
+                1550,
+                LocalDateTime.of(
+                        2026, 9, 29, 10, 0),
+                LocalDateTime.of(
+                        2026, 9, 29, 14, 0));
+
+        OrderCharge charge = new OrderCharge(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                550,
+                taxCategory.getId(),
+                taxCategory.getCode(),
+                taxCategory.getName(),
+                taxCategory.getTaxRate(),
+                10);
+
+        order.addCharge(charge);
+
+        Order saved = orderRepository.save(order);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Order found = orderRepository
+                .findByIdAndUserIdWithCharges(
+                        saved.getId(),
+                        user.getId())
+                .orElseThrow();
+
+        /*
+         * Repositoryのトランザクション管理から
+         * 切り離した後でも付帯料金を参照できることを確認する。
+         */
+        entityManager.clear();
+
+        assertEquals(
+                1,
+                found.getCharges().size());
+
+        OrderCharge foundCharge = found.getCharges().get(0);
+
+        assertEquals(
+                OrderChargeType.SHIPPING,
+                foundCharge.getChargeType());
+
+        assertEquals(
+                "送料・梱包料",
+                foundCharge.getName());
+
+        assertEquals(
+                550,
+                foundCharge.getAmount());
     }
 
     private Order createOrderWithItem(
