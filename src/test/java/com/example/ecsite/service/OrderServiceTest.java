@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -44,6 +45,7 @@ import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderChargeType;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
@@ -65,6 +67,9 @@ import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
+import com.example.ecsite.service.pricing.OrderAmount;
+import com.example.ecsite.service.pricing.OrderAmountCalculator;
+import com.example.ecsite.service.pricing.OrderChargeAmount;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -92,6 +97,12 @@ class OrderServiceTest {
 
     @Mock
     private OrderAssigneeHistoryService orderAssigneeHistoryService;
+
+    @Mock
+    private TaxCategoryService taxCategoryService;
+
+    @Mock
+    private OrderAmountCalculator orderAmountCalculator;
 
     private OrderService orderService;
 
@@ -137,6 +148,37 @@ class OrderServiceTest {
         when(productService.findByIdForUpdate(1L))
                 .thenReturn(product);
 
+        TaxCategory shippingTaxCategory = createTaxCategory(
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"));
+
+        when(taxCategoryService.findStandardTaxCategory())
+                .thenReturn(shippingTaxCategory);
+
+        OrderChargeAmount shippingCharge = new OrderChargeAmount(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                550,
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                10);
+
+        OrderAmount orderAmount = new OrderAmount(
+                2000,
+                List.of(shippingCharge),
+                550,
+                231,
+                2550);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                same(shippingTaxCategory)))
+                .thenReturn(orderAmount);
+
         Long orderId = 100L;
 
         when(orderRepository.save(any(Order.class)))
@@ -155,7 +197,10 @@ class OrderServiceTest {
                 cart,
                 createCheckoutForm());
 
-        assertEquals(2000, order.getTotalAmount());
+        assertEquals(2000, order.getItemSubtotal());
+        assertEquals(550, order.getChargeTotal());
+        assertEquals(231, order.getTaxAmount());
+        assertEquals(2550, order.getTotalAmount());
         assertEquals(1, order.getItems().size());
         assertEquals(100L, order.getItems().get(0).getCategoryId());
         assertEquals("テストカテゴリ", order.getItems().get(0).getCategoryName());
@@ -165,6 +210,14 @@ class OrderServiceTest {
         assertEquals("STANDARD", order.getItems().get(0).getTaxCategoryCode());
         assertEquals("標準税率", order.getItems().get(0).getTaxCategoryName());
         assertEquals(0, new BigDecimal("10.00").compareTo(order.getItems().get(0).getTaxRate()));
+        assertEquals(1, order.getCharges().size());
+        assertEquals(OrderChargeType.SHIPPING, order.getCharges().get(0).getChargeType());
+        assertEquals("送料・梱包料", order.getCharges().get(0).getName());
+        assertEquals(550, order.getCharges().get(0).getAmount());
+        assertEquals(300L, order.getCharges().get(0).getTaxCategoryId());
+        assertEquals("STANDARD", order.getCharges().get(0).getTaxCategoryCode());
+        assertEquals("標準税率", order.getCharges().get(0).getTaxCategoryName());
+        assertEquals(0, new BigDecimal("10.00").compareTo(order.getCharges().get(0).getTaxRate()));
 
         verify(inventoryService)
                 .decreaseForOrder(
@@ -182,6 +235,14 @@ class OrderServiceTest {
                         OrderStatusHistoryActorType.USER,
                         userId,
                         username);
+
+        verify(taxCategoryService)
+                .findStandardTaxCategory();
+
+        verify(orderAmountCalculator)
+                .calculate(
+                        any(),
+                        same(shippingTaxCategory));
     }
 
     @Test
@@ -527,6 +588,12 @@ class OrderServiceTest {
                     return order;
                 });
 
+        mockOrderAmountCalculation(
+                3000,
+                550,
+                322,
+                3550);
+
         OrderService orderService = createOrderService();
 
         Order result = orderService.createOrder(
@@ -535,7 +602,7 @@ class OrderServiceTest {
                 cart,
                 checkoutForm);
 
-        assertEquals(3000, result.getTotalAmount());
+        assertEquals(3550, result.getTotalAmount());
         assertEquals(1, result.getItems().size());
         assertEquals(3, result.getItems().get(0).getQuantity());
 
@@ -574,6 +641,76 @@ class OrderServiceTest {
 
         verifyNoInteractions(productService);
         verifyNoInteractions(orderRepository);
+    }
+
+    @Test
+    void createOrderKeepsZeroAmountShippingChargeWhenShippingIsFree() {
+
+        Long userId = 10L;
+        String username = "testuser";
+
+        Product product = createProduct(
+                1L,
+                "送料無料商品",
+                5000,
+                5);
+
+        Cart cart = new Cart();
+        cart.addItem(new CartItem(
+                1L,
+                "送料無料商品",
+                5000,
+                1));
+
+        when(productService.findByIdForUpdate(1L))
+                .thenReturn(product);
+
+        mockOrderAmountCalculation(
+                5000,
+                0,
+                454,
+                5000);
+
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(invocation -> {
+                    Order order = invocation.getArgument(0);
+
+                    org.springframework.test.util.ReflectionTestUtils
+                            .setField(order, "id", 100L);
+
+                    return order;
+                });
+
+        Order order = orderService.createOrder(
+                userId,
+                username,
+                cart,
+                createCheckoutForm());
+
+        assertEquals(5000, order.getItemSubtotal());
+        assertEquals(0, order.getChargeTotal());
+        assertEquals(454, order.getTaxAmount());
+        assertEquals(5000, order.getTotalAmount());
+
+        assertEquals(1, order.getCharges().size());
+
+        assertEquals(
+                OrderChargeType.SHIPPING,
+                order.getCharges().get(0).getChargeType());
+
+        assertEquals(
+                "送料・梱包料",
+                order.getCharges().get(0).getName());
+
+        assertEquals(
+                0,
+                order.getCharges().get(0).getAmount());
+
+        assertEquals(
+                "STANDARD",
+                order.getCharges().get(0).getTaxCategoryCode());
+
+        verify(orderRepository).save(order);
     }
 
     private CheckoutForm createValidCheckoutForm() {
@@ -1086,6 +1223,12 @@ class OrderServiceTest {
 
                     return order;
                 });
+
+        mockOrderAmountCalculation(
+                2000,
+                550,
+                231,
+                2550);
 
         OrderService orderService = createOrderService();
 
@@ -3019,6 +3162,8 @@ class OrderServiceTest {
                 orderAssigneeHistoryService,
                 adminAccountService,
                 orderDeadlineCalculator,
+                taxCategoryService,
+                orderAmountCalculator,
                 clock);
     }
 
@@ -3063,6 +3208,64 @@ class OrderServiceTest {
                 "080-1234-5678");
 
         return form;
+    }
+
+    private TaxCategory createTaxCategory(
+            Long id,
+            String code,
+            String name,
+            BigDecimal taxRate) {
+
+        TaxCategory taxCategory = new TaxCategory();
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(taxCategory, "id", id);
+
+        taxCategory.setCode(code);
+        taxCategory.setName(name);
+        taxCategory.setTaxRate(taxRate);
+        taxCategory.setActive(true);
+        taxCategory.setDisplayOrder(10);
+
+        return taxCategory;
+    }
+
+    private void mockOrderAmountCalculation(
+            int itemSubtotal,
+            int shippingFee,
+            int taxAmount,
+            int totalAmount) {
+
+        TaxCategory shippingTaxCategory = createTaxCategory(
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"));
+
+        when(taxCategoryService.findStandardTaxCategory())
+                .thenReturn(shippingTaxCategory);
+
+        OrderChargeAmount shippingCharge = new OrderChargeAmount(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                shippingFee,
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                10);
+
+        OrderAmount orderAmount = new OrderAmount(
+                itemSubtotal,
+                List.of(shippingCharge),
+                shippingFee,
+                taxAmount,
+                totalAmount);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                same(shippingTaxCategory)))
+                .thenReturn(orderAmount);
     }
 
 }

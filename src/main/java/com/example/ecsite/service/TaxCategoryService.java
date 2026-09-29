@@ -14,6 +14,8 @@ public class TaxCategoryService {
 
     private final TaxCategoryRepository taxCategoryRepository;
 
+    private static final String STANDARD_TAX_CATEGORY_CODE = "STANDARD";
+
     public TaxCategoryService(
             TaxCategoryRepository taxCategoryRepository) {
 
@@ -30,8 +32,16 @@ public class TaxCategoryService {
 
         return taxCategoryRepository
                 .findByIdAndActiveTrue(id)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "有効な税区分が見つかりません。"));
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "有効な税区分が見つかりません。"));
     }
+
+    public TaxCategory findStandardTaxCategory() {
+
+        return taxCategoryRepository
+                .findByCode(STANDARD_TAX_CATEGORY_CODE)
+                .orElseThrow(() -> new IllegalStateException(
+                        "標準税率の税区分が見つかりません。"));
+    }
+
 }

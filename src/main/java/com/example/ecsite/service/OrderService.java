@@ -26,6 +26,7 @@ import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderCharge;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
@@ -46,6 +47,10 @@ import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
+import com.example.ecsite.service.pricing.OrderAmount;
+import com.example.ecsite.service.pricing.OrderAmountCalculator;
+import com.example.ecsite.service.pricing.OrderChargeAmount;
+import com.example.ecsite.service.pricing.OrderPricingContext;
 
 @Service
 public class OrderService {
@@ -59,6 +64,8 @@ public class OrderService {
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
     private final AdminAccountService adminAccountService;
     private final OrderDeadlineCalculator orderDeadlineCalculator;
+    private final TaxCategoryService taxCategoryService;
+    private final OrderAmountCalculator orderAmountCalculator;
     private final Clock clock;
 
     @Autowired
@@ -71,7 +78,9 @@ public class OrderService {
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService,
-            OrderDeadlineCalculator orderDeadlineCalculator) {
+            OrderDeadlineCalculator orderDeadlineCalculator,
+            TaxCategoryService taxCategoryService,
+            OrderAmountCalculator orderAmountCalculator) {
 
         this(
                 orderRepository,
@@ -83,6 +92,8 @@ public class OrderService {
                 orderAssigneeHistoryService,
                 adminAccountService,
                 orderDeadlineCalculator,
+                taxCategoryService,
+                orderAmountCalculator,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -96,6 +107,8 @@ public class OrderService {
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService,
             OrderDeadlineCalculator orderDeadlineCalculator,
+            TaxCategoryService taxCategoryService,
+            OrderAmountCalculator orderAmountCalculator,
             Clock clock) {
 
         this.orderRepository = orderRepository;
@@ -107,6 +120,8 @@ public class OrderService {
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.adminAccountService = adminAccountService;
         this.orderDeadlineCalculator = orderDeadlineCalculator;
+        this.taxCategoryService = taxCategoryService;
+        this.orderAmountCalculator = orderAmountCalculator;
         this.clock = clock;
     }
 
@@ -132,6 +147,8 @@ public class OrderService {
                 orderedAt,
                 changeDeadlineAt);
 
+        OrderPricingContext pricingContext = new OrderPricingContext();
+
         order.setShippingAddress(
                 checkoutForm.getShippingName().trim(),
                 checkoutForm.getShippingPostalCode().trim(),
@@ -139,8 +156,6 @@ public class OrderService {
                 checkoutForm.getShippingCity().trim(),
                 checkoutForm.getShippingAddressLine().trim(),
                 checkoutForm.getShippingPhone().trim());
-
-        int totalAmount = 0;
 
         for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
 
@@ -198,10 +213,37 @@ public class OrderService {
 
             order.addItem(orderItem);
 
-            totalAmount += orderItem.getSubtotal();
+            pricingContext.addItem(
+                    product.getPrice(),
+                    cartItem.getQuantity(),
+                    taxCategory.getId(),
+                    taxCategory.getCode(),
+                    taxCategory.getName(),
+                    taxCategory.getTaxRate());
         }
 
-        order.setTotalAmount(totalAmount);
+        TaxCategory shippingTaxCategory = taxCategoryService.findStandardTaxCategory();
+
+        OrderAmount orderAmount = orderAmountCalculator.calculate(
+                pricingContext,
+                shippingTaxCategory);
+
+        order.applyAmount(orderAmount);
+
+        for (OrderChargeAmount chargeAmount : orderAmount.charges()) {
+
+            OrderCharge orderCharge = new OrderCharge(
+                    chargeAmount.chargeType(),
+                    chargeAmount.name(),
+                    chargeAmount.amount(),
+                    chargeAmount.taxCategoryId(),
+                    chargeAmount.taxCategoryCode(),
+                    chargeAmount.taxCategoryName(),
+                    chargeAmount.taxRate(),
+                    chargeAmount.displayOrder());
+
+            order.addCharge(orderCharge);
+        }
 
         Order savedOrder = orderRepository.save(order);
 

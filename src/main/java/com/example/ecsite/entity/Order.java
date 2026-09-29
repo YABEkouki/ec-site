@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.service.pricing.OrderAmount;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -140,6 +141,14 @@ public class Order {
 
     public int getTaxAmount() {
         return taxAmount;
+    }
+
+    public void applyAmount(OrderAmount amount) {
+
+        this.itemSubtotal = amount.itemSubtotal();
+        this.chargeTotal = amount.chargeTotal();
+        this.taxAmount = amount.taxAmount();
+        this.totalAmount = amount.totalAmount();
     }
 
     public OrderStatus getStatus() {

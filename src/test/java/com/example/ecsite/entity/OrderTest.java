@@ -1,5 +1,6 @@
 package com.example.ecsite.entity;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -8,10 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.service.pricing.OrderAmount;
 
 class OrderTest {
 
@@ -294,6 +297,30 @@ class OrderTest {
 
         assertFalse(order.canCancelByUser(
                 LocalDateTime.of(2026, 9, 28, 13, 0)));
+    }
+
+    @Test
+    void applyAmountUpdatesAllOrderAmounts() {
+
+        Order order = new Order(
+                1L,
+                0,
+                LocalDateTime.of(2026, 9, 29, 12, 0),
+                LocalDateTime.of(2026, 9, 30, 12, 0));
+
+        OrderAmount amount = new OrderAmount(
+                4400,
+                List.of(),
+                550,
+                450,
+                4950);
+
+        order.applyAmount(amount);
+
+        assertThat(order.getItemSubtotal()).isEqualTo(4400);
+        assertThat(order.getChargeTotal()).isEqualTo(550);
+        assertThat(order.getTaxAmount()).isEqualTo(450);
+        assertThat(order.getTotalAmount()).isEqualTo(4950);
     }
 
     private Order createOrder() {
