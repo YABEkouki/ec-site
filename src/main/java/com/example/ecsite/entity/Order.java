@@ -35,6 +35,15 @@ public class Order {
     @Column(name = "total_amount", nullable = false)
     private int totalAmount;
 
+    @Column(name = "item_subtotal", nullable = false)
+    private int itemSubtotal;
+
+    @Column(name = "charge_total", nullable = false)
+    private int chargeTotal;
+
+    @Column(name = "tax_amount", nullable = false)
+    private int taxAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private OrderStatus status = OrderStatus.ORDERED;
@@ -119,6 +128,18 @@ public class Order {
 
     public void setTotalAmount(int totalAmount) {
         this.totalAmount = totalAmount;
+    }
+
+    public int getItemSubtotal() {
+        return itemSubtotal;
+    }
+
+    public int getChargeTotal() {
+        return chargeTotal;
+    }
+
+    public int getTaxAmount() {
+        return taxAmount;
     }
 
     public OrderStatus getStatus() {
