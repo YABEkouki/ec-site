@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -18,16 +19,20 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.Validator;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.OrderItemChangePreview;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistory;
 import com.example.ecsite.entity.OrderStatusHistory;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
@@ -1016,6 +1021,581 @@ class OrderControllerTest {
                 .addAttribute(
                         "order",
                         order);
+    }
+
+    @Test
+    void itemChangeInputDisplaysFormWhenChangeIsAllowed() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                5500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
+
+        OrderItem item = new OrderItem(
+                10L,
+                "商品A",
+                100L,
+                "テストカテゴリ",
+                200L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                2000,
+                2);
+
+        ReflectionTestUtils.setField(
+                item,
+                "id",
+                1001L);
+
+        order.addItem(item);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canChangeItemsByUser(order))
+                .thenReturn(true);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = orderController.itemChangeInput(
+                orderId,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "orders/item-change",
+                viewName);
+
+        verify(orderService)
+                .findOrderByIdAndUserId(
+                        orderId,
+                        userId);
+
+        verify(orderService)
+                .canChangeItemsByUser(order);
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+
+        verify(model)
+                .addAttribute(
+                        org.mockito.ArgumentMatchers.eq(
+                                "orderItemChangeForm"),
+                        org.mockito.ArgumentMatchers.any(
+                                OrderItemChangeForm.class));
+    }
+
+    @Test
+    void itemChangeInputRedirectsWhenChangeIsNotAllowed() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                5500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canChangeItemsByUser(order))
+                .thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = orderController.itemChangeInput(
+                orderId,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(orderService)
+                .findOrderByIdAndUserId(
+                        orderId,
+                        userId);
+
+        verify(orderService)
+                .canChangeItemsByUser(order);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "現在、この注文の商品内容は変更できません。");
+    }
+
+    @Test
+    void itemChangeConfirmDisplaysConfirmationWhenChangeIsValid() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                5500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        OrderItemChangePreview preview = mock(OrderItemChangePreview.class);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canChangeItemsByUser(order))
+                .thenReturn(true);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        when(orderService.previewItemChangeForUser(
+                orderId,
+                userId,
+                form))
+                .thenReturn(preview);
+
+        when(preview.isChanged())
+                .thenReturn(true);
+
+        String viewName = orderController.itemChangeConfirm(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "orders/item-change-confirm",
+                viewName);
+
+        verify(validator)
+                .validate(
+                        form,
+                        bindingResult);
+
+        verify(orderService)
+                .previewItemChangeForUser(
+                        orderId,
+                        userId,
+                        form);
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+
+        verify(model)
+                .addAttribute(
+                        "preview",
+                        preview);
+    }
+
+    @Test
+    void itemChangeConfirmReturnsToInputWhenNothingChanged() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                5500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        OrderItemChangePreview preview = mock(OrderItemChangePreview.class);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canChangeItemsByUser(order))
+                .thenReturn(true);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        when(orderService.previewItemChangeForUser(
+                orderId,
+                userId,
+                form))
+                .thenReturn(preview);
+
+        when(preview.isChanged())
+                .thenReturn(false);
+
+        String viewName = orderController.itemChangeConfirm(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "orders/item-change",
+                viewName);
+
+        verify(validator)
+                .validate(
+                        form,
+                        bindingResult);
+
+        verify(orderService)
+                .previewItemChangeForUser(
+                        orderId,
+                        userId,
+                        form);
+
+        verify(bindingResult)
+                .reject(
+                        "unchanged",
+                        "注文内容に変更がありません。");
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+    }
+
+    @Test
+    void itemChangeBackReturnsToInputWithSubmittedForm() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                5500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canChangeItemsByUser(order))
+                .thenReturn(true);
+
+        when(orderService.canCancelByUser(order))
+                .thenReturn(true);
+
+        String viewName = orderController.itemChangeBack(
+                orderId,
+                form,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "orders/item-change",
+                viewName);
+
+        verify(orderService)
+                .findOrderByIdAndUserId(
+                        orderId,
+                        userId);
+
+        verify(orderService)
+                .canChangeItemsByUser(order);
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+
+        verify(model)
+                .addAttribute(
+                        "canCancelByUser",
+                        true);
+
+        verifyNoInteractions(validator);
+    }
+
+    @Test
+    void changeItemsUpdatesOwnedOrderAndRedirectsToDetail() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+        String username = "testuser";
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(loginUser.getUsername())
+                .thenReturn(username);
+
+        when(orderService.changeItemsForUser(
+                orderId,
+                userId,
+                username,
+                form))
+                .thenReturn(true);
+
+        String viewName = orderController.changeItems(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(validator)
+                .validate(
+                        form,
+                        bindingResult);
+
+        verify(orderService)
+                .changeItemsForUser(
+                        orderId,
+                        userId,
+                        username,
+                        form);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "注文内容を変更しました。");
+    }
+
+    @Test
+    void changeItemsDisplaysErrorWhenContentRevisionIsStale() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+        String username = "testuser";
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        form.setContentRevision(0);
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(false);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(loginUser.getUsername())
+                .thenReturn(username);
+
+        IllegalStateException exception = new IllegalStateException(
+                "注文内容が更新されています。もう一度確認してください。");
+
+        when(orderService.changeItemsForUser(
+                orderId,
+                userId,
+                username,
+                form))
+                .thenThrow(exception);
+
+        String viewName = orderController.changeItems(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(validator)
+                .validate(
+                        form,
+                        bindingResult);
+
+        verify(orderService)
+                .changeItemsForUser(
+                        orderId,
+                        userId,
+                        username,
+                        form);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        exception.getMessage());
+    }
+
+    @Test
+    void changeItemsDoesNotCallServiceWhenFormHasValidationErrors() {
+
+        Long orderId = 1L;
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        String viewName = orderController.changeItems(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/orders/" + orderId + "/items",
+                viewName);
+
+        verify(validator)
+                .validate(
+                        form,
+                        bindingResult);
+
+        verify(orderService, never())
+                .changeItemsForUser(
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(
+                                OrderItemChangeForm.class));
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "注文内容が正しくありません。もう一度入力してください。");
+    }
+
+    @Test
+    void itemChangeConfirmReturnsToInputWhenFormHasValidationErrors() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                5500,
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 28, 14, 0));
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canChangeItemsByUser(order))
+                .thenReturn(true);
+
+        when(bindingResult.hasErrors())
+                .thenReturn(true);
+
+        when(orderService.canCancelByUser(order))
+                .thenReturn(true);
+
+        String viewName = orderController.itemChangeConfirm(
+                orderId,
+                form,
+                bindingResult,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "orders/item-change",
+                viewName);
+
+        verify(validator)
+                .validate(
+                        form,
+                        bindingResult);
+
+        verify(orderService, never())
+                .previewItemChangeForUser(
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.any(
+                                OrderItemChangeForm.class));
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+
+        verify(model)
+                .addAttribute(
+                        "canCancelByUser",
+                        true);
     }
 
 }

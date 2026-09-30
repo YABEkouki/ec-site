@@ -4,5 +4,6 @@ public enum StockMovementType {
 
     ADMIN_ADJUSTMENT,
     ORDER_PLACEMENT,
-    ORDER_CANCELLATION
+    ORDER_CANCELLATION,
+    ORDER_ITEM_CHANGE
 }

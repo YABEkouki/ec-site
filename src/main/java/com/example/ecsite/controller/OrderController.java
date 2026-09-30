@@ -14,9 +14,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import com.example.ecsite.dto.OrderItemChangePreview;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
@@ -93,6 +95,10 @@ public class OrderController {
                 orderService.canCancelByUser(order));
 
         model.addAttribute(
+                "canChangeItemsByUser",
+                orderService.canChangeItemsByUser(order));
+
+        model.addAttribute(
                 "statusHistories",
                 orderStatusHistoryService.findByOrderId(id));
 
@@ -150,6 +156,219 @@ public class OrderController {
                     "注文をキャンセルしました。");
 
         } catch (InvalidOrderStatusException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    e.getMessage());
+        }
+
+        return "redirect:/orders/" + id;
+    }
+
+    @GetMapping("/{id}/items")
+    public String itemChangeInput(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!orderService.canChangeItemsByUser(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文の商品内容は変更できません。");
+
+            model.addAttribute(
+                    "canCancelByUser",
+                    orderService.canCancelByUser(order));
+
+            return "redirect:/orders/" + id;
+        }
+
+        OrderItemChangeForm form = createOrderItemChangeForm(order);
+
+        model.addAttribute(
+                "order",
+                order);
+
+        model.addAttribute(
+                "orderItemChangeForm",
+                form);
+
+        return "orders/item-change";
+    }
+
+    @PostMapping("/{id}/items/confirm")
+    public String itemChangeConfirm(
+            @PathVariable Long id,
+            @ModelAttribute("orderItemChangeForm") OrderItemChangeForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!orderService.canChangeItemsByUser(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文の商品内容は変更できません。");
+
+            model.addAttribute(
+                    "canCancelByUser",
+                    orderService.canCancelByUser(order));
+
+            return "redirect:/orders/" + id;
+        }
+
+        validator.validate(
+                form,
+                bindingResult);
+
+        if (bindingResult.hasErrors()) {
+
+            model.addAttribute(
+                    "order",
+                    order);
+
+            model.addAttribute(
+                    "canCancelByUser",
+                    orderService.canCancelByUser(order));
+
+            return "orders/item-change";
+        }
+
+        try {
+
+            OrderItemChangePreview preview = orderService.previewItemChangeForUser(
+                    id,
+                    loginUser.getId(),
+                    form);
+
+            if (!preview.isChanged()) {
+
+                bindingResult.reject(
+                        "unchanged",
+                        "注文内容に変更がありません。");
+
+                model.addAttribute(
+                        "order",
+                        order);
+
+                return "orders/item-change";
+            }
+
+            model.addAttribute(
+                    "order",
+                    order);
+
+            model.addAttribute(
+                    "preview",
+                    preview);
+
+            return "orders/item-change-confirm";
+
+        } catch (IllegalArgumentException
+                | IllegalStateException
+                | InvalidOrderStatusException e) {
+
+            bindingResult.reject(
+                    "itemChange",
+                    e.getMessage());
+
+            model.addAttribute(
+                    "order",
+                    order);
+
+            model.addAttribute(
+                    "canCancelByUser",
+                    orderService.canCancelByUser(order));
+
+            return "orders/item-change";
+        }
+    }
+
+    @PostMapping("/{id}/items/back")
+    public String itemChangeBack(
+            @PathVariable Long id,
+            @ModelAttribute("orderItemChangeForm") OrderItemChangeForm form,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!orderService.canChangeItemsByUser(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文の商品内容は変更できません。");
+
+            model.addAttribute(
+                    "canCancelByUser",
+                    orderService.canCancelByUser(order));
+
+            return "redirect:/orders/" + id;
+        }
+
+        model.addAttribute(
+                "order",
+                order);
+
+        model.addAttribute(
+                "canCancelByUser",
+                orderService.canCancelByUser(order));
+
+        return "orders/item-change";
+    }
+
+    @PostMapping("/{id}/items")
+    public String changeItems(
+            @PathVariable Long id,
+            @ModelAttribute("orderItemChangeForm") OrderItemChangeForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        validator.validate(
+                form,
+                bindingResult);
+
+        if (bindingResult.hasErrors()) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "注文内容が正しくありません。もう一度入力してください。");
+
+            return "redirect:/orders/" + id + "/items";
+        }
+
+        try {
+
+            boolean changed = orderService.changeItemsForUser(
+                    id,
+                    loginUser.getId(),
+                    loginUser.getUsername(),
+                    form);
+
+            redirectAttributes.addFlashAttribute(
+                    "successMessage",
+                    changed
+                            ? "注文内容を変更しました。"
+                            : "注文内容に変更はありません。");
+
+        } catch (IllegalArgumentException
+                | IllegalStateException
+                | InvalidOrderStatusException e) {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
@@ -404,6 +623,30 @@ public class OrderController {
 
         form.setShippingPhone(
                 address.getPhone());
+    }
+
+    private OrderItemChangeForm createOrderItemChangeForm(
+            Order order) {
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        form.setContentRevision(
+                order.getContentRevision());
+
+        for (var orderItem : order.getItems()) {
+
+            OrderItemChangeForm.Item item = new OrderItemChangeForm.Item();
+
+            item.setOrderItemId(
+                    orderItem.getId());
+
+            item.setQuantity(
+                    orderItem.getQuantity());
+
+            form.getItems().add(item);
+        }
+
+        return form;
     }
 
 }

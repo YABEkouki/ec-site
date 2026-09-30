@@ -58,11 +58,7 @@ public class StockMovement {
     @Column(length = 500)
     private String reason;
 
-    @Column(
-            name = "changed_at",
-            nullable = false,
-            insertable = false,
-            updatable = false)
+    @Column(name = "changed_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime changedAt;
 
     protected StockMovement() {
@@ -81,15 +77,13 @@ public class StockMovement {
 
         movement.product = product;
         movement.productName = product.getName();
-        movement.movementType =
-                StockMovementType.ADMIN_ADJUSTMENT;
+        movement.movementType = StockMovementType.ADMIN_ADJUSTMENT;
 
         movement.quantity = quantity;
         movement.stockBefore = stockBefore;
         movement.stockAfter = stockAfter;
 
-        movement.changedByType =
-                StockMovementActorType.ADMIN;
+        movement.changedByType = StockMovementActorType.ADMIN;
         movement.changedByAccountId = changedByAccountId;
         movement.changedByUsername = changedByUsername;
 
@@ -110,15 +104,13 @@ public class StockMovement {
 
         movement.product = product;
         movement.productName = product.getName();
-        movement.movementType =
-                StockMovementType.ORDER_PLACEMENT;
+        movement.movementType = StockMovementType.ORDER_PLACEMENT;
 
         movement.quantity = quantity;
         movement.stockBefore = stockBefore;
         movement.stockAfter = stockAfter;
 
-        movement.changedByType =
-                StockMovementActorType.SYSTEM;
+        movement.changedByType = StockMovementActorType.SYSTEM;
         movement.changedByAccountId = null;
         movement.changedByUsername = "SYSTEM";
 
@@ -139,15 +131,40 @@ public class StockMovement {
 
         movement.product = product;
         movement.productName = product.getName();
-        movement.movementType =
-                StockMovementType.ORDER_CANCELLATION;
+        movement.movementType = StockMovementType.ORDER_CANCELLATION;
 
         movement.quantity = quantity;
         movement.stockBefore = stockBefore;
         movement.stockAfter = stockAfter;
 
-        movement.changedByType =
-                StockMovementActorType.SYSTEM;
+        movement.changedByType = StockMovementActorType.SYSTEM;
+        movement.changedByAccountId = null;
+        movement.changedByUsername = "SYSTEM";
+
+        movement.orderId = orderId;
+        movement.reason = null;
+
+        return movement;
+    }
+
+    public static StockMovement createOrderItemChange(
+            Product product,
+            int stockBefore,
+            int stockAfter,
+            int quantity,
+            Long orderId) {
+
+        StockMovement movement = new StockMovement();
+
+        movement.product = product;
+        movement.productName = product.getName();
+        movement.movementType = StockMovementType.ORDER_ITEM_CHANGE;
+
+        movement.quantity = quantity;
+        movement.stockBefore = stockBefore;
+        movement.stockAfter = stockAfter;
+
+        movement.changedByType = StockMovementActorType.SYSTEM;
         movement.changedByAccountId = null;
         movement.changedByUsername = "SYSTEM";
 

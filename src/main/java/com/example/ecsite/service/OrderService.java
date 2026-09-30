@@ -7,8 +7,13 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -25,9 +30,16 @@ import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
+import com.example.ecsite.dto.OrderItemChangePreview;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderCharge;
+import com.example.ecsite.entity.OrderChargeType;
+import com.example.ecsite.entity.OrderContentChangeCharge;
+import com.example.ecsite.entity.OrderContentChangeHistory;
+import com.example.ecsite.entity.OrderContentChangeHistoryActorType;
+import com.example.ecsite.entity.OrderContentChangeItem;
+import com.example.ecsite.entity.OrderContentChangeSource;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
@@ -44,10 +56,16 @@ import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
+import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
+import com.example.ecsite.repository.OrderContentChangeHistoryRepository;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
+import com.example.ecsite.service.order.OrderAmountSnapshot;
+import com.example.ecsite.service.order.OrderChargeSnapshot;
+import com.example.ecsite.service.order.OrderItemSnapshot;
+import com.example.ecsite.service.pricing.ChargeTaxSnapshot;
 import com.example.ecsite.service.pricing.OrderAmount;
 import com.example.ecsite.service.pricing.OrderAmountCalculator;
 import com.example.ecsite.service.pricing.OrderChargeAmount;
@@ -63,6 +81,7 @@ public class OrderService {
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
     private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
+    private final OrderContentChangeHistoryRepository orderContentChangeHistoryRepository;
     private final AdminAccountService adminAccountService;
     private final OrderDeadlineCalculator orderDeadlineCalculator;
     private final TaxCategoryService taxCategoryService;
@@ -78,6 +97,7 @@ public class OrderService {
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
+            OrderContentChangeHistoryRepository orderContentChangeHistoryRepository,
             AdminAccountService adminAccountService,
             OrderDeadlineCalculator orderDeadlineCalculator,
             TaxCategoryService taxCategoryService,
@@ -91,6 +111,7 @@ public class OrderService {
                 orderHandlingStatusHistoryService,
                 orderShippingAddressHistoryService,
                 orderAssigneeHistoryService,
+                orderContentChangeHistoryRepository,
                 adminAccountService,
                 orderDeadlineCalculator,
                 taxCategoryService,
@@ -106,6 +127,7 @@ public class OrderService {
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
+            OrderContentChangeHistoryRepository orderContentChangeHistoryRepository,
             AdminAccountService adminAccountService,
             OrderDeadlineCalculator orderDeadlineCalculator,
             TaxCategoryService taxCategoryService,
@@ -119,6 +141,7 @@ public class OrderService {
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
         this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
+        this.orderContentChangeHistoryRepository = orderContentChangeHistoryRepository;
         this.adminAccountService = adminAccountService;
         this.orderDeadlineCalculator = orderDeadlineCalculator;
         this.taxCategoryService = taxCategoryService;
@@ -743,6 +766,21 @@ public class OrderService {
                 null);
     }
 
+    @Transactional(readOnly = true)
+    public OrderItemChangePreview previewItemChangeForUser(
+            Long orderId,
+            Long userId,
+            OrderItemChangeForm form) {
+
+        Order order = findOrderByIdAndUserId(orderId, userId);
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        validateItemChangeOrder(order, form, now);
+
+        return buildItemChangePreview(order, form);
+    }
+
     private ActionRequiredAgingSummary getActionRequiredAgingSummary(
             AdminOrderAssigneeFilter assigneeFilter,
             Long assignedAdminAccountId) {
@@ -1071,6 +1109,113 @@ public class OrderService {
         return orderRepository.countByHandlingStatus(handlingStatus);
     }
 
+    @Transactional
+    public boolean changeItemsForUser(
+            Long orderId,
+            Long userId,
+            String username,
+            OrderItemChangeForm form) {
+
+        Order order = orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        // items / charges をトランザクション内で読み込む
+        order.getItems().size();
+        order.getCharges().size();
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        validateItemChangeOrder(
+                order,
+                form,
+                now);
+
+        Map<Long, Integer> newQuantities = toItemQuantityMap(form);
+
+        boolean changed = order.getItems()
+                .stream()
+                .anyMatch(item -> item.getQuantity() != newQuantities.get(item.getId()));
+
+        if (!changed) {
+            return false;
+        }
+
+        List<OrderItemSnapshot> beforeItems = order.getItems()
+                .stream()
+                .map(OrderItemSnapshot::from)
+                .toList();
+
+        List<OrderChargeSnapshot> beforeCharges = order.getCharges()
+                .stream()
+                .map(OrderChargeSnapshot::from)
+                .toList();
+
+        OrderAmountSnapshot beforeAmount = OrderAmountSnapshot.from(order);
+
+        OrderCharge shippingCharge = order.getCharges()
+                .stream()
+                .filter(charge -> charge.getChargeType() == OrderChargeType.SHIPPING)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "注文の送料情報が見つかりません。"));
+
+        ChargeTaxSnapshot shippingTaxSnapshot = ChargeTaxSnapshot.from(shippingCharge);
+
+        applyItemQuantityChanges(
+                order,
+                newQuantities);
+
+        OrderPricingContext pricingContext = createPricingContext(order);
+
+        OrderAmount newAmount = orderAmountCalculator.calculate(
+                pricingContext,
+                shippingTaxSnapshot);
+
+        order.applyAmount(newAmount);
+
+        updateOrderCharges(
+                order,
+                newAmount);
+
+        List<OrderItemSnapshot> afterItems = order.getItems()
+                .stream()
+                .map(OrderItemSnapshot::from)
+                .toList();
+
+        List<OrderChargeSnapshot> afterCharges = order.getCharges()
+                .stream()
+                .map(OrderChargeSnapshot::from)
+                .toList();
+
+        OrderAmountSnapshot afterAmount = OrderAmountSnapshot.from(order);
+
+        restoreChangedItemStock(
+                order,
+                beforeItems,
+                afterItems);
+
+        OrderContentChangeHistory history = createContentChangeHistory(
+                order,
+                userId,
+                username,
+                now,
+                beforeItems,
+                afterItems,
+                beforeCharges,
+                afterCharges,
+                beforeAmount,
+                afterAmount);
+
+        orderContentChangeHistoryRepository.save(history);
+
+        order.incrementContentRevision();
+
+        return true;
+    }
+
     public List<AdminAssigneeActionRequiredSummary> getActionRequiredOrderCountsByAssignee() {
 
         LocalDate today = LocalDate.now();
@@ -1104,6 +1249,16 @@ public class OrderService {
                 LocalDateTime.now(clock));
     }
 
+    public boolean canChangeShippingAddress(Order order) {
+        return order.canChangeShippingAddress(
+                LocalDateTime.now(clock));
+    }
+
+    public boolean canChangeItemsByUser(Order order) {
+        return order.canChangeItemsByUser(
+                LocalDateTime.now(clock));
+    }
+
     private LocalDateTime resolveFrom(
             AdminOrderSearchForm searchForm) {
 
@@ -1134,9 +1289,415 @@ public class OrderService {
         };
     }
 
-    public boolean canChangeShippingAddress(Order order) {
-        return order.canChangeShippingAddress(
-                LocalDateTime.now(clock));
+    private void validateItemChangeOrder(
+            Order order,
+            OrderItemChangeForm form,
+            LocalDateTime now) {
+
+        if (!order.canChangeItemsByUser(now)) {
+            throw new InvalidOrderStatusException(
+                    "この注文は現在、注文内容を変更できません。");
+        }
+
+        if (form.getContentRevision() == null
+                || form.getContentRevision() != order.getContentRevision()) {
+
+            throw new IllegalStateException(
+                    "注文内容が変更されています。最新の注文内容を確認して、もう一度操作してください。");
+        }
+
+        if (form.getItems() == null
+                || form.getItems().size() != order.getItems().size()) {
+
+            throw new IllegalArgumentException(
+                    "注文商品の指定が正しくありません。");
+        }
+
+        Map<Long, OrderItem> orderItemsById = new HashMap<>();
+
+        for (OrderItem item : order.getItems()) {
+            orderItemsById.put(item.getId(), item);
+        }
+
+        Set<Long> submittedIds = new HashSet<>();
+        int totalQuantity = 0;
+
+        for (OrderItemChangeForm.Item submittedItem : form.getItems()) {
+
+            if (submittedItem == null
+                    || submittedItem.getOrderItemId() == null
+                    || submittedItem.getQuantity() == null) {
+
+                throw new IllegalArgumentException(
+                        "注文商品の指定が正しくありません。");
+            }
+
+            Long orderItemId = submittedItem.getOrderItemId();
+
+            if (!submittedIds.add(orderItemId)) {
+                throw new IllegalArgumentException(
+                        "同じ注文商品が重複して指定されています。");
+            }
+
+            OrderItem currentItem = orderItemsById.get(orderItemId);
+
+            if (currentItem == null) {
+                throw new IllegalArgumentException(
+                        "注文商品の指定が正しくありません。");
+            }
+
+            int newQuantity = submittedItem.getQuantity();
+
+            if (newQuantity < 0) {
+                throw new IllegalArgumentException(
+                        "数量は0以上で指定してください。");
+            }
+
+            if (newQuantity > currentItem.getQuantity()) {
+                throw new IllegalArgumentException(
+                        "現在の注文数量を超える数量には変更できません。");
+            }
+
+            totalQuantity += newQuantity;
+        }
+
+        if (totalQuantity == 0) {
+            throw new IllegalArgumentException(
+                    "注文には1点以上の商品が必要です。"
+                            + "注文全体を取り消す場合は注文キャンセルを選択してください。");
+        }
+    }
+
+    private OrderItemChangePreview buildItemChangePreview(
+            Order order,
+            OrderItemChangeForm form) {
+
+        Map<Long, Integer> quantities = new HashMap<>();
+
+        for (OrderItemChangeForm.Item item : form.getItems()) {
+            quantities.put(
+                    item.getOrderItemId(),
+                    item.getQuantity());
+        }
+
+        OrderPricingContext context = new OrderPricingContext();
+
+        List<OrderItemChangePreview.Item> previewItems = new ArrayList<>();
+
+        for (OrderItem item : order.getItems()) {
+
+            int newQuantity = quantities.get(item.getId());
+
+            previewItems.add(
+                    new OrderItemChangePreview.Item(
+                            item.getId(),
+                            item.getProductName(),
+                            item.getPrice(),
+                            item.getQuantity(),
+                            newQuantity,
+                            item.getSubtotal(),
+                            item.getPrice() * newQuantity));
+
+            if (newQuantity == 0) {
+                continue;
+            }
+
+            context.addItem(
+                    item.getPrice(),
+                    newQuantity,
+                    item.getTaxCategoryId(),
+                    item.getTaxCategoryCode(),
+                    item.getTaxCategoryName(),
+                    item.getTaxRate());
+        }
+
+        OrderCharge shippingCharge = order.getCharges()
+                .stream()
+                .filter(charge -> charge.getChargeType() == OrderChargeType.SHIPPING)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "注文の送料情報が見つかりません。"));
+
+        OrderAmount newAmount = orderAmountCalculator.calculate(
+                context,
+                ChargeTaxSnapshot.from(shippingCharge));
+
+        return new OrderItemChangePreview(
+                previewItems,
+                order.getItemSubtotal(),
+                newAmount.itemSubtotal(),
+                order.getChargeTotal(),
+                newAmount.chargeTotal(),
+                order.getTaxAmount(),
+                newAmount.taxAmount(),
+                order.getTotalAmount(),
+                newAmount.totalAmount());
+    }
+
+    private Map<Long, Integer> toItemQuantityMap(
+            OrderItemChangeForm form) {
+
+        Map<Long, Integer> quantities = new HashMap<>();
+
+        for (OrderItemChangeForm.Item item : form.getItems()) {
+            quantities.put(
+                    item.getOrderItemId(),
+                    item.getQuantity());
+        }
+
+        return quantities;
+    }
+
+    private void applyItemQuantityChanges(
+            Order order,
+            Map<Long, Integer> newQuantities) {
+
+        List<OrderItem> currentItems = new ArrayList<>(order.getItems());
+
+        for (OrderItem item : currentItems) {
+
+            int newQuantity = newQuantities.get(item.getId());
+
+            if (newQuantity == 0) {
+                order.removeItem(item);
+                continue;
+            }
+
+            if (newQuantity != item.getQuantity()) {
+                item.setQuantity(newQuantity);
+            }
+        }
+    }
+
+    private OrderPricingContext createPricingContext(
+            Order order) {
+
+        OrderPricingContext context = new OrderPricingContext();
+
+        for (OrderItem item : order.getItems()) {
+
+            context.addItem(
+                    item.getPrice(),
+                    item.getQuantity(),
+                    item.getTaxCategoryId(),
+                    item.getTaxCategoryCode(),
+                    item.getTaxCategoryName(),
+                    item.getTaxRate());
+        }
+
+        return context;
+    }
+
+    private void updateOrderCharges(
+            Order order,
+            OrderAmount amount) {
+
+        for (OrderChargeAmount calculatedCharge : amount.charges()) {
+
+            OrderCharge existingCharge = order.getCharges()
+                    .stream()
+                    .filter(charge -> charge.getChargeType() == calculatedCharge.chargeType())
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                            "注文の付帯料金情報が見つかりません。"));
+
+            existingCharge.updateAmount(
+                    calculatedCharge.amount());
+        }
+    }
+
+    private void restoreChangedItemStock(
+            Order order,
+            List<OrderItemSnapshot> beforeItems,
+            List<OrderItemSnapshot> afterItems) {
+
+        Map<Long, OrderItemSnapshot> afterByOrderItemId = afterItems.stream()
+                .collect(Collectors.toMap(
+                        OrderItemSnapshot::orderItemId,
+                        Function.identity()));
+
+        List<OrderItemSnapshot> sortedBeforeItems = beforeItems.stream()
+                .sorted(Comparator
+                        .comparing(OrderItemSnapshot::productId)
+                        .thenComparing(OrderItemSnapshot::orderItemId))
+                .toList();
+
+        for (OrderItemSnapshot before : sortedBeforeItems) {
+
+            OrderItemSnapshot after = afterByOrderItemId.get(
+                    before.orderItemId());
+
+            int newQuantity = after == null
+                    ? 0
+                    : after.quantity();
+
+            int restoreQuantity = before.quantity() - newQuantity;
+
+            if (restoreQuantity <= 0) {
+                continue;
+            }
+
+            inventoryService.restoreForOrderItemChange(
+                    before.productId(),
+                    restoreQuantity,
+                    order.getId());
+        }
+    }
+
+    private OrderContentChangeHistory createContentChangeHistory(
+            Order order,
+            Long userId,
+            String username,
+            LocalDateTime changedAt,
+            List<OrderItemSnapshot> beforeItems,
+            List<OrderItemSnapshot> afterItems,
+            List<OrderChargeSnapshot> beforeCharges,
+            List<OrderChargeSnapshot> afterCharges,
+            OrderAmountSnapshot beforeAmount,
+            OrderAmountSnapshot afterAmount) {
+
+        OrderContentChangeHistory history = new OrderContentChangeHistory(
+                order,
+                OrderContentChangeSource.CUSTOMER,
+                null,
+                OrderContentChangeHistoryActorType.USER,
+                userId,
+                username,
+                beforeAmount.itemSubtotal(),
+                afterAmount.itemSubtotal(),
+                beforeAmount.chargeTotal(),
+                afterAmount.chargeTotal(),
+                beforeAmount.taxAmount(),
+                afterAmount.taxAmount(),
+                beforeAmount.totalAmount(),
+                afterAmount.totalAmount(),
+                changedAt);
+
+        addItemChangeHistories(
+                history,
+                beforeItems,
+                afterItems);
+
+        addChargeChangeHistories(
+                history,
+                beforeCharges,
+                afterCharges);
+
+        return history;
+    }
+
+    private void addItemChangeHistories(
+            OrderContentChangeHistory history,
+            List<OrderItemSnapshot> beforeItems,
+            List<OrderItemSnapshot> afterItems) {
+
+        Map<Long, OrderItemSnapshot> afterById = afterItems.stream()
+                .collect(Collectors.toMap(
+                        OrderItemSnapshot::orderItemId,
+                        Function.identity()));
+
+        for (OrderItemSnapshot before : beforeItems) {
+
+            OrderItemSnapshot after = afterById.get(before.orderItemId());
+
+            if (after == null) {
+
+                history.addItem(
+                        OrderContentChangeItem.removed(
+                                before.orderItemId(),
+                                before.productId(),
+                                before.productName(),
+                                before.price(),
+                                before.quantity(),
+                                before.subtotal(),
+                                before.taxCategoryId(),
+                                before.taxCategoryCode(),
+                                before.taxCategoryName(),
+                                before.taxRate()));
+
+                continue;
+            }
+
+            if (before.quantity() == after.quantity()) {
+                continue;
+            }
+
+            history.addItem(
+                    OrderContentChangeItem.updated(
+                            before.orderItemId(),
+                            before.productId(),
+                            before.productName(),
+                            before.price(),
+                            before.quantity(),
+                            after.quantity(),
+                            before.subtotal(),
+                            after.subtotal(),
+                            before.taxCategoryId(),
+                            before.taxCategoryCode(),
+                            before.taxCategoryName(),
+                            before.taxRate()));
+        }
+    }
+
+    private void addChargeChangeHistories(
+            OrderContentChangeHistory history,
+            List<OrderChargeSnapshot> beforeCharges,
+            List<OrderChargeSnapshot> afterCharges) {
+
+        Map<OrderChargeType, OrderChargeSnapshot> afterByType = afterCharges.stream()
+                .collect(Collectors.toMap(
+                        OrderChargeSnapshot::chargeType,
+                        Function.identity()));
+
+        for (OrderChargeSnapshot before : beforeCharges) {
+
+            OrderChargeSnapshot after = afterByType.get(before.chargeType());
+
+            if (after == null) {
+                continue;
+            }
+
+            boolean changed = !Objects.equals(
+                    before.name(),
+                    after.name())
+                    || before.amount() != after.amount()
+                    || !Objects.equals(
+                            before.taxCategoryId(),
+                            after.taxCategoryId())
+                    || !Objects.equals(
+                            before.taxCategoryCode(),
+                            after.taxCategoryCode())
+                    || !Objects.equals(
+                            before.taxCategoryName(),
+                            after.taxCategoryName())
+                    || !Objects.equals(
+                            before.taxRate(),
+                            after.taxRate())
+                    || before.displayOrder() != after.displayOrder();
+
+            if (!changed) {
+                continue;
+            }
+
+            history.addCharge(
+                    OrderContentChangeCharge.updated(
+                            before.orderChargeId(),
+                            before.chargeType(),
+                            before.name(),
+                            after.name(),
+                            before.amount(),
+                            after.amount(),
+                            before.taxCategoryId(),
+                            after.taxCategoryId(),
+                            before.taxCategoryCode(),
+                            after.taxCategoryCode(),
+                            before.taxCategoryName(),
+                            after.taxCategoryName(),
+                            before.taxRate(),
+                            after.taxRate(),
+                            before.displayOrder(),
+                            after.displayOrder()));
+        }
     }
 
 }

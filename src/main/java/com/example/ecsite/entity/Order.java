@@ -63,6 +63,9 @@ public class Order {
     @Column(name = "change_deadline_at", nullable = false)
     private LocalDateTime changeDeadlineAt;
 
+    @Column(name = "content_revision", nullable = false)
+    private int contentRevision;
+
     @Column(name = "shipping_name", length = 100)
     private String shippingName;
 
@@ -163,6 +166,14 @@ public class Order {
         return changeDeadlineAt;
     }
 
+    public int getContentRevision() {
+        return contentRevision;
+    }
+
+    public void incrementContentRevision() {
+        contentRevision++;
+    }
+
     public OrderHandlingStatus getHandlingStatus() {
         return handlingStatus;
     }
@@ -192,6 +203,10 @@ public class Order {
         item.setOrder(this);
     }
 
+    public void removeItem(OrderItem item) {
+        items.remove(item);
+    }
+
     public List<OrderItem> getItems() {
         return Collections.unmodifiableList(items);
     }
@@ -199,6 +214,14 @@ public class Order {
     public void addCharge(OrderCharge charge) {
         charges.add(charge);
         charge.setOrder(this);
+    }
+
+    public void replaceCharges(List<OrderCharge> newCharges) {
+        charges.clear();
+
+        for (OrderCharge charge : newCharges) {
+            addCharge(charge);
+        }
     }
 
     public List<OrderCharge> getCharges() {
@@ -296,6 +319,11 @@ public class Order {
 
     public boolean canChangeShippingAddress(LocalDateTime now) {
         return (status == OrderStatus.ORDERED || status == OrderStatus.PAID)
+                && isWithinModificationPeriod(now);
+    }
+
+    public boolean canChangeItemsByUser(LocalDateTime now) {
+        return status == OrderStatus.ORDERED
                 && isWithinModificationPeriod(now);
     }
 

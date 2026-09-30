@@ -13,10 +13,18 @@ public class ShippingChargeCalculator {
     private static final String SHIPPING_CHARGE_NAME = "送料・梱包料";
     private static final int SHIPPING_DISPLAY_ORDER = 10;
 
-    
     public OrderChargeAmount calculate(
             OrderPricingContext context,
             TaxCategory taxCategory) {
+
+        return calculate(
+                context,
+                ChargeTaxSnapshot.from(taxCategory));
+    }
+
+    public OrderChargeAmount calculate(
+            OrderPricingContext context,
+            ChargeTaxSnapshot taxSnapshot) {
 
         int itemSubtotal = context.getItems()
                 .stream()
@@ -31,10 +39,10 @@ public class ShippingChargeCalculator {
                 OrderChargeType.SHIPPING,
                 SHIPPING_CHARGE_NAME,
                 shippingFee,
-                taxCategory.getId(),
-                taxCategory.getCode(),
-                taxCategory.getName(),
-                taxCategory.getTaxRate(),
+                taxSnapshot.taxCategoryId(),
+                taxSnapshot.taxCategoryCode(),
+                taxSnapshot.taxCategoryName(),
+                taxSnapshot.taxRate(),
                 SHIPPING_DISPLAY_ORDER);
     }
 }

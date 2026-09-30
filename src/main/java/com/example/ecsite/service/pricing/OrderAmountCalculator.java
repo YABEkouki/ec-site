@@ -24,6 +24,15 @@ public class OrderAmountCalculator {
             OrderPricingContext context,
             TaxCategory shippingTaxCategory) {
 
+        return calculate(
+                context,
+                ChargeTaxSnapshot.from(shippingTaxCategory));
+    }
+
+    public OrderAmount calculate(
+            OrderPricingContext context,
+            ChargeTaxSnapshot shippingTaxSnapshot) {
+
         int itemSubtotal = context.getItems()
                 .stream()
                 .mapToInt(OrderPricingContext.Item::getSubtotal)
@@ -32,7 +41,7 @@ public class OrderAmountCalculator {
         OrderChargeAmount shippingCharge =
                 shippingChargeCalculator.calculate(
                         context,
-                        shippingTaxCategory);
+                        shippingTaxSnapshot);
 
         List<OrderChargeAmount> charges =
                 List.of(shippingCharge);

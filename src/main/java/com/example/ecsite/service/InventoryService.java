@@ -103,4 +103,29 @@ public class InventoryService {
         stockMovementRepository.save(movement);
     }
 
+    public void restoreForOrderItemChange(
+            Long productId,
+            int quantity,
+            Long orderId) {
+
+        Product product = productRepository
+                .findByIdForUpdateIncludingInactive(productId)
+                .orElseThrow(() -> new ProductNotFoundException(productId));
+
+        int stockBefore = product.getStock();
+
+        product.adjustStock(quantity);
+
+        int stockAfter = product.getStock();
+
+        StockMovement movement = StockMovement.createOrderItemChange(
+                product,
+                stockBefore,
+                stockAfter,
+                quantity,
+                orderId);
+
+        stockMovementRepository.save(movement);
+    }
+
 }
