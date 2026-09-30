@@ -13,7 +13,8 @@ VALUES
     ('スマートフォン・タブレット', TRUE, FALSE, 200),
     ('家電', TRUE, FALSE, 300),
     ('文房具', TRUE, FALSE, 400),
-    ('書籍', TRUE, FALSE, 500)
+    ('書籍', TRUE, FALSE, 500),
+    ('食品・飲料', TRUE, FALSE, 600)
 ON CONFLICT (name)
 DO UPDATE SET
     active = EXCLUDED.active,

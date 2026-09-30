@@ -17,6 +17,7 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.StockMovement;
 import com.example.ecsite.entity.StockMovementType;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.entity.User;
 
 import jakarta.persistence.EntityManager;
@@ -46,6 +47,9 @@ class StockMovementRepositoryTest {
 
     @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private TaxCategoryRepository taxCategoryRepository;
 
     @Test
     void findByProductIdReturnsMovementsNewestFirst() {
@@ -245,12 +249,19 @@ class StockMovementRepositoryTest {
         Product product = new Product();
         product.setName(name);
         product.setPrice(1000);
+        product.setTaxCategory(getStandardTaxCategory());
         product.setStock(10);
         product.setDescription("Repository test product");
         product.setCategory(category);
         product.setActive(true);
 
         return productRepository.save(product);
+    }
+
+    private TaxCategory getStandardTaxCategory() {
+        return taxCategoryRepository
+                .findByCode("STANDARD")
+                .orElseThrow();
     }
 
     private User createTestUser() {

@@ -21,17 +21,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.cart.Cart;
+import com.example.ecsite.cart.CartItem;
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderCharge;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
@@ -45,6 +48,10 @@ import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
+import com.example.ecsite.service.pricing.OrderAmount;
+import com.example.ecsite.service.pricing.OrderAmountCalculator;
+import com.example.ecsite.service.pricing.OrderChargeAmount;
+import com.example.ecsite.service.pricing.OrderPricingContext;
 
 @Service
 public class OrderService {
@@ -58,6 +65,8 @@ public class OrderService {
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
     private final AdminAccountService adminAccountService;
     private final OrderDeadlineCalculator orderDeadlineCalculator;
+    private final TaxCategoryService taxCategoryService;
+    private final OrderAmountCalculator orderAmountCalculator;
     private final Clock clock;
 
     @Autowired
@@ -70,7 +79,9 @@ public class OrderService {
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService,
-            OrderDeadlineCalculator orderDeadlineCalculator) {
+            OrderDeadlineCalculator orderDeadlineCalculator,
+            TaxCategoryService taxCategoryService,
+            OrderAmountCalculator orderAmountCalculator) {
 
         this(
                 orderRepository,
@@ -82,6 +93,8 @@ public class OrderService {
                 orderAssigneeHistoryService,
                 adminAccountService,
                 orderDeadlineCalculator,
+                taxCategoryService,
+                orderAmountCalculator,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -95,6 +108,8 @@ public class OrderService {
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             AdminAccountService adminAccountService,
             OrderDeadlineCalculator orderDeadlineCalculator,
+            TaxCategoryService taxCategoryService,
+            OrderAmountCalculator orderAmountCalculator,
             Clock clock) {
 
         this.orderRepository = orderRepository;
@@ -106,6 +121,8 @@ public class OrderService {
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.adminAccountService = adminAccountService;
         this.orderDeadlineCalculator = orderDeadlineCalculator;
+        this.taxCategoryService = taxCategoryService;
+        this.orderAmountCalculator = orderAmountCalculator;
         this.clock = clock;
     }
 
@@ -131,6 +148,8 @@ public class OrderService {
                 orderedAt,
                 changeDeadlineAt);
 
+        OrderPricingContext pricingContext = new OrderPricingContext();
+
         order.setShippingAddress(
                 checkoutForm.getShippingName().trim(),
                 checkoutForm.getShippingPostalCode().trim(),
@@ -138,8 +157,6 @@ public class OrderService {
                 checkoutForm.getShippingCity().trim(),
                 checkoutForm.getShippingAddressLine().trim(),
                 checkoutForm.getShippingPhone().trim());
-
-        int totalAmount = 0;
 
         for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
 
@@ -181,20 +198,53 @@ public class OrderService {
                                 + "の在庫が不足しています。");
             }
 
+            TaxCategory taxCategory = product.getTaxCategory();
+
             OrderItem orderItem = new OrderItem(
                     product.getId(),
                     product.getName(),
                     product.getCategory().getId(),
                     product.getCategory().getName(),
+                    taxCategory.getId(),
+                    taxCategory.getCode(),
+                    taxCategory.getName(),
+                    taxCategory.getTaxRate(),
                     product.getPrice(),
                     cartItem.getQuantity());
 
             order.addItem(orderItem);
 
-            totalAmount += orderItem.getSubtotal();
+            pricingContext.addItem(
+                    product.getPrice(),
+                    cartItem.getQuantity(),
+                    taxCategory.getId(),
+                    taxCategory.getCode(),
+                    taxCategory.getName(),
+                    taxCategory.getTaxRate());
         }
 
-        order.setTotalAmount(totalAmount);
+        TaxCategory shippingTaxCategory = taxCategoryService.findStandardTaxCategory();
+
+        OrderAmount orderAmount = orderAmountCalculator.calculate(
+                pricingContext,
+                shippingTaxCategory);
+
+        order.applyAmount(orderAmount);
+
+        for (OrderChargeAmount chargeAmount : orderAmount.charges()) {
+
+            OrderCharge orderCharge = new OrderCharge(
+                    chargeAmount.chargeType(),
+                    chargeAmount.name(),
+                    chargeAmount.amount(),
+                    chargeAmount.taxCategoryId(),
+                    chargeAmount.taxCategoryCode(),
+                    chargeAmount.taxCategoryName(),
+                    chargeAmount.taxRate(),
+                    chargeAmount.displayOrder());
+
+            order.addCharge(orderCharge);
+        }
 
         Order savedOrder = orderRepository.save(order);
 
@@ -283,6 +333,34 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
+    public OrderAmount calculateOrderAmount(Cart cart) {
+
+        OrderPricingContext pricingContext = new OrderPricingContext();
+
+        for (CartItem cartItem : cart.getItems()) {
+
+            Product product = productService.findById(
+                    cartItem.getProductId());
+
+            TaxCategory taxCategory = product.getTaxCategory();
+
+            pricingContext.addItem(
+                    product.getPrice(),
+                    cartItem.getQuantity(),
+                    taxCategory.getId(),
+                    taxCategory.getCode(),
+                    taxCategory.getName(),
+                    taxCategory.getTaxRate());
+        }
+
+        TaxCategory shippingTaxCategory = taxCategoryService.findStandardTaxCategory();
+
+        return orderAmountCalculator.calculate(
+                pricingContext,
+                shippingTaxCategory);
+    }
+
+    @Transactional(readOnly = true)
     public Page<Order> findAllOrders(
             OrderStatus status,
             int page,
@@ -302,8 +380,15 @@ public class OrderService {
     @Transactional(readOnly = true)
     public Order findOrderWithItems(Long id) {
 
-        return orderRepository.findByIdWithItems(id)
+        Order order = orderRepository
+                .findByIdWithItems(id)
                 .orElseThrow(() -> new OrderNotFoundException(id));
+
+        orderRepository
+                .findByIdWithCharges(id)
+                .orElseThrow(() -> new OrderNotFoundException(id));
+
+        return order;
     }
 
     @Transactional
@@ -834,11 +919,19 @@ public class OrderService {
             Long orderId,
             Long userId) {
 
-        return orderRepository
+        Order order = orderRepository
                 .findByIdAndUserIdWithItems(
                         orderId,
                         userId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        orderRepository
+                .findByIdAndUserIdWithCharges(
+                        orderId,
+                        userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        return order;
     }
 
     @Transactional

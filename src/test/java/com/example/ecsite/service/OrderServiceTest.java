@@ -9,12 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -43,12 +45,14 @@ import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderChargeType;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.OrderStatusHistoryActorType;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.exception.OrderValidationException;
@@ -63,6 +67,9 @@ import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
+import com.example.ecsite.service.pricing.OrderAmount;
+import com.example.ecsite.service.pricing.OrderAmountCalculator;
+import com.example.ecsite.service.pricing.OrderChargeAmount;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -90,6 +97,12 @@ class OrderServiceTest {
 
     @Mock
     private OrderAssigneeHistoryService orderAssigneeHistoryService;
+
+    @Mock
+    private TaxCategoryService taxCategoryService;
+
+    @Mock
+    private OrderAmountCalculator orderAmountCalculator;
 
     private OrderService orderService;
 
@@ -135,6 +148,37 @@ class OrderServiceTest {
         when(productService.findByIdForUpdate(1L))
                 .thenReturn(product);
 
+        TaxCategory shippingTaxCategory = createTaxCategory(
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"));
+
+        when(taxCategoryService.findStandardTaxCategory())
+                .thenReturn(shippingTaxCategory);
+
+        OrderChargeAmount shippingCharge = new OrderChargeAmount(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                550,
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                10);
+
+        OrderAmount orderAmount = new OrderAmount(
+                2000,
+                List.of(shippingCharge),
+                550,
+                231,
+                2550);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                same(shippingTaxCategory)))
+                .thenReturn(orderAmount);
+
         Long orderId = 100L;
 
         when(orderRepository.save(any(Order.class)))
@@ -153,12 +197,27 @@ class OrderServiceTest {
                 cart,
                 createCheckoutForm());
 
-        assertEquals(2000, order.getTotalAmount());
+        assertEquals(2000, order.getItemSubtotal());
+        assertEquals(550, order.getChargeTotal());
+        assertEquals(231, order.getTaxAmount());
+        assertEquals(2550, order.getTotalAmount());
         assertEquals(1, order.getItems().size());
         assertEquals(100L, order.getItems().get(0).getCategoryId());
         assertEquals("テストカテゴリ", order.getItems().get(0).getCategoryName());
         assertEquals(LocalDateTime.of(2026, 9, 28, 10, 0), order.getOrderedAt());
         assertEquals(LocalDateTime.of(2026, 9, 28, 14, 0), order.getChangeDeadlineAt());
+        assertEquals(200L, order.getItems().get(0).getTaxCategoryId());
+        assertEquals("STANDARD", order.getItems().get(0).getTaxCategoryCode());
+        assertEquals("標準税率", order.getItems().get(0).getTaxCategoryName());
+        assertEquals(0, new BigDecimal("10.00").compareTo(order.getItems().get(0).getTaxRate()));
+        assertEquals(1, order.getCharges().size());
+        assertEquals(OrderChargeType.SHIPPING, order.getCharges().get(0).getChargeType());
+        assertEquals("送料・梱包料", order.getCharges().get(0).getName());
+        assertEquals(550, order.getCharges().get(0).getAmount());
+        assertEquals(300L, order.getCharges().get(0).getTaxCategoryId());
+        assertEquals("STANDARD", order.getCharges().get(0).getTaxCategoryCode());
+        assertEquals("標準税率", order.getCharges().get(0).getTaxCategoryName());
+        assertEquals(0, new BigDecimal("10.00").compareTo(order.getCharges().get(0).getTaxRate()));
 
         verify(inventoryService)
                 .decreaseForOrder(
@@ -176,6 +235,14 @@ class OrderServiceTest {
                         OrderStatusHistoryActorType.USER,
                         userId,
                         username);
+
+        verify(taxCategoryService)
+                .findStandardTaxCategory();
+
+        verify(orderAmountCalculator)
+                .calculate(
+                        any(),
+                        same(shippingTaxCategory));
     }
 
     @Test
@@ -291,41 +358,6 @@ class OrderServiceTest {
 
         verify(orderRepository, never())
                 .save(any(Order.class));
-    }
-
-    private Product createProduct(
-            Long id,
-            String name,
-            int price,
-            int stock) {
-
-        Category category = new Category("テストカテゴリ");
-
-        org.springframework.test.util.ReflectionTestUtils
-                .setField(category, "id", 100L);
-
-        Product product = new Product();
-        product.setId(id);
-        product.setName(name);
-        product.setPrice(price);
-        product.setStock(stock);
-        product.setCategory(category);
-
-        return product;
-    }
-
-    private CheckoutForm createCheckoutForm() {
-
-        CheckoutForm form = new CheckoutForm();
-
-        form.setShippingName("山田 太郎");
-        form.setShippingPostalCode("123-4567");
-        form.setShippingPrefecture("東京都");
-        form.setShippingCity("千代田区");
-        form.setShippingAddressLine("1-2-3");
-        form.setShippingPhone("090-1234-5678");
-
-        return form;
     }
 
     @Test
@@ -490,6 +522,7 @@ class OrderServiceTest {
         CartItem cartItem = mock(CartItem.class);
         Product product = mock(Product.class);
         Category category = mock(Category.class);
+        TaxCategory taxCategory = mock(TaxCategory.class);
         CheckoutForm checkoutForm = createValidCheckoutForm();
 
         when(cart.getItems())
@@ -528,6 +561,21 @@ class OrderServiceTest {
         when(category.getName())
                 .thenReturn("テストカテゴリ");
 
+        when(product.getTaxCategory())
+                .thenReturn(taxCategory);
+
+        when(taxCategory.getId())
+                .thenReturn(200L);
+
+        when(taxCategory.getCode())
+                .thenReturn("STANDARD");
+
+        when(taxCategory.getName())
+                .thenReturn("標準税率");
+
+        when(taxCategory.getTaxRate())
+                .thenReturn(new BigDecimal("10.00"));
+
         Long orderId = 100L;
 
         when(orderRepository.save(any(Order.class)))
@@ -540,6 +588,12 @@ class OrderServiceTest {
                     return order;
                 });
 
+        mockOrderAmountCalculation(
+                3000,
+                550,
+                322,
+                3550);
+
         OrderService orderService = createOrderService();
 
         Order result = orderService.createOrder(
@@ -548,7 +602,7 @@ class OrderServiceTest {
                 cart,
                 checkoutForm);
 
-        assertEquals(3000, result.getTotalAmount());
+        assertEquals(3550, result.getTotalAmount());
         assertEquals(1, result.getItems().size());
         assertEquals(3, result.getItems().get(0).getQuantity());
 
@@ -587,6 +641,133 @@ class OrderServiceTest {
 
         verifyNoInteractions(productService);
         verifyNoInteractions(orderRepository);
+    }
+
+    @Test
+    void createOrderKeepsZeroAmountShippingChargeWhenShippingIsFree() {
+
+        Long userId = 10L;
+        String username = "testuser";
+
+        Product product = createProduct(
+                1L,
+                "送料無料商品",
+                5000,
+                5);
+
+        Cart cart = new Cart();
+        cart.addItem(new CartItem(
+                1L,
+                "送料無料商品",
+                5000,
+                1));
+
+        when(productService.findByIdForUpdate(1L))
+                .thenReturn(product);
+
+        mockOrderAmountCalculation(
+                5000,
+                0,
+                454,
+                5000);
+
+        when(orderRepository.save(any(Order.class)))
+                .thenAnswer(invocation -> {
+                    Order order = invocation.getArgument(0);
+
+                    org.springframework.test.util.ReflectionTestUtils
+                            .setField(order, "id", 100L);
+
+                    return order;
+                });
+
+        Order order = orderService.createOrder(
+                userId,
+                username,
+                cart,
+                createCheckoutForm());
+
+        assertEquals(5000, order.getItemSubtotal());
+        assertEquals(0, order.getChargeTotal());
+        assertEquals(454, order.getTaxAmount());
+        assertEquals(5000, order.getTotalAmount());
+
+        assertEquals(1, order.getCharges().size());
+
+        assertEquals(
+                OrderChargeType.SHIPPING,
+                order.getCharges().get(0).getChargeType());
+
+        assertEquals(
+                "送料・梱包料",
+                order.getCharges().get(0).getName());
+
+        assertEquals(
+                0,
+                order.getCharges().get(0).getAmount());
+
+        assertEquals(
+                "STANDARD",
+                order.getCharges().get(0).getTaxCategoryCode());
+
+        verify(orderRepository).save(order);
+    }
+
+    @Test
+    void calculateOrderAmountReturnsPricingResult() {
+
+        Product product = createProduct(
+                1L,
+                "テスト商品",
+                2000,
+                5);
+
+        Cart cart = new Cart();
+
+        cart.addItem(new CartItem(
+                1L,
+                "テスト商品",
+                2000,
+                2));
+
+        when(productService.findById(1L))
+                .thenReturn(product);
+
+        TaxCategory shippingTaxCategory = createTaxCategory(
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"));
+
+        when(taxCategoryService.findStandardTaxCategory())
+                .thenReturn(shippingTaxCategory);
+
+        OrderAmount expected = new OrderAmount(
+                4000,
+                List.of(),
+                550,
+                413,
+                4550);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                same(shippingTaxCategory)))
+                .thenReturn(expected);
+
+        OrderAmount result = orderService.calculateOrderAmount(cart);
+
+        assertSame(expected, result);
+
+        verify(productService)
+                .findById(1L);
+
+        verify(taxCategoryService)
+                .findStandardTaxCategory();
+
+        verify(orderAmountCalculator)
+                .calculate(
+                        any(),
+                        same(shippingTaxCategory));
     }
 
     private CheckoutForm createValidCheckoutForm() {
@@ -998,6 +1179,11 @@ class OrderServiceTest {
                         userId))
                 .thenReturn(Optional.of(expectedOrder));
 
+        when(orderRepository.findByIdAndUserIdWithCharges(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(expectedOrder));
+
         Order actualOrder = orderService.findOrderByIdAndUserId(
                 orderId,
                 userId);
@@ -1099,6 +1285,12 @@ class OrderServiceTest {
 
                     return order;
                 });
+
+        mockOrderAmountCalculation(
+                2000,
+                550,
+                231,
+                2550);
 
         OrderService orderService = createOrderService();
 
@@ -2839,63 +3031,6 @@ class OrderServiceTest {
                 order.getShippingName());
     }
 
-    private OrderService createOrderService() {
-        return new OrderService(
-                orderRepository,
-                productService,
-                inventoryService,
-                orderStatusHistoryService,
-                orderHandlingStatusHistoryService,
-                orderShippingAddressHistoryService,
-                orderAssigneeHistoryService,
-                adminAccountService,
-                orderDeadlineCalculator,
-                clock);
-    }
-
-    private Order createOrder(
-            Long userId,
-            int totalAmount) {
-
-        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
-
-        LocalDateTime changeDeadlineAt = orderDeadlineCalculator.calculate(orderedAt);
-
-        return new Order(
-                userId,
-                totalAmount,
-                orderedAt,
-                changeDeadlineAt);
-    }
-
-    private OrderShippingAddressForm createOrderShippingAddressForm() {
-
-        OrderShippingAddressForm form = new OrderShippingAddressForm();
-
-        form.setShippingAddressMode(
-                OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_DIRECT);
-
-        form.setShippingName(
-                "佐藤 花子");
-
-        form.setShippingPostalCode(
-                "150-0001");
-
-        form.setShippingPrefecture(
-                "東京都");
-
-        form.setShippingCity(
-                "渋谷区");
-
-        form.setShippingAddressLine(
-                "神宮前1-2-3");
-
-        form.setShippingPhone(
-                "080-1234-5678");
-
-        return form;
-    }
-
     @Test
     void changeShippingAddressForUserAllowsOneSecondBeforeDeadline() {
 
@@ -3029,6 +3164,170 @@ class OrderServiceTest {
                         createOrderShippingAddressForm()));
 
         verifyNoInteractions(orderShippingAddressHistoryService);
+    }
+
+    private Product createProduct(
+            Long id,
+            String name,
+            int price,
+            int stock) {
+
+        Category category = new Category("テストカテゴリ");
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(category, "id", 100L);
+
+        TaxCategory taxCategory = new TaxCategory();
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(taxCategory, "id", 200L);
+
+        taxCategory.setCode("STANDARD");
+        taxCategory.setName("標準税率");
+        taxCategory.setTaxRate(new BigDecimal("10.00"));
+        taxCategory.setActive(true);
+        taxCategory.setDisplayOrder(10);
+
+        Product product = new Product();
+        product.setId(id);
+        product.setName(name);
+        product.setPrice(price);
+        product.setStock(stock);
+        product.setCategory(category);
+        product.setTaxCategory(taxCategory);
+
+        return product;
+    }
+
+    private CheckoutForm createCheckoutForm() {
+
+        CheckoutForm form = new CheckoutForm();
+
+        form.setShippingName("山田 太郎");
+        form.setShippingPostalCode("123-4567");
+        form.setShippingPrefecture("東京都");
+        form.setShippingCity("千代田区");
+        form.setShippingAddressLine("1-2-3");
+        form.setShippingPhone("090-1234-5678");
+
+        return form;
+    }
+
+    private OrderService createOrderService() {
+        return new OrderService(
+                orderRepository,
+                productService,
+                inventoryService,
+                orderStatusHistoryService,
+                orderHandlingStatusHistoryService,
+                orderShippingAddressHistoryService,
+                orderAssigneeHistoryService,
+                adminAccountService,
+                orderDeadlineCalculator,
+                taxCategoryService,
+                orderAmountCalculator,
+                clock);
+    }
+
+    private Order createOrder(
+            Long userId,
+            int totalAmount) {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+
+        LocalDateTime changeDeadlineAt = orderDeadlineCalculator.calculate(orderedAt);
+
+        return new Order(
+                userId,
+                totalAmount,
+                orderedAt,
+                changeDeadlineAt);
+    }
+
+    private OrderShippingAddressForm createOrderShippingAddressForm() {
+
+        OrderShippingAddressForm form = new OrderShippingAddressForm();
+
+        form.setShippingAddressMode(
+                OrderShippingAddressForm.SHIPPING_ADDRESS_MODE_DIRECT);
+
+        form.setShippingName(
+                "佐藤 花子");
+
+        form.setShippingPostalCode(
+                "150-0001");
+
+        form.setShippingPrefecture(
+                "東京都");
+
+        form.setShippingCity(
+                "渋谷区");
+
+        form.setShippingAddressLine(
+                "神宮前1-2-3");
+
+        form.setShippingPhone(
+                "080-1234-5678");
+
+        return form;
+    }
+
+    private TaxCategory createTaxCategory(
+            Long id,
+            String code,
+            String name,
+            BigDecimal taxRate) {
+
+        TaxCategory taxCategory = new TaxCategory();
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(taxCategory, "id", id);
+
+        taxCategory.setCode(code);
+        taxCategory.setName(name);
+        taxCategory.setTaxRate(taxRate);
+        taxCategory.setActive(true);
+        taxCategory.setDisplayOrder(10);
+
+        return taxCategory;
+    }
+
+    private void mockOrderAmountCalculation(
+            int itemSubtotal,
+            int shippingFee,
+            int taxAmount,
+            int totalAmount) {
+
+        TaxCategory shippingTaxCategory = createTaxCategory(
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"));
+
+        when(taxCategoryService.findStandardTaxCategory())
+                .thenReturn(shippingTaxCategory);
+
+        OrderChargeAmount shippingCharge = new OrderChargeAmount(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                shippingFee,
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                10);
+
+        OrderAmount orderAmount = new OrderAmount(
+                itemSubtotal,
+                List.of(shippingCharge),
+                shippingFee,
+                taxAmount,
+                totalAmount);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                same(shippingTaxCategory)))
+                .thenReturn(orderAmount);
     }
 
 }

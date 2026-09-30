@@ -32,6 +32,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Product;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.exception.CategoryNotFoundException;
 import com.example.ecsite.form.ProductForm;
 import com.example.ecsite.form.ProductSearchForm;
@@ -52,6 +53,9 @@ class ProductServiceTest {
     @Mock
     private ProductSearchKeywordService productSearchKeywordService;
 
+    @Mock
+    private TaxCategoryService taxCategoryService;
+
     @Test
     void findLowStockProductsUsesSpecifiedThreshold() {
 
@@ -71,7 +75,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         List<Product> actualProducts = productService.findLowStockProducts(
                 threshold);
@@ -100,7 +105,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         productService.delete(productId);
 
@@ -126,7 +132,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         productService.restore(productId);
 
@@ -150,7 +157,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Page<Product> actual = productService.search(
                 null,
@@ -181,7 +189,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Page<Product> actual = productService.search(
                 "  商品  ",
@@ -213,7 +222,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Page<Product> actual = productService.search(
                 null,
@@ -246,7 +256,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Page<Product> actual = productService.search(
                 "  商品  ",
@@ -297,7 +308,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Product result = productService.update(
                 productId,
@@ -351,7 +363,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Product result = productService.update(
                 productId,
@@ -407,7 +420,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         assertThrows(
                 CategoryNotFoundException.class,
@@ -469,7 +483,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Product result = productService.create(form);
 
@@ -532,7 +547,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Product result = productService.update(
                 productId,
@@ -582,7 +598,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Product result = productService.update(
                 productId,
@@ -633,7 +650,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         productService.update(
                 productId,
@@ -674,7 +692,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Product result = productService.create(form);
 
@@ -718,7 +737,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Product result = productService.update(
                 productId,
@@ -744,7 +764,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         List<String> actual = productService.findSearchKeywords(productId);
 
@@ -776,7 +797,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         Page<Product> actual = productService.searchForUser(
                 form,
@@ -819,7 +841,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         productService.searchForUser(
                 form,
@@ -894,7 +917,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         List<Product> result = productService.findLatestAvailableProducts(limit);
 
@@ -943,7 +967,8 @@ class ProductServiceTest {
                 productRepository,
                 categoryService,
                 productImageService,
-                productSearchKeywordService);
+                productSearchKeywordService,
+                taxCategoryService);
 
         productService.searchForUser(
                 form,
@@ -990,6 +1015,7 @@ class ProductServiceTest {
                 categoryService,
                 productImageService,
                 productSearchKeywordService,
+                taxCategoryService,
                 clock);
 
         List<Product> actual = productService
@@ -1013,6 +1039,102 @@ class ProductServiceTest {
         assertEquals(
                 0,
                 pageableCaptor.getValue().getPageNumber());
+    }
+
+    @Test
+    void createSetsSelectedTaxCategory() {
+
+        Long categoryId = 1L;
+        Long taxCategoryId = 2L;
+
+        Category category = mock(Category.class);
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        ProductForm form = new ProductForm();
+        form.setName("テスト商品");
+        form.setPrice(1000);
+        form.setStock(10);
+        form.setDescription("説明");
+        form.setCategoryId(categoryId);
+        form.setTaxCategoryId(taxCategoryId);
+
+        when(categoryService.findActiveById(categoryId))
+                .thenReturn(category);
+
+        when(taxCategoryService.findActiveById(taxCategoryId))
+                .thenReturn(taxCategory);
+
+        when(productRepository.save(any(Product.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService,
+                taxCategoryService);
+
+        Product savedProduct = productService.create(form);
+
+        assertSame(
+                taxCategory,
+                savedProduct.getTaxCategory());
+
+        verify(taxCategoryService)
+                .findActiveById(taxCategoryId);
+    }
+
+    @Test
+    void updateChangesTaxCategory() {
+
+        Long productId = 1L;
+        Long categoryId = 2L;
+        Long taxCategoryId = 3L;
+
+        Product product = mock(Product.class);
+        Category currentCategory = mock(Category.class);
+        TaxCategory taxCategory = mock(TaxCategory.class);
+
+        ProductForm form = new ProductForm();
+        form.setName("更新商品");
+        form.setPrice(2000);
+        form.setStock(10);
+        form.setDescription("更新説明");
+        form.setCategoryId(categoryId);
+        form.setTaxCategoryId(taxCategoryId);
+
+        when(productRepository
+                .findByIdForUpdate(productId))
+                .thenReturn(Optional.of(product));
+
+        when(product.getCategory())
+                .thenReturn(currentCategory);
+
+        when(currentCategory.getId())
+                .thenReturn(categoryId);
+
+        when(taxCategoryService
+                .findActiveById(taxCategoryId))
+                .thenReturn(taxCategory);
+
+        ProductService productService = new ProductService(
+                productRepository,
+                categoryService,
+                productImageService,
+                productSearchKeywordService,
+                taxCategoryService);
+
+        Product result = productService.update(
+                productId,
+                form);
+
+        assertSame(product, result);
+
+        verify(taxCategoryService)
+                .findActiveById(taxCategoryId);
+
+        verify(product)
+                .setTaxCategory(taxCategory);
     }
 
 }

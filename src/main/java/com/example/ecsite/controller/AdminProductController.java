@@ -35,6 +35,7 @@ import com.example.ecsite.service.CategoryService;
 import com.example.ecsite.service.InventoryService;
 import com.example.ecsite.service.ProductService;
 import com.example.ecsite.service.StockMovementService;
+import com.example.ecsite.service.TaxCategoryService;
 import com.example.ecsite.util.AdminReturnUrlHelper;
 
 import jakarta.validation.Valid;
@@ -47,17 +48,20 @@ public class AdminProductController {
     private final CategoryService categoryService;
     private final InventoryService inventoryService;
     private final StockMovementService stockMovementService;
+    private final TaxCategoryService taxCategoryService;
 
     public AdminProductController(
             ProductService productService,
             CategoryService categoryService,
             InventoryService inventoryService,
-            StockMovementService stockMovementService) {
+            StockMovementService stockMovementService,
+            TaxCategoryService taxCategoryService) {
 
         this.productService = productService;
         this.categoryService = categoryService;
         this.inventoryService = inventoryService;
         this.stockMovementService = stockMovementService;
+        this.taxCategoryService = taxCategoryService;
     }
 
     @GetMapping
@@ -97,9 +101,7 @@ public class AdminProductController {
                 "returnUrl",
                 returnUrl);
 
-        model.addAttribute(
-                "categories",
-                categoryService.findActiveCategories());
+        addCategories(model);
 
         return "admin/products/list";
     }
@@ -112,6 +114,7 @@ public class AdminProductController {
                 new ProductForm());
 
         addCategories(model);
+        addTaxCategories(model);
 
         return "admin/products/form";
     }
@@ -125,6 +128,7 @@ public class AdminProductController {
 
         if (bindingResult.hasErrors()) {
             addCategories(model);
+            addTaxCategories(model);
             return "admin/products/form";
         }
 
@@ -137,6 +141,7 @@ public class AdminProductController {
                     e.getMessage());
 
             addCategories(model);
+            addTaxCategories(model);
 
             return "admin/products/form";
 
@@ -147,6 +152,7 @@ public class AdminProductController {
                     e.getMessage());
 
             addCategories(model);
+            addTaxCategories(model);
 
             return "admin/products/form";
         }
@@ -178,11 +184,8 @@ public class AdminProductController {
                 "productId",
                 id);
 
-        model.addAttribute(
-                "categories",
-                categoryService
-                        .findCategoriesForProductEdit(
-                                product.getCategory().getId()));
+        addCategories(model);
+        addTaxCategories(model);
 
         model.addAttribute("product", product);
 
@@ -210,11 +213,8 @@ public class AdminProductController {
 
             model.addAttribute("product", product);
 
-            model.addAttribute(
-                    "categories",
-                    categoryService
-                            .findCategoriesForProductEdit(
-                                    product.getCategory().getId()));
+            addCategories(model);
+            addTaxCategories(model);
 
             model.addAttribute("returnUrl", resolvedReturnUrl);
 
@@ -234,10 +234,8 @@ public class AdminProductController {
             model.addAttribute("productId", id);
             model.addAttribute("product", product);
 
-            model.addAttribute(
-                    "categories",
-                    categoryService.findCategoriesForProductEdit(
-                            product.getCategory().getId()));
+            addCategories(model);
+            addTaxCategories(model);
 
             model.addAttribute("returnUrl", resolvedReturnUrl);
 
@@ -254,13 +252,10 @@ public class AdminProductController {
             model.addAttribute("productId", id);
             model.addAttribute("product", product);
 
-            model.addAttribute(
-                    "categories",
-                    categoryService.findCategoriesForProductEdit(
-                            product.getCategory().getId()));
+            addCategories(model);
+            addTaxCategories(model);
 
             model.addAttribute("returnUrl", resolvedReturnUrl);
-
             return "admin/products/edit";
         }
 
@@ -465,6 +460,13 @@ public class AdminProductController {
         model.addAttribute(
                 "categories",
                 categoryService.findActiveCategories());
+    }
+
+    private void addTaxCategories(Model model) {
+
+        model.addAttribute(
+                "taxCategories",
+                taxCategoryService.findActiveTaxCategories());
     }
 
     private String buildProductListReturnUrl(ProductSearchForm searchForm, int page) {

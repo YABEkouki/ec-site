@@ -72,9 +72,50 @@
             </tr>
 
             <tr>
-                <th>合計金額</th>
+                <th>商品小計（税込）</th>
                 <td>
-                    <span th:text="${#numbers.formatInteger(order.totalAmount, 1, 'COMMA')}">
+                    <span th:text="${#numbers.formatInteger(
+                        order.itemSubtotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+            </tr>
+
+            <tr th:each="charge : ${order.charges}">
+                <th th:text="${charge.name + '（税込）'}"></th>
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        charge.amount,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+            </tr>
+
+            <tr>
+                <th>注文合計（税込）</th>
+                <td>
+                    <strong>
+                        <span th:text="${#numbers.formatInteger(
+                            order.totalAmount,
+                            1,
+                            'COMMA')}">
+                        </span>
+                        円
+                    </strong>
+                </td>
+            </tr>
+
+            <tr>
+                <th>うち消費税</th>
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+            order.taxAmount,
+            1,
+            'COMMA')}">
                     </span>
                     円
                 </td>
@@ -263,9 +304,9 @@
         <thead>
             <tr>
                 <th>商品名</th>
-                <th>購入時価格</th>
+                <th>購入時価格（税込）</th>
                 <th>数量</th>
-                <th>小計</th>
+                <th>小計（税込）</th>
             </tr>
         </thead>
 

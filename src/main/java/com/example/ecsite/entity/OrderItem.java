@@ -1,5 +1,7 @@
 package com.example.ecsite.entity;
 
+import java.math.BigDecimal;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -43,6 +45,18 @@ public class OrderItem {
     @Column(nullable = false)
     private int subtotal;
 
+    @Column(name = "tax_category_id", nullable = false)
+    private Long taxCategoryId;
+
+    @Column(name = "tax_category_code", nullable = false, length = 30)
+    private String taxCategoryCode;
+
+    @Column(name = "tax_category_name", nullable = false, length = 100)
+    private String taxCategoryName;
+
+    @Column(name = "tax_rate", nullable = false, precision = 5, scale = 2)
+    private BigDecimal taxRate;
+
     public OrderItem() {
     }
 
@@ -51,6 +65,10 @@ public class OrderItem {
             String productName,
             Long categoryId,
             String categoryName,
+            Long taxCategoryId,
+            String taxCategoryCode,
+            String taxCategoryName,
+            BigDecimal taxRate,
             int price,
             int quantity) {
 
@@ -58,6 +76,10 @@ public class OrderItem {
         this.productName = productName;
         this.categoryId = categoryId;
         this.categoryName = categoryName;
+        this.taxCategoryId = taxCategoryId;
+        this.taxCategoryCode = taxCategoryCode;
+        this.taxCategoryName = taxCategoryName;
+        this.taxRate = taxRate;
         this.price = price;
         this.quantity = quantity;
         this.subtotal = price * quantity;
@@ -127,6 +149,22 @@ public class OrderItem {
 
     public int getSubtotal() {
         return subtotal;
+    }
+
+    public Long getTaxCategoryId() {
+        return taxCategoryId;
+    }
+
+    public String getTaxCategoryCode() {
+        return taxCategoryCode;
+    }
+
+    public String getTaxCategoryName() {
+        return taxCategoryName;
+    }
+
+    public BigDecimal getTaxRate() {
+        return taxRate;
     }
 
     private void calculateSubtotal() {

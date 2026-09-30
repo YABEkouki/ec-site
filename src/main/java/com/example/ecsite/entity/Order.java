@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 
 import com.example.ecsite.exception.InvalidOrderStatusException;
+import com.example.ecsite.service.pricing.OrderAmount;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -34,6 +35,15 @@ public class Order {
 
     @Column(name = "total_amount", nullable = false)
     private int totalAmount;
+
+    @Column(name = "item_subtotal", nullable = false)
+    private int itemSubtotal;
+
+    @Column(name = "charge_total", nullable = false)
+    private int chargeTotal;
+
+    @Column(name = "tax_amount", nullable = false)
+    private int taxAmount;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
@@ -71,8 +81,20 @@ public class Order {
     @Column(name = "shipping_phone", length = 20)
     private String shippingPhone;
 
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    @Column(name = "shipped_at")
+    private LocalDateTime shippedAt;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
+
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderCharge> charges = new ArrayList<>();
 
     public Order() {
     }
@@ -109,6 +131,26 @@ public class Order {
         this.totalAmount = totalAmount;
     }
 
+    public int getItemSubtotal() {
+        return itemSubtotal;
+    }
+
+    public int getChargeTotal() {
+        return chargeTotal;
+    }
+
+    public int getTaxAmount() {
+        return taxAmount;
+    }
+
+    public void applyAmount(OrderAmount amount) {
+
+        this.itemSubtotal = amount.itemSubtotal();
+        this.chargeTotal = amount.chargeTotal();
+        this.taxAmount = amount.taxAmount();
+        this.totalAmount = amount.totalAmount();
+    }
+
     public OrderStatus getStatus() {
         return status;
     }
@@ -133,15 +175,6 @@ public class Order {
         this.orderedAt = orderedAt;
     }
 
-    @Column(name = "paid_at")
-    private LocalDateTime paidAt;
-
-    @Column(name = "shipped_at")
-    private LocalDateTime shippedAt;
-
-    @Column(name = "cancelled_at")
-    private LocalDateTime cancelledAt;
-
     public LocalDateTime getPaidAt() {
         return paidAt;
     }
@@ -161,6 +194,15 @@ public class Order {
 
     public List<OrderItem> getItems() {
         return Collections.unmodifiableList(items);
+    }
+
+    public void addCharge(OrderCharge charge) {
+        charges.add(charge);
+        charge.setOrder(this);
+    }
+
+    public List<OrderCharge> getCharges() {
+        return Collections.unmodifiableList(charges);
     }
 
     public void setShippingAddress(

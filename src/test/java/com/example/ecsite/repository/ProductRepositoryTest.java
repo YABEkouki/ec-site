@@ -20,6 +20,7 @@ import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.entity.Product;
 import com.example.ecsite.entity.ProductSearchKeyword;
+import com.example.ecsite.entity.TaxCategory;
 import com.example.ecsite.entity.User;
 import com.example.ecsite.specification.ProductSpecification;
 
@@ -43,6 +44,9 @@ class ProductRepositoryTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TaxCategoryRepository taxCategoryRepository;
 
     @Test
     void searchMatchesProductName() {
@@ -791,12 +795,19 @@ class ProductRepositoryTest {
         Product product = new Product();
         product.setName(name);
         product.setPrice(price);
+        product.setTaxCategory(getStandardTaxCategory());
         product.setStock(stock);
         product.setDescription(description);
         product.setActive(active);
         product.setCategory(category);
 
         return productRepository.save(product);
+    }
+
+    private TaxCategory getStandardTaxCategory() {
+        return taxCategoryRepository
+                .findByCode("STANDARD")
+                .orElseThrow();
     }
 
     private void createSearchKeyword(
@@ -824,6 +835,10 @@ class ProductRepositoryTest {
                 product.getName(),
                 product.getCategory().getId(),
                 product.getCategory().getName(),
+                product.getTaxCategory().getId(),
+                product.getTaxCategory().getCode(),
+                product.getTaxCategory().getName(),
+                product.getTaxCategory().getTaxRate(),
                 product.getPrice(),
                 quantity);
 

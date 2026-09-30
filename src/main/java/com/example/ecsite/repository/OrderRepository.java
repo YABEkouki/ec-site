@@ -475,4 +475,24 @@ public interface OrderRepository
     AdminCustomerPurchaseSummaryProjection findCustomerPurchaseSummary(
             @Param("userId") Long userId);
 
+    @Query("""
+            SELECT DISTINCT o
+            FROM Order o
+            LEFT JOIN FETCH o.charges
+            WHERE o.id = :id
+              AND o.userId = :userId
+            """)
+    Optional<Order> findByIdAndUserIdWithCharges(
+            @Param("id") Long id,
+            @Param("userId") Long userId);
+
+    @Query("""
+            SELECT DISTINCT o
+            FROM Order o
+            LEFT JOIN FETCH o.charges
+            WHERE o.id = :id
+            """)
+    Optional<Order> findByIdWithCharges(
+            @Param("id") Long id);
+
 }
