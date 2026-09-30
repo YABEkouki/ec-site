@@ -451,7 +451,8 @@ public class OrderService {
                 OrderStatusHistoryActorType.ADMIN,
                 accountId,
                 username,
-                internalNote);
+                internalNote,
+                LocalDateTime.now(clock));
     }
 
     @Transactional
@@ -883,12 +884,13 @@ public class OrderService {
             OrderStatusHistoryActorType changedByType,
             Long accountId,
             String username,
-            String internalNote) {
+            String internalNote,
+            LocalDateTime cancelledAt) {
 
         OrderStatus fromStatus = order.getStatus();
 
         // 不正な状態なら、在庫を変更する前に例外になる
-        order.cancel();
+        order.cancel(cancelledAt);
 
         orderStatusHistoryService.record(
                 order,
@@ -965,7 +967,8 @@ public class OrderService {
                 OrderStatusHistoryActorType.USER,
                 userId,
                 username,
-                null);
+                null,
+                now);
     }
 
     @Transactional

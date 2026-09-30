@@ -411,7 +411,7 @@ class OrderRepositoryTest {
         shippedOrder.markAsPaid();
         shippedOrder.markAsShipped();
 
-        cancelledOrder.cancel();
+        cancelledOrder.cancel(cancelledOrder.getOrderedAt().plusMinutes(1));
 
         entityManager.flush();
 
@@ -452,7 +452,7 @@ class OrderRepositoryTest {
         shippedOrder.markAsPaid();
         shippedOrder.markAsShipped();
 
-        cancelledOrder.cancel();
+        cancelledOrder.cancel(cancelledOrder.getOrderedAt().plusMinutes(1));
 
         entityManager.flush();
 
@@ -540,7 +540,7 @@ class OrderRepositoryTest {
         shippedOrder.markAsPaid();
         shippedOrder.markAsShipped();
 
-        cancelledOrder.cancel();
+        cancelledOrder.cancel(cancelledOrder.getOrderedAt().plusMinutes(1));
 
         entityManager.flush();
 
@@ -612,7 +612,7 @@ class OrderRepositoryTest {
         shippedOrder.markAsPaid();
         shippedOrder.markAsShipped();
 
-        cancelledOrder.cancel();
+        cancelledOrder.cancel(cancelledOrder.getOrderedAt().plusMinutes(1));
 
         entityManager.flush();
 
@@ -699,7 +699,7 @@ class OrderRepositoryTest {
 
         secondUserPaidOrder.markAsPaid();
 
-        cancelledOrder.cancel();
+        cancelledOrder.cancel(cancelledOrder.getOrderedAt().plusMinutes(1));
 
         entityManager.flush();
 
@@ -813,7 +813,7 @@ class OrderRepositoryTest {
         shippedOrder.markAsPaid();
         shippedOrder.markAsShipped();
 
-        cancelledOrder.cancel();
+        cancelledOrder.cancel(cancelledOrder.getOrderedAt().plusMinutes(1));
 
         Category changedCategory = new Category(
                 "changed-category-" + System.nanoTime());
@@ -2330,7 +2330,7 @@ class OrderRepositoryTest {
                 LocalDateTime.of(2026, 9, 4, 13, 0),
                 4000);
 
-        cancelled.cancel();
+        cancelled.cancel(cancelled.getOrderedAt().plusMinutes(1));
 
         orderRepository.saveAll(List.of(
                 ordered,
