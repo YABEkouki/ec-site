@@ -691,9 +691,8 @@ class UserRepositoryTest {
                 PageRequest.of(
                         page,
                         size,
-                        Sort.by(
-                                Sort.Direction.DESC,
-                                "id")));
+                        Sort.by(User::getId)
+                                .descending()));
     }
 
     private User createUser(
