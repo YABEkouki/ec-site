@@ -27,6 +27,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.dto.OrderItemChangePreview;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderContentChangeHistory;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistory;
 import com.example.ecsite.entity.OrderStatusHistory;
@@ -35,6 +36,7 @@ import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
@@ -62,6 +64,9 @@ class OrderControllerTest {
     private OrderShippingAddressHistoryService orderShippingAddressHistoryService;
 
     @Mock
+    private OrderContentChangeHistoryService orderContentChangeHistoryService;
+
+    @Mock
     private Validator validator;
 
     private OrderController orderController;
@@ -73,6 +78,7 @@ class OrderControllerTest {
                 orderStatusHistoryService,
                 shippingAddressService,
                 orderShippingAddressHistoryService,
+                orderContentChangeHistoryService,
                 validator);
     }
 
@@ -223,6 +229,62 @@ class OrderControllerTest {
                 .addAttribute(
                         "canCancelByUser",
                         true);
+    }
+
+    @Test
+    void contentChangeHistoryDisplaysHistoriesForOwnedOrder() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                4000,
+                LocalDateTime.of(2026, 9, 30, 10, 0),
+                LocalDateTime.of(2026, 9, 30, 14, 0));
+
+        OrderContentChangeHistory history = mock(OrderContentChangeHistory.class);
+
+        List<OrderContentChangeHistory> histories = List.of(history);
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderContentChangeHistoryService.findByOrderId(
+                orderId))
+                .thenReturn(histories);
+
+        String viewName = orderController.contentChangeHistory(
+                orderId,
+                loginUser,
+                model);
+
+        assertEquals(
+                "orders/content-change-history",
+                viewName);
+
+        verify(orderService)
+                .findOrderByIdAndUserId(
+                        orderId,
+                        userId);
+
+        verify(orderContentChangeHistoryService)
+                .findByOrderId(orderId);
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+
+        verify(model)
+                .addAttribute(
+                        "contentChangeHistories",
+                        histories);
     }
 
     @Test

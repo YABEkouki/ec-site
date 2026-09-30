@@ -30,6 +30,7 @@ import com.example.ecsite.dto.AdminActionRequiredOrderDto;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderAssigneeHistory;
+import com.example.ecsite.entity.OrderContentChangeHistory;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderHandlingStatusHistory;
 import com.example.ecsite.entity.OrderNote;
@@ -47,6 +48,7 @@ import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
+import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -87,6 +89,9 @@ class AdminOrderControllerTest {
     @Mock
     private OrderAssigneeHistoryService orderAssigneeHistoryService;
 
+    @Mock
+    private OrderContentChangeHistoryService orderContentChangeHistoryService;
+
     private AdminOrderController adminOrderController;
 
     private static final Long ADMIN_ID = 20L;
@@ -102,6 +107,7 @@ class AdminOrderControllerTest {
                 orderHandlingStatusHistoryService,
                 orderShippingAddressHistoryService,
                 orderAssigneeHistoryService,
+                orderContentChangeHistoryService,
                 adminAccountService);
     }
 
@@ -360,6 +366,94 @@ class AdminOrderControllerTest {
                 .addAttribute(
                         "assignableAdmins",
                         List.of(assignableAdmin));
+
+        verify(model)
+                .addAttribute(
+                        "returnUrl",
+                        "/admin/orders");
+    }
+
+    @Test
+    void contentChangeHistoryDisplaysHistories() {
+
+        Long orderId = 1L;
+
+        String returnUrl = "/admin/orders?status=ORDERED&page=1&size=10";
+
+        Order order = new Order(
+                10L,
+                4000,
+                LocalDateTime.of(2026, 9, 30, 10, 0),
+                LocalDateTime.of(2026, 9, 30, 14, 0));
+
+        OrderContentChangeHistory history = mock(OrderContentChangeHistory.class);
+
+        List<OrderContentChangeHistory> histories = List.of(history);
+
+        when(orderService.findOrderWithItems(orderId))
+                .thenReturn(order);
+
+        when(orderContentChangeHistoryService.findByOrderId(
+                orderId))
+                .thenReturn(histories);
+
+        String viewName = adminOrderController.contentChangeHistory(
+                orderId,
+                returnUrl,
+                model);
+
+        assertEquals(
+                "admin/orders/content-change-history",
+                viewName);
+
+        verify(orderService)
+                .findOrderWithItems(orderId);
+
+        verify(orderContentChangeHistoryService)
+                .findByOrderId(orderId);
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+
+        verify(model)
+                .addAttribute(
+                        "contentChangeHistories",
+                        histories);
+
+        verify(model)
+                .addAttribute(
+                        "returnUrl",
+                        returnUrl);
+    }
+
+    @Test
+    void contentChangeHistoryUsesDefaultReturnUrlWhenReturnUrlIsInvalid() {
+
+        Long orderId = 1L;
+
+        Order order = new Order(
+                10L,
+                4000,
+                LocalDateTime.of(2026, 9, 30, 10, 0),
+                LocalDateTime.of(2026, 9, 30, 14, 0));
+
+        when(orderService.findOrderWithItems(orderId))
+                .thenReturn(order);
+
+        when(orderContentChangeHistoryService.findByOrderId(
+                orderId))
+                .thenReturn(List.of());
+
+        String viewName = adminOrderController.contentChangeHistory(
+                orderId,
+                "https://example.com/",
+                model);
+
+        assertEquals(
+                "admin/orders/content-change-history",
+                viewName);
 
         verify(model)
                 .addAttribute(

@@ -151,6 +151,12 @@
             </a>
         </p>
 
+        <p>
+            <a th:href="@{/orders/{id}/content-changes(id=${order.id})}" class="button button-secondary">
+                注文内容変更履歴を見る
+            </a>
+        </p>
+
         <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).PAID}">
             支払済みのため、画面からキャンセルできません。
         </p>

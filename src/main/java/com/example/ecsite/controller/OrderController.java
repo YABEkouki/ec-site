@@ -21,6 +21,7 @@ import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.security.CustomUserDetails;
+import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
@@ -34,6 +35,7 @@ public class OrderController {
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final ShippingAddressService shippingAddressService;
     private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
+    private final OrderContentChangeHistoryService orderContentChangeHistoryService;
     private final Validator validator;
 
     public OrderController(
@@ -41,12 +43,14 @@ public class OrderController {
             OrderStatusHistoryService orderStatusHistoryService,
             ShippingAddressService shippingAddressService,
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
+            OrderContentChangeHistoryService orderContentChangeHistoryService,
             Validator validator) {
 
         this.orderService = orderService;
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.shippingAddressService = shippingAddressService;
         this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
+        this.orderContentChangeHistoryService = orderContentChangeHistoryService;
         this.validator = validator;
     }
 
@@ -111,6 +115,27 @@ public class OrderController {
                 orderService.canChangeShippingAddress(order));
 
         return "orders/detail";
+    }
+
+    @GetMapping("/{id}/content-changes")
+    public String contentChangeHistory(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        model.addAttribute(
+                "order",
+                order);
+
+        model.addAttribute(
+                "contentChangeHistories",
+                orderContentChangeHistoryService.findByOrderId(id));
+
+        return "orders/content-change-history";
     }
 
     @GetMapping("/{id}/cancel")
