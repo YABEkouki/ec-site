@@ -857,7 +857,7 @@ class ProductRepositoryTest {
             order.markAsPaid();
             order.markAsShipped();
         } else if (status == OrderStatus.CANCELLED) {
-            order.cancel();
+            order.cancel(orderedAt.plusMinutes(1));
         }
 
         Order saved = orderRepository.save(order);

@@ -12,8 +12,10 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -439,7 +441,7 @@ class OrderServiceTest {
                 adminUsername,
                 internalNote);
 
-        verify(order).cancel();
+        verify(order).cancel(LocalDateTime.of(2026, 9, 28, 10, 0));
 
         verify(inventoryService)
                 .restoreForOrderCancellation(
@@ -1056,7 +1058,7 @@ class OrderServiceTest {
                 userId,
                 username);
 
-        verify(order).cancel();
+        verify(order).cancel(LocalDateTime.of(2026, 9, 28, 10, 0));
 
         verify(inventoryService)
                 .restoreForOrderCancellation(
@@ -1073,58 +1075,6 @@ class OrderServiceTest {
                         userId,
                         username,
                         null);
-    }
-
-    @Test
-    void cancelOrderForUserRestoresStockForOwnedOrderSecond() {
-
-        Long orderId = 1L;
-        Long userId = 10L;
-        String username = "testuser";
-        Long productId = 20L;
-        int quantity = 3;
-
-        Order order = mock(Order.class);
-        OrderItem orderItem = mock(OrderItem.class);
-
-        when(order.getId())
-                .thenReturn(orderId);
-
-        when(orderRepository
-                .findByIdAndUserIdForUpdate(
-                        orderId,
-                        userId))
-                .thenReturn(Optional.of(order));
-
-        when(order.getItems())
-                .thenReturn(List.of(orderItem));
-
-        when(orderItem.getProductId())
-                .thenReturn(productId);
-
-        when(orderItem.getQuantity())
-                .thenReturn(quantity);
-
-        when(order.canCancel())
-                .thenReturn(true);
-
-        when(order.isWithinModificationPeriod(any(LocalDateTime.class)))
-                .thenReturn(true);
-
-        OrderService orderService = createOrderService();
-
-        orderService.cancelOrderForUser(
-                orderId,
-                userId,
-                username);
-
-        verify(order).cancel();
-
-        verify(inventoryService)
-                .restoreForOrderCancellation(
-                        productId,
-                        quantity,
-                        orderId);
     }
 
     @Test
@@ -1160,7 +1110,7 @@ class OrderServiceTest {
                 "この注文の変更受付は終了しています。",
                 exception.getMessage());
 
-        verify(order, never()).cancel();
+        verify(order, never()).cancel(any(LocalDateTime.class));
 
         verifyNoInteractions(inventoryService);
     }
@@ -2970,7 +2920,7 @@ class OrderServiceTest {
                 userId,
                 1000);
 
-        order.cancel();
+        order.cancel(LocalDateTime.of(2026, 9, 28, 12, 0));
 
         when(orderRepository.findByIdAndUserIdForUpdate(
                 orderId,
@@ -3164,6 +3114,136 @@ class OrderServiceTest {
                         createOrderShippingAddressForm()));
 
         verifyNoInteractions(orderShippingAddressHistoryService);
+    }
+
+    @Test
+    void cancelOrderForUserRejectsOrderOwnedByAnotherUser() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+        String username = "testuser";
+
+        when(orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                OrderNotFoundException.class,
+                () -> orderService.cancelOrderForUser(
+                        orderId,
+                        userId,
+                        username));
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(orderStatusHistoryService);
+    }
+
+    @Test
+    void cancelOrderForUserRejectsAlreadyCancelledOrder() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+        String username = "testuser";
+
+        Order order = mock(Order.class);
+
+        when(orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId))
+                .thenReturn(Optional.of(order));
+
+        when(order.canCancel())
+                .thenReturn(false);
+
+        InvalidOrderStatusException exception = assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.cancelOrderForUser(
+                        orderId,
+                        userId,
+                        username));
+
+        assertEquals(
+                "注文受付中の注文だけをキャンセルできます。",
+                exception.getMessage());
+
+        verify(order, never())
+                .cancel(any(LocalDateTime.class));
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(orderStatusHistoryService);
+    }
+
+    @Test
+    void cancelOrderForUserRestoresStockForAllOrderItems() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+        String username = "testuser";
+
+        Order order = mock(Order.class);
+
+        OrderItem firstItem = mock(OrderItem.class);
+        OrderItem secondItem = mock(OrderItem.class);
+
+        when(order.getId())
+                .thenReturn(orderId);
+
+        when(order.getStatus())
+                .thenReturn(
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED);
+
+        when(orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId))
+                .thenReturn(Optional.of(order));
+
+        when(order.canCancel())
+                .thenReturn(true);
+
+        when(order.isWithinModificationPeriod(
+                any(LocalDateTime.class)))
+                .thenReturn(true);
+
+        when(order.getItems())
+                .thenReturn(List.of(
+                        firstItem,
+                        secondItem));
+
+        when(firstItem.getProductId())
+                .thenReturn(20L);
+
+        when(firstItem.getQuantity())
+                .thenReturn(2);
+
+        when(secondItem.getProductId())
+                .thenReturn(30L);
+
+        when(secondItem.getQuantity())
+                .thenReturn(4);
+
+        orderService.cancelOrderForUser(
+                orderId,
+                userId,
+                username);
+
+        verify(inventoryService, times(1))
+                .restoreForOrderCancellation(
+                        20L,
+                        2,
+                        orderId);
+
+        verify(inventoryService, times(1))
+                .restoreForOrderCancellation(
+                        30L,
+                        4,
+                        orderId);
+
+        verifyNoMoreInteractions(inventoryService);
     }
 
     private Product createProduct(

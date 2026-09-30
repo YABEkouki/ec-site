@@ -748,7 +748,7 @@ class UserRepositoryTest {
             order.markAsPaid();
             order.markAsShipped();
         } else if (status == OrderStatus.CANCELLED) {
-            order.cancel();
+            order.cancel(orderedAt.plusMinutes(1));
         }
 
         return orderRepository.saveAndFlush(order);

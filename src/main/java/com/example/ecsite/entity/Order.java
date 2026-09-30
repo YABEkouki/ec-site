@@ -269,7 +269,7 @@ public class Order {
         shippedAt = LocalDateTime.now();
     }
 
-    public void cancel() {
+    public void cancel(LocalDateTime cancelledAt) {
 
         if (!canCancel()) {
             throw new InvalidOrderStatusException(
@@ -278,7 +278,7 @@ public class Order {
         }
 
         status = OrderStatus.CANCELLED;
-        cancelledAt = LocalDateTime.now();
+        this.cancelledAt = cancelledAt;
     }
 
     public boolean canCancel() {

@@ -65,7 +65,9 @@ class OrderTest {
 
         Order order = createOrder();
 
-        order.cancel();
+        LocalDateTime cancelledAt = LocalDateTime.of(2026, 9, 28, 12, 0);
+
+        order.cancel(cancelledAt);
 
         assertEquals(
                 OrderStatus.CANCELLED,
@@ -78,10 +80,11 @@ class OrderTest {
         Order order = createOrder();
         order.markAsPaid();
 
+        LocalDateTime cancelledAt = LocalDateTime.of(2026, 9, 28, 12, 0);
+
         assertThrows(
                 InvalidOrderStatusException.class,
-                order::cancel);
-
+                () -> order.cancel(cancelledAt));
         assertEquals(
                 OrderStatus.PAID,
                 order.getStatus());
@@ -111,11 +114,15 @@ class OrderTest {
 
         Order order = createOrder();
 
+        LocalDateTime cancelledAt = LocalDateTime.of(2026, 9, 28, 12, 34, 56);
+
         assertNull(order.getCancelledAt());
 
-        order.cancel();
+        order.cancel(cancelledAt);
 
-        assertNotNull(order.getCancelledAt());
+        assertEquals(
+                cancelledAt,
+                order.getCancelledAt());
     }
 
     @Test
