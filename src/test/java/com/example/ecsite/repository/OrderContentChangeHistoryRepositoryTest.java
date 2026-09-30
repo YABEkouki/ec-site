@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -247,152 +248,272 @@ class OrderContentChangeHistoryRepositoryTest {
     }
 
     @Test
-void savePersistsRemovedItemWithNullNewSnapshots() {
+    void savePersistsRemovedItemWithNullNewSnapshots() {
 
-    User user = createUser(
-            "order-content-change-removed-item-user");
+        User user = createUser(
+                "order-content-change-removed-item-user");
 
-    Order order = orderRepository.save(
-            new Order(
-                    user.getId(),
-                    5500,
-                    LocalDateTime.of(2026, 9, 28, 10, 0),
-                    LocalDateTime.of(2026, 9, 28, 14, 0)));
+        Order order = orderRepository.save(
+                new Order(
+                        user.getId(),
+                        5500,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
-    OrderContentChangeHistory history =
-            new OrderContentChangeHistory(
-                    order,
-                    OrderContentChangeSource.CUSTOMER,
-                    null,
-                    OrderContentChangeHistoryActorType.USER,
-                    user.getId(),
-                    user.getUsername(),
-                    5500,
-                    4000,
-                    0,
-                    550,
-                    500,
-                    414,
-                    5500,
-                    4550,
-                    LocalDateTime.of(2026, 9, 28, 11, 0));
+        OrderContentChangeHistory history = new OrderContentChangeHistory(
+                order,
+                OrderContentChangeSource.CUSTOMER,
+                null,
+                OrderContentChangeHistoryActorType.USER,
+                user.getId(),
+                user.getUsername(),
+                5500,
+                4000,
+                0,
+                550,
+                500,
+                414,
+                5500,
+                4550,
+                LocalDateTime.of(2026, 9, 28, 11, 0));
 
-    history.addItem(
-            OrderContentChangeItem.removed(
-                    1002L,
-                    20L,
-                    "商品B",
-                    1500,
-                    1,
-                    1500,
-                    200L,
-                    "STANDARD",
-                    "標準税率",
-                    new BigDecimal("10.00")));
+        history.addItem(
+                OrderContentChangeItem.removed(
+                        1002L,
+                        20L,
+                        "商品B",
+                        1500,
+                        1,
+                        1500,
+                        200L,
+                        "STANDARD",
+                        "標準税率",
+                        new BigDecimal("10.00")));
 
-    OrderContentChangeHistory saved =
-            orderContentChangeHistoryRepository.save(history);
+        OrderContentChangeHistory saved = orderContentChangeHistoryRepository.save(history);
 
-    entityManager.flush();
-    entityManager.clear();
+        entityManager.flush();
+        entityManager.clear();
 
-    OrderContentChangeHistory loaded =
-            orderContentChangeHistoryRepository
-                    .findById(saved.getId())
-                    .orElseThrow();
+        OrderContentChangeHistory loaded = orderContentChangeHistoryRepository
+                .findById(saved.getId())
+                .orElseThrow();
 
-    assertEquals(
-            1,
-            loaded.getItems().size());
+        assertEquals(
+                1,
+                loaded.getItems().size());
 
-    OrderContentChangeItem item =
-            loaded.getItems().get(0);
+        OrderContentChangeItem item = loaded.getItems().get(0);
 
-    assertEquals(
-            OrderContentChangeType.REMOVED,
-            item.getChangeType());
+        assertEquals(
+                OrderContentChangeType.REMOVED,
+                item.getChangeType());
 
-    assertEquals(
-            1002L,
-            item.getOrderItemId());
+        assertEquals(
+                1002L,
+                item.getOrderItemId());
 
-    assertEquals(
-            20L,
-            item.getProductId());
+        assertEquals(
+                20L,
+                item.getProductId());
 
-    assertEquals(
-            "商品B",
-            item.getProductName());
+        assertEquals(
+                "商品B",
+                item.getProductName());
 
-    assertEquals(
-            1500,
-            item.getOldPrice());
+        assertEquals(
+                1500,
+                item.getOldPrice());
 
-    assertEquals(
-            1,
-            item.getOldQuantity());
+        assertEquals(
+                1,
+                item.getOldQuantity());
 
-    assertEquals(
-            1500,
-            item.getOldSubtotal());
+        assertEquals(
+                1500,
+                item.getOldSubtotal());
 
-    assertEquals(
-            200L,
-            item.getOldTaxCategoryId());
+        assertEquals(
+                200L,
+                item.getOldTaxCategoryId());
 
-    assertEquals(
-            "STANDARD",
-            item.getOldTaxCategoryCode());
+        assertEquals(
+                "STANDARD",
+                item.getOldTaxCategoryCode());
 
-    assertEquals(
-            "標準税率",
-            item.getOldTaxCategoryName());
+        assertEquals(
+                "標準税率",
+                item.getOldTaxCategoryName());
 
-    assertEquals(
-            new BigDecimal("10.00"),
-            item.getOldTaxRate());
+        assertEquals(
+                new BigDecimal("10.00"),
+                item.getOldTaxRate());
 
-    assertNull(item.getNewPrice());
-    assertNull(item.getNewQuantity());
-    assertNull(item.getNewSubtotal());
-    assertNull(item.getNewTaxCategoryId());
-    assertNull(item.getNewTaxCategoryCode());
-    assertNull(item.getNewTaxCategoryName());
-    assertNull(item.getNewTaxRate());
-}
+        assertNull(item.getNewPrice());
+        assertNull(item.getNewQuantity());
+        assertNull(item.getNewSubtotal());
+        assertNull(item.getNewTaxCategoryId());
+        assertNull(item.getNewTaxCategoryCode());
+        assertNull(item.getNewTaxCategoryName());
+        assertNull(item.getNewTaxRate());
+    }
 
-@Test
-void orderContentRevisionIsPersisted() {
+    @Test
+    void orderContentRevisionIsPersisted() {
 
-    User user = createUser(
-            "order-content-revision-user");
+        User user = createUser(
+                "order-content-revision-user");
 
-    Order order = orderRepository.save(
-            new Order(
-                    user.getId(),
-                    1000,
-                    LocalDateTime.of(2026, 9, 28, 10, 0),
-                    LocalDateTime.of(2026, 9, 28, 14, 0)));
+        Order order = orderRepository.save(
+                new Order(
+                        user.getId(),
+                        1000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
 
-    assertEquals(
-            0,
-            order.getContentRevision());
+        assertEquals(
+                0,
+                order.getContentRevision());
 
-    order.incrementContentRevision();
+        order.incrementContentRevision();
 
-    orderRepository.save(order);
+        orderRepository.save(order);
 
-    entityManager.flush();
-    entityManager.clear();
+        entityManager.flush();
+        entityManager.clear();
 
-    Order loaded =
-            orderRepository.findById(order.getId())
-                    .orElseThrow();
+        Order loaded = orderRepository.findById(order.getId())
+                .orElseThrow();
 
-    assertEquals(
-            1,
-            loaded.getContentRevision());
-}
+        assertEquals(
+                1,
+                loaded.getContentRevision());
+    }
+
+    @Test
+    void findByOrderIdReturnsHistoriesNewestFirst() {
+
+        User user = createUser(
+                "order-content-change-find-user");
+
+        Order order = orderRepository.save(
+                new Order(
+                        user.getId(),
+                        5000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
+
+        OrderContentChangeHistory first = createHistory(
+                order,
+                user,
+                LocalDateTime.of(2026, 9, 28, 11, 0),
+                5000,
+                4500);
+
+        orderContentChangeHistoryRepository.save(first);
+        entityManager.flush();
+
+        OrderContentChangeHistory second = createHistory(
+                order,
+                user,
+                LocalDateTime.of(2026, 9, 28, 12, 0),
+                4500,
+                4000);
+
+        orderContentChangeHistoryRepository.save(second);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<OrderContentChangeHistory> histories = orderContentChangeHistoryRepository
+                .findByOrderIdOrderByChangedAtDescIdDesc(
+                        order.getId());
+
+        assertEquals(2, histories.size());
+
+        assertEquals(
+                second.getId(),
+                histories.get(0).getId());
+
+        assertEquals(
+                first.getId(),
+                histories.get(1).getId());
+    }
+
+    @Test
+    void findByOrderIdDoesNotReturnHistoriesForOtherOrders() {
+
+        User user = createUser(
+                "order-content-change-other-order-user");
+
+        Order targetOrder = orderRepository.save(
+                new Order(
+                        user.getId(),
+                        5000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
+
+        Order otherOrder = orderRepository.save(
+                new Order(
+                        user.getId(),
+                        3000,
+                        LocalDateTime.of(2026, 9, 28, 10, 0),
+                        LocalDateTime.of(2026, 9, 28, 14, 0)));
+
+        orderContentChangeHistoryRepository.save(
+                createHistory(
+                        targetOrder,
+                        user,
+                        LocalDateTime.of(2026, 9, 28, 11, 0),
+                        5000,
+                        4000));
+
+        orderContentChangeHistoryRepository.save(
+                createHistory(
+                        otherOrder,
+                        user,
+                        LocalDateTime.of(2026, 9, 28, 12, 0),
+                        3000,
+                        2000));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<OrderContentChangeHistory> histories = orderContentChangeHistoryRepository
+                .findByOrderIdOrderByChangedAtDescIdDesc(
+                        targetOrder.getId());
+
+        assertEquals(1, histories.size());
+
+        assertEquals(
+                targetOrder.getId(),
+                histories.get(0).getOrder().getId());
+    }
+
+    private OrderContentChangeHistory createHistory(
+            Order order,
+            User user,
+            LocalDateTime changedAt,
+            int oldTotalAmount,
+            int newTotalAmount) {
+
+        return new OrderContentChangeHistory(
+                order,
+                OrderContentChangeSource.CUSTOMER,
+                null,
+                OrderContentChangeHistoryActorType.USER,
+                user.getId(),
+                user.getUsername(),
+                oldTotalAmount,
+                newTotalAmount,
+                0,
+                0,
+                0,
+                0,
+                oldTotalAmount,
+                newTotalAmount,
+                changedAt);
+    }
 
     private User createUser(String username) {
 

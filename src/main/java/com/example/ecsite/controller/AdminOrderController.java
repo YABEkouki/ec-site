@@ -36,6 +36,7 @@ import com.example.ecsite.form.AdminOrderStatusChangeForm;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
+import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderCsvService;
 import com.example.ecsite.service.OrderHandlingStatusHistoryService;
 import com.example.ecsite.service.OrderNoteService;
@@ -57,6 +58,7 @@ public class AdminOrderController {
     private final OrderHandlingStatusHistoryService orderHandlingStatusHistoryService;
     private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
+    private final OrderContentChangeHistoryService orderContentChangeHistoryService;
     private final AdminAccountService adminAccountService;
 
     public AdminOrderController(
@@ -67,6 +69,7 @@ public class AdminOrderController {
             OrderHandlingStatusHistoryService orderHandlingStatusHistoryService,
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
+            OrderContentChangeHistoryService orderContentChangeHistoryService,
             AdminAccountService adminAccountService) {
 
         this.orderService = orderService;
@@ -76,6 +79,7 @@ public class AdminOrderController {
         this.orderHandlingStatusHistoryService = orderHandlingStatusHistoryService;
         this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
+        this.orderContentChangeHistoryService = orderContentChangeHistoryService;
         this.adminAccountService = adminAccountService;
     }
 
@@ -257,6 +261,31 @@ public class AdminOrderController {
                 assignableAdmins);
 
         return "admin/orders/detail";
+    }
+
+    @GetMapping("/{id}/content-changes")
+    public String contentChangeHistory(
+            @PathVariable Long id,
+            @RequestParam(required = false) String returnUrl,
+            Model model) {
+
+        String safeReturnUrl = AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl);
+
+        Order order = orderService.findOrderWithItems(id);
+
+        model.addAttribute(
+                "order",
+                order);
+
+        model.addAttribute(
+                "contentChangeHistories",
+                orderContentChangeHistoryService.findByOrderId(id));
+
+        model.addAttribute(
+                "returnUrl",
+                safeReturnUrl);
+
+        return "admin/orders/content-change-history";
     }
 
     @PostMapping("/{id}/pay")

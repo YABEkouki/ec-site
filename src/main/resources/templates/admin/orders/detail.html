@@ -532,6 +532,18 @@
         </p>
     </section>
 
+    <section>
+        <h2>注文内容変更履歴</h2>
+
+        <p>
+            <a th:href="@{/admin/orders/{id}/content-changes(
+            id=${order.id},
+            returnUrl=${returnUrl})}" class="button button-secondary">
+                注文内容変更履歴を見る
+            </a>
+        </p>
+    </section>
+
     <h2>注文明細</h2>
 
     <table>
