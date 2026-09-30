@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
@@ -47,7 +48,14 @@ import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.AdminAccount;
 import com.example.ecsite.entity.Category;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.OrderCharge;
 import com.example.ecsite.entity.OrderChargeType;
+import com.example.ecsite.entity.OrderContentChangeCharge;
+import com.example.ecsite.entity.OrderContentChangeHistory;
+import com.example.ecsite.entity.OrderContentChangeHistoryActorType;
+import com.example.ecsite.entity.OrderContentChangeItem;
+import com.example.ecsite.entity.OrderContentChangeSource;
+import com.example.ecsite.entity.OrderContentChangeType;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistoryActorType;
@@ -64,11 +72,14 @@ import com.example.ecsite.form.AdminActionRequiredOrderSearchForm;
 import com.example.ecsite.form.AdminOrderAssigneeFilter;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.CheckoutForm;
+import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
+import com.example.ecsite.repository.OrderContentChangeHistoryRepository;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
+import com.example.ecsite.service.pricing.ChargeTaxSnapshot;
 import com.example.ecsite.service.pricing.OrderAmount;
 import com.example.ecsite.service.pricing.OrderAmountCalculator;
 import com.example.ecsite.service.pricing.OrderChargeAmount;
@@ -105,6 +116,9 @@ class OrderServiceTest {
 
     @Mock
     private OrderAmountCalculator orderAmountCalculator;
+
+    @Mock
+    private OrderContentChangeHistoryRepository orderContentChangeHistoryRepository;
 
     private OrderService orderService;
 
@@ -3246,6 +3260,799 @@ class OrderServiceTest {
         verifyNoMoreInteractions(inventoryService);
     }
 
+    @Test
+    void changeItemsForUserDecreasesQuantityAndRestoresStock() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderChargeAmount shippingCharge = new OrderChargeAmount(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                550,
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                10);
+
+        OrderAmount changedAmount = new OrderAmount(
+                3500,
+                List.of(shippingCharge),
+                550,
+                368,
+                4050);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                any(ChargeTaxSnapshot.class)))
+                .thenReturn(changedAmount);
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                1,
+                1);
+
+        boolean changed = orderService.changeItemsForUser(
+                orderId,
+                userId,
+                "testuser",
+                form);
+
+        assertTrue(changed);
+
+        assertEquals(
+                1,
+                order.getItems().get(0).getQuantity());
+
+        assertEquals(
+                1,
+                order.getItems().get(1).getQuantity());
+
+        assertEquals(
+                3500,
+                order.getItemSubtotal());
+
+        assertEquals(
+                550,
+                order.getChargeTotal());
+
+        assertEquals(
+                4050,
+                order.getTotalAmount());
+
+        assertEquals(
+                1,
+                order.getContentRevision());
+
+        verify(inventoryService)
+                .restoreForOrderItemChange(
+                        10L,
+                        1,
+                        orderId);
+
+        ArgumentCaptor<OrderContentChangeHistory> historyCaptor = ArgumentCaptor
+                .forClass(OrderContentChangeHistory.class);
+
+        verify(orderContentChangeHistoryRepository)
+                .save(historyCaptor.capture());
+
+        OrderContentChangeHistory history = historyCaptor.getValue();
+
+        assertEquals(orderId, history.getOrder().getId());
+
+        assertEquals(
+                OrderContentChangeSource.CUSTOMER,
+                history.getChangeSource());
+
+        assertEquals(
+                OrderContentChangeHistoryActorType.USER,
+                history.getChangedByType());
+
+        assertEquals(
+                userId,
+                history.getChangedByAccountId());
+
+        assertEquals(
+                "testuser",
+                history.getChangedByUsername());
+
+        assertEquals(
+                5500,
+                history.getOldItemSubtotal());
+
+        assertEquals(
+                3500,
+                history.getNewItemSubtotal());
+
+        assertEquals(
+                0,
+                history.getOldChargeTotal());
+
+        assertEquals(
+                550,
+                history.getNewChargeTotal());
+
+        assertEquals(
+                500,
+                history.getOldTaxAmount());
+
+        assertEquals(
+                368,
+                history.getNewTaxAmount());
+
+        assertEquals(
+                5500,
+                history.getOldTotalAmount());
+
+        assertEquals(
+                4050,
+                history.getNewTotalAmount());
+
+        assertEquals(
+                1,
+                history.getItems().size());
+
+        OrderContentChangeItem changedItem = history.getItems().get(0);
+
+        assertEquals(
+                OrderContentChangeType.UPDATED,
+                changedItem.getChangeType());
+
+        assertEquals(
+                1001L,
+                changedItem.getOrderItemId());
+
+        assertEquals(
+                10L,
+                changedItem.getProductId());
+
+        assertEquals(
+                "商品A",
+                changedItem.getProductName());
+
+        assertEquals(
+                2,
+                changedItem.getOldQuantity());
+
+        assertEquals(
+                1,
+                changedItem.getNewQuantity());
+
+        assertEquals(
+                4000,
+                changedItem.getOldSubtotal());
+
+        assertEquals(
+                2000,
+                changedItem.getNewSubtotal());
+
+        assertEquals(
+                1,
+                history.getCharges().size());
+
+        OrderContentChangeCharge changedCharge = history.getCharges().get(0);
+
+        assertEquals(
+                OrderContentChangeType.UPDATED,
+                changedCharge.getChangeType());
+
+        assertEquals(
+                OrderChargeType.SHIPPING,
+                changedCharge.getChargeType());
+
+        assertEquals(
+                0,
+                changedCharge.getOldAmount());
+
+        assertEquals(
+                550,
+                changedCharge.getNewAmount());
+    }
+
+    @Test
+    void changeItemsForUserRemovesItemAndRestoresAllItemStock() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderChargeAmount shippingCharge = new OrderChargeAmount(
+                OrderChargeType.SHIPPING,
+                "送料・梱包料",
+                550,
+                300L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                10);
+
+        OrderAmount changedAmount = new OrderAmount(
+                1500,
+                List.of(shippingCharge),
+                550,
+                186,
+                2050);
+
+        when(orderAmountCalculator.calculate(
+                any(),
+                any(ChargeTaxSnapshot.class)))
+                .thenReturn(changedAmount);
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                0,
+                1);
+
+        boolean changed = orderService.changeItemsForUser(
+                orderId,
+                userId,
+                "testuser",
+                form);
+
+        assertTrue(changed);
+
+        assertEquals(
+                1,
+                order.getItems().size());
+
+        assertEquals(
+                1002L,
+                order.getItems().get(0).getId());
+
+        assertEquals(
+                20L,
+                order.getItems().get(0).getProductId());
+
+        assertEquals(
+                1,
+                order.getItems().get(0).getQuantity());
+
+        assertEquals(
+                1500,
+                order.getItemSubtotal());
+
+        assertEquals(
+                550,
+                order.getChargeTotal());
+
+        assertEquals(
+                2050,
+                order.getTotalAmount());
+
+        assertEquals(
+                1,
+                order.getContentRevision());
+
+        verify(inventoryService)
+                .restoreForOrderItemChange(
+                        10L,
+                        2,
+                        orderId);
+
+        verify(inventoryService, never())
+                .restoreForOrderItemChange(
+                        eq(20L),
+                        anyInt(),
+                        eq(orderId));
+
+        ArgumentCaptor<OrderContentChangeHistory> historyCaptor = ArgumentCaptor
+                .forClass(OrderContentChangeHistory.class);
+
+        verify(orderContentChangeHistoryRepository)
+                .save(historyCaptor.capture());
+
+        OrderContentChangeHistory history = historyCaptor.getValue();
+
+        assertEquals(1, history.getItems().size());
+
+        OrderContentChangeItem removedItem = history.getItems().get(0);
+
+        assertEquals(
+                OrderContentChangeType.REMOVED,
+                removedItem.getChangeType());
+
+        assertEquals(
+                1001L,
+                removedItem.getOrderItemId());
+
+        assertEquals(
+                10L,
+                removedItem.getProductId());
+
+        assertEquals(
+                "商品A",
+                removedItem.getProductName());
+
+        assertEquals(
+                2,
+                removedItem.getOldQuantity());
+
+        assertNull(
+                removedItem.getNewQuantity());
+
+        assertEquals(
+                4000,
+                removedItem.getOldSubtotal());
+
+        assertNull(
+                removedItem.getNewSubtotal());
+
+        assertEquals(
+                5500,
+                history.getOldItemSubtotal());
+
+        assertEquals(
+                1500,
+                history.getNewItemSubtotal());
+
+        assertEquals(
+                0,
+                history.getOldChargeTotal());
+
+        assertEquals(
+                550,
+                history.getNewChargeTotal());
+
+        assertEquals(
+                500,
+                history.getOldTaxAmount());
+
+        assertEquals(
+                186,
+                history.getNewTaxAmount());
+
+        assertEquals(
+                5500,
+                history.getOldTotalAmount());
+
+        assertEquals(
+                2050,
+                history.getNewTotalAmount());
+    }
+
+    @Test
+    void changeItemsForUserDoesNothingWhenQuantitiesAreUnchanged() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                2,
+                1);
+
+        boolean changed = orderService.changeItemsForUser(
+                orderId,
+                userId,
+                "testuser",
+                form);
+
+        assertFalse(changed);
+
+        assertEquals(
+                2,
+                order.getItems().size());
+
+        assertEquals(
+                2,
+                order.getItems().get(0).getQuantity());
+
+        assertEquals(
+                1,
+                order.getItems().get(1).getQuantity());
+
+        assertEquals(
+                5500,
+                order.getItemSubtotal());
+
+        assertEquals(
+                0,
+                order.getChargeTotal());
+
+        assertEquals(
+                5500,
+                order.getTotalAmount());
+
+        assertEquals(
+                0,
+                order.getContentRevision());
+
+        verifyNoInteractions(
+                inventoryService);
+
+        verifyNoInteractions(
+                orderContentChangeHistoryRepository);
+
+        verifyNoInteractions(
+                orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsRemovingAllItems() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                0,
+                0);
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        assertEquals(
+                "注文には1点以上の商品が必要です。"
+                        + "注文全体を取り消す場合は注文キャンセルを選択してください。",
+                exception.getMessage());
+
+        assertEquals(
+                2,
+                order.getItems().size());
+
+        assertEquals(
+                2,
+                order.getItems().get(0).getQuantity());
+
+        assertEquals(
+                1,
+                order.getItems().get(1).getQuantity());
+
+        assertEquals(
+                0,
+                order.getContentRevision());
+
+        verifyNoInteractions(
+                inventoryService);
+
+        verifyNoInteractions(
+                orderContentChangeHistoryRepository);
+
+        verifyNoInteractions(
+                orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsQuantityIncrease() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                3,
+                1);
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        assertEquals(
+                "現在の注文数量を超える数量には変更できません。",
+                exception.getMessage());
+
+        assertEquals(
+                2,
+                order.getItems().get(0).getQuantity());
+
+        assertEquals(
+                1,
+                order.getItems().get(1).getQuantity());
+
+        assertEquals(
+                0,
+                order.getContentRevision());
+
+        verifyNoInteractions(
+                inventoryService);
+
+        verifyNoInteractions(
+                orderContentChangeHistoryRepository);
+
+        verifyNoInteractions(
+                orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsStaleContentRevision() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                1,
+                1,
+                1);
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        assertEquals(
+                "注文内容が変更されています。最新の注文内容を確認して、もう一度操作してください。",
+                exception.getMessage());
+
+        assertEquals(
+                2,
+                order.getItems().get(0).getQuantity());
+
+        assertEquals(
+                1,
+                order.getItems().get(1).getQuantity());
+
+        assertEquals(
+                0,
+                order.getContentRevision());
+
+        verifyNoInteractions(
+                inventoryService);
+
+        verifyNoInteractions(
+                orderContentChangeHistoryRepository);
+
+        verifyNoInteractions(
+                orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsUnknownOrderItemId() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                1,
+                1);
+
+        form.getItems().get(0)
+                .setOrderItemId(9999L);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        assertEquals(2, order.getItems().get(0).getQuantity());
+        assertEquals(1, order.getItems().get(1).getQuantity());
+        assertEquals(0, order.getContentRevision());
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(orderContentChangeHistoryRepository);
+        verifyNoInteractions(orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsDuplicateOrderItemId() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                1,
+                1);
+
+        form.getItems().get(1)
+                .setOrderItemId(1001L);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        assertEquals(2, order.getItems().get(0).getQuantity());
+        assertEquals(1, order.getItems().get(1).getQuantity());
+        assertEquals(0, order.getContentRevision());
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(orderContentChangeHistoryRepository);
+        verifyNoInteractions(orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsExactlyAtDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        clock = Clock.fixed(
+                LocalDateTime.of(
+                        2026, 9, 28, 14, 0, 0)
+                        .atZone(ZoneId.of("Asia/Tokyo"))
+                        .toInstant(),
+                ZoneId.of("Asia/Tokyo"));
+
+        orderService = createOrderService();
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                1,
+                1);
+
+        assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        assertEquals(2, order.getItems().get(0).getQuantity());
+        assertEquals(1, order.getItems().get(1).getQuantity());
+        assertEquals(0, order.getContentRevision());
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(orderContentChangeHistoryRepository);
+        verifyNoInteractions(orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsPaidOrder() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = createOrderForItemChange(
+                orderId,
+                userId);
+
+        order.markAsPaid();
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.of(order));
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                1,
+                1);
+
+        assertThrows(
+                InvalidOrderStatusException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        assertEquals(0, order.getContentRevision());
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(orderContentChangeHistoryRepository);
+        verifyNoInteractions(orderAmountCalculator);
+    }
+
+    @Test
+    void changeItemsForUserRejectsOrderOwnedByAnotherUser() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        when(orderRepository.findByIdAndUserIdForUpdate(
+                orderId,
+                userId))
+                .thenReturn(Optional.empty());
+
+        OrderItemChangeForm form = createOrderItemChangeForm(
+                0,
+                1,
+                1);
+
+        assertThrows(
+                OrderNotFoundException.class,
+                () -> orderService.changeItemsForUser(
+                        orderId,
+                        userId,
+                        "testuser",
+                        form));
+
+        verifyNoInteractions(inventoryService);
+        verifyNoInteractions(orderContentChangeHistoryRepository);
+        verifyNoInteractions(orderAmountCalculator);
+    }
+
     private Product createProduct(
             Long id,
             String name,
@@ -3302,6 +4109,7 @@ class OrderServiceTest {
                 orderHandlingStatusHistoryService,
                 orderShippingAddressHistoryService,
                 orderAssigneeHistoryService,
+                orderContentChangeHistoryRepository,
                 adminAccountService,
                 orderDeadlineCalculator,
                 taxCategoryService,
@@ -3408,6 +4216,113 @@ class OrderServiceTest {
                 any(),
                 same(shippingTaxCategory)))
                 .thenReturn(orderAmount);
+    }
+
+    private Order createOrderForItemChange(
+            Long orderId,
+            Long userId) {
+
+        LocalDateTime orderedAt = LocalDateTime.of(2026, 9, 28, 10, 0);
+
+        LocalDateTime changeDeadlineAt = LocalDateTime.of(2026, 9, 28, 14, 0);
+
+        Order order = new Order(
+                userId,
+                5500,
+                orderedAt,
+                changeDeadlineAt);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(order, "id", orderId);
+
+        OrderItem firstItem = new OrderItem(
+                10L,
+                "商品A",
+                100L,
+                "テストカテゴリ",
+                200L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                2000,
+                2);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(firstItem, "id", 1001L);
+
+        OrderItem secondItem = new OrderItem(
+                20L,
+                "商品B",
+                100L,
+                "テストカテゴリ",
+                200L,
+                "STANDARD",
+                "標準税率",
+                new BigDecimal("10.00"),
+                1500,
+                1);
+
+        org.springframework.test.util.ReflectionTestUtils
+                .setField(secondItem, "id", 1002L);
+
+        order.addItem(firstItem);
+        order.addItem(secondItem);
+
+        order.addCharge(
+                new OrderCharge(
+                        OrderChargeType.SHIPPING,
+                        "送料・梱包料",
+                        0,
+                        300L,
+                        "STANDARD",
+                        "標準税率",
+                        new BigDecimal("10.00"),
+                        10));
+
+        order.applyAmount(
+                new OrderAmount(
+                        5500,
+                        List.of(
+                                new OrderChargeAmount(
+                                        OrderChargeType.SHIPPING,
+                                        "送料・梱包料",
+                                        0,
+                                        300L,
+                                        "STANDARD",
+                                        "標準税率",
+                                        new BigDecimal("10.00"),
+                                        10)),
+                        0,
+                        500,
+                        5500));
+
+        return order;
+    }
+
+    private OrderItemChangeForm createOrderItemChangeForm(
+            int contentRevision,
+            int firstQuantity,
+            int secondQuantity) {
+
+        OrderItemChangeForm form = new OrderItemChangeForm();
+
+        form.setContentRevision(
+                contentRevision);
+
+        OrderItemChangeForm.Item first = new OrderItemChangeForm.Item();
+
+        first.setOrderItemId(1001L);
+        first.setQuantity(firstQuantity);
+
+        OrderItemChangeForm.Item second = new OrderItemChangeForm.Item();
+
+        second.setOrderItemId(1002L);
+        second.setQuantity(secondQuantity);
+
+        form.setItems(
+                List.of(first, second));
+
+        return form;
     }
 
 }

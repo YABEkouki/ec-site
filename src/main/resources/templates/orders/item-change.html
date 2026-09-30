@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>注文内容変更</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>注文内容変更</h1>
+
+    <p>
+        注文番号：
+        <span th:text="${order.id}"></span>
+    </p>
+
+    <p>
+        変更期限：
+        <span th:text="${#temporals.format(
+            order.changeDeadlineAt,
+            'yyyy/MM/dd HH:mm')}">
+        </span>
+    </p>
+
+    <p>
+        数量を減らすか、0にすると商品を注文から削除できます。
+        数量を増やすことはできません。
+    </p>
+
+    <form th:action="@{/orders/{id}/items/confirm(id=${order.id})}" th:object="${orderItemChangeForm}" method="post">
+
+        <input type="hidden" th:field="*{contentRevision}">
+
+        <div th:if="${#fields.hasGlobalErrors()}">
+            <p th:each="error : ${#fields.globalErrors()}" th:text="${error}" class="message-error">
+            </p>
+        </div>
+
+        <h2>注文商品</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>商品名</th>
+                    <th>単価（税込）</th>
+                    <th>現在数量</th>
+                    <th>変更後数量</th>
+                    <th>現在小計（税込）</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr th:each="item, stat : ${order.items}">
+
+                    <td th:text="${item.productName}">
+                    </td>
+
+                    <td>
+                        <span th:text="${#numbers.formatInteger(
+                            item.price,
+                            1,
+                            'COMMA')}">
+                        </span>
+                        円
+                    </td>
+
+                    <td th:text="${item.quantity}">
+                    </td>
+
+                    <td>
+                        <input type="hidden" th:field="*{items[__${stat.index}__].orderItemId}">
+
+                        <input type="number" th:field="*{items[__${stat.index}__].quantity}" min="0"
+                            th:max="${item.quantity}" step="1">
+
+                        <span class="field-error" th:if="${#fields.hasErrors(
+                                'items[' + stat.index + '].quantity')}"
+                            th:errors="*{items[__${stat.index}__].quantity}">
+                        </span>
+                    </td>
+
+                    <td>
+                        <span th:text="${#numbers.formatInteger(
+                            item.subtotal,
+                            1,
+                            'COMMA')}">
+                        </span>
+                        円
+                    </td>
+
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            ※ 変更後数量を0にした商品は注文から削除されます。
+        </p>
+
+        <p>
+            ※ 注文商品をすべて削除することはできません。
+            注文全体を取り消す場合は注文キャンセルを利用してください。
+        </p>
+
+        <div class="actions">
+
+            <button type="submit" class="button-primary">
+                変更内容を確認する
+            </button>
+
+            <a th:href="@{/orders/{id}(id=${order.id})}" class="button button-secondary">
+                注文詳細へ戻る
+            </a>
+
+            <a th:if="${canCancelByUser}" th:href="@{/orders/{id}/cancel(id=${order.id})}" class="button button-danger">
+                注文全体をキャンセルする
+            </a>
+        </div>
+
+    </form>
+
+</body>
+
+</html>

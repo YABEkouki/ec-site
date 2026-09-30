@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>注文内容変更確認</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>注文内容変更確認</h1>
+
+    <p>
+        注文番号：
+        <span th:text="${order.id}"></span>
+    </p>
+
+    <p>
+        変更期限：
+        <span th:text="${#temporals.format(
+            order.changeDeadlineAt,
+            'yyyy/MM/dd HH:mm')}">
+        </span>
+    </p>
+
+    <h2>注文商品</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>商品名</th>
+                <th>単価（税込）</th>
+                <th>変更前数量</th>
+                <th>変更後数量</th>
+                <th>変更前小計（税込）</th>
+                <th>変更後小計（税込）</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr th:each="item : ${preview.items}">
+
+                <td th:text="${item.productName}">
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        item.price,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td th:text="${item.oldQuantity}">
+                </td>
+
+                <td>
+                    <span th:text="${item.newQuantity}">
+                    </span>
+                    <span th:if="${item.removed}">
+                        （削除）
+                    </span>
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        item.oldSubtotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        item.newSubtotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>注文金額</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th></th>
+                <th>変更前</th>
+                <th>変更後</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            <tr>
+                <th>商品小計（税込）</th>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        preview.oldItemSubtotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        preview.newItemSubtotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+            </tr>
+
+            <tr>
+                <th>付帯料金（税込）</th>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        preview.oldChargeTotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        preview.newChargeTotal,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+            </tr>
+
+            <tr>
+                <th>注文合計（税込）</th>
+
+                <td>
+                    <strong>
+                        <span th:text="${#numbers.formatInteger(
+                            preview.oldTotalAmount,
+                            1,
+                            'COMMA')}">
+                        </span>
+                        円
+                    </strong>
+                </td>
+
+                <td>
+                    <strong>
+                        <span th:text="${#numbers.formatInteger(
+                            preview.newTotalAmount,
+                            1,
+                            'COMMA')}">
+                        </span>
+                        円
+                    </strong>
+                </td>
+            </tr>
+
+            <tr>
+                <th>うち消費税</th>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        preview.oldTaxAmount,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+
+                <td>
+                    <span th:text="${#numbers.formatInteger(
+                        preview.newTaxAmount,
+                        1,
+                        'COMMA')}">
+                    </span>
+                    円
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <form th:action="@{/orders/{id}/items(id=${order.id})}" th:object="${orderItemChangeForm}" method="post">
+
+        <input type="hidden" th:field="*{contentRevision}">
+
+        <div th:each="item, stat : *{items}">
+            <input type="hidden" th:field="*{items[__${stat.index}__].orderItemId}">
+
+            <input type="hidden" th:field="*{items[__${stat.index}__].quantity}">
+        </div>
+
+        <div class="actions">
+            <button type="submit" class="button-primary">
+                注文内容を変更する
+            </button>
+        </div>
+
+    </form>
+
+    <form th:action="@{/orders/{id}/items/back(id=${order.id})}" th:object="${orderItemChangeForm}" method="post">
+
+        <input type="hidden" th:field="*{contentRevision}">
+
+        <div th:each="item, stat : *{items}">
+            <input type="hidden" th:field="*{items[__${stat.index}__].orderItemId}">
+
+            <input type="hidden" th:field="*{items[__${stat.index}__].quantity}">
+        </div>
+
+        <div class="actions">
+
+            <button type="submit" class="button button-secondary">
+                入力内容を修正する
+            </button>
+
+            <a th:href="@{/orders/{id}(id=${order.id})}" class="button button-secondary">
+                注文詳細へ戻る
+            </a>
+
+            <a th:if="${canCancelByUser}" th:href="@{/orders/{id}/cancel(id=${order.id})}" class="button button-danger">
+                注文全体をキャンセルする
+            </a>
+
+        </div>
+
+    </form>
+
+</body>
+
+</html>

@@ -103,6 +103,10 @@ public class OrderCharge {
         return amount;
     }
 
+    public void updateAmount(int amount) {
+        this.amount = amount;
+    }
+
     public Long getTaxCategoryId() {
         return taxCategoryId;
     }

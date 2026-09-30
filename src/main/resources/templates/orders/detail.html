@@ -139,6 +139,12 @@
             この注文の変更受付は終了しました。
         </p>
 
+        <p th:if="${canChangeItemsByUser}">
+            <a th:href="@{/orders/{id}/items(id=${order.id})}" class="button button-secondary">
+                注文内容を変更する
+            </a>
+        </p>
+
         <p th:if="${canCancelByUser}">
             <a th:href="@{/orders/{id}/cancel(id=${order.id})}" class="button button-danger">
                 注文をキャンセルする
