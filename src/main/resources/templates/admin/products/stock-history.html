@@ -87,6 +87,11 @@
                     注文キャンセル
                 </option>
 
+                <option value="ORDER_ITEM_CHANGE" th:selected="${movementType != null
+                    && movementType.name() == 'ORDER_ITEM_CHANGE'}">
+                    注文内容変更
+                </option>
+
             </select>
 
         </div>
@@ -150,6 +155,10 @@
 
                         <span th:case="'ORDER_CANCELLATION'">
                             注文キャンセル
+                        </span>
+
+                        <span th:case="'ORDER_ITEM_CHANGE'">
+                            注文内容変更
                         </span>
 
                     </span>
