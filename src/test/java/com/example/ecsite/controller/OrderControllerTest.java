@@ -3,6 +3,7 @@ package com.example.ecsite.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -918,6 +919,103 @@ class OrderControllerTest {
                 .addAttribute(
                         "shippingAddresses",
                         List.of());
+    }
+
+    @Test
+    void cancelConfirmDisplaysConfirmationWhenCancellationIsAllowed() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                2000,
+                LocalDateTime.of(2026, 9, 30, 10, 0),
+                LocalDateTime.of(2026, 9, 30, 15, 0));
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canCancelByUser(order))
+                .thenReturn(true);
+
+        RedirectAttributes redirectAttributes = mock(
+                RedirectAttributes.class);
+
+        String viewName = orderController.cancelConfirm(
+                orderId,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "orders/cancel-confirm",
+                viewName);
+
+        verify(orderService)
+                .findOrderByIdAndUserId(
+                        orderId,
+                        userId);
+
+        verify(orderService)
+                .canCancelByUser(order);
+
+        verify(model)
+                .addAttribute(
+                        "order",
+                        order);
+    }
+
+    @Test
+    void cancelConfirmRedirectsWhenCancellationIsNotAllowed() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = new Order(
+                userId,
+                2000,
+                LocalDateTime.of(2026, 9, 30, 10, 0),
+                LocalDateTime.of(2026, 9, 30, 15, 0));
+
+        when(loginUser.getId())
+                .thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(
+                orderId,
+                userId))
+                .thenReturn(order);
+
+        when(orderService.canCancelByUser(order))
+                .thenReturn(false);
+
+        RedirectAttributes redirectAttributes = mock(
+                RedirectAttributes.class);
+
+        String viewName = orderController.cancelConfirm(
+                orderId,
+                loginUser,
+                model,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "現在、この注文はキャンセルできません。");
+
+        verify(model, never())
+                .addAttribute(
+                        "order",
+                        order);
     }
 
 }

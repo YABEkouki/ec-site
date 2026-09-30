@@ -107,6 +107,33 @@ public class OrderController {
         return "orders/detail";
     }
 
+    @GetMapping("/{id}/cancel")
+    public String cancelConfirm(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            Model model,
+            RedirectAttributes redirectAttributes) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!orderService.canCancelByUser(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文はキャンセルできません。");
+
+            return "redirect:/orders/" + id;
+        }
+
+        model.addAttribute(
+                "order",
+                order);
+
+        return "orders/cancel-confirm";
+    }
+
     @PostMapping("/{id}/cancel")
     public String cancel(
             @PathVariable Long id,
