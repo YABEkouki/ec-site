@@ -139,15 +139,11 @@
             この注文の変更受付は終了しました。
         </p>
 
-        <form th:if="${canCancelByUser}" th:action="@{/orders/{id}/cancel(
-              id=${order.id})}" method="post">
-
-            <button type="submit" class="button-danger" onclick="return confirm(
-                    'この注文をキャンセルしますか？');">
+        <p th:if="${canCancelByUser}">
+            <a th:href="@{/orders/{id}/cancel(id=${order.id})}" class="button button-danger">
                 注文をキャンセルする
-            </button>
-
-        </form>
+            </a>
+        </p>
 
         <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).PAID}">
             支払済みのため、画面からキャンセルできません。
