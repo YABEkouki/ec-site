@@ -12,6 +12,9 @@ import com.example.ecsite.config.PayJpProperties;
 import com.example.ecsite.payment.AuthorizationPreparation;
 import com.example.ecsite.payment.AuthorizationRequest;
 import com.example.ecsite.payment.AuthorizationResult;
+import com.example.ecsite.payment.CancellationRequest;
+import com.example.ecsite.payment.CancellationResult;
+import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.payment.PaymentGatewayException;
 
@@ -92,6 +95,48 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     "Failed to create PAY.JP Payment Flow", e);
         }
 
+    }
+
+    @Override
+    public CancellationResult cancelAuthorization(
+            CancellationRequest request) {
+
+        Map<String, Object> body = Map.of(
+                "cancellation_reason",
+                "requested_by_customer");
+
+        try {
+            PayJpPaymentFlowResponse response = restClient.post()
+                    .uri(
+                            "/v2/payment_flows/{paymentFlowId}/cancel",
+                            request.providerPaymentId())
+                    .header(
+                            "Idempotency-Key",
+                            request.idempotencyKey())
+                    .body(body)
+                    .retrieve()
+                    .body(PayJpPaymentFlowResponse.class);
+
+            if (response == null || response.status() == null) {
+                throw new IllegalStateException(
+                        "PAY.JP returned an invalid Payment Flow response");
+            }
+
+            if ("canceled".equals(response.status())) {
+                return new CancellationResult(
+                        CancellationResultStatus.CANCELLED,
+                        response.id());
+            }
+
+            return new CancellationResult(
+                    CancellationResultStatus.PENDING,
+                    response.id());
+
+        } catch (RestClientException e) {
+            throw new PaymentGatewayException(
+                    "Failed to cancel PAY.JP Payment Flow",
+                    e);
+        }
     }
 
 }

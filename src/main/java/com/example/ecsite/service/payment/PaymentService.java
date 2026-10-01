@@ -3,6 +3,7 @@ package com.example.ecsite.service.payment;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,8 @@ import com.example.ecsite.entity.PaymentTransactionStatus;
 import com.example.ecsite.entity.PaymentTransactionType;
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.AuthorizationResultStatus;
+import com.example.ecsite.payment.CancellationResult;
+import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.repository.PaymentRepository;
 import com.example.ecsite.repository.PaymentTransactionRepository;
 
@@ -201,6 +204,98 @@ public class PaymentService {
             throw new IllegalArgumentException(
                     "決済情報と注文が一致しません。");
         }
+    }
+
+    @Transactional
+    public PaymentCancellationStart startCancellation(Order order) {
+
+        List<Payment> payments = paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(
+                order.getId());
+
+        Payment payment = payments.stream()
+                .filter(p -> p.getStatus() == PaymentStatus.AUTHORIZED)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "取消可能な与信済み決済が見つかりません。"));
+
+        String providerPaymentId = payment.getProviderPaymentId();
+
+        if (providerPaymentId == null
+                || providerPaymentId.isBlank()) {
+
+            throw new IllegalStateException(
+                    "決済プロバイダーIDが設定されていません。");
+        }
+
+        var existingTransaction = paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.CANCEL,
+                        PaymentTransactionStatus.PENDING);
+
+        if (existingTransaction.isPresent()) {
+
+            PaymentTransaction transaction = existingTransaction.get();
+
+            return new PaymentCancellationStart(
+                    payment.getId(),
+                    transaction.getId(),
+                    providerPaymentId,
+                    transaction.getIdempotencyKey());
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        PaymentTransaction transaction = new PaymentTransaction(
+                payment,
+                PaymentTransactionType.CANCEL,
+                payment.getAmount(),
+                order.getContentRevision(),
+                UUID.randomUUID().toString(),
+                now);
+
+        paymentTransactionRepository.save(transaction);
+
+        return new PaymentCancellationStart(
+                payment.getId(),
+                transaction.getId(),
+                providerPaymentId,
+                transaction.getIdempotencyKey());
+    }
+
+    @Transactional
+    public void applyCancellationResult(
+            Long paymentId,
+            CancellationResult result) {
+
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "決済情報が見つかりません。"));
+
+        if (payment.getStatus() == PaymentStatus.CANCELLED
+                && result.status() == CancellationResultStatus.CANCELLED) {
+            return;
+        }
+
+        PaymentTransaction transaction = paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        paymentId,
+                        PaymentTransactionType.CANCEL,
+                        PaymentTransactionStatus.PENDING)
+                .orElseThrow(() -> new IllegalStateException(
+                        "処理中の取消操作が見つかりません。"));
+
+        if (result.status() == CancellationResultStatus.PENDING) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        payment.markCancelled(now);
+
+        transaction.markSucceeded(
+                result.providerTransactionId(),
+                now);
     }
 
 }

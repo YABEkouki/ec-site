@@ -20,12 +20,16 @@ import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
+import com.example.ecsite.payment.CancellationResult;
+import com.example.ecsite.payment.CancellationResultStatus;
+import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.service.ShippingAddressService;
+import com.example.ecsite.service.payment.PaymentCancellationService;
 
 @Controller
 @RequestMapping("/orders")
@@ -37,6 +41,7 @@ public class OrderController {
     private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
     private final OrderContentChangeHistoryService orderContentChangeHistoryService;
     private final Validator validator;
+    private final PaymentCancellationService paymentCancellationService;
 
     public OrderController(
             OrderService orderService,
@@ -44,7 +49,8 @@ public class OrderController {
             ShippingAddressService shippingAddressService,
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderContentChangeHistoryService orderContentChangeHistoryService,
-            Validator validator) {
+            Validator validator,
+            PaymentCancellationService paymentCancellationService) {
 
         this.orderService = orderService;
         this.orderStatusHistoryService = orderStatusHistoryService;
@@ -52,6 +58,7 @@ public class OrderController {
         this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
         this.orderContentChangeHistoryService = orderContentChangeHistoryService;
         this.validator = validator;
+        this.paymentCancellationService = paymentCancellationService;
     }
 
     @GetMapping
@@ -172,19 +179,39 @@ public class OrderController {
             RedirectAttributes redirectAttributes) {
 
         try {
-            orderService.cancelOrderForUser(
+
+            CancellationResult result = paymentCancellationService.cancelForUser(
                     id,
                     loginUser.getId(),
                     loginUser.getUsername());
-            redirectAttributes.addFlashAttribute(
-                    "successMessage",
-                    "注文をキャンセルしました。");
 
-        } catch (InvalidOrderStatusException e) {
+            if (result.status() == CancellationResultStatus.CANCELLED) {
+
+                redirectAttributes.addFlashAttribute(
+                        "successMessage",
+                        "注文をキャンセルしました。");
+
+            } else {
+
+                redirectAttributes.addFlashAttribute(
+                        "errorMessage",
+                        "決済の取消処理を確認中です。"
+                                + "注文はまだキャンセルされていません。");
+            }
+
+        } catch (InvalidOrderStatusException
+                | IllegalStateException e) {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
                     e.getMessage());
+
+        } catch (PaymentGatewayException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "決済の取消結果を確認できませんでした。"
+                            + "注文はまだキャンセルされていません。");
         }
 
         return "redirect:/orders/" + id;

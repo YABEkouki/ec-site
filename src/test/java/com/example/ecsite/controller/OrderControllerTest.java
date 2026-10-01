@@ -35,12 +35,15 @@ import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
+import com.example.ecsite.payment.CancellationResult;
+import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.service.ShippingAddressService;
+import com.example.ecsite.service.payment.PaymentCancellationService;
 
 @ExtendWith(MockitoExtension.class)
 class OrderControllerTest {
@@ -69,6 +72,9 @@ class OrderControllerTest {
     @Mock
     private Validator validator;
 
+    @Mock
+    private PaymentCancellationService paymentCancellationService;
+
     private OrderController orderController;
 
     @BeforeEach
@@ -79,7 +85,8 @@ class OrderControllerTest {
                 shippingAddressService,
                 orderShippingAddressHistoryService,
                 orderContentChangeHistoryService,
-                validator);
+                validator,
+                paymentCancellationService);
     }
 
     @Test
@@ -356,15 +363,23 @@ class OrderControllerTest {
 
         Long orderId = 1L;
         Long userId = 10L;
-        String username = "user1";
-
-        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+        String username = "testuser";
 
         when(loginUser.getId())
                 .thenReturn(userId);
 
         when(loginUser.getUsername())
                 .thenReturn(username);
+
+        when(paymentCancellationService.cancelForUser(
+                orderId,
+                userId,
+                username))
+                .thenReturn(new CancellationResult(
+                        CancellationResultStatus.CANCELLED,
+                        "pf_test"));
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
         String viewName = orderController.cancel(
                 orderId,
@@ -375,8 +390,8 @@ class OrderControllerTest {
                 "redirect:/orders/" + orderId,
                 viewName);
 
-        verify(orderService)
-                .cancelOrderForUser(
+        verify(paymentCancellationService)
+                .cancelForUser(
                         orderId,
                         userId,
                         username);
@@ -385,6 +400,7 @@ class OrderControllerTest {
                 .addFlashAttribute(
                         "successMessage",
                         "注文をキャンセルしました。");
+
     }
 
     @Test
@@ -392,9 +408,7 @@ class OrderControllerTest {
 
         Long orderId = 1L;
         Long userId = 10L;
-        String username = "user1";
-
-        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+        String username = "testuser";
 
         when(loginUser.getId())
                 .thenReturn(userId);
@@ -403,15 +417,15 @@ class OrderControllerTest {
                 .thenReturn(username);
 
         InvalidOrderStatusException exception = new InvalidOrderStatusException(
-                "注文受付中の注文だけを"
-                        + "キャンセルできます。");
+                "注文受付中の注文だけをキャンセルできます。");
 
-        doThrow(exception)
-                .when(orderService)
-                .cancelOrderForUser(
-                        orderId,
-                        userId,
-                        username);
+        when(paymentCancellationService.cancelForUser(
+                orderId,
+                userId,
+                username))
+                .thenThrow(exception);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
         String viewName = orderController.cancel(
                 orderId,
@@ -421,6 +435,12 @@ class OrderControllerTest {
         assertEquals(
                 "redirect:/orders/" + orderId,
                 viewName);
+
+        verify(paymentCancellationService)
+                .cancelForUser(
+                        orderId,
+                        userId,
+                        username);
 
         verify(redirectAttributes)
                 .addFlashAttribute(
