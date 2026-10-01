@@ -4107,7 +4107,7 @@ class OrderServiceTest {
                         OrderStatus.CANCELLED,
                         OrderStatusHistoryActorType.SYSTEM,
                         null,
-                        null,
+                        "SYSTEM",
                         "カード与信失敗による注文キャンセル");
     }
 

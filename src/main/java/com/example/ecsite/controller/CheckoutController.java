@@ -22,6 +22,9 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.form.CheckoutForm;
+import com.example.ecsite.payment.AuthorizationResult;
+import com.example.ecsite.payment.AuthorizationResultStatus;
+import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
@@ -301,6 +304,86 @@ public class CheckoutController {
         return "checkout/payment";
     }
 
+    @GetMapping("/payment/return")
+    public String paymentReturn(
+            HttpSession session,
+            SessionStatus sessionStatus,
+            RedirectAttributes redirectAttributes) {
+
+        Object orderIdValue = session.getAttribute(
+                "checkoutOrderId");
+
+        Object paymentIdValue = session.getAttribute(
+                "checkoutPaymentId");
+
+        if (!(orderIdValue instanceof Long orderId)
+                || !(paymentIdValue instanceof Long paymentId)) {
+
+            return "redirect:/";
+        }
+
+        final AuthorizationResult result;
+
+        try {
+            result = paymentAuthorizationService
+                    .refreshAuthorization(
+                            orderId,
+                            paymentId);
+
+        } catch (PaymentGatewayException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "決済状況を確認できませんでした。"
+                            + "しばらくしてからもう一度お試しください。");
+
+            return "redirect:/checkout/payment";
+        }
+
+        if (result.status() == AuthorizationResultStatus.AUTHORIZED) {
+
+            clearCheckoutPaymentSession(session);
+
+            sessionStatus.setComplete();
+
+            redirectAttributes.addFlashAttribute(
+                    "orderId",
+                    orderId);
+
+            return "redirect:/checkout/complete";
+        }
+
+        if (result.status() == AuthorizationResultStatus.FAILED) {
+
+            clearCheckoutPaymentSession(session);
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "カードの与信に失敗しました。"
+                            + "カード情報をご確認のうえ、"
+                            + "もう一度注文してください。");
+
+            return "redirect:/cart";
+        }
+
+        if (result.status() == AuthorizationResultStatus.REQUIRES_ACTION) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "カード認証が完了していません。"
+                            + "認証を完了してください。");
+
+            return "redirect:/checkout/payment";
+        }
+
+        redirectAttributes.addFlashAttribute(
+                "errorMessage",
+                "決済処理を確認中です。"
+                        + "しばらくしてからもう一度お試しください。");
+
+        return "redirect:/checkout/payment";
+    }
+
     @GetMapping("/complete")
     public String complete(Model model) {
 
@@ -419,6 +502,19 @@ public class CheckoutController {
         checkoutForm.setShippingCity(null);
         checkoutForm.setShippingAddressLine(null);
         checkoutForm.setShippingPhone(null);
+    }
+
+    private void clearCheckoutPaymentSession(
+            HttpSession session) {
+
+        session.removeAttribute(
+                "checkoutOrderId");
+
+        session.removeAttribute(
+                "checkoutPaymentId");
+
+        session.removeAttribute(
+                "checkoutPaymentClientSecret");
     }
 
 }

@@ -39,6 +39,9 @@ import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.OrderValidationException;
 import com.example.ecsite.exception.ShippingAddressNotFoundException;
 import com.example.ecsite.form.CheckoutForm;
+import com.example.ecsite.payment.AuthorizationResult;
+import com.example.ecsite.payment.AuthorizationResultStatus;
+import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
@@ -1127,4 +1130,292 @@ class CheckoutControllerTest {
         assertNull(
                 checkoutForm.getShippingPhone());
     }
+
+    @Test
+    void paymentReturnCompletesCheckoutWhenAuthorized() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(orderId);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(paymentId);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.AUTHORIZED,
+                null,
+                null,
+                null);
+
+        when(paymentAuthorizationService
+                .refreshAuthorization(
+                        orderId,
+                        paymentId))
+                .thenReturn(result);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        String view = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/checkout/complete",
+                view);
+
+        assertEquals(
+                orderId,
+                redirectAttributes
+                        .getFlashAttributes()
+                        .get("orderId"));
+
+        verify(paymentAuthorizationService)
+                .refreshAuthorization(
+                        orderId,
+                        paymentId);
+
+        verify(session)
+                .removeAttribute(
+                        "checkoutOrderId");
+
+        verify(session)
+                .removeAttribute(
+                        "checkoutPaymentId");
+
+        verify(session)
+                .removeAttribute(
+                        "checkoutPaymentClientSecret");
+
+        verify(sessionStatus)
+                .setComplete();
+    }
+
+    @Test
+    void paymentReturnKeepsCartAndReturnsToCartWhenAuthorizationFails() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(orderId);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(paymentId);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.FAILED,
+                null,
+                "card_declined",
+                "Card was declined");
+
+        when(paymentAuthorizationService
+                .refreshAuthorization(
+                        orderId,
+                        paymentId))
+                .thenReturn(result);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        String view = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/cart",
+                view);
+
+        assertTrue(
+                redirectAttributes
+                        .getFlashAttributes()
+                        .containsKey("errorMessage"));
+
+        verify(session)
+                .removeAttribute(
+                        "checkoutOrderId");
+
+        verify(session)
+                .removeAttribute(
+                        "checkoutPaymentId");
+
+        verify(session)
+                .removeAttribute(
+                        "checkoutPaymentClientSecret");
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
+    @Test
+    void paymentReturnKeepsPaymentStateWhenAuthorizationIsPending() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(orderId);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(paymentId);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.PENDING,
+                null,
+                null,
+                null);
+
+        when(paymentAuthorizationService
+                .refreshAuthorization(
+                        orderId,
+                        paymentId))
+                .thenReturn(result);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        String view = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/checkout/payment",
+                view);
+
+        verify(session, never())
+                .removeAttribute(
+                        "checkoutOrderId");
+
+        verify(session, never())
+                .removeAttribute(
+                        "checkoutPaymentId");
+
+        verify(session, never())
+                .removeAttribute(
+                        "checkoutPaymentClientSecret");
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
+    @Test
+    void paymentReturnKeepsPaymentStateWhenActionIsStillRequired() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(orderId);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(paymentId);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_ACTION,
+                null,
+                null,
+                null);
+
+        when(paymentAuthorizationService
+                .refreshAuthorization(
+                        orderId,
+                        paymentId))
+                .thenReturn(result);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        String view = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/checkout/payment",
+                view);
+
+        verify(session, never())
+                .removeAttribute(
+                        "checkoutPaymentId");
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
+    @Test
+    void paymentReturnKeepsPaymentStateWhenGatewayCommunicationFails() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(orderId);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(paymentId);
+
+        when(paymentAuthorizationService
+                .refreshAuthorization(
+                        orderId,
+                        paymentId))
+                .thenThrow(
+                        new PaymentGatewayException(
+                                "PAY.JP communication failed"));
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        String view = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/checkout/payment",
+                view);
+
+        assertTrue(
+                redirectAttributes
+                        .getFlashAttributes()
+                        .containsKey("errorMessage"));
+
+        verify(session, never())
+                .removeAttribute(
+                        "checkoutOrderId");
+
+        verify(session, never())
+                .removeAttribute(
+                        "checkoutPaymentId");
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
+    @Test
+    void paymentReturnRedirectsHomeWhenSessionStateIsMissing() {
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(null);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(null);
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        String view = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/",
+                view);
+
+        verifyNoInteractions(
+                paymentAuthorizationService);
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
 }
