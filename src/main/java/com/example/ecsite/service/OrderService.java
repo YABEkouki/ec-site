@@ -1216,6 +1216,27 @@ public class OrderService {
         return true;
     }
 
+    @Transactional
+    public void cancelOrderForPaymentFailure(
+            Long orderId) {
+
+        Order order = findOrderForUpdate(orderId);
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        cancelAndRestoreStock(
+                order,
+                OrderStatusHistoryActorType.SYSTEM,
+                null,
+                "SYSTEM",
+                "カード与信失敗による注文キャンセル",
+                now);
+    }
+
     public List<AdminAssigneeActionRequiredSummary> getActionRequiredOrderCountsByAssignee() {
 
         LocalDate today = LocalDate.now();

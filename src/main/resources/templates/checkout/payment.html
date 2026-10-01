@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お支払い</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <header th:replace="~{fragments/header :: header}">
+    </header>
+
+    <h1>お支払い</h1>
+
+    <section>
+        <p>
+            注文番号：
+            <strong th:text="${orderId}"></strong>
+        </p>
+
+        <p>
+            カード情報を入力してください。
+        </p>
+
+        <div id="payment-form"></div>
+
+        <p id="payment-error" class="message-error" style="display: none;">
+        </p>
+
+        <div class="actions">
+            <button type="button" id="payment-submit" class="button-primary">
+                カードで支払う
+            </button>
+        </div>
+    </section>
+
+    <script src="https://js.pay.jp/payments.js"></script>
+
+    <script th:inline="javascript">
+        const payjpPublicKey =
+            /*[[${payjpPublicKey}]]*/ '';
+
+        const clientSecret =
+            /*[[${clientSecret}]]*/ '';
+
+        const returnUrl =
+            /*[[@{/checkout/payment/return}]]*/ '';
+
+        const payments =
+            PayjpPayments(
+                payjpPublicKey,
+                { locale: 'ja' });
+
+        const widgets =
+            payments.widgets({
+                clientSecret: clientSecret
+            });
+
+        const paymentForm =
+            widgets.createForm(
+                'payment',
+                {
+                    paymentMethodOrder: ['card']
+                });
+
+        paymentForm.mount('#payment-form');
+
+        const submitButton =
+            document.getElementById(
+                'payment-submit');
+
+        const errorElement =
+            document.getElementById(
+                'payment-error');
+
+        submitButton.addEventListener(
+            'click',
+            async () => {
+
+                submitButton.disabled = true;
+                errorElement.style.display = 'none';
+                errorElement.textContent = '';
+
+                try {
+                    const result =
+                        await widgets.confirmPayment({
+                            return_url:
+                                new URL(
+                                    returnUrl,
+                                    window.location.origin)
+                                    .toString()
+                        });
+
+                    if (result.error) {
+                        errorElement.textContent =
+                            result.error.message
+                            || 'カード決済を開始できませんでした。';
+
+                        errorElement.style.display =
+                            'block';
+
+                        submitButton.disabled = false;
+                    }
+
+                } catch (error) {
+                    console.error(error);
+
+                    errorElement.textContent =
+                        'カード決済を開始できませんでした。'
+                        + 'しばらくしてからもう一度お試しください。';
+
+                    errorElement.style.display =
+                        'block';
+
+                    submitButton.disabled = false;
+                }
+            });
+    </script>
+
+</body>
+
+</html>
