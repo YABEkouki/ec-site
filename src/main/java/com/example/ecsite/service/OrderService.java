@@ -1010,6 +1010,32 @@ public class OrderService {
     }
 
     @Transactional
+    public void cancelOrderForUserAfterPaymentCancellation(
+            Long orderId,
+            Long userId,
+            String username) {
+
+        Order order = orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        if (!order.canCancel()) {
+            throw new InvalidOrderStatusException(
+                    "注文受付中の注文だけをキャンセルできます。");
+        }
+
+        cancelAndRestoreStock(
+                order,
+                OrderStatusHistoryActorType.USER,
+                userId,
+                username,
+                null,
+                LocalDateTime.now(clock));
+    }
+
+    @Transactional
     public boolean changeShippingAddressForUser(
             Long orderId,
             Long userId,

@@ -4137,6 +4137,77 @@ class OrderServiceTest {
         verifyNoInteractions(orderStatusHistoryService);
     }
 
+    @Test
+    void cancelOrderForUserAfterPaymentCancellationDoesNotRecheckModificationDeadline() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+        String username = "testuser";
+        Long productId = 20L;
+        int quantity = 3;
+
+        Order order = mock(Order.class);
+        OrderItem orderItem = mock(OrderItem.class);
+
+        when(order.getId())
+                .thenReturn(orderId);
+
+        when(order.getStatus())
+                .thenReturn(
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED);
+
+        when(orderRepository
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId))
+                .thenReturn(Optional.of(order));
+
+        when(order.canCancel())
+                .thenReturn(true);
+
+        when(order.getItems())
+                .thenReturn(List.of(orderItem));
+
+        when(orderItem.getProductId())
+                .thenReturn(productId);
+
+        when(orderItem.getQuantity())
+                .thenReturn(quantity);
+
+        OrderService orderService = createOrderService();
+
+        orderService.cancelOrderForUserAfterPaymentCancellation(
+                orderId,
+                userId,
+                username);
+
+        verify(order, never())
+                .isWithinModificationPeriod(
+                        any(LocalDateTime.class));
+
+        verify(order)
+                .cancel(
+                        LocalDateTime.of(
+                                2026, 9, 28, 10, 0));
+
+        verify(inventoryService)
+                .restoreForOrderCancellation(
+                        productId,
+                        quantity,
+                        orderId);
+
+        verify(orderStatusHistoryService)
+                .record(
+                        order,
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED,
+                        OrderStatusHistoryActorType.USER,
+                        userId,
+                        username,
+                        null);
+    }
+
     private Product createProduct(
             Long id,
             String name,
