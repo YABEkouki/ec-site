@@ -1,77 +1,91 @@
 package com.example.ecsite.service.payment;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.payment.AuthorizationPreparation;
-import com.example.ecsite.payment.AuthorizationRequest;
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.AuthorizationResultStatus;
 import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.payment.PaymentGatewayException;
 
+@ExtendWith(MockitoExtension.class)
 class PaymentAuthorizationServiceTest {
 
+    @Mock
     private PaymentService paymentService;
+
+    @Mock
     private PaymentGateway paymentGateway;
+
+    @Mock
+    private PaymentAuthorizationResultService paymentAuthorizationResultService;
+
+    @Mock
+    private Order order;
+
     private PaymentAuthorizationService service;
 
     @BeforeEach
     void setUp() {
-        paymentService = mock(PaymentService.class);
-        paymentGateway = mock(PaymentGateway.class);
 
         service = new PaymentAuthorizationService(
                 paymentService,
-                paymentGateway);
+                paymentGateway,
+                paymentAuthorizationResultService);
     }
 
     @Test
-    void prepareAuthorizationCreatesPaymentFlowAndStoresProviderId() {
+    void prepareAuthorizationCreatesProviderPaymentAndStoresProviderId() {
 
-        Order order = mock(Order.class);
+        Long paymentId = 10L;
+        Long transactionId = 20L;
+        int amount = 3300;
+        String idempotencyKey = "authorization-idempotency-key";
+        String providerPaymentId = "pf_test_123";
+        String clientSecret = "client_secret_test";
 
         PaymentAuthorizationStart start = new PaymentAuthorizationStart(
-                10L,
-                20L,
-                12_345,
-                "idempotency-key-123");
+                paymentId,
+                transactionId,
+                amount,
+                idempotencyKey);
+
+        AuthorizationPreparation preparation = new AuthorizationPreparation(
+                providerPaymentId,
+                clientSecret);
 
         when(paymentService.startAuthorization(order))
                 .thenReturn(start);
 
         when(paymentGateway.prepareAuthorization(
-                new AuthorizationRequest(
-                        12_345,
-                        "idempotency-key-123")))
-                .thenReturn(
-                        new AuthorizationPreparation(
-                                "pf_test_123",
-                                "client_secret_test"));
+                new com.example.ecsite.payment.AuthorizationRequest(
+                        amount,
+                        idempotencyKey)))
+                .thenReturn(preparation);
 
-        PaymentAuthorizationPreparation result = service.prepareAuthorization(order);
+        PaymentAuthorizationPreparation actual = service.prepareAuthorization(order);
 
-        assertEquals(10L, result.paymentId());
-        assertEquals(
-                "client_secret_test",
-                result.clientSecret());
+        assertSame(
+                paymentId,
+                actual.paymentId());
 
-        verify(paymentService).setProviderPaymentId(
-                10L,
-                "pf_test_123");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                clientSecret,
+                actual.clientSecret());
 
         InOrder inOrder = inOrder(
                 paymentService,
@@ -82,107 +96,148 @@ class PaymentAuthorizationServiceTest {
 
         inOrder.verify(paymentGateway)
                 .prepareAuthorization(
-                        new AuthorizationRequest(
-                                12_345,
-                                "idempotency-key-123"));
+                        new com.example.ecsite.payment.AuthorizationRequest(
+                                amount,
+                                idempotencyKey));
 
         inOrder.verify(paymentService)
                 .setProviderPaymentId(
-                        10L,
-                        "pf_test_123");
+                        paymentId,
+                        providerPaymentId);
     }
 
     @Test
-    void prepareAuthorizationLeavesPaymentPendingWhenGatewayFails() {
+    void prepareAuthorizationDoesNotStoreProviderIdWhenGatewayFails() {
 
-        Order order = mock(Order.class);
+        Long paymentId = 10L;
+        Long transactionId = 20L;
+        int amount = 3300;
+        String idempotencyKey = "authorization-idempotency-key";
 
         PaymentAuthorizationStart start = new PaymentAuthorizationStart(
-                10L,
-                20L,
-                12_345,
-                "idempotency-key-123");
+                paymentId,
+                transactionId,
+                amount,
+                idempotencyKey);
 
         when(paymentService.startAuthorization(order))
                 .thenReturn(start);
 
         when(paymentGateway.prepareAuthorization(
-                new AuthorizationRequest(
-                        12_345,
-                        "idempotency-key-123")))
+                new com.example.ecsite.payment.AuthorizationRequest(
+                        amount,
+                        idempotencyKey)))
                 .thenThrow(
                         new PaymentGatewayException(
                                 "PAY.JP communication failed"));
 
         assertThrows(
                 PaymentGatewayException.class,
-                () -> service.prepareAuthorization(order));
+                () -> service.prepareAuthorization(
+                        order));
+
+        verify(paymentService)
+                .startAuthorization(order);
+
+        verify(paymentGateway)
+                .prepareAuthorization(
+                        new com.example.ecsite.payment.AuthorizationRequest(
+                                amount,
+                                idempotencyKey));
 
         verify(paymentService, never())
                 .setProviderPaymentId(
-                        anyLong(),
-                        anyString());
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyString());
+
+        verifyNoInteractions(
+                paymentAuthorizationResultService);
     }
 
     @Test
     void refreshAuthorizationRetrievesProviderStateAndAppliesResult() {
 
-        when(paymentService.getProviderPaymentId(10L))
-                .thenReturn("pf_test_123");
+        Long orderId = 10L;
+        Long paymentId = 20L;
 
-        AuthorizationResult authorizationResult = new AuthorizationResult(
+        String providerPaymentId = "pf_test_123";
+
+        AuthorizationResult result = new AuthorizationResult(
                 AuthorizationResultStatus.AUTHORIZED,
                 null,
                 null,
                 null);
 
+        when(paymentService.getProviderPaymentId(
+                paymentId))
+                .thenReturn(providerPaymentId);
+
         when(paymentGateway.retrieveAuthorization(
-                "pf_test_123"))
-                .thenReturn(authorizationResult);
+                providerPaymentId))
+                .thenReturn(result);
 
-        AuthorizationResult result = service.refreshAuthorization(10L);
+        AuthorizationResult actual = service.refreshAuthorization(
+                orderId,
+                paymentId);
 
-        assertEquals(
-                AuthorizationResultStatus.AUTHORIZED,
-                result.status());
+        assertSame(
+                result,
+                actual);
 
         InOrder inOrder = inOrder(
                 paymentService,
-                paymentGateway);
+                paymentGateway,
+                paymentAuthorizationResultService);
 
         inOrder.verify(paymentService)
-                .getProviderPaymentId(10L);
+                .getProviderPaymentId(
+                        paymentId);
 
         inOrder.verify(paymentGateway)
                 .retrieveAuthorization(
-                        "pf_test_123");
+                        providerPaymentId);
 
-        inOrder.verify(paymentService)
-                .applyAuthorizationResult(
-                        10L,
-                        authorizationResult);
+        inOrder.verify(
+                paymentAuthorizationResultService)
+                .apply(
+                        orderId,
+                        paymentId,
+                        result);
     }
 
     @Test
     void refreshAuthorizationDoesNotUpdateLocalStateWhenGatewayFails() {
 
-        when(paymentService.getProviderPaymentId(10L))
-                .thenReturn("pf_test_123");
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        String providerPaymentId = "pf_test_123";
+
+        when(paymentService.getProviderPaymentId(
+                paymentId))
+                .thenReturn(providerPaymentId);
 
         when(paymentGateway.retrieveAuthorization(
-                "pf_test_123"))
+                providerPaymentId))
                 .thenThrow(
                         new PaymentGatewayException(
                                 "PAY.JP communication failed"));
 
         assertThrows(
                 PaymentGatewayException.class,
-                () -> service.refreshAuthorization(10L));
+                () -> service.refreshAuthorization(
+                        orderId,
+                        paymentId));
 
-        verify(paymentService, never())
-                .applyAuthorizationResult(
-                        anyLong(),
-                        any());
+        verify(paymentService)
+                .getProviderPaymentId(
+                        paymentId);
+
+        verify(paymentGateway)
+                .retrieveAuthorization(
+                        providerPaymentId);
+
+        verifyNoInteractions(
+                paymentAuthorizationResultService);
     }
-
 }

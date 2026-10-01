@@ -33,6 +33,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 
 import com.example.ecsite.cart.Cart;
 import com.example.ecsite.cart.CartItem;
+import com.example.ecsite.config.PayJpProperties;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.OrderValidationException;
@@ -41,6 +42,8 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
+import com.example.ecsite.service.payment.PaymentAuthorizationPreparation;
+import com.example.ecsite.service.payment.PaymentAuthorizationService;
 import com.example.ecsite.service.pricing.OrderAmount;
 
 import jakarta.servlet.http.HttpSession;
@@ -66,6 +69,12 @@ class CheckoutControllerTest {
     @Mock
     private Validator validator;
 
+    @Mock
+    private PaymentAuthorizationService paymentAuthorizationService;
+
+    @Mock
+    private PayJpProperties payJpProperties;
+
     private static final String CHECKOUT_TOKEN = "test-checkout-token";
     private static final Long USER_ID = 10L;
     private static final String USERNAME = "user1";
@@ -76,7 +85,9 @@ class CheckoutControllerTest {
         controller = new CheckoutController(
                 orderService,
                 shippingAddressService,
-                validator);
+                validator,
+                paymentAuthorizationService,
+                payJpProperties);
 
         loginUser = new CustomUserDetails(
                 USER_ID,
@@ -87,10 +98,11 @@ class CheckoutControllerTest {
     }
 
     @Test
-    void placeOrderClearsSessionAfterSuccess() {
+    void placeOrderStartsPaymentAuthorizationAfterOrderCreation() {
 
         Cart cart = createCart();
         CheckoutForm checkoutForm = createCheckoutForm();
+
         Order order = new Order(
                 10L,
                 1000,
@@ -106,6 +118,13 @@ class CheckoutControllerTest {
                 cart,
                 checkoutForm))
                 .thenReturn(order);
+
+        when(paymentAuthorizationService
+                .prepareAuthorization(order))
+                .thenReturn(
+                        new PaymentAuthorizationPreparation(
+                                20L,
+                                "client_secret_test"));
 
         BindingResult bindingResult = new BeanPropertyBindingResult(
                 checkoutForm,
@@ -124,18 +143,28 @@ class CheckoutControllerTest {
                 sessionStatus);
 
         assertEquals(
-                "redirect:/checkout/complete",
+                "redirect:/checkout/payment",
                 view);
-
-        assertTrue(
-                redirectAttributes
-                        .getFlashAttributes()
-                        .containsKey("orderId"));
 
         verify(session)
                 .removeAttribute("checkoutToken");
 
-        verify(sessionStatus)
+        verify(session)
+                .setAttribute(
+                        "checkoutOrderId",
+                        order.getId());
+
+        verify(session)
+                .setAttribute(
+                        "checkoutPaymentId",
+                        20L);
+
+        verify(session)
+                .setAttribute(
+                        "checkoutPaymentClientSecret",
+                        "client_secret_test");
+
+        verify(sessionStatus, never())
                 .setComplete();
 
         verify(orderService)
@@ -144,6 +173,9 @@ class CheckoutControllerTest {
                         USERNAME,
                         cart,
                         checkoutForm);
+
+        verify(paymentAuthorizationService)
+                .prepareAuthorization(order);
     }
 
     @Test
@@ -200,6 +232,8 @@ class CheckoutControllerTest {
                 USERNAME,
                 cart,
                 checkoutForm);
+
+        verifyNoInteractions(paymentAuthorizationService);
     }
 
     @Test
@@ -242,6 +276,100 @@ class CheckoutControllerTest {
                 .setComplete();
 
         verifyNoInteractions(orderService);
+
+        verifyNoInteractions(paymentAuthorizationService);
+    }
+
+    @Test
+    void paymentDisplaysPaymentPageWhenSessionStateExists() {
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(10L);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(20L);
+
+        when(session.getAttribute(
+                "checkoutPaymentClientSecret"))
+                .thenReturn("client_secret_test");
+
+        when(payJpProperties.publicKey())
+                .thenReturn("pk_test_example");
+
+        Model model = new ConcurrentModel();
+
+        String view = controller.payment(
+                session,
+                model);
+
+        assertEquals(
+                "checkout/payment",
+                view);
+
+        assertEquals(
+                10L,
+                model.getAttribute("orderId"));
+
+        assertEquals(
+                "client_secret_test",
+                model.getAttribute("clientSecret"));
+
+        assertEquals(
+                "pk_test_example",
+                model.getAttribute("payjpPublicKey"));
+    }
+
+    @Test
+    void paymentRedirectsHomeWhenSessionStateIsMissing() {
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(null);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(null);
+
+        when(session.getAttribute(
+                "checkoutPaymentClientSecret"))
+                .thenReturn(null);
+
+        Model model = new ConcurrentModel();
+
+        String view = controller.payment(
+                session,
+                model);
+
+        assertEquals(
+                "redirect:/",
+                view);
+    }
+
+    @Test
+    void paymentFailsWhenPayJpPublicKeyIsMissing() {
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(10L);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(20L);
+
+        when(session.getAttribute(
+                "checkoutPaymentClientSecret"))
+                .thenReturn("client_secret_test");
+
+        when(payJpProperties.publicKey())
+                .thenReturn("");
+
+        Model model = new ConcurrentModel();
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> controller.payment(
+                        session,
+                        model));
+
+        assertEquals(
+                "PAY.JP公開鍵が設定されていません。",
+                exception.getMessage());
     }
 
     private Cart createCart() {

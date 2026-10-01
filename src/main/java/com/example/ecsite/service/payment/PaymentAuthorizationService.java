@@ -13,13 +13,16 @@ public class PaymentAuthorizationService {
 
     private final PaymentService paymentService;
     private final PaymentGateway paymentGateway;
+    private final PaymentAuthorizationResultService paymentAuthorizationResultService;
 
     public PaymentAuthorizationService(
             PaymentService paymentService,
-            PaymentGateway paymentGateway) {
+            PaymentGateway paymentGateway,
+            PaymentAuthorizationResultService paymentAuthorizationResultService) {
 
         this.paymentService = paymentService;
         this.paymentGateway = paymentGateway;
+        this.paymentAuthorizationResultService = paymentAuthorizationResultService;
     }
 
     public PaymentAuthorizationPreparation prepareAuthorization(
@@ -42,18 +45,20 @@ public class PaymentAuthorizationService {
     }
 
     public AuthorizationResult refreshAuthorization(
+            Long orderId,
             Long paymentId) {
 
-        String providerPaymentId = paymentService.getProviderPaymentId(paymentId);
+        String providerPaymentId = paymentService.getProviderPaymentId(
+                paymentId);
 
         AuthorizationResult result = paymentGateway.retrieveAuthorization(
                 providerPaymentId);
 
-        paymentService.applyAuthorizationResult(
+        paymentAuthorizationResultService.apply(
+                orderId,
                 paymentId,
                 result);
 
         return result;
     }
-
 }

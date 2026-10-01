@@ -17,6 +17,7 @@ import org.springframework.web.bind.support.SessionStatus;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.cart.Cart;
+import com.example.ecsite.config.PayJpProperties;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.OrderValidationException;
@@ -24,6 +25,8 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
+import com.example.ecsite.service.payment.PaymentAuthorizationPreparation;
+import com.example.ecsite.service.payment.PaymentAuthorizationService;
 import com.example.ecsite.service.pricing.OrderAmount;
 
 import jakarta.servlet.http.HttpSession;
@@ -37,15 +40,21 @@ public class CheckoutController {
     private final OrderService orderService;
     private final ShippingAddressService shippingAddressService;
     private final Validator validator;
+    private final PaymentAuthorizationService paymentAuthorizationService;
+    private final PayJpProperties payJpProperties;
 
     public CheckoutController(
             OrderService orderService,
             ShippingAddressService shippingAddressService,
-            Validator validator) {
+            Validator validator,
+            PaymentAuthorizationService paymentAuthorizationService,
+            PayJpProperties payJpProperties) {
 
         this.orderService = orderService;
         this.shippingAddressService = shippingAddressService;
         this.validator = validator;
+        this.paymentAuthorizationService = paymentAuthorizationService;
+        this.payJpProperties = payJpProperties;
     }
 
     @ModelAttribute("cart")
@@ -227,13 +236,21 @@ public class CheckoutController {
                     cart,
                     checkoutForm);
 
-            sessionStatus.setComplete();
+            PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
 
-            redirectAttributes.addFlashAttribute(
-                    "orderId",
+            session.setAttribute(
+                    "checkoutOrderId",
                     order.getId());
 
-            return "redirect:/checkout/complete";
+            session.setAttribute(
+                    "checkoutPaymentId",
+                    preparation.paymentId());
+
+            session.setAttribute(
+                    "checkoutPaymentClientSecret",
+                    preparation.clientSecret());
+
+            return "redirect:/checkout/payment";
 
         } catch (OrderValidationException e) {
             redirectAttributes.addFlashAttribute(
@@ -242,6 +259,46 @@ public class CheckoutController {
 
             return "redirect:/cart";
         }
+    }
+
+    @GetMapping("/payment")
+    public String payment(
+            HttpSession session,
+            Model model) {
+
+        Object orderId = session.getAttribute("checkoutOrderId");
+
+        Object paymentId = session.getAttribute("checkoutPaymentId");
+
+        Object clientSecret = session.getAttribute("checkoutPaymentClientSecret");
+
+        if (!(orderId instanceof Long)
+                || !(paymentId instanceof Long)
+                || !(clientSecret instanceof String secret)
+                || secret.isBlank()) {
+
+            return "redirect:/";
+        }
+
+        model.addAttribute(
+                "orderId",
+                orderId);
+
+        model.addAttribute(
+                "clientSecret",
+                secret);
+
+        if (payJpProperties.publicKey() == null
+                || payJpProperties.publicKey().isBlank()) {
+            throw new IllegalStateException(
+                    "PAY.JP公開鍵が設定されていません。");
+        }
+
+        model.addAttribute(
+                "payjpPublicKey",
+                payJpProperties.publicKey());
+
+        return "checkout/payment";
     }
 
     @GetMapping("/complete")

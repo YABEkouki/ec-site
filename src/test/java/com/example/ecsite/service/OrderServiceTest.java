@@ -4053,6 +4053,90 @@ class OrderServiceTest {
         verifyNoInteractions(orderAmountCalculator);
     }
 
+    @Test
+    void cancelOrderForPaymentFailureRestoresStock() {
+
+        Long orderId = 1L;
+        Long productId = 20L;
+        int quantity = 3;
+
+        Order order = mock(Order.class);
+        OrderItem orderItem = mock(OrderItem.class);
+
+        when(order.getId())
+                .thenReturn(orderId);
+
+        when(order.getStatus())
+                .thenReturn(
+                        OrderStatus.ORDERED,
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        when(order.getItems())
+                .thenReturn(List.of(orderItem));
+
+        when(orderItem.getProductId())
+                .thenReturn(productId);
+
+        when(orderItem.getQuantity())
+                .thenReturn(quantity);
+
+        OrderService orderService = createOrderService();
+
+        orderService.cancelOrderForPaymentFailure(
+                orderId);
+
+        verify(order)
+                .cancel(
+                        LocalDateTime.of(
+                                2026, 9, 28, 10, 0));
+
+        verify(inventoryService)
+                .restoreForOrderCancellation(
+                        productId,
+                        quantity,
+                        orderId);
+
+        verify(orderStatusHistoryService)
+                .record(
+                        order,
+                        OrderStatus.ORDERED,
+                        OrderStatus.CANCELLED,
+                        OrderStatusHistoryActorType.SYSTEM,
+                        null,
+                        null,
+                        "カード与信失敗による注文キャンセル");
+    }
+
+    @Test
+    void cancelOrderForPaymentFailureDoesNothingWhenAlreadyCancelled() {
+
+        Long orderId = 1L;
+
+        Order order = mock(Order.class);
+
+        when(order.getStatus())
+                .thenReturn(OrderStatus.CANCELLED);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        OrderService orderService = createOrderService();
+
+        orderService.cancelOrderForPaymentFailure(
+                orderId);
+
+        verify(order, never())
+                .cancel(any(LocalDateTime.class));
+
+        verifyNoInteractions(inventoryService);
+
+        verifyNoInteractions(orderStatusHistoryService);
+    }
+
     private Product createProduct(
             Long id,
             String name,
