@@ -416,6 +416,60 @@ class PaymentServiceTest {
                         any());
     }
 
+    @Test
+    void validatePaymentBelongsToOrderAcceptsMatchingOrder() {
+
+        Order order = mock(Order.class);
+
+        when(order.getId())
+                .thenReturn(100L);
+
+        Payment payment = createPayment(order);
+
+        when(paymentRepository.findById(10L))
+                .thenReturn(Optional.of(payment));
+
+        paymentService.validatePaymentBelongsToOrder(
+                10L,
+                100L);
+
+        verify(paymentRepository)
+                .findById(10L);
+    }
+
+    @Test
+    void validatePaymentBelongsToOrderRejectsDifferentOrder() {
+
+        Order order = mock(Order.class);
+
+        when(order.getId())
+                .thenReturn(100L);
+
+        Payment payment = createPayment(order);
+
+        when(paymentRepository.findById(10L))
+                .thenReturn(Optional.of(payment));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> paymentService.validatePaymentBelongsToOrder(
+                        10L,
+                        200L));
+    }
+
+    @Test
+    void validatePaymentBelongsToOrderRejectsUnknownPayment() {
+
+        when(paymentRepository.findById(10L))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> paymentService.validatePaymentBelongsToOrder(
+                        10L,
+                        100L));
+    }
+
     private Payment createPayment(Order order) {
         return new Payment(
                 order,

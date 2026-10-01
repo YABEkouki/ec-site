@@ -188,4 +188,19 @@ public class PaymentService {
         return providerPaymentId;
     }
 
+    @Transactional(readOnly = true)
+    public void validatePaymentBelongsToOrder(
+            Long paymentId,
+            Long orderId) {
+
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "決済情報が見つかりません。"));
+
+        if (!payment.getOrder().getId().equals(orderId)) {
+            throw new IllegalArgumentException(
+                    "決済情報と注文が一致しません。");
+        }
+    }
+
 }

@@ -27,12 +27,15 @@ public class PaymentAuthorizationResultService {
             Long paymentId,
             AuthorizationResult result) {
 
+        paymentService.validatePaymentBelongsToOrder(
+                paymentId,
+                orderId);
+
         paymentService.applyAuthorizationResult(
                 paymentId,
                 result);
 
-        if (result.status()
-                == AuthorizationResultStatus.FAILED) {
+        if (result.status() == AuthorizationResultStatus.FAILED) {
 
             orderService.cancelOrderForPaymentFailure(
                     orderId);
