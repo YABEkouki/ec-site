@@ -29,7 +29,12 @@ import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.service.ShippingAddressService;
+import com.example.ecsite.service.payment.PaymentAuthorizationPreparation;
+import com.example.ecsite.service.payment.PaymentAuthorizationService;
 import com.example.ecsite.service.payment.PaymentCancellationService;
+import com.example.ecsite.service.payment.PaymentService;
+
+import jakarta.servlet.http.HttpSession;
 
 @Controller
 @RequestMapping("/orders")
@@ -42,6 +47,8 @@ public class OrderController {
     private final OrderContentChangeHistoryService orderContentChangeHistoryService;
     private final Validator validator;
     private final PaymentCancellationService paymentCancellationService;
+    private final PaymentService paymentService;
+    private final PaymentAuthorizationService paymentAuthorizationService;
 
     public OrderController(
             OrderService orderService,
@@ -50,7 +57,9 @@ public class OrderController {
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderContentChangeHistoryService orderContentChangeHistoryService,
             Validator validator,
-            PaymentCancellationService paymentCancellationService) {
+            PaymentCancellationService paymentCancellationService,
+            PaymentService paymentService,
+            PaymentAuthorizationService paymentAuthorizationService) {
 
         this.orderService = orderService;
         this.orderStatusHistoryService = orderStatusHistoryService;
@@ -59,6 +68,8 @@ public class OrderController {
         this.orderContentChangeHistoryService = orderContentChangeHistoryService;
         this.validator = validator;
         this.paymentCancellationService = paymentCancellationService;
+        this.paymentService = paymentService;
+        this.paymentAuthorizationService = paymentAuthorizationService;
     }
 
     @GetMapping
@@ -95,6 +106,8 @@ public class OrderController {
                 id,
                 loginUser.getId());
 
+        boolean canResumePayment = paymentService.canResumeAuthorization(order);
+
         model.addAttribute("order", order);
 
         model.addAttribute(
@@ -120,6 +133,10 @@ public class OrderController {
         model.addAttribute(
                 "canChangeShippingAddress",
                 orderService.canChangeShippingAddress(order));
+
+        model.addAttribute(
+                "canResumePayment",
+                canResumePayment);
 
         return "orders/detail";
     }
@@ -215,6 +232,54 @@ public class OrderController {
         }
 
         return "redirect:/orders/" + id;
+    }
+
+    @PostMapping("/{id}/payment/resume")
+    public String resumePayment(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            RedirectAttributes redirectAttributes,
+            HttpSession session) {
+
+        Order order = orderService.findOrderByIdAndUserId(
+                id,
+                loginUser.getId());
+
+        if (!paymentService.canResumeAuthorization(order)) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "現在、この注文のカード決済は再開できません。");
+
+            return "redirect:/orders/" + id;
+        }
+
+        try {
+
+            PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
+
+            session.setAttribute(
+                    "checkoutOrderId",
+                    id);
+
+            session.setAttribute(
+                    "checkoutPaymentId",
+                    preparation.paymentId());
+
+            session.setAttribute(
+                    "checkoutPaymentClientSecret",
+                    preparation.clientSecret());
+
+            return "redirect:/checkout/payment";
+
+        } catch (PaymentGatewayException ex) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "カード決済を開始できませんでした。しばらくしてからもう一度お試しください。");
+
+            return "redirect:/orders/" + id;
+        }
     }
 
     @GetMapping("/{id}/items")

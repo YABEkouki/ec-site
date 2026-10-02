@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,6 +59,40 @@ public class PaymentService {
     @Transactional
     public PaymentAuthorizationStart startAuthorization(Order order) {
 
+        List<Payment> payments = paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(
+                        order.getId());
+
+        List<Payment> pendingPayments = payments.stream()
+                .filter(payment -> payment.getProvider() == PaymentProvider.PAYJP)
+                .filter(payment -> payment.getPaymentMethod() == PaymentMethod.CARD)
+                .filter(payment -> payment.getStatus() == PaymentStatus.PENDING)
+                .toList();
+
+        if (pendingPayments.size() > 1) {
+            throw new IllegalStateException(
+                    "複数の処理中決済が存在するため、与信を開始できません。");
+        }
+
+        if (pendingPayments.size() == 1) {
+
+            Payment payment = pendingPayments.getFirst();
+
+            PaymentTransaction transaction = paymentTransactionRepository
+                    .findByPaymentIdAndTransactionTypeAndStatus(
+                            payment.getId(),
+                            PaymentTransactionType.AUTHORIZE,
+                            PaymentTransactionStatus.PENDING)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "処理中決済に対応する与信操作が見つかりません。"));
+
+            return new PaymentAuthorizationStart(
+                    payment.getId(),
+                    transaction.getId(),
+                    payment.getAmount(),
+                    transaction.getIdempotencyKey());
+        }
+
         LocalDateTime now = LocalDateTime.now(clock);
 
         Payment payment = new Payment(
@@ -84,6 +119,56 @@ public class PaymentService {
                 transaction.getId(),
                 payment.getAmount(),
                 transaction.getIdempotencyKey());
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<String> findProviderPaymentId(Long paymentId) {
+
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "決済情報が見つかりません。"));
+
+        return Optional.ofNullable(payment.getProviderPaymentId())
+                .filter(providerPaymentId -> !providerPaymentId.isBlank());
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canResumeAuthorization(Order order) {
+
+        List<Payment> pendingPayments = paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(order.getId())
+                .stream()
+                .filter(payment -> payment.getProvider() == PaymentProvider.PAYJP)
+                .filter(payment -> payment.getPaymentMethod() == PaymentMethod.CARD)
+                .filter(payment -> payment.getStatus() == PaymentStatus.PENDING)
+                .toList();
+
+        if (pendingPayments.size() != 1) {
+            return false;
+        }
+
+        Payment payment = pendingPayments.getFirst();
+
+        if (payment.getAmount() != order.getTotalAmount()) {
+            return false;
+        }
+
+        if (payment.getProviderPaymentId() != null
+                && !payment.getProviderPaymentId().isBlank()) {
+            return false;
+        }
+
+        Optional<PaymentTransaction> transaction = paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING);
+
+        if (transaction.isEmpty()) {
+            return false;
+        }
+
+        return transaction.get().getOrderContentRevision() == order.getContentRevision();
     }
 
     @Transactional

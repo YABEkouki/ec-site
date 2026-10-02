@@ -157,6 +157,13 @@
             </a>
         </p>
 
+        <form th:if="${canResumePayment}" th:action="@{/orders/{id}/payment/resume(id=${order.id})}" method="post"
+            class="d-inline">
+            <button type="submit" class="btn btn-primary">
+                カード決済を再開
+            </button>
+        </form>
+
         <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).PAID}">
             支払済みのため、画面からキャンセルできません。
         </p>

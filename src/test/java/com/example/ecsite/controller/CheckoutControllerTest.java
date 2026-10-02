@@ -284,6 +284,80 @@ class CheckoutControllerTest {
     }
 
     @Test
+    void placeOrderRedirectsToOrderDetailWhenPaymentAuthorizationFails() {
+
+        Cart cart = createCart();
+        CheckoutForm checkoutForm = createCheckoutForm();
+
+        Order order = new Order(
+                USER_ID,
+                1000,
+                LocalDateTime.of(2026, 10, 2, 10, 0),
+                LocalDateTime.of(2026, 10, 2, 14, 0));
+
+        when(session.getAttribute("checkoutToken"))
+                .thenReturn(CHECKOUT_TOKEN);
+
+        when(orderService.createOrder(
+                USER_ID,
+                USERNAME,
+                cart,
+                checkoutForm))
+                .thenReturn(order);
+
+        when(paymentAuthorizationService
+                .prepareAuthorization(order))
+                .thenThrow(new PaymentGatewayException(
+                        "PAY.JPとの通信に失敗しました。"));
+
+        BindingResult bindingResult = new BeanPropertyBindingResult(
+                checkoutForm,
+                "checkoutForm");
+
+        RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
+
+        String view = controller.placeOrder(
+                checkoutForm,
+                bindingResult,
+                cart,
+                loginUser,
+                CHECKOUT_TOKEN,
+                redirectAttributes,
+                session,
+                sessionStatus);
+
+        assertEquals(
+                "redirect:/orders/" + order.getId(),
+                view);
+
+        assertEquals(
+                "注文は受け付けましたが、カード決済を開始できませんでした。"
+                        + "注文詳細からカード決済を再開してください。",
+                redirectAttributes
+                        .getFlashAttributes()
+                        .get("errorMessage"));
+
+        verify(orderService)
+                .createOrder(
+                        USER_ID,
+                        USERNAME,
+                        cart,
+                        checkoutForm);
+
+        verify(paymentAuthorizationService)
+                .prepareAuthorization(order);
+
+        verify(session, never())
+                .setAttribute(
+                        org.mockito.ArgumentMatchers.eq(
+                                "checkoutPaymentClientSecret"),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
+    @Test
     void paymentDisplaysPaymentPageWhenSessionStateExists() {
 
         when(session.getAttribute("checkoutOrderId"))

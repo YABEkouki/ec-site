@@ -71,6 +71,9 @@ class PaymentAuthorizationServiceTest {
         when(paymentService.startAuthorization(order))
                 .thenReturn(start);
 
+        when(paymentService.findProviderPaymentId(paymentId))
+                .thenReturn(java.util.Optional.empty());
+
         when(paymentGateway.prepareAuthorization(
                 new com.example.ecsite.payment.AuthorizationRequest(
                         amount,
@@ -122,6 +125,9 @@ class PaymentAuthorizationServiceTest {
 
         when(paymentService.startAuthorization(order))
                 .thenReturn(start);
+
+        when(paymentService.findProviderPaymentId(paymentId))
+                .thenReturn(java.util.Optional.empty());
 
         when(paymentGateway.prepareAuthorization(
                 new com.example.ecsite.payment.AuthorizationRequest(
@@ -240,4 +246,93 @@ class PaymentAuthorizationServiceTest {
         verifyNoInteractions(
                 paymentAuthorizationResultService);
     }
+
+    @Test
+    void prepareAuthorizationRetriesPendingAuthorizationWithoutProviderPaymentId() {
+
+        Long paymentId = 10L;
+        Long transactionId = 20L;
+        int amount = 3300;
+        String idempotencyKey = "existing-authorization-key";
+        String providerPaymentId = "pf_test_123";
+        String clientSecret = "client_secret_test";
+
+        PaymentAuthorizationStart start = new PaymentAuthorizationStart(
+                paymentId,
+                transactionId,
+                amount,
+                idempotencyKey);
+
+        AuthorizationPreparation preparation = new AuthorizationPreparation(
+                providerPaymentId,
+                clientSecret);
+
+        when(paymentService.startAuthorization(order))
+                .thenReturn(start);
+
+        when(paymentService.findProviderPaymentId(paymentId))
+                .thenReturn(java.util.Optional.empty());
+
+        when(paymentGateway.prepareAuthorization(
+                new com.example.ecsite.payment.AuthorizationRequest(
+                        amount,
+                        idempotencyKey)))
+                .thenReturn(preparation);
+
+        PaymentAuthorizationPreparation actual = service.prepareAuthorization(order);
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                paymentId,
+                actual.paymentId());
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                clientSecret,
+                actual.clientSecret());
+
+        verify(paymentGateway)
+                .prepareAuthorization(
+                        new com.example.ecsite.payment.AuthorizationRequest(
+                                amount,
+                                idempotencyKey));
+
+        verify(paymentService)
+                .setProviderPaymentId(
+                        paymentId,
+                        providerPaymentId);
+    }
+
+    @Test
+    void prepareAuthorizationRejectsRetryWhenProviderPaymentIdAlreadyExists() {
+
+        Long paymentId = 10L;
+        Long transactionId = 20L;
+        int amount = 3300;
+        String idempotencyKey = "existing-authorization-key";
+
+        PaymentAuthorizationStart start = new PaymentAuthorizationStart(
+                paymentId,
+                transactionId,
+                amount,
+                idempotencyKey);
+
+        when(paymentService.startAuthorization(order))
+                .thenReturn(start);
+
+        when(paymentService.findProviderPaymentId(paymentId))
+                .thenReturn(java.util.Optional.of("pf_test_123"));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.prepareAuthorization(order));
+
+        verify(paymentGateway, never())
+                .prepareAuthorization(
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(paymentService, never())
+                .setProviderPaymentId(
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyString());
+    }
+
 }

@@ -72,6 +72,12 @@ class PaymentServiceTest {
         when(order.getTotalAmount()).thenReturn(12_345);
         when(order.getContentRevision()).thenReturn(2);
 
+        when(order.getId()).thenReturn(100L);
+
+        when(paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of());
+
         paymentService.startAuthorization(order);
 
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
@@ -108,6 +114,151 @@ class PaymentServiceTest {
         assertEquals(
                 transaction.getIdempotencyKey().trim(),
                 transaction.getIdempotencyKey());
+    }
+
+    @Test
+    void startAuthorizationReusesExistingPendingPaymentAndTransaction() {
+
+        Order order = mock(Order.class);
+
+        when(order.getId()).thenReturn(100L);
+
+        Payment payment = createPayment(order);
+        when(order.getTotalAmount()).thenReturn(12_345);
+        when(order.getContentRevision()).thenReturn(2);
+
+        createPayment(order);
+
+        PaymentTransaction transaction = new PaymentTransaction(
+                payment,
+                PaymentTransactionType.AUTHORIZE,
+                12_345,
+                2,
+                "authorization-key-123",
+                LocalDateTime.of(
+                        2026, 10, 1, 9, 30));
+
+        when(paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(payment));
+
+        when(paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING))
+                .thenReturn(Optional.of(transaction));
+
+        PaymentAuthorizationStart result = paymentService.startAuthorization(order);
+
+        assertEquals(
+                payment.getId(),
+                result.paymentId());
+
+        assertEquals(
+                transaction.getId(),
+                result.transactionId());
+
+        assertEquals(
+                12_345,
+                result.amount());
+
+        assertEquals(
+                "authorization-key-123",
+                result.idempotencyKey());
+
+        verify(paymentRepository, never())
+                .save(any(Payment.class));
+
+        verify(paymentTransactionRepository, never())
+                .save(any(PaymentTransaction.class));
+    }
+
+    @Test
+    void startAuthorizationRejectsMultiplePendingPayments() {
+
+        Order order = mock(Order.class);
+
+        when(order.getId()).thenReturn(100L);
+
+        Payment payment1 = createPayment(order);
+        Payment payment2 = createPayment(order);
+
+        when(paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(
+                        payment1,
+                        payment2));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> paymentService.startAuthorization(order));
+
+        verify(paymentTransactionRepository, never())
+                .save(any(PaymentTransaction.class));
+    }
+
+    @Test
+    void startAuthorizationRejectsPendingPaymentWithoutPendingAuthorizationTransaction() {
+
+        Order order = mock(Order.class);
+
+        when(order.getId()).thenReturn(100L);
+
+        Payment payment = createPayment(order);
+
+        when(paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(payment));
+
+        when(paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> paymentService.startAuthorization(order));
+
+        verify(paymentRepository, never())
+                .save(any(Payment.class));
+
+        verify(paymentTransactionRepository, never())
+                .save(any(PaymentTransaction.class));
+    }
+
+    @Test
+    void findProviderPaymentIdReturnsStoredId() {
+
+        Order order = mock(Order.class);
+        Payment payment = createPayment(order);
+
+        payment.setProviderPaymentId(
+                "pf_test_123",
+                LocalDateTime.of(2026, 10, 1, 9, 30));
+
+        when(paymentRepository.findById(10L))
+                .thenReturn(Optional.of(payment));
+
+        assertEquals(
+                Optional.of("pf_test_123"),
+                paymentService.findProviderPaymentId(10L));
+    }
+
+    @Test
+    void findProviderPaymentIdReturnsEmptyWhenNotSet() {
+
+        Order order = mock(Order.class);
+        Payment payment = createPayment(order);
+
+        when(paymentRepository.findById(10L))
+                .thenReturn(Optional.of(payment));
+
+        assertEquals(
+                Optional.empty(),
+                paymentService.findProviderPaymentId(10L));
     }
 
     @Test
@@ -1171,6 +1322,155 @@ class PaymentServiceTest {
 
         assertFalse(
                 paymentService.requiresAuthorizationCancellation(orderId));
+    }
+
+    @Test
+    void canResumeAuthorizationReturnsTrueForPendingPayJpCardAuthorization() {
+
+        Order order = mock(Order.class);
+        when(order.getId()).thenReturn(100L);
+        when(order.getTotalAmount()).thenReturn(12_345);
+
+        Payment payment = createPayment(order);
+
+        PaymentTransaction transaction = mock(PaymentTransaction.class);
+
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(payment));
+
+        when(paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING))
+                .thenReturn(Optional.of(transaction));
+
+        assertTrue(
+                paymentService.canResumeAuthorization(order));
+    }
+
+    @Test
+    void canResumeAuthorizationReturnsFalseWhenPendingPaymentDoesNotExist() {
+
+        Order order = mock(Order.class);
+        when(order.getId()).thenReturn(100L);
+
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of());
+
+        assertFalse(
+                paymentService.canResumeAuthorization(order));
+
+        verify(paymentTransactionRepository, never())
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        anyLong(),
+                        any(),
+                        any());
+    }
+
+    @Test
+    void canResumeAuthorizationReturnsFalseWhenPendingAuthorizationTransactionDoesNotExist() {
+
+        Order order = mock(Order.class);
+
+        Payment payment = createPayment(order);
+
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(payment));
+
+        when(paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING))
+                .thenReturn(Optional.empty());
+
+        assertFalse(
+                paymentService.canResumeAuthorization(order));
+    }
+
+    @Test
+    void canResumeAuthorizationReturnsFalseWhenProviderPaymentIdAlreadyExists() {
+
+        Order order = mock(Order.class);
+        when(order.getId()).thenReturn(100L);
+
+        Payment payment = createPayment(order);
+
+        payment.setProviderPaymentId(
+                "pf_test_123",
+                LocalDateTime.of(2026, 10, 2, 13, 0));
+
+        PaymentTransaction transaction = mock(PaymentTransaction.class);
+
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(payment));
+
+        when(paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING))
+                .thenReturn(Optional.of(transaction));
+
+        assertFalse(
+                paymentService.canResumeAuthorization(order));
+    }
+
+    @Test
+    void canResumeAuthorizationReturnsFalseWhenPaymentAmountDoesNotMatchOrder() {
+
+        Order order = mock(Order.class);
+
+        when(order.getId()).thenReturn(100L);
+        when(order.getTotalAmount()).thenReturn(5000);
+
+        Payment payment = createPayment(order);
+
+        PaymentTransaction transaction = mock(PaymentTransaction.class);
+
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(payment));
+
+        when(paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING))
+                .thenReturn(Optional.of(transaction));
+
+        assertFalse(
+                paymentService.canResumeAuthorization(order));
+    }
+
+    @Test
+    void canResumeAuthorizationReturnsFalseWhenContentRevisionDoesNotMatch() {
+
+        Order order = mock(Order.class);
+
+        when(order.getId()).thenReturn(100L);
+        when(order.getTotalAmount()).thenReturn(12_345);
+        when(order.getContentRevision()).thenReturn(3);
+
+        Payment payment = createPayment(order);
+
+        PaymentTransaction transaction = mock(PaymentTransaction.class);
+
+        when(transaction.getOrderContentRevision())
+                .thenReturn(2);
+
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .thenReturn(List.of(payment));
+
+        when(paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING))
+                .thenReturn(Optional.of(transaction));
+
+        assertFalse(
+                paymentService.canResumeAuthorization(order));
     }
 
     private Payment createPayment(Order order) {
