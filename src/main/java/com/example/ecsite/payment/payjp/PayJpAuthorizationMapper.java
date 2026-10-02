@@ -18,10 +18,15 @@ class PayJpAuthorizationMapper {
 
             case "requires_payment_method" ->
                 result(
-                        AuthorizationResultStatus.FAILED,
+                        AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,
                         response.lastPaymentError());
 
-            case "requires_confirmation", "processing" ->
+            case "requires_confirmation" ->
+                result(
+                        AuthorizationResultStatus.REQUIRES_CONFIRMATION,
+                        null);
+
+            case "processing" ->
                 result(AuthorizationResultStatus.PENDING, null);
 
             case "canceled" ->

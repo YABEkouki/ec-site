@@ -449,6 +449,100 @@ class CheckoutControllerTest {
                 exception.getMessage());
     }
 
+    @Test
+    void paymentReturnRedirectsToPaymentWhenPaymentMethodIsRequired() {
+
+        Long orderId = 100L;
+        Long paymentId = 20L;
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(orderId);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(paymentId);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,
+                null,
+                "card_declined",
+                "Card was declined");
+
+        when(paymentAuthorizationService.refreshAuthorization(
+                orderId,
+                paymentId))
+                .thenReturn(result);
+
+        String viewName = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/checkout/payment",
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "カード情報を確認して、もう一度お試しください。");
+
+        verify(session, never())
+                .removeAttribute(
+                        org.mockito.ArgumentMatchers.anyString());
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
+    @Test
+    void paymentReturnRedirectsToPaymentWhenConfirmationIsRequired() {
+
+        Long orderId = 100L;
+        Long paymentId = 20L;
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(session.getAttribute("checkoutOrderId"))
+                .thenReturn(orderId);
+
+        when(session.getAttribute("checkoutPaymentId"))
+                .thenReturn(paymentId);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_CONFIRMATION,
+                null,
+                null,
+                null);
+
+        when(paymentAuthorizationService.refreshAuthorization(
+                orderId,
+                paymentId))
+                .thenReturn(result);
+
+        String viewName = controller.paymentReturn(
+                session,
+                sessionStatus,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/checkout/payment",
+                viewName);
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "カード決済を続けてください。");
+
+        verify(session, never())
+                .removeAttribute(
+                        org.mockito.ArgumentMatchers.anyString());
+
+        verify(sessionStatus, never())
+                .setComplete();
+    }
+
     private Cart createCart() {
 
         Cart cart = new Cart();
