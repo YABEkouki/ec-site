@@ -34,3 +34,8 @@ build/
 
 ### Upload Data ###
 uploads/
+
+### Local Secrets ###
+.env
+.env.*
+!.env.example
