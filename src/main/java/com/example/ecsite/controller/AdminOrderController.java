@@ -33,6 +33,11 @@ import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
+import com.example.ecsite.payment.CancellationResult;
+import com.example.ecsite.payment.CancellationResultStatus;
+import com.example.ecsite.payment.CaptureResult;
+import com.example.ecsite.payment.CaptureResultStatus;
+import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
@@ -43,6 +48,9 @@ import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
+import com.example.ecsite.service.payment.AdminPaymentCancellationService;
+import com.example.ecsite.service.payment.PaymentCaptureService;
+import com.example.ecsite.service.payment.PaymentService;
 import com.example.ecsite.util.AdminReturnUrlHelper;
 
 import jakarta.validation.Valid;
@@ -60,6 +68,9 @@ public class AdminOrderController {
     private final OrderAssigneeHistoryService orderAssigneeHistoryService;
     private final OrderContentChangeHistoryService orderContentChangeHistoryService;
     private final AdminAccountService adminAccountService;
+    private final PaymentService paymentService;
+    private final PaymentCaptureService paymentCaptureService;
+    private final AdminPaymentCancellationService adminPaymentCancellationService;
 
     public AdminOrderController(
             OrderService orderService,
@@ -70,7 +81,10 @@ public class AdminOrderController {
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
             OrderAssigneeHistoryService orderAssigneeHistoryService,
             OrderContentChangeHistoryService orderContentChangeHistoryService,
-            AdminAccountService adminAccountService) {
+            AdminAccountService adminAccountService,
+            PaymentService paymentService,
+            PaymentCaptureService paymentCaptureService,
+            AdminPaymentCancellationService adminPaymentCancellationService) {
 
         this.orderService = orderService;
         this.orderCsvService = orderCsvService;
@@ -81,6 +95,9 @@ public class AdminOrderController {
         this.orderAssigneeHistoryService = orderAssigneeHistoryService;
         this.orderContentChangeHistoryService = orderContentChangeHistoryService;
         this.adminAccountService = adminAccountService;
+        this.paymentService = paymentService;
+        this.paymentCaptureService = paymentCaptureService;
+        this.adminPaymentCancellationService = adminPaymentCancellationService;
     }
 
     @GetMapping
@@ -191,6 +208,13 @@ public class AdminOrderController {
         String safeReturnUrl = AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl);
 
         Order order = orderService.findOrderWithItems(id);
+
+        boolean canCaptureForShipment = order.getStatus() == OrderStatus.ORDERED
+                && paymentService.canCaptureForShipment(id);
+
+        model.addAttribute(
+                "canCaptureForShipment",
+                canCaptureForShipment);
 
         model.addAttribute(
                 "order",
@@ -308,6 +332,11 @@ public class AdminOrderController {
         }
 
         try {
+            if (paymentService.canCaptureForShipment(id)) {
+                throw new InvalidOrderStatusException(
+                        "カード与信済みの注文は、売上確定して発送してください。");
+            }
+
             orderService.markAsPaid(
                     id,
                     loginUser.getId(),
@@ -370,6 +399,72 @@ public class AdminOrderController {
                 returnUrl);
     }
 
+    @PostMapping("/{id}/capture-and-ship")
+    public String captureAndShip(
+            @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "変更理由・備考は500文字以内で入力してください。");
+
+            return redirectToDetail(
+                    id,
+                    returnUrl);
+        }
+
+        try {
+            CaptureResult result = paymentCaptureService.captureForShipment(
+                    id,
+                    loginUser.getId(),
+                    loginUser.getUsername(),
+                    form.getInternalNote());
+
+            if (result.status() == CaptureResultStatus.CAPTURED) {
+
+                redirectAttributes.addFlashAttribute(
+                        "successMessage",
+                        "売上を確定し、注文を発送済みに変更しました。");
+
+            } else if (result.status() == CaptureResultStatus.FAILED) {
+
+                redirectAttributes.addFlashAttribute(
+                        "errorMessage",
+                        "売上確定に失敗したため、注文は発送済みに変更していません。");
+
+            } else {
+
+                redirectAttributes.addFlashAttribute(
+                        "errorMessage",
+                        "売上確定結果を確認中です。"
+                                + "注文はまだ発送済みに変更していません。");
+            }
+
+        } catch (InvalidOrderStatusException
+                | IllegalStateException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    e.getMessage());
+
+        } catch (PaymentGatewayException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "売上確定結果を確認できませんでした。"
+                            + "注文はまだ発送済みに変更していません。");
+        }
+
+        return redirectToDetail(
+                id,
+                returnUrl);
+    }
+
     @PostMapping("/{id}/cancel")
     public String cancel(
             @PathVariable Long id,
@@ -390,20 +485,51 @@ public class AdminOrderController {
         }
 
         try {
-            orderService.cancelOrder(
-                    id,
-                    loginUser.getId(),
-                    loginUser.getUsername(),
-                    form.getInternalNote());
+            if (paymentService.requiresAuthorizationCancellation(id)) {
 
-            redirectAttributes.addFlashAttribute(
-                    "successMessage",
-                    "注文をキャンセルしました。");
+                CancellationResult result = adminPaymentCancellationService.cancel(
+                        id,
+                        loginUser.getId(),
+                        loginUser.getUsername(),
+                        form.getInternalNote());
 
-        } catch (InvalidOrderStatusException e) {
+                if (result.status() == CancellationResultStatus.CANCELLED) {
+
+                    redirectAttributes.addFlashAttribute(
+                            "successMessage",
+                            "決済与信を取り消し、注文をキャンセルしました。");
+
+                } else {
+
+                    redirectAttributes.addFlashAttribute(
+                            "errorMessage",
+                            "決済取消結果を確認中です。"
+                                    + "注文はまだキャンセルしていません。");
+                }
+
+            } else {
+                orderService.cancelOrder(
+                        id,
+                        loginUser.getId(),
+                        loginUser.getUsername(),
+                        form.getInternalNote());
+
+                redirectAttributes.addFlashAttribute(
+                        "successMessage",
+                        "注文をキャンセルしました。");
+            }
+
+        } catch (InvalidOrderStatusException
+                | IllegalStateException e) {
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
                     e.getMessage());
+        } catch (PaymentGatewayException e) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "決済取消結果を確認できませんでした。"
+                            + "注文はまだキャンセルしていません。");
         }
 
         return redirectToDetail(

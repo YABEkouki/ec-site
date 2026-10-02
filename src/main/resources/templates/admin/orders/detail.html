@@ -286,7 +286,7 @@
                 <textarea id="internalNoteOrdered" name="internalNote" rows="3" maxlength="500"></textarea>
             </p>
 
-            <button th:if="${order.canMarkAsPaid()}" type="submit" class="button-primary"
+            <button th:if="${order.canMarkAsPaid() and !canCaptureForShipment}" type="submit" class="button-primary"
                 th:formaction="@{/admin/orders/{id}/pay(id=${order.id})}" onclick="return confirm('この注文を支払済みにしますか？');">
                 支払済みにする
             </button>
@@ -295,6 +295,30 @@
                 th:formaction="@{/admin/orders/{id}/cancel(id=${order.id})}"
                 onclick="return confirm('この注文をキャンセルしますか？');">
                 キャンセル
+            </button>
+
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+
+        </form>
+
+    </div>
+
+    <div th:if="${canCaptureForShipment}">
+
+        <form th:action="@{/admin/orders/{id}/capture-and-ship(id=${order.id})}" method="post">
+
+            <p>
+                <label for="internalNoteCaptureAndShip">
+                    変更理由・備考（任意）
+                </label>
+            </p>
+
+            <p>
+                <textarea id="internalNoteCaptureAndShip" name="internalNote" rows="3" maxlength="500"></textarea>
+            </p>
+
+            <button type="submit" class="button-primary" onclick="return confirm('カード決済の売上を確定し、この注文を発送済みにしますか？');">
+                売上確定して発送済みにする
             </button>
 
             <input type="hidden" name="returnUrl" th:value="${returnUrl}">

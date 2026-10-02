@@ -3,6 +3,7 @@ package com.example.ecsite.service.payment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
@@ -10,13 +11,13 @@ import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.service.OrderService;
 
 @Service
-public class PaymentCancellationResultService {
+public class AdminPaymentCancellationResultService {
 
+    private final OrderRepository orderRepository;
     private final PaymentService paymentService;
     private final OrderService orderService;
-    private final OrderRepository orderRepository;
 
-    public PaymentCancellationResultService(
+    public AdminPaymentCancellationResultService(
             OrderRepository orderRepository,
             PaymentService paymentService,
             OrderService orderService) {
@@ -30,19 +31,18 @@ public class PaymentCancellationResultService {
     public void apply(
             Long orderId,
             Long paymentId,
-            Long userId,
+            Long accountId,
             String username,
+            String internalNote,
             CancellationResult result) {
 
-        orderRepository
-                .findByIdAndUserIdForUpdate(
-                        orderId,
-                        userId)
+        Order order = orderRepository
+                .findByIdForUpdate(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
         paymentService.validatePaymentBelongsToOrder(
                 paymentId,
-                orderId);
+                order.getId());
 
         paymentService.applyCancellationResult(
                 paymentId,
@@ -52,9 +52,10 @@ public class PaymentCancellationResultService {
             return;
         }
 
-        orderService.cancelOrderForUserAfterPaymentCancellation(
-                orderId,
-                userId,
-                username);
+        orderService.cancelOrderAfterPaymentCancellation(
+                order,
+                accountId,
+                username,
+                internalNote);
     }
 }

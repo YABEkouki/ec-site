@@ -2,8 +2,10 @@ package com.example.ecsite.controller;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,6 +47,9 @@ import com.example.ecsite.form.AdminOrderHandlingStatusForm;
 import com.example.ecsite.form.AdminOrderNoteForm;
 import com.example.ecsite.form.AdminOrderSearchForm;
 import com.example.ecsite.form.AdminOrderStatusChangeForm;
+import com.example.ecsite.payment.CancellationResult;
+import com.example.ecsite.payment.CancellationResultStatus;
+import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
@@ -55,6 +60,9 @@ import com.example.ecsite.service.OrderNoteService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
+import com.example.ecsite.service.payment.AdminPaymentCancellationService;
+import com.example.ecsite.service.payment.PaymentCaptureService;
+import com.example.ecsite.service.payment.PaymentService;
 
 @ExtendWith(MockitoExtension.class)
 class AdminOrderControllerTest {
@@ -92,6 +100,15 @@ class AdminOrderControllerTest {
     @Mock
     private OrderContentChangeHistoryService orderContentChangeHistoryService;
 
+    @Mock
+    private PaymentService paymentService;
+
+    @Mock
+    private PaymentCaptureService paymentCaptureService;
+
+    @Mock
+    private AdminPaymentCancellationService adminPaymentCancellationService;
+
     private AdminOrderController adminOrderController;
 
     private static final Long ADMIN_ID = 20L;
@@ -108,7 +125,10 @@ class AdminOrderControllerTest {
                 orderShippingAddressHistoryService,
                 orderAssigneeHistoryService,
                 orderContentChangeHistoryService,
-                adminAccountService);
+                adminAccountService,
+                paymentService,
+                paymentCaptureService,
+                adminPaymentCancellationService);
     }
 
     @Test
@@ -636,6 +656,48 @@ class AdminOrderControllerTest {
                 .addFlashAttribute(
                         "errorMessage",
                         exception.getMessage());
+    }
+
+    @Test
+    void markAsPaidRejectsAuthorizedCardPayment() {
+
+        Long orderId = 1L;
+
+        when(paymentService.canCaptureForShipment(orderId))
+                .thenReturn(true);
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+
+        form.setInternalNote("入金確認");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        String viewName = adminOrderController.markAsPaid(
+                orderId,
+                form,
+                bindingResult,
+                null,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
+                viewName);
+
+        verify(orderService, never())
+                .markAsPaid(
+                        any(),
+                        any(),
+                        any(),
+                        any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "カード与信済みの注文は、売上確定して発送してください。");
     }
 
     @Test
@@ -1754,6 +1816,200 @@ class AdminOrderControllerTest {
                 "redirect:/admin/orders/1"
                         + "?returnUrl=%2Fadmin%2Forders%3FassigneeFilter%3DME%26page%3D2%26size%3D20",
                 viewName);
+    }
+
+    @Test
+    void cancelAuthorizedCardPaymentUsesPaymentCancellationService() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+        form.setInternalNote("管理者キャンセル");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(paymentService.requiresAuthorizationCancellation(orderId))
+                .thenReturn(true);
+
+        CancellationResult result = new CancellationResult(
+                CancellationResultStatus.CANCELLED,
+                "provider-transaction-id");
+
+        when(adminPaymentCancellationService.cancel(
+                orderId,
+                ADMIN_ID,
+                ADMIN_USERNAME,
+                "管理者キャンセル"))
+                .thenReturn(result);
+
+        String viewName = adminOrderController.cancel(
+                orderId,
+                form,
+                bindingResult,
+                null,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
+                viewName);
+
+        verify(adminPaymentCancellationService)
+                .cancel(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME,
+                        "管理者キャンセル");
+
+        verify(orderService, never())
+                .cancelOrder(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "決済与信を取り消し、注文をキャンセルしました。");
+    }
+
+    @Test
+    void cancelAuthorizedCardPaymentDisplaysPendingMessageWhenCancellationIsPending() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+        form.setInternalNote("管理者キャンセル");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(paymentService.requiresAuthorizationCancellation(orderId))
+                .thenReturn(true);
+
+        CancellationResult result = new CancellationResult(
+                CancellationResultStatus.PENDING,
+                "provider-transaction-id");
+
+        when(adminPaymentCancellationService.cancel(
+                orderId,
+                ADMIN_ID,
+                ADMIN_USERNAME,
+                "管理者キャンセル"))
+                .thenReturn(result);
+
+        String viewName = adminOrderController.cancel(
+                orderId,
+                form,
+                bindingResult,
+                null,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
+                viewName);
+
+        verify(adminPaymentCancellationService)
+                .cancel(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME,
+                        "管理者キャンセル");
+
+        verify(orderService, never())
+                .cancelOrder(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "決済取消結果を確認中です。"
+                                + "注文はまだキャンセルしていません。");
+    }
+
+    @Test
+    void cancelAuthorizedCardPaymentDisplaysErrorWhenGatewayFails() {
+
+        when(loginUser.getId())
+                .thenReturn(ADMIN_ID);
+
+        when(loginUser.getUsername())
+                .thenReturn(ADMIN_USERNAME);
+
+        Long orderId = 1L;
+
+        AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
+        form.setInternalNote("管理者キャンセル");
+
+        BindingResult bindingResult = mock(BindingResult.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        when(paymentService.requiresAuthorizationCancellation(orderId))
+                .thenReturn(true);
+
+        when(adminPaymentCancellationService.cancel(
+                orderId,
+                ADMIN_ID,
+                ADMIN_USERNAME,
+                "管理者キャンセル"))
+                .thenThrow(new PaymentGatewayException(
+                        "PAY.JP cancellation failed"));
+
+        String viewName = adminOrderController.cancel(
+                orderId,
+                form,
+                bindingResult,
+                null,
+                loginUser,
+                redirectAttributes);
+
+        assertEquals(
+                "redirect:/admin/orders/" + orderId
+                        + "?returnUrl=%2Fadmin%2Forders",
+                viewName);
+
+        verify(adminPaymentCancellationService)
+                .cancel(
+                        orderId,
+                        ADMIN_ID,
+                        ADMIN_USERNAME,
+                        "管理者キャンセル");
+
+        verify(orderService, never())
+                .cancelOrder(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "決済取消結果を確認できませんでした。"
+                                + "注文はまだキャンセルしていません。");
     }
 
 }
