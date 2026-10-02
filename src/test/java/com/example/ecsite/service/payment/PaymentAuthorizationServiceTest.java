@@ -1,5 +1,6 @@
 package com.example.ecsite.service.payment;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.inOrder;
@@ -17,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.payment.AuthorizationPreparation;
+import com.example.ecsite.payment.AuthorizationRecovery;
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.AuthorizationResultStatus;
 import com.example.ecsite.payment.PaymentGateway;
@@ -178,9 +180,13 @@ class PaymentAuthorizationServiceTest {
                 paymentId))
                 .thenReturn(providerPaymentId);
 
+        AuthorizationRecovery recovery = new AuthorizationRecovery(
+                result,
+                "client_secret_test");
+
         when(paymentGateway.retrieveAuthorization(
                 providerPaymentId))
-                .thenReturn(result);
+                .thenReturn(recovery);
 
         AuthorizationResult actual = service.refreshAuthorization(
                 orderId,
@@ -333,6 +339,259 @@ class PaymentAuthorizationServiceTest {
                 .setProviderPaymentId(
                         org.mockito.ArgumentMatchers.anyLong(),
                         org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void recoverAuthorizationRetrievesExistingProviderPayment() {
+
+        Long paymentId = 20L;
+        Long orderId = 100L;
+
+        when(order.getId())
+                .thenReturn(orderId);
+
+        when(paymentService.getRecoverableAuthorizationPaymentId(order))
+                .thenReturn(paymentId);
+
+        when(paymentService.getProviderPaymentId(paymentId))
+                .thenReturn("pf_test_123");
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_ACTION,
+                null,
+                null,
+                null);
+
+        AuthorizationRecovery recovery = new AuthorizationRecovery(
+                result,
+                "client-secret-123");
+
+        when(paymentGateway.retrieveAuthorization("pf_test_123"))
+                .thenReturn(recovery);
+
+        PaymentAuthorizationRecovery actual = service.recoverAuthorization(order);
+
+        assertEquals(
+                paymentId,
+                actual.paymentId());
+
+        assertSame(
+                result,
+                actual.result());
+
+        assertEquals(
+                "client-secret-123",
+                actual.clientSecret());
+
+        assertEquals(
+                PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT,
+                actual.action());
+
+        verify(paymentService)
+                .getRecoverableAuthorizationPaymentId(order);
+
+        verify(paymentService)
+                .getProviderPaymentId(paymentId);
+
+        verify(paymentGateway)
+                .retrieveAuthorization("pf_test_123");
+
+        verify(paymentAuthorizationResultService)
+                .apply(
+                        orderId,
+                        paymentId,
+                        result);
+    }
+
+    @Test
+    void recoverAuthorizationAppliesAuthorizedResult() {
+
+        Long orderId = 100L;
+        Long paymentId = 20L;
+
+        when(order.getId())
+                .thenReturn(orderId);
+
+        when(paymentService.getRecoverableAuthorizationPaymentId(order))
+                .thenReturn(paymentId);
+
+        when(paymentService.getProviderPaymentId(paymentId))
+                .thenReturn("pf_test_123");
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.AUTHORIZED,
+                null,
+                null,
+                null);
+
+        AuthorizationRecovery recovery = new AuthorizationRecovery(
+                result,
+                "client-secret-123");
+
+        when(paymentGateway.retrieveAuthorization("pf_test_123"))
+                .thenReturn(recovery);
+
+        PaymentAuthorizationRecovery actual = service.recoverAuthorization(order);
+
+        assertEquals(
+                paymentId,
+                actual.paymentId());
+
+        assertEquals(
+                PaymentAuthorizationRecoveryAction.COMPLETED,
+                actual.action());
+
+        assertSame(
+                result,
+                actual.result());
+
+        verify(paymentAuthorizationResultService)
+                .apply(
+                        orderId,
+                        paymentId,
+                        result);
+    }
+
+    @Test
+    void recoverAuthorizationAppliesFailedResult() {
+
+        Long orderId = 100L;
+        Long paymentId = 20L;
+
+        when(order.getId())
+                .thenReturn(orderId);
+
+        when(paymentService.getRecoverableAuthorizationPaymentId(order))
+                .thenReturn(paymentId);
+
+        when(paymentService.getProviderPaymentId(paymentId))
+                .thenReturn("pf_test_123");
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.FAILED,
+                null,
+                null,
+                null);
+
+        AuthorizationRecovery recovery = new AuthorizationRecovery(
+                result,
+                "client-secret-123");
+
+        when(paymentGateway.retrieveAuthorization("pf_test_123"))
+                .thenReturn(recovery);
+
+        PaymentAuthorizationRecovery actual = service.recoverAuthorization(order);
+
+        assertEquals(
+                paymentId,
+                actual.paymentId());
+
+        assertEquals(
+                PaymentAuthorizationRecoveryAction.FAILED,
+                actual.action());
+
+        assertSame(
+                result,
+                actual.result());
+
+        verify(paymentAuthorizationResultService)
+                .apply(
+                        orderId,
+                        paymentId,
+                        result);
+    }
+
+    @Test
+    void recoverAuthorizationReturnsWaitForPendingResult() {
+
+        Long paymentId = 20L;
+
+        when(paymentService.getRecoverableAuthorizationPaymentId(order))
+                .thenReturn(paymentId);
+
+        when(paymentService.getProviderPaymentId(paymentId))
+                .thenReturn("pf_test_123");
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.PENDING,
+                null,
+                null,
+                null);
+
+        when(paymentGateway.retrieveAuthorization("pf_test_123"))
+                .thenReturn(new AuthorizationRecovery(
+                        result,
+                        "client-secret-123"));
+
+        PaymentAuthorizationRecovery actual = service.recoverAuthorization(order);
+
+        assertEquals(
+                PaymentAuthorizationRecoveryAction.WAIT,
+                actual.action());
+
+        verifyNoInteractions(paymentAuthorizationResultService);
+    }
+
+    @Test
+    void recoverAuthorizationReturnsResumeCheckoutForRequiresPaymentMethod() {
+
+        Long paymentId = 20L;
+
+        when(paymentService.getRecoverableAuthorizationPaymentId(order))
+                .thenReturn(paymentId);
+
+        when(paymentService.getProviderPaymentId(paymentId))
+                .thenReturn("pf_test_123");
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,
+                null,
+                "card_declined",
+                "Card was declined");
+
+        when(paymentGateway.retrieveAuthorization("pf_test_123"))
+                .thenReturn(new AuthorizationRecovery(
+                        result,
+                        "client-secret-123"));
+
+        PaymentAuthorizationRecovery actual = service.recoverAuthorization(order);
+
+        assertEquals(
+                PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT,
+                actual.action());
+
+        verifyNoInteractions(paymentAuthorizationResultService);
+    }
+
+    @Test
+    void recoverAuthorizationReturnsResumeCheckoutForRequiresConfirmation() {
+
+        Long paymentId = 20L;
+
+        when(paymentService.getRecoverableAuthorizationPaymentId(order))
+                .thenReturn(paymentId);
+
+        when(paymentService.getProviderPaymentId(paymentId))
+                .thenReturn("pf_test_123");
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_CONFIRMATION,
+                null,
+                null,
+                null);
+
+        when(paymentGateway.retrieveAuthorization("pf_test_123"))
+                .thenReturn(new AuthorizationRecovery(
+                        result,
+                        "client-secret-123"));
+
+        PaymentAuthorizationRecovery actual = service.recoverAuthorization(order);
+
+        assertEquals(
+                PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT,
+                actual.action());
+
+        verifyNoInteractions(paymentAuthorizationResultService);
     }
 
 }

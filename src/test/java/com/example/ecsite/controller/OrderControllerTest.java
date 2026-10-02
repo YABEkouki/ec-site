@@ -35,6 +35,8 @@ import com.example.ecsite.entity.ShippingAddress;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
+import com.example.ecsite.payment.AuthorizationResult;
+import com.example.ecsite.payment.AuthorizationResultStatus;
 import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
@@ -45,6 +47,8 @@ import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.service.ShippingAddressService;
 import com.example.ecsite.service.payment.PaymentAuthorizationPreparation;
+import com.example.ecsite.service.payment.PaymentAuthorizationRecovery;
+import com.example.ecsite.service.payment.PaymentAuthorizationRecoveryAction;
 import com.example.ecsite.service.payment.PaymentAuthorizationService;
 import com.example.ecsite.service.payment.PaymentCancellationService;
 import com.example.ecsite.service.payment.PaymentService;
@@ -1867,6 +1871,330 @@ class OrderControllerTest {
                 .addFlashAttribute(
                         "errorMessage",
                         "カード決済を開始できませんでした。しばらくしてからもう一度お試しください。");
+    }
+
+    @Test
+    void detailAllowsPaymentResumeWhenAuthorizationCanBeRecovered() {
+
+        Long orderId = 1L;
+        Long userId = 10L;
+
+        Order order = mock(Order.class);
+
+        when(loginUser.getId()).thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(orderId, userId))
+                .thenReturn(order);
+
+        when(paymentService.canResumeAuthorization(order))
+                .thenReturn(false);
+
+        when(paymentService.canRecoverAuthorization(order))
+                .thenReturn(true);
+
+        String viewName = orderController.detail(
+                orderId,
+                loginUser,
+                model);
+
+        assertEquals("orders/detail", viewName);
+
+        verify(model)
+                .addAttribute(
+                        "canResumePayment",
+                        true);
+    }
+
+    @Test
+    void resumePaymentRecoversExistingAuthorizationAndRedirectsToPayment() {
+
+        Long orderId = 100L;
+        Long userId = 10L;
+        Long paymentId = 20L;
+
+        Order order = mock(Order.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        HttpSession session = mock(HttpSession.class);
+
+        when(loginUser.getId()).thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(orderId, userId))
+                .thenReturn(order);
+
+        when(paymentService.canResumeAuthorization(order))
+                .thenReturn(false);
+
+        when(paymentService.canRecoverAuthorization(order))
+                .thenReturn(true);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_ACTION,
+                null,
+                null,
+                null);
+
+        when(paymentAuthorizationService.recoverAuthorization(order))
+                .thenReturn(new PaymentAuthorizationRecovery(
+                        paymentId,
+                        result,
+                        "client-secret-123",
+                        PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT));
+
+        String viewName = orderController.resumePayment(
+                orderId,
+                loginUser,
+                redirectAttributes,
+                session);
+
+        assertEquals(
+                "redirect:/checkout/payment",
+                viewName);
+
+        verify(paymentAuthorizationService, never())
+                .prepareAuthorization(order);
+
+        verify(paymentAuthorizationService)
+                .recoverAuthorization(order);
+
+        verify(session)
+                .setAttribute(
+                        "checkoutOrderId",
+                        orderId);
+
+        verify(session)
+                .setAttribute(
+                        "checkoutPaymentId",
+                        paymentId);
+
+        verify(session)
+                .setAttribute(
+                        "checkoutPaymentClientSecret",
+                        "client-secret-123");
+    }
+
+    @Test
+    void resumePaymentRedirectsToDetailWhenRecoveredAuthorizationIsPending() {
+
+        Long orderId = 100L;
+        Long userId = 10L;
+        Long paymentId = 20L;
+
+        Order order = mock(Order.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        HttpSession session = mock(HttpSession.class);
+
+        when(loginUser.getId()).thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(orderId, userId))
+                .thenReturn(order);
+
+        when(paymentService.canResumeAuthorization(order))
+                .thenReturn(false);
+
+        when(paymentService.canRecoverAuthorization(order))
+                .thenReturn(true);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.PENDING,
+                null,
+                null,
+                null);
+
+        when(paymentAuthorizationService.recoverAuthorization(order))
+                .thenReturn(new PaymentAuthorizationRecovery(
+                        paymentId,
+                        result,
+                        "client-secret-123",
+                        PaymentAuthorizationRecoveryAction.WAIT));
+
+        String viewName = orderController.resumePayment(
+                orderId,
+                loginUser,
+                redirectAttributes,
+                session);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(session, never())
+                .setAttribute(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "カード決済の処理状況を確認中です。しばらくしてからもう一度お試しください。");
+    }
+
+    @Test
+    void resumePaymentRedirectsToDetailWhenRecoveredAuthorizationIsCompleted() {
+
+        Long orderId = 100L;
+        Long userId = 10L;
+        Long paymentId = 20L;
+
+        Order order = mock(Order.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        HttpSession session = mock(HttpSession.class);
+
+        when(loginUser.getId()).thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(orderId, userId))
+                .thenReturn(order);
+
+        when(paymentService.canResumeAuthorization(order))
+                .thenReturn(false);
+
+        when(paymentService.canRecoverAuthorization(order))
+                .thenReturn(true);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.AUTHORIZED,
+                "ch_test_123",
+                null,
+                null);
+
+        when(paymentAuthorizationService.recoverAuthorization(order))
+                .thenReturn(new PaymentAuthorizationRecovery(
+                        paymentId,
+                        result,
+                        null,
+                        PaymentAuthorizationRecoveryAction.COMPLETED));
+
+        String viewName = orderController.resumePayment(
+                orderId,
+                loginUser,
+                redirectAttributes,
+                session);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(session, never())
+                .setAttribute(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "successMessage",
+                        "カードの与信が完了しています。");
+    }
+
+    @Test
+    void resumePaymentRedirectsToDetailWhenRecoveredAuthorizationFailed() {
+
+        Long orderId = 100L;
+        Long userId = 10L;
+        Long paymentId = 20L;
+
+        Order order = mock(Order.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        HttpSession session = mock(HttpSession.class);
+
+        when(loginUser.getId()).thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(orderId, userId))
+                .thenReturn(order);
+
+        when(paymentService.canResumeAuthorization(order))
+                .thenReturn(false);
+
+        when(paymentService.canRecoverAuthorization(order))
+                .thenReturn(true);
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.FAILED,
+                null,
+                "payment_failed",
+                "Payment failed");
+
+        when(paymentAuthorizationService.recoverAuthorization(order))
+                .thenReturn(new PaymentAuthorizationRecovery(
+                        paymentId,
+                        result,
+                        null,
+                        PaymentAuthorizationRecoveryAction.FAILED));
+
+        String viewName = orderController.resumePayment(
+                orderId,
+                loginUser,
+                redirectAttributes,
+                session);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(session, never())
+                .setAttribute(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "カード決済を完了できませんでした。");
+    }
+
+    @Test
+    void resumePaymentRedirectsToDetailWhenAuthorizationRecoveryGatewayFails() {
+
+        Long orderId = 100L;
+        Long userId = 10L;
+
+        Order order = mock(Order.class);
+
+        RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
+
+        HttpSession session = mock(HttpSession.class);
+
+        when(loginUser.getId()).thenReturn(userId);
+
+        when(orderService.findOrderByIdAndUserId(orderId, userId))
+                .thenReturn(order);
+
+        when(paymentService.canResumeAuthorization(order))
+                .thenReturn(false);
+
+        when(paymentService.canRecoverAuthorization(order))
+                .thenReturn(true);
+
+        when(paymentAuthorizationService.recoverAuthorization(order))
+                .thenThrow(new PaymentGatewayException(
+                        "PAY.JPとの通信に失敗しました。"));
+
+        String viewName = orderController.resumePayment(
+                orderId,
+                loginUser,
+                redirectAttributes,
+                session);
+
+        assertEquals(
+                "redirect:/orders/" + orderId,
+                viewName);
+
+        verify(session, never())
+                .setAttribute(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+
+        verify(redirectAttributes)
+                .addFlashAttribute(
+                        "errorMessage",
+                        "カード決済を開始できませんでした。"
+                                + "しばらくしてからもう一度お試しください。");
     }
 
 }

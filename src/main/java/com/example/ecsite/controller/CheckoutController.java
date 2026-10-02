@@ -377,6 +377,24 @@ public class CheckoutController {
             return "redirect:/cart";
         }
 
+        if (result.status() == AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "カード情報を確認して、もう一度お試しください。");
+
+            return "redirect:/checkout/payment";
+        }
+
+        if (result.status() == AuthorizationResultStatus.REQUIRES_CONFIRMATION) {
+
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage",
+                    "カード決済を続けてください。");
+
+            return "redirect:/checkout/payment";
+        }
+
         if (result.status() == AuthorizationResultStatus.REQUIRES_ACTION) {
 
             redirectAttributes.addFlashAttribute(

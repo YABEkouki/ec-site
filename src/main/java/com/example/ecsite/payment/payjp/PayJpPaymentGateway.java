@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClientException;
 
 import com.example.ecsite.config.PayJpProperties;
 import com.example.ecsite.payment.AuthorizationPreparation;
+import com.example.ecsite.payment.AuthorizationRecovery;
 import com.example.ecsite.payment.AuthorizationRequest;
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.CancellationRequest;
@@ -77,7 +78,7 @@ public class PayJpPaymentGateway implements PaymentGateway {
     }
 
     @Override
-    public AuthorizationResult retrieveAuthorization(
+    public AuthorizationRecovery retrieveAuthorization(
             String providerPaymentId) {
 
         try {
@@ -92,10 +93,15 @@ public class PayJpPaymentGateway implements PaymentGateway {
                         "PAY.JP returned an invalid Payment Flow response");
             }
 
-            return authorizationMapper.map(response);
+            AuthorizationResult result = authorizationMapper.map(response);
+
+            return new AuthorizationRecovery(
+                    result,
+                    response.clientSecret());
+
         } catch (RestClientException e) {
             throw new PaymentGatewayException(
-                    "Failed to create PAY.JP Payment Flow", e);
+                    "Failed to retrieve PAY.JP Payment Flow", e);
         }
 
     }

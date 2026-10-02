@@ -171,6 +171,63 @@ public class PaymentService {
         return transaction.get().getOrderContentRevision() == order.getContentRevision();
     }
 
+    @Transactional(readOnly = true)
+    public boolean canRecoverAuthorization(Order order) {
+        return findRecoverableAuthorizationPayment(order).isPresent();
+    }
+
+    @Transactional(readOnly = true)
+    public Long getRecoverableAuthorizationPaymentId(Order order) {
+
+        return findRecoverableAuthorizationPayment(order)
+                .orElseThrow(() -> new IllegalStateException(
+                        "復旧可能なカード決済が見つかりません。"))
+                .getId();
+    }
+
+    private Optional<Payment> findRecoverableAuthorizationPayment(Order order) {
+
+        List<Payment> recoverablePayments = paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(order.getId())
+                .stream()
+                .filter(payment -> payment.getProvider() == PaymentProvider.PAYJP)
+                .filter(payment -> payment.getPaymentMethod() == PaymentMethod.CARD)
+                .filter(payment -> payment.getStatus() == PaymentStatus.PENDING
+                        || payment.getStatus() == PaymentStatus.REQUIRES_ACTION)
+                .toList();
+
+        if (recoverablePayments.size() != 1) {
+            return Optional.empty();
+        }
+
+        Payment payment = recoverablePayments.getFirst();
+
+        if (payment.getAmount() != order.getTotalAmount()) {
+            return Optional.empty();
+        }
+
+        if (payment.getProviderPaymentId() == null
+                || payment.getProviderPaymentId().isBlank()) {
+            return Optional.empty();
+        }
+
+        Optional<PaymentTransaction> transaction = paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.PENDING);
+
+        if (transaction.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if (transaction.get().getOrderContentRevision() != order.getContentRevision()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(payment);
+    }
+
     @Transactional
     public void setProviderPaymentId(
             Long paymentId,

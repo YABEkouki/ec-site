@@ -30,6 +30,7 @@ import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
 import com.example.ecsite.service.ShippingAddressService;
 import com.example.ecsite.service.payment.PaymentAuthorizationPreparation;
+import com.example.ecsite.service.payment.PaymentAuthorizationRecovery;
 import com.example.ecsite.service.payment.PaymentAuthorizationService;
 import com.example.ecsite.service.payment.PaymentCancellationService;
 import com.example.ecsite.service.payment.PaymentService;
@@ -106,7 +107,8 @@ public class OrderController {
                 id,
                 loginUser.getId());
 
-        boolean canResumePayment = paymentService.canResumeAuthorization(order);
+        boolean canResumePayment = paymentService.canResumeAuthorization(order)
+                || paymentService.canRecoverAuthorization(order);
 
         model.addAttribute("order", order);
 
@@ -245,38 +247,80 @@ public class OrderController {
                 id,
                 loginUser.getId());
 
-        if (!paymentService.canResumeAuthorization(order)) {
+        try {
+
+            if (paymentService.canResumeAuthorization(order)) {
+
+                PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
+
+                setCheckoutSession(
+                        session,
+                        id,
+                        preparation.paymentId(),
+                        preparation.clientSecret());
+
+                return "redirect:/checkout/payment";
+            }
+
+            if (paymentService.canRecoverAuthorization(order)) {
+
+                PaymentAuthorizationRecovery recovery = paymentAuthorizationService.recoverAuthorization(order);
+
+                return switch (recovery.action()) {
+
+                    case RESUME_CHECKOUT -> {
+
+                        setCheckoutSession(
+                                session,
+                                id,
+                                recovery.paymentId(),
+                                recovery.clientSecret());
+
+                        yield "redirect:/checkout/payment";
+                    }
+
+                    case WAIT -> {
+
+                        redirectAttributes.addFlashAttribute(
+                                "errorMessage",
+                                "カード決済の処理状況を確認中です。"
+                                        + "しばらくしてからもう一度お試しください。");
+
+                        yield "redirect:/orders/" + id;
+                    }
+
+                    case COMPLETED -> {
+
+                        redirectAttributes.addFlashAttribute(
+                                "successMessage",
+                                "カードの与信が完了しています。");
+
+                        yield "redirect:/orders/" + id;
+                    }
+
+                    case FAILED -> {
+
+                        redirectAttributes.addFlashAttribute(
+                                "errorMessage",
+                                "カード決済を完了できませんでした。");
+
+                        yield "redirect:/orders/" + id;
+                    }
+                };
+            }
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
                     "現在、この注文のカード決済は再開できません。");
 
             return "redirect:/orders/" + id;
-        }
-
-        try {
-
-            PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
-
-            session.setAttribute(
-                    "checkoutOrderId",
-                    id);
-
-            session.setAttribute(
-                    "checkoutPaymentId",
-                    preparation.paymentId());
-
-            session.setAttribute(
-                    "checkoutPaymentClientSecret",
-                    preparation.clientSecret());
-
-            return "redirect:/checkout/payment";
 
         } catch (PaymentGatewayException ex) {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "カード決済を開始できませんでした。しばらくしてからもう一度お試しください。");
+                    "カード決済を開始できませんでした。"
+                            + "しばらくしてからもう一度お試しください。");
 
             return "redirect:/orders/" + id;
         }
@@ -766,4 +810,22 @@ public class OrderController {
         return form;
     }
 
+    private void setCheckoutSession(
+            HttpSession session,
+            Long orderId,
+            Long paymentId,
+            String clientSecret) {
+
+        session.setAttribute(
+                "checkoutOrderId",
+                orderId);
+
+        session.setAttribute(
+                "checkoutPaymentId",
+                paymentId);
+
+        session.setAttribute(
+                "checkoutPaymentClientSecret",
+                clientSecret);
+    }
 }
