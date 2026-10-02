@@ -460,6 +460,43 @@ public class OrderService {
                 internalNote);
     }
 
+    public void markAsShippedAfterPaymentCapture(
+            Order order,
+            Long accountId,
+            String username,
+            String internalNote) {
+
+        OrderStatus fromStatus = order.getStatus();
+
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        order.markAsShippedAfterPaymentCapture(now);
+
+        orderStatusHistoryService.record(
+                order,
+                fromStatus,
+                order.getStatus(),
+                OrderStatusHistoryActorType.ADMIN,
+                accountId,
+                username,
+                internalNote);
+    }
+
+    public void cancelOrderAfterPaymentCancellation(
+            Order order,
+            Long accountId,
+            String username,
+            String internalNote) {
+
+        cancelAndRestoreStock(
+                order,
+                OrderStatusHistoryActorType.ADMIN,
+                accountId,
+                username,
+                internalNote,
+                LocalDateTime.now(clock));
+    }
+
     @Transactional
     public void cancelOrder(
             Long id,

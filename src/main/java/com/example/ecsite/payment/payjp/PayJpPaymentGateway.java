@@ -15,6 +15,9 @@ import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.CancellationRequest;
 import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
+import com.example.ecsite.payment.CaptureRequest;
+import com.example.ecsite.payment.CaptureResult;
+import com.example.ecsite.payment.CaptureResultStatus;
 import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.payment.PaymentGatewayException;
 
@@ -135,6 +138,47 @@ public class PayJpPaymentGateway implements PaymentGateway {
         } catch (RestClientException e) {
             throw new PaymentGatewayException(
                     "Failed to cancel PAY.JP Payment Flow",
+                    e);
+        }
+    }
+
+    @Override
+    public CaptureResult capture(
+            CaptureRequest request) {
+
+        try {
+            PayJpPaymentFlowResponse response = restClient.post()
+                    .uri(
+                            "/v2/payment_flows/{paymentFlowId}/capture",
+                            request.providerPaymentId())
+                    .header(
+                            "Idempotency-Key",
+                            request.idempotencyKey())
+                    .retrieve()
+                    .body(PayJpPaymentFlowResponse.class);
+
+            if (response == null || response.status() == null) {
+                throw new IllegalStateException(
+                        "PAY.JP returned an invalid Payment Flow response");
+            }
+
+            if ("succeeded".equals(response.status())) {
+                return new CaptureResult(
+                        CaptureResultStatus.CAPTURED,
+                        response.id(),
+                        null,
+                        null);
+            }
+
+            return new CaptureResult(
+                    CaptureResultStatus.PENDING,
+                    response.id(),
+                    null,
+                    null);
+
+        } catch (RestClientException e) {
+            throw new PaymentGatewayException(
+                    "Failed to capture PAY.JP Payment Flow",
                     e);
         }
     }

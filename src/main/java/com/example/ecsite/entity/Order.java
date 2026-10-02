@@ -335,6 +335,24 @@ public class Order {
         return status == OrderStatus.PAID;
     }
 
+    public void markAsShippedAfterPaymentCapture(
+            LocalDateTime shippedAt) {
+
+        if (status != OrderStatus.ORDERED) {
+            throw new InvalidOrderStatusException(
+                    "注文受付中の注文だけを発送済みに変更できます。");
+        }
+
+        if (shippedAt == null) {
+            throw new IllegalArgumentException(
+                    "発送日時は必須です。");
+        }
+
+        this.status = OrderStatus.SHIPPED;
+        this.paidAt = shippedAt;
+        this.shippedAt = shippedAt;
+    }
+
     public AdminAccount getAssignedAdminAccount() {
         return assignedAdminAccount;
     }
