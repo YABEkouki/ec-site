@@ -15,4 +15,5 @@ set -a
 source "${ENV_FILE}"
 set +a
 
-exec "${SCRIPT_DIR}/mvnw" spring-boot:run
+cd "${SCRIPT_DIR}"
+exec ./mvnw spring-boot:run

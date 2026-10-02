@@ -30,6 +30,11 @@ public class PaymentAuthorizationService {
 
         PaymentAuthorizationStart start = paymentService.startAuthorization(order);
 
+        if (paymentService.findProviderPaymentId(start.paymentId()).isPresent()) {
+            throw new IllegalStateException(
+                    "決済プロバイダーIDが設定済みのため、新しい与信を開始できません。");
+        }
+
         AuthorizationPreparation preparation = paymentGateway.prepareAuthorization(
                 new AuthorizationRequest(
                         start.amount(),

@@ -239,21 +239,32 @@ public class CheckoutController {
                     cart,
                     checkoutForm);
 
-            PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
+            try {
+                PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
 
-            session.setAttribute(
-                    "checkoutOrderId",
-                    order.getId());
+                session.setAttribute(
+                        "checkoutOrderId",
+                        order.getId());
 
-            session.setAttribute(
-                    "checkoutPaymentId",
-                    preparation.paymentId());
+                session.setAttribute(
+                        "checkoutPaymentId",
+                        preparation.paymentId());
 
-            session.setAttribute(
-                    "checkoutPaymentClientSecret",
-                    preparation.clientSecret());
+                session.setAttribute(
+                        "checkoutPaymentClientSecret",
+                        preparation.clientSecret());
 
-            return "redirect:/checkout/payment";
+                return "redirect:/checkout/payment";
+
+            } catch (PaymentGatewayException ex) {
+
+                redirectAttributes.addFlashAttribute(
+                        "errorMessage",
+                        "注文は受け付けましたが、カード決済を開始できませんでした。"
+                                + "注文詳細からカード決済を再開してください。");
+
+                return "redirect:/orders/" + order.getId();
+            }
 
         } catch (OrderValidationException e) {
             redirectAttributes.addFlashAttribute(
