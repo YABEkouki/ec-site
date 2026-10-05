@@ -31,11 +31,13 @@ public class PaymentAuthorizationResultService {
                 paymentId,
                 orderId);
 
-        paymentService.applyAuthorizationResult(
-                paymentId,
-                result);
+        boolean stateChanged =
+                paymentService.applyAuthorizationResult(
+                        paymentId,
+                        result);
 
-        if (result.status() == AuthorizationResultStatus.FAILED) {
+        if (stateChanged
+                && result.status() == AuthorizationResultStatus.FAILED) {
 
             orderService.cancelOrderForPaymentFailure(
                     orderId);
