@@ -10,5 +10,6 @@ import jakarta.validation.constraints.NotBlank;
 public record PayJpProperties(
         @NotBlank String publicKey,
         @NotBlank String secretKey,
-        @NotBlank String apiBaseUrl) {
+        @NotBlank String apiBaseUrl,
+        @NotBlank String webhookToken) {
 }

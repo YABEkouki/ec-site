@@ -1,6 +1,7 @@
 package com.example.ecsite.repository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -128,6 +129,35 @@ class PaymentRepositoryTest {
 
         assertEquals(1, payments.size());
         assertEquals(target.getId(), payments.get(0).getId());
+    }
+
+    @Test
+    void findByProviderAndProviderPaymentIdReturnsMatchingPayment() {
+
+        Order order = createOrder("payment-provider-find-user");
+
+        Payment payment = new Payment(
+                order,
+                PaymentProvider.PAYJP,
+                PaymentMethod.CARD,
+                10_000,
+                LocalDateTime.of(2026, 10, 1, 10, 0));
+
+        payment.setProviderPaymentId(
+                "pf_test_webhook_123",
+                LocalDateTime.of(2026, 10, 1, 10, 1));
+
+        payment = paymentRepository.save(payment);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        var found = paymentRepository.findByProviderAndProviderPaymentId(
+                PaymentProvider.PAYJP,
+                "pf_test_webhook_123");
+
+        assertTrue(found.isPresent());
+        assertEquals(payment.getId(), found.orElseThrow().getId());
     }
 
     private Order createOrder(String username) {

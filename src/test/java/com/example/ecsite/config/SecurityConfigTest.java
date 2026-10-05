@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 
 import java.util.List;
 
@@ -173,6 +174,28 @@ class SecurityConfigTest {
                                 "confirmPassword",
                                 "new-password"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void payJpWebhookPostIsPublicAndDoesNotRequireCsrf()
+            throws Exception {
+
+        mockMvc.perform(
+                post("/webhooks/payjp")
+                        .header(
+                                "X-Payjp-Webhook-Token",
+                                "wh_test_dummy")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "id": "evt_test_123",
+                                  "type": "payment_flow.succeeded",
+                                  "data": {
+                                    "id": "pf_test_123"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk());
     }
 
     @Test

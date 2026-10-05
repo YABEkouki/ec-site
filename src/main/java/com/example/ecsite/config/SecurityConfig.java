@@ -75,7 +75,8 @@ public class SecurityConfig {
                                 "/password/reset",
                                 "/403",
                                 "/css/**",
-                                "/product-images/**")
+                                "/product-images/**",
+                                "/webhooks/payjp")
                         .permitAll()
                         .requestMatchers(
                                 "/products",
@@ -83,6 +84,9 @@ public class SecurityConfig {
                         .hasRole("USER")
                         .anyRequest()
                         .hasRole("USER"))
+                .csrf(csrf -> csrf
+                        .ignoringRequestMatchers(
+                                "/webhooks/payjp"))
                 .formLogin(form -> form
                         .loginPage("/login")
                         .loginProcessingUrl("/login")

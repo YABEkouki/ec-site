@@ -254,11 +254,11 @@ public class PaymentService {
     }
 
     @Transactional
-    public void applyAuthorizationResult(
+    public boolean applyAuthorizationResult(
             Long paymentId,
             AuthorizationResult result) {
 
-        Payment payment = paymentRepository.findById(paymentId)
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "決済情報が見つかりません。"));
 
@@ -268,7 +268,7 @@ public class PaymentService {
          */
         if (payment.getStatus() == PaymentStatus.AUTHORIZED
                 && result.status() == AuthorizationResultStatus.AUTHORIZED) {
-            return;
+            return false;
         }
 
         /*
@@ -277,7 +277,7 @@ public class PaymentService {
          */
         if (payment.getStatus() == PaymentStatus.FAILED
                 && result.status() == AuthorizationResultStatus.FAILED) {
-            return;
+            return false;
         }
 
         PaymentTransaction transaction = paymentTransactionRepository
@@ -290,18 +290,18 @@ public class PaymentService {
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        switch (result.status()) {
+        return switch (result.status()) {
 
             case PENDING,
                     REQUIRES_PAYMENT_METHOD,
-                    REQUIRES_CONFIRMATION -> {
-                // 与信未確定なのでローカル状態は変更しない
-            }
+                    REQUIRES_CONFIRMATION -> false;
 
             case REQUIRES_ACTION -> {
                 if (payment.getStatus() == PaymentStatus.PENDING) {
                     payment.markRequiresAction(now);
+                    yield true;
                 }
+                yield false;
             }
 
             case AUTHORIZED -> {
@@ -310,6 +310,7 @@ public class PaymentService {
                 transaction.markSucceeded(
                         result.providerTransactionId(),
                         now);
+                yield true;
             }
 
             case FAILED -> {
@@ -320,8 +321,9 @@ public class PaymentService {
                         result.failureCode(),
                         result.failureMessage(),
                         now);
+                yield true;
             }
-        }
+        };
     }
 
     @Transactional(readOnly = true)
