@@ -39,9 +39,6 @@ public class SecurityConfig {
                         .permitAll()
                         .anyRequest()
                         .hasRole("ADMIN"))
-                .csrf(csrf -> csrf
-                        .ignoringRequestMatchers(
-                                new AntPathRequestMatcher("/webhooks/payjp", "POST")))
                 .formLogin(form -> form
                         .loginPage("/admin/login")
                         .loginProcessingUrl("/admin/login")
@@ -88,6 +85,9 @@ public class SecurityConfig {
                         .hasRole("USER")
                         .anyRequest()
                         .hasRole("USER"))
+                .csrf(csrf -> csrf
+                        .ignoringRequestMatchers(
+                                new AntPathRequestMatcher("/webhooks/payjp", "POST")))
                 .formLogin(form -> form
                         .loginPage("/login")
                         .loginProcessingUrl("/login")
