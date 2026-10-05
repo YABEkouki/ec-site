@@ -3,6 +3,7 @@ package com.example.ecsite.service.payment;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -78,6 +79,11 @@ class PaymentAuthorizationResultServiceTest {
                 "card_declined",
                 "Card was declined");
 
+        when(paymentService.applyAuthorizationResult(
+                paymentId,
+                result))
+                .thenReturn(true);
+
         service.apply(
                 orderId,
                 paymentId,
@@ -96,6 +102,32 @@ class PaymentAuthorizationResultServiceTest {
                 .validatePaymentBelongsToOrder(
                         paymentId,
                         orderId);
+    }
+
+    @Test
+    void repeatedFailedResultDoesNotCancelOrderAgain() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.FAILED,
+                null,
+                "card_declined",
+                "Card was declined");
+
+        when(paymentService.applyAuthorizationResult(
+                paymentId,
+                result))
+                .thenReturn(false);
+
+        service.apply(
+                orderId,
+                paymentId,
+                result);
+
+        verify(orderService, never())
+                .cancelOrderForPaymentFailure(orderId);
     }
 
     @Test
