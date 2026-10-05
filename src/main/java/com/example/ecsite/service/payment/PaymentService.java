@@ -422,6 +422,7 @@ public class PaymentService {
                     payment.getId(),
                     transaction.getId(),
                     providerPaymentId,
+                    transaction.getAmount(),
                     transaction.getIdempotencyKey());
         }
 
@@ -430,7 +431,7 @@ public class PaymentService {
         PaymentTransaction transaction = new PaymentTransaction(
                 payment,
                 PaymentTransactionType.CAPTURE,
-                payment.getAmount(),
+                order.getTotalAmount(),
                 order.getContentRevision(),
                 UUID.randomUUID().toString(),
                 now);
@@ -441,6 +442,7 @@ public class PaymentService {
                 payment.getId(),
                 transaction.getId(),
                 providerPaymentId,
+                transaction.getAmount(),
                 transaction.getIdempotencyKey());
     }
 

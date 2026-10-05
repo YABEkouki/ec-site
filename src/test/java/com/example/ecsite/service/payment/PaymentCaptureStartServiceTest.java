@@ -47,18 +47,17 @@ class PaymentCaptureStartServiceTest {
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        PaymentCaptureStart expected =
-                new PaymentCaptureStart(
-                        20L,
-                        30L,
-                        "pf_test_123",
-                        "capture-key-123");
+        PaymentCaptureStart expected = new PaymentCaptureStart(
+                20L,
+                30L,
+                "pf_test_123",
+                5_500,
+                "capture-key-123");
 
         when(paymentService.startCapture(order))
                 .thenReturn(expected);
 
-        PaymentCaptureStart result =
-                service.start(orderId);
+        PaymentCaptureStart result = service.start(orderId);
 
         assertEquals(expected, result);
 
