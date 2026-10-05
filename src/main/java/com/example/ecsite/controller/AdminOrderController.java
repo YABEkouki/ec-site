@@ -332,7 +332,7 @@ public class AdminOrderController {
         }
 
         try {
-            if (paymentService.canCaptureForShipment(id)) {
+            if (paymentService.hasAuthorizedCardPayment(id)) {
                 throw new InvalidOrderStatusException(
                         "カード与信済みの注文は、売上確定して発送してください。");
             }

@@ -663,7 +663,7 @@ class AdminOrderControllerTest {
 
         Long orderId = 1L;
 
-        when(paymentService.canCaptureForShipment(orderId))
+        when(paymentService.hasAuthorizedCardPayment(orderId))
                 .thenReturn(true);
 
         AdminOrderStatusChangeForm form = new AdminOrderStatusChangeForm();
