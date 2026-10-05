@@ -292,8 +292,10 @@ public class PaymentService {
 
         switch (result.status()) {
 
-            case PENDING -> {
-                // 結果未確定なのでローカル状態は変更しない
+            case PENDING,
+                    REQUIRES_PAYMENT_METHOD,
+                    REQUIRES_CONFIRMATION -> {
+                // 与信未確定なのでローカル状態は変更しない
             }
 
             case REQUIRES_ACTION -> {

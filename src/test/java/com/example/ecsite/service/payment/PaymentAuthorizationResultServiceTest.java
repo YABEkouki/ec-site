@@ -166,4 +166,68 @@ class PaymentAuthorizationResultServiceTest {
                         orderId);
     }
 
+    @Test
+    void applyRequiresPaymentMethodDoesNotCancelOrder() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,
+                null,
+                "card_declined",
+                "Card was declined");
+
+        service.apply(
+                orderId,
+                paymentId,
+                result);
+
+        verify(paymentService)
+                .validatePaymentBelongsToOrder(
+                        paymentId,
+                        orderId);
+
+        verify(paymentService)
+                .applyAuthorizationResult(
+                        paymentId,
+                        result);
+
+        verify(orderService, never())
+                .cancelOrderForPaymentFailure(
+                        orderId);
+    }
+
+    @Test
+    void applyRequiresConfirmationDoesNotCancelOrder() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+
+        AuthorizationResult result = new AuthorizationResult(
+                AuthorizationResultStatus.REQUIRES_CONFIRMATION,
+                null,
+                null,
+                null);
+
+        service.apply(
+                orderId,
+                paymentId,
+                result);
+
+        verify(paymentService)
+                .validatePaymentBelongsToOrder(
+                        paymentId,
+                        orderId);
+
+        verify(paymentService)
+                .applyAuthorizationResult(
+                        paymentId,
+                        result);
+
+        verify(orderService, never())
+                .cancelOrderForPaymentFailure(
+                        orderId);
+    }
+
 }
