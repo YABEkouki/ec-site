@@ -55,7 +55,11 @@ class AdminPaymentCancellationServiceTest {
                 CancellationResultStatus.CANCELLED,
                 "provider-transaction-id");
 
-        when(startService.start(orderId))
+        when(startService.start(
+                orderId,
+                accountId,
+                "admin",
+                "管理者キャンセル"))
                 .thenReturn(start);
 
         when(paymentGateway.cancelAuthorization(
@@ -80,12 +84,20 @@ class AdminPaymentCancellationServiceTest {
                         "admin",
                         "管理者キャンセル",
                         result);
+
+        verify(startService)
+                .start(
+                        orderId,
+                        accountId,
+                        "admin",
+                        "管理者キャンセル");
     }
 
     @Test
     void gatewayFailureDoesNotApplyCancellationResult() {
 
         Long orderId = 1L;
+        Long accountId = 20L;
 
         PaymentCancellationStart start = new PaymentCancellationStart(
                 10L,
@@ -93,7 +105,11 @@ class AdminPaymentCancellationServiceTest {
                 "payjp-payment-id",
                 "idempotency-key");
 
-        when(startService.start(orderId))
+        when(startService.start(
+                orderId,
+                accountId,
+                "admin",
+                "管理者キャンセル"))
                 .thenReturn(start);
 
         when(paymentGateway.cancelAuthorization(
@@ -107,7 +123,7 @@ class AdminPaymentCancellationServiceTest {
                 PaymentGatewayException.class,
                 () -> service.cancel(
                         orderId,
-                        20L,
+                        accountId,
                         "admin",
                         "管理者キャンセル"));
 

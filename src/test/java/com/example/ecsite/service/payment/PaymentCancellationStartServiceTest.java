@@ -2,6 +2,7 @@ package com.example.ecsite.service.payment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.PaymentTransactionInitiatorType;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
@@ -53,6 +55,7 @@ class PaymentCancellationStartServiceTest {
 
         Long orderId = 10L;
         Long userId = 20L;
+        String username = "testuser";
 
         Order order = org.mockito.Mockito.mock(Order.class);
 
@@ -74,19 +77,27 @@ class PaymentCancellationStartServiceTest {
                 LocalDateTime.of(2026, 10, 1, 10, 0)))
                 .thenReturn(true);
 
-        when(paymentService.startCancellation(order))
+        when(paymentService.startCancellation(
+                org.mockito.ArgumentMatchers.eq(order),
+                org.mockito.ArgumentMatchers.any()))
                 .thenReturn(expected);
 
         PaymentCancellationStart actual = service.start(
                 orderId,
-                userId);
+                userId,
+                username);
 
         assertEquals(
                 expected,
                 actual);
 
         verify(paymentService)
-                .startCancellation(order);
+                .startCancellation(
+                        org.mockito.ArgumentMatchers.eq(order),
+                        argThat(initiator -> initiator.type() == PaymentTransactionInitiatorType.USER
+                                && userId.equals(initiator.id())
+                                && username.equals(initiator.username())
+                                && initiator.internalNote() == null));
     }
 
     @Test
@@ -109,10 +120,13 @@ class PaymentCancellationStartServiceTest {
                 InvalidOrderStatusException.class,
                 () -> service.start(
                         orderId,
-                        userId));
+                        userId,
+                        "testuser"));
 
         verify(paymentService, never())
-                .startCancellation(order);
+                .startCancellation(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -139,10 +153,13 @@ class PaymentCancellationStartServiceTest {
                 InvalidOrderStatusException.class,
                 () -> service.start(
                         orderId,
-                        userId));
+                        userId,
+                        "testuser"));
 
         verify(paymentService, never())
-                .startCancellation(order);
+                .startCancellation(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -160,10 +177,12 @@ class PaymentCancellationStartServiceTest {
                 OrderNotFoundException.class,
                 () -> service.start(
                         orderId,
-                        userId));
+                        userId,
+                        "testuser"));
 
         verify(paymentService, never())
                 .startCancellation(
+                        org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any());
     }
 }

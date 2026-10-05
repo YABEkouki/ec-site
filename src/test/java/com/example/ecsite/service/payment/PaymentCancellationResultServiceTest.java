@@ -61,6 +61,11 @@ class PaymentCancellationResultServiceTest {
                 CancellationResultStatus.CANCELLED,
                 "pf_test_123");
 
+        when(paymentService.applyCancellationResult(
+                20L,
+                result))
+                .thenReturn(true);
+
         service.apply(
                 orderId,
                 paymentId,
@@ -178,6 +183,56 @@ class PaymentCancellationResultServiceTest {
                         userId);
 
         verify(paymentService, never())
+                .applyCancellationResult(
+                        paymentId,
+                        result);
+
+        verify(orderService, never())
+                .cancelOrderForUserAfterPaymentCancellation(
+                        orderId,
+                        userId,
+                        username);
+    }
+
+    @Test
+    void alreadyAppliedCancellationDoesNotCancelOrderAgain() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+        Long userId = 30L;
+        String username = "testuser";
+
+        mockLockedOrder(
+                orderId,
+                userId);
+
+        CancellationResult result = new CancellationResult(
+                CancellationResultStatus.CANCELLED,
+                "pf_test_123");
+
+        when(paymentService.applyCancellationResult(
+                paymentId,
+                result))
+                .thenReturn(false);
+
+        service.apply(
+                orderId,
+                paymentId,
+                userId,
+                username,
+                result);
+
+        verify(orderRepository)
+                .findByIdAndUserIdForUpdate(
+                        orderId,
+                        userId);
+
+        verify(paymentService)
+                .validatePaymentBelongsToOrder(
+                        paymentId,
+                        orderId);
+
+        verify(paymentService)
                 .applyCancellationResult(
                         paymentId,
                         result);

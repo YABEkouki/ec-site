@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.PaymentTransactionInitiator;
+import com.example.ecsite.entity.PaymentTransactionInitiatorType;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
@@ -44,7 +46,8 @@ public class PaymentCancellationStartService {
     @Transactional
     public PaymentCancellationStart start(
             Long orderId,
-            Long userId) {
+            Long userId,
+            String username) {
 
         Order order = orderRepository
                 .findByIdAndUserIdForUpdate(
@@ -64,6 +67,12 @@ public class PaymentCancellationStartService {
                     "この注文の変更受付は終了しています。");
         }
 
-        return paymentService.startCancellation(order);
+        return paymentService.startCancellation(
+                order,
+                new PaymentTransactionInitiator(
+                        PaymentTransactionInitiatorType.USER,
+                        userId,
+                        username,
+                        null));
     }
 }

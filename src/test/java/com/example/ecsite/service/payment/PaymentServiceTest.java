@@ -29,6 +29,8 @@ import com.example.ecsite.entity.PaymentMethod;
 import com.example.ecsite.entity.PaymentProvider;
 import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.entity.PaymentTransaction;
+import com.example.ecsite.entity.PaymentTransactionInitiator;
+import com.example.ecsite.entity.PaymentTransactionInitiatorType;
 import com.example.ecsite.entity.PaymentTransactionStatus;
 import com.example.ecsite.entity.PaymentTransactionType;
 import com.example.ecsite.payment.AuthorizationResult;
@@ -737,7 +739,9 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.empty());
 
-        PaymentCancellationStart result = paymentService.startCancellation(order);
+        PaymentCancellationStart result = paymentService.startCancellation(
+                order,
+                TEST_INITIATOR);
 
         ArgumentCaptor<PaymentTransaction> captor = ArgumentCaptor.forClass(
                 PaymentTransaction.class);
@@ -765,6 +769,22 @@ class PaymentServiceTest {
 
         assertNotNull(
                 transaction.getIdempotencyKey());
+
+        assertEquals(
+                PaymentTransactionInitiatorType.ADMIN,
+                transaction.getInitiatorType());
+
+        assertEquals(
+                1L,
+                transaction.getInitiatorId());
+
+        assertEquals(
+                "test-admin",
+                transaction.getInitiatorUsername());
+
+        assertEquals(
+                "test",
+                transaction.getInternalNote());
 
         assertEquals(
                 "pf_test_123",
@@ -811,7 +831,9 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        PaymentCancellationStart result = paymentService.startCancellation(order);
+        PaymentCancellationStart result = paymentService.startCancellation(
+                order,
+                TEST_INITIATOR);
 
         assertEquals(
                 "pf_test_123",
@@ -840,7 +862,9 @@ class PaymentServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> paymentService.startCancellation(order));
+                () -> paymentService.startCancellation(
+                        order,
+                        TEST_INITIATOR));
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
@@ -865,7 +889,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(
                         2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -917,7 +941,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(
                         2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -993,7 +1017,9 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.SUCCEEDED))
                 .thenReturn(Optional.of(authorization));
 
-        PaymentCaptureStart result = paymentService.startCapture(order);
+        PaymentCaptureStart result = paymentService.startCapture(
+                order,
+                TEST_INITIATOR);
 
         ArgumentCaptor<PaymentTransaction> captor = ArgumentCaptor.forClass(
                 PaymentTransaction.class);
@@ -1021,6 +1047,22 @@ class PaymentServiceTest {
 
         assertNotNull(
                 transaction.getIdempotencyKey());
+
+        assertEquals(
+                PaymentTransactionInitiatorType.ADMIN,
+                transaction.getInitiatorType());
+
+        assertEquals(
+                1L,
+                transaction.getInitiatorId());
+
+        assertEquals(
+                "test-admin",
+                transaction.getInitiatorUsername());
+
+        assertEquals(
+                "test",
+                transaction.getInternalNote());
 
         assertEquals(
                 "pf_test_123",
@@ -1088,7 +1130,9 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.SUCCEEDED))
                 .thenReturn(Optional.of(authorization));
 
-        PaymentCaptureStart result = paymentService.startCapture(order);
+        PaymentCaptureStart result = paymentService.startCapture(
+                order,
+                TEST_INITIATOR);
 
         assertEquals(
                 "pf_test_123",
@@ -1154,7 +1198,9 @@ class PaymentServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> paymentService.startCapture(order));
+                () -> paymentService.startCapture(
+                        order,
+                        TEST_INITIATOR));
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
@@ -1175,7 +1221,9 @@ class PaymentServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> paymentService.startCapture(order));
+                () -> paymentService.startCapture(
+                        order,
+                        TEST_INITIATOR));
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
@@ -1205,7 +1253,9 @@ class PaymentServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> paymentService.startCapture(order));
+                () -> paymentService.startCapture(
+                        order,
+                        TEST_INITIATOR));
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
@@ -1230,7 +1280,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(
                         2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -1288,7 +1338,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(
                         2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -1341,7 +1391,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(
                         2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -1804,7 +1854,9 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.SUCCEEDED))
                 .thenReturn(Optional.of(authorization));
 
-        PaymentCaptureStart result = paymentService.startCapture(order);
+        PaymentCaptureStart result = paymentService.startCapture(
+                order,
+                TEST_INITIATOR);
 
         ArgumentCaptor<PaymentTransaction> captor = ArgumentCaptor.forClass(PaymentTransaction.class);
 
@@ -1854,7 +1906,9 @@ class PaymentServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> paymentService.startCapture(order));
+                () -> paymentService.startCapture(
+                        order,
+                        TEST_INITIATOR));
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
@@ -1896,7 +1950,9 @@ class PaymentServiceTest {
 
         assertThrows(
                 IllegalStateException.class,
-                () -> paymentService.startCapture(order));
+                () -> paymentService.startCapture(
+                        order,
+                        TEST_INITIATOR));
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
@@ -2034,5 +2090,11 @@ class PaymentServiceTest {
 
         return transaction;
     }
+
+    private static final PaymentTransactionInitiator TEST_INITIATOR = new PaymentTransactionInitiator(
+            PaymentTransactionInitiatorType.ADMIN,
+            1L,
+            "test-admin",
+            "test");
 
 }

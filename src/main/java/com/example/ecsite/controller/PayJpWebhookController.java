@@ -10,21 +10,20 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.ecsite.payment.payjp.PayJpWebhookEvent;
 import com.example.ecsite.payment.payjp.PayJpWebhookTokenVerifier;
-import com.example.ecsite.service.payment.PayJpWebhookAuthorizationSyncService;
+import com.example.ecsite.service.payment.PayJpWebhookSyncService;
 
 @RestController
 @RequestMapping("/webhooks/payjp")
 public class PayJpWebhookController {
 
-    private static final String WEBHOOK_TOKEN_HEADER =
-            "X-Payjp-Webhook-Token";
+    private static final String WEBHOOK_TOKEN_HEADER = "X-Payjp-Webhook-Token";
 
     private final PayJpWebhookTokenVerifier tokenVerifier;
-    private final PayJpWebhookAuthorizationSyncService syncService;
+    private final PayJpWebhookSyncService syncService;
 
     public PayJpWebhookController(
             PayJpWebhookTokenVerifier tokenVerifier,
-            PayJpWebhookAuthorizationSyncService syncService) {
+            PayJpWebhookSyncService syncService) {
 
         this.tokenVerifier = tokenVerifier;
         this.syncService = syncService;
@@ -32,10 +31,7 @@ public class PayJpWebhookController {
 
     @PostMapping
     public ResponseEntity<Void> receive(
-            @RequestHeader(
-                    name = WEBHOOK_TOKEN_HEADER,
-                    required = false)
-            String webhookToken,
+            @RequestHeader(name = WEBHOOK_TOKEN_HEADER, required = false) String webhookToken,
             @RequestBody PayJpWebhookEvent event) {
 
         if (!tokenVerifier.isValid(webhookToken)) {

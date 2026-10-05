@@ -17,6 +17,7 @@ import com.example.ecsite.entity.PaymentMethod;
 import com.example.ecsite.entity.PaymentProvider;
 import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.entity.PaymentTransaction;
+import com.example.ecsite.entity.PaymentTransactionInitiator;
 import com.example.ecsite.entity.PaymentTransactionStatus;
 import com.example.ecsite.entity.PaymentTransactionType;
 import com.example.ecsite.payment.AuthorizationResult;
@@ -294,7 +295,8 @@ public class PaymentService {
 
             case PENDING,
                     REQUIRES_PAYMENT_METHOD,
-                    REQUIRES_CONFIRMATION -> false;
+                    REQUIRES_CONFIRMATION ->
+                false;
 
             case REQUIRES_ACTION -> {
                 if (payment.getStatus() == PaymentStatus.PENDING) {
@@ -360,7 +362,9 @@ public class PaymentService {
     }
 
     @Transactional
-    public PaymentCaptureStart startCapture(Order order) {
+    public PaymentCaptureStart startCapture(
+            Order order,
+            PaymentTransactionInitiator initiator) {
 
         List<Payment> payments = paymentRepository
                 .findByOrderIdOrderByCreatedAtAscIdAsc(
@@ -438,7 +442,8 @@ public class PaymentService {
                 order.getTotalAmount(),
                 order.getContentRevision(),
                 UUID.randomUUID().toString(),
-                now);
+                now,
+                initiator);
 
         paymentTransactionRepository.save(transaction);
 
@@ -451,17 +456,17 @@ public class PaymentService {
     }
 
     @Transactional
-    public void applyCaptureResult(
+    public boolean applyCaptureResult(
             Long paymentId,
             CaptureResult result) {
 
-        Payment payment = paymentRepository.findById(paymentId)
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "決済情報が見つかりません。"));
 
         if (payment.getStatus() == PaymentStatus.CAPTURED
                 && result.status() == CaptureResultStatus.CAPTURED) {
-            return;
+            return false;
         }
 
         PaymentTransaction transaction = paymentTransactionRepository
@@ -473,12 +478,12 @@ public class PaymentService {
                         "処理中の売上確定操作が見つかりません。"));
 
         if (result.status() == CaptureResultStatus.PENDING) {
-            return;
+            return false;
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        switch (result.status()) {
+        return switch (result.status()) {
 
             case CAPTURED -> {
                 payment.markCaptured(now);
@@ -486,22 +491,26 @@ public class PaymentService {
                 transaction.markSucceeded(
                         result.providerTransactionId(),
                         now);
+                yield true;
             }
 
-            case FAILED -> transaction.markFailed(
-                    result.providerTransactionId(),
-                    result.failureCode(),
-                    result.failureMessage(),
-                    now);
-
-            case PENDING -> {
-                // 上でreturnしているため到達しない
+            case FAILED -> {
+                transaction.markFailed(
+                        result.providerTransactionId(),
+                        result.failureCode(),
+                        result.failureMessage(),
+                        now);
+                yield true;
             }
-        }
+
+            case PENDING -> false;
+        };
     }
 
     @Transactional
-    public PaymentCancellationStart startCancellation(Order order) {
+    public PaymentCancellationStart startCancellation(
+            Order order,
+            PaymentTransactionInitiator initiator) {
 
         List<Payment> payments = paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(
                 order.getId());
@@ -558,7 +567,8 @@ public class PaymentService {
                 payment.getAmount(),
                 order.getContentRevision(),
                 UUID.randomUUID().toString(),
-                now);
+                now,
+                initiator);
 
         paymentTransactionRepository.save(transaction);
 
@@ -570,17 +580,17 @@ public class PaymentService {
     }
 
     @Transactional
-    public void applyCancellationResult(
+    public boolean applyCancellationResult(
             Long paymentId,
             CancellationResult result) {
 
-        Payment payment = paymentRepository.findById(paymentId)
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "決済情報が見つかりません。"));
 
         if (payment.getStatus() == PaymentStatus.CANCELLED
                 && result.status() == CancellationResultStatus.CANCELLED) {
-            return;
+            return false;
         }
 
         PaymentTransaction transaction = paymentTransactionRepository
@@ -592,7 +602,7 @@ public class PaymentService {
                         "処理中の取消操作が見つかりません。"));
 
         if (result.status() == CancellationResultStatus.PENDING) {
-            return;
+            return false;
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
@@ -602,6 +612,8 @@ public class PaymentService {
         transaction.markSucceeded(
                 result.providerTransactionId(),
                 now);
+
+        return true;
     }
 
     @Transactional(readOnly = true)

@@ -57,6 +57,11 @@ class AdminPaymentCancellationResultServiceTest {
                 CancellationResultStatus.CANCELLED,
                 "provider-transaction-id");
 
+        when(paymentService.applyCancellationResult(
+                10L,
+                result))
+                .thenReturn(true);
+
         service.apply(
                 orderId,
                 paymentId,
@@ -129,4 +134,49 @@ class AdminPaymentCancellationResultServiceTest {
                         "admin",
                         "管理者キャンセル");
     }
+
+    @Test
+    void alreadyAppliedCancellationDoesNotCancelOrderAgain() {
+
+        Long orderId = 10L;
+        Long paymentId = 20L;
+        Long accountId = 30L;
+        String username = "admin";
+        String internalNote = "管理者キャンセル";
+
+        Order order = mock(Order.class);
+
+        when(orderRepository.findByIdForUpdate(orderId))
+                .thenReturn(Optional.of(order));
+
+        CancellationResult result = new CancellationResult(
+                CancellationResultStatus.CANCELLED,
+                "provider-transaction-id");
+
+        when(paymentService.applyCancellationResult(
+                paymentId,
+                result))
+                .thenReturn(false);
+
+        service.apply(
+                orderId,
+                paymentId,
+                accountId,
+                username,
+                internalNote,
+                result);
+
+        verify(paymentService)
+                .applyCancellationResult(
+                        paymentId,
+                        result);
+
+        verify(orderService, never())
+                .cancelOrderAfterPaymentCancellation(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+    }
+
 }

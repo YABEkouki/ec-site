@@ -52,6 +52,19 @@ public class PaymentTransaction {
     @Column(name = "failure_message", length = 500)
     private String failureMessage;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "initiator_type", length = 20)
+    private PaymentTransactionInitiatorType initiatorType;
+
+    @Column(name = "initiator_id")
+    private Long initiatorId;
+
+    @Column(name = "initiator_username", length = 255)
+    private String initiatorUsername;
+
+    @Column(name = "internal_note", length = 1000)
+    private String internalNote;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -59,6 +72,33 @@ public class PaymentTransaction {
     private LocalDateTime completedAt;
 
     protected PaymentTransaction() {
+    }
+
+    public PaymentTransaction(
+            Payment payment,
+            PaymentTransactionType transactionType,
+            int amount,
+            int orderContentRevision,
+            String idempotencyKey,
+            LocalDateTime createdAt,
+            PaymentTransactionInitiator initiator) {
+
+        this(
+                payment,
+                transactionType,
+                amount,
+                orderContentRevision,
+                idempotencyKey,
+                createdAt);
+
+        if (initiator == null) {
+            throw new IllegalArgumentException("決済操作開始者は必須です。");
+        }
+
+        this.initiatorType = initiator.type();
+        this.initiatorId = initiator.id();
+        this.initiatorUsername = initiator.username();
+        this.internalNote = initiator.internalNote();
     }
 
     public PaymentTransaction(
@@ -138,6 +178,22 @@ public class PaymentTransaction {
 
     public String getFailureMessage() {
         return failureMessage;
+    }
+
+    public PaymentTransactionInitiatorType getInitiatorType() {
+        return initiatorType;
+    }
+
+    public Long getInitiatorId() {
+        return initiatorId;
+    }
+
+    public String getInitiatorUsername() {
+        return initiatorUsername;
+    }
+
+    public String getInternalNote() {
+        return internalNote;
     }
 
     public LocalDateTime getCreatedAt() {

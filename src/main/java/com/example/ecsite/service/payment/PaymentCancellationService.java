@@ -30,7 +30,8 @@ public class PaymentCancellationService {
 
         PaymentCancellationStart start = startService.start(
                 orderId,
-                userId);
+                userId,
+                username);
 
         CancellationResult result = paymentGateway.cancelAuthorization(
                 new CancellationRequest(

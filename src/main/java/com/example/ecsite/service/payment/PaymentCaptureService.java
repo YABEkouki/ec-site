@@ -29,7 +29,11 @@ public class PaymentCaptureService {
             String username,
             String internalNote) {
 
-        PaymentCaptureStart start = startService.start(orderId);
+        PaymentCaptureStart start = startService.start(
+                orderId,
+                accountId,
+                username,
+                internalNote);
 
         CaptureResult result = paymentGateway.capture(
                 new CaptureRequest(

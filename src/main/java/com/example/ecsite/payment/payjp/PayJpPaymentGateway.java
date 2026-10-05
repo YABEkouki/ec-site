@@ -19,6 +19,8 @@ import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.CaptureRequest;
 import com.example.ecsite.payment.CaptureResult;
 import com.example.ecsite.payment.CaptureResultStatus;
+import com.example.ecsite.payment.PaymentFlowState;
+import com.example.ecsite.payment.PaymentFlowStatus;
 import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.payment.PaymentGatewayException;
 
@@ -74,6 +76,40 @@ public class PayJpPaymentGateway implements PaymentGateway {
         } catch (RestClientException e) {
             throw new PaymentGatewayException(
                     "Failed to create PAY.JP Payment Flow", e);
+        }
+    }
+
+    @Override
+    public PaymentFlowState retrievePaymentFlow(
+            String providerPaymentId) {
+
+        try {
+            PayJpPaymentFlowResponse response = restClient.get()
+                    .uri(
+                            "/v2/payment_flows/{paymentFlowId}",
+                            providerPaymentId)
+                    .retrieve()
+                    .body(PayJpPaymentFlowResponse.class);
+
+            if (response == null
+                    || response.id() == null
+                    || response.status() == null) {
+                throw new IllegalStateException(
+                        "PAY.JP returned an invalid Payment Flow response");
+            }
+
+            PayJpPaymentErrorResponse error = response.lastPaymentError();
+
+            return new PaymentFlowState(
+                    response.id(),
+                    mapPaymentFlowStatus(response.status()),
+                    error != null ? error.code() : null,
+                    error != null ? error.message() : null);
+
+        } catch (RestClientException e) {
+            throw new PaymentGatewayException(
+                    "Failed to retrieve PAY.JP Payment Flow",
+                    e);
         }
     }
 
@@ -153,7 +189,7 @@ public class PayJpPaymentGateway implements PaymentGateway {
             CaptureRequest request) {
 
         Map<String, Object> body = Map.of(
-                "amount", request.amount());
+                "amount_to_capture", request.amount());
 
         try {
             PayJpPaymentFlowResponse response = restClient.post()
@@ -191,6 +227,29 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     "Failed to capture PAY.JP Payment Flow",
                     e);
         }
+    }
+
+    private PaymentFlowStatus mapPaymentFlowStatus(String status) {
+
+        return switch (status) {
+            case "requires_payment_method" ->
+                PaymentFlowStatus.REQUIRES_PAYMENT_METHOD;
+            case "requires_confirmation" ->
+                PaymentFlowStatus.REQUIRES_CONFIRMATION;
+            case "requires_action" ->
+                PaymentFlowStatus.REQUIRES_ACTION;
+            case "processing" ->
+                PaymentFlowStatus.PROCESSING;
+            case "requires_capture" ->
+                PaymentFlowStatus.REQUIRES_CAPTURE;
+            case "succeeded" ->
+                PaymentFlowStatus.SUCCEEDED;
+            case "canceled" ->
+                PaymentFlowStatus.CANCELED;
+            default ->
+                throw new IllegalStateException(
+                        "Unknown PAY.JP Payment Flow status: " + status);
+        };
     }
 
 }
