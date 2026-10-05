@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import com.example.ecsite.entity.Payment;
 import com.example.ecsite.entity.PaymentProvider;
+import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.payment.AuthorizationRecovery;
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.PaymentGateway;
@@ -53,6 +54,11 @@ public class PayJpWebhookAuthorizationSyncService {
         }
 
         Payment payment = paymentOptional.get();
+
+        if (payment.getStatus() != PaymentStatus.PENDING
+                && payment.getStatus() != PaymentStatus.REQUIRES_ACTION) {
+            return;
+        }
 
         AuthorizationRecovery recovery =
                 paymentGateway.retrieveAuthorization(providerPaymentId);
