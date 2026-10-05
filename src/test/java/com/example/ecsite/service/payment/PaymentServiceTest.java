@@ -573,7 +573,7 @@ class PaymentServiceTest {
                 "pf_test_123",
                 LocalDateTime.of(2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findByIdForUpdate(10L))
+        when(paymentRepository.findById(10L))
                 .thenReturn(Optional.of(payment));
 
         assertEquals(
