@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.Payment;
 import com.example.ecsite.entity.PaymentProvider;
+import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.payment.AuthorizationRecovery;
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.AuthorizationResultStatus;
@@ -47,6 +48,7 @@ class PayJpWebhookAuthorizationSyncServiceTest {
 
         when(payment.getId()).thenReturn(20L);
         when(payment.getOrder()).thenReturn(order);
+        when(payment.getStatus()).thenReturn(PaymentStatus.PENDING);
         when(order.getId()).thenReturn(10L);
 
         when(paymentRepository.findByProviderAndProviderPaymentId(
@@ -77,6 +79,27 @@ class PayJpWebhookAuthorizationSyncServiceTest {
                         10L,
                         20L,
                         result);
+    }
+
+    @Test
+    void completedLocalAuthorizationIgnoresDelayedAuthorizationWebhook() {
+
+        Payment payment = mock(Payment.class);
+
+        when(payment.getStatus())
+                .thenReturn(PaymentStatus.AUTHORIZED);
+
+        when(paymentRepository.findByProviderAndProviderPaymentId(
+                PaymentProvider.PAYJP,
+                "pf_test_123"))
+                .thenReturn(Optional.of(payment));
+
+        service.synchronize(
+                "payment_flow.amount_capturable_updated",
+                "pf_test_123");
+
+        verify(paymentGateway, never())
+                .retrieveAuthorization("pf_test_123");
     }
 
     @Test
