@@ -254,11 +254,11 @@ public class PaymentService {
     }
 
     @Transactional
-    public void applyAuthorizationResult(
+    public boolean applyAuthorizationResult(
             Long paymentId,
             AuthorizationResult result) {
 
-        Payment payment = paymentRepository.findById(paymentId)
+        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "決済情報が見つかりません。"));
 
@@ -268,7 +268,7 @@ public class PaymentService {
          */
         if (payment.getStatus() == PaymentStatus.AUTHORIZED
                 && result.status() == AuthorizationResultStatus.AUTHORIZED) {
-            return;
+            return false;
         }
 
         /*
@@ -277,7 +277,7 @@ public class PaymentService {
          */
         if (payment.getStatus() == PaymentStatus.FAILED
                 && result.status() == AuthorizationResultStatus.FAILED) {
-            return;
+            return false;
         }
 
         PaymentTransaction transaction = paymentTransactionRepository
@@ -296,12 +296,15 @@ public class PaymentService {
                     REQUIRES_PAYMENT_METHOD,
                     REQUIRES_CONFIRMATION -> {
                 // 与信未確定なのでローカル状態は変更しない
+                return false;
             }
 
             case REQUIRES_ACTION -> {
                 if (payment.getStatus() == PaymentStatus.PENDING) {
                     payment.markRequiresAction(now);
+                    return true;
                 }
+                return false;
             }
 
             case AUTHORIZED -> {
@@ -310,6 +313,7 @@ public class PaymentService {
                 transaction.markSucceeded(
                         result.providerTransactionId(),
                         now);
+                return true;
             }
 
             case FAILED -> {
@@ -320,6 +324,7 @@ public class PaymentService {
                         result.failureCode(),
                         result.failureMessage(),
                         now);
+                return true;
             }
         }
     }
