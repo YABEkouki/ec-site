@@ -14,16 +14,14 @@ import com.example.ecsite.entity.PaymentTransaction;
 
 class PaymentConsistencyEvaluatorTest {
 
-    private final PaymentConsistencyEvaluator evaluator =
-            new PaymentConsistencyEvaluator();
+    private final PaymentConsistencyEvaluator evaluator = new PaymentConsistencyEvaluator();
 
     @Test
     void returnsConsistentWhenAmountsAndRevisionMatch() {
 
         Order order = mock(Order.class);
         Payment payment = mock(Payment.class);
-        PaymentTransaction authorizationTransaction =
-                mock(PaymentTransaction.class);
+        PaymentTransaction authorizationTransaction = mock(PaymentTransaction.class);
 
         when(order.getTotalAmount()).thenReturn(5_500);
         when(order.getContentRevision()).thenReturn(2);
@@ -62,7 +60,7 @@ class PaymentConsistencyEvaluatorTest {
                 PaymentConsistencyStatus.AMOUNT_DECREASED,
                 result.status());
 
-        assertFalse(result.canCapture());
+        assertTrue(result.canCapture());
     }
 
     @Test
@@ -142,8 +140,7 @@ class PaymentConsistencyEvaluatorTest {
 
         Order order = mock(Order.class);
         Payment payment = mock(Payment.class);
-        PaymentTransaction authorizationTransaction =
-                mock(PaymentTransaction.class);
+        PaymentTransaction authorizationTransaction = mock(PaymentTransaction.class);
 
         when(order.getTotalAmount()).thenReturn(orderAmount);
         when(order.getContentRevision()).thenReturn(orderContentRevision);

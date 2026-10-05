@@ -1771,7 +1771,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void startCaptureRejectsWhenOrderAmountDecreasedAfterAuthorization() {
+    void startCaptureUsesCurrentOrderAmountWhenOrderAmountDecreasedAfterAuthorization() {
 
         Order order = mock(Order.class);
 
@@ -1804,12 +1804,18 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.SUCCEEDED))
                 .thenReturn(Optional.of(authorization));
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> paymentService.startCapture(order));
+        PaymentCaptureStart result = paymentService.startCapture(order);
 
-        verify(paymentTransactionRepository, never())
-                .save(any(PaymentTransaction.class));
+        ArgumentCaptor<PaymentTransaction> captor = ArgumentCaptor.forClass(PaymentTransaction.class);
+
+        verify(paymentTransactionRepository).save(captor.capture());
+
+        PaymentTransaction transaction = captor.getValue();
+
+        assertEquals(PaymentTransactionType.CAPTURE, transaction.getTransactionType());
+        assertEquals(10000, transaction.getAmount());
+        assertEquals(1, transaction.getOrderContentRevision());
+        assertEquals(10000, result.amount());
     }
 
     @Test
@@ -1954,7 +1960,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void canCaptureForShipmentReturnsFalseWhenAuthorizationDoesNotMatchCurrentOrder() {
+    void canCaptureForShipmentReturnsTrueWhenOrderAmountDecreasedAfterAuthorization() {
 
         Long orderId = 100L;
 
@@ -1984,7 +1990,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.SUCCEEDED))
                 .thenReturn(Optional.of(authorization));
 
-        assertFalse(
+        assertTrue(
                 paymentService.canCaptureForShipment(orderId));
     }
 

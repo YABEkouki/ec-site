@@ -34,6 +34,7 @@ public class PaymentCaptureService {
         CaptureResult result = paymentGateway.capture(
                 new CaptureRequest(
                         start.providerPaymentId(),
+                        start.amount(),
                         start.idempotencyKey()));
 
         resultService.apply(

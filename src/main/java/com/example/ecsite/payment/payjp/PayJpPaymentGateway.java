@@ -152,6 +152,9 @@ public class PayJpPaymentGateway implements PaymentGateway {
     public CaptureResult capture(
             CaptureRequest request) {
 
+        Map<String, Object> body = Map.of(
+                "amount", request.amount());
+
         try {
             PayJpPaymentFlowResponse response = restClient.post()
                     .uri(
@@ -160,6 +163,7 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     .header(
                             "Idempotency-Key",
                             request.idempotencyKey())
+                    .body(body)
                     .retrieve()
                     .body(PayJpPaymentFlowResponse.class);
 

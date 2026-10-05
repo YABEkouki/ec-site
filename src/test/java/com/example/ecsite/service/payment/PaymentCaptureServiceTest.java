@@ -55,6 +55,7 @@ class PaymentCaptureServiceTest {
                         paymentId,
                         40L,
                         "pf_test_123",
+                        5_500,
                         "capture-key-123");
 
         CaptureResult result =
@@ -70,6 +71,7 @@ class PaymentCaptureServiceTest {
         when(paymentGateway.capture(
                 new CaptureRequest(
                         "pf_test_123",
+                        5_500,
                         "capture-key-123")))
                 .thenReturn(result);
 
@@ -94,6 +96,7 @@ class PaymentCaptureServiceTest {
                 .capture(
                         new CaptureRequest(
                                 "pf_test_123",
+                                5_500,
                                 "capture-key-123"));
 
         inOrder.verify(resultService)
@@ -117,6 +120,7 @@ class PaymentCaptureServiceTest {
                         paymentId,
                         40L,
                         "pf_test_123",
+                        5_500,
                         "capture-key-123");
 
         when(startService.start(orderId))
@@ -130,6 +134,7 @@ class PaymentCaptureServiceTest {
         when(paymentGateway.capture(
                 new CaptureRequest(
                         "pf_test_123",
+                        5_500,
                         "capture-key-123")))
                 .thenThrow(exception);
 
