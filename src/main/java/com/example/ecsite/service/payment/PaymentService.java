@@ -290,21 +290,18 @@ public class PaymentService {
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        switch (result.status()) {
+        return switch (result.status()) {
 
             case PENDING,
                     REQUIRES_PAYMENT_METHOD,
-                    REQUIRES_CONFIRMATION -> {
-                // 与信未確定なのでローカル状態は変更しない
-                return false;
-            }
+                    REQUIRES_CONFIRMATION -> false;
 
             case REQUIRES_ACTION -> {
                 if (payment.getStatus() == PaymentStatus.PENDING) {
                     payment.markRequiresAction(now);
-                    return true;
+                    yield true;
                 }
-                return false;
+                yield false;
             }
 
             case AUTHORIZED -> {
@@ -313,7 +310,7 @@ public class PaymentService {
                 transaction.markSucceeded(
                         result.providerTransactionId(),
                         now);
-                return true;
+                yield true;
             }
 
             case FAILED -> {
@@ -324,9 +321,9 @@ public class PaymentService {
                         result.failureCode(),
                         result.failureMessage(),
                         now);
-                return true;
+                yield true;
             }
-        }
+        };
     }
 
     @Transactional(readOnly = true)
