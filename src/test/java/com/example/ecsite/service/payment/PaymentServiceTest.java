@@ -323,7 +323,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -360,7 +360,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -400,7 +400,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -440,7 +440,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -480,7 +480,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -522,7 +522,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         when(paymentTransactionRepository
@@ -573,7 +573,7 @@ class PaymentServiceTest {
                 "pf_test_123",
                 LocalDateTime.of(2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         assertEquals(
@@ -590,7 +590,7 @@ class PaymentServiceTest {
         payment.markAuthorized(
                 LocalDateTime.of(2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         paymentService.applyAuthorizationResult(
@@ -627,7 +627,7 @@ class PaymentServiceTest {
         payment.markFailed(
                 LocalDateTime.of(2026, 10, 1, 9, 30));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
         paymentService.applyAuthorizationResult(
