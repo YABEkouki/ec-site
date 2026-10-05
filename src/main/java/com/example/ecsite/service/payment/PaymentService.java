@@ -33,26 +33,31 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PaymentTransactionRepository paymentTransactionRepository;
+    private final PaymentConsistencyEvaluator paymentConsistencyEvaluator;
     private final Clock clock;
 
     @Autowired
     public PaymentService(
             PaymentRepository paymentRepository,
-            PaymentTransactionRepository paymentTransactionRepository) {
+            PaymentTransactionRepository paymentTransactionRepository,
+            PaymentConsistencyEvaluator paymentConsistencyEvaluator) {
 
         this(
                 paymentRepository,
                 paymentTransactionRepository,
+                paymentConsistencyEvaluator,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
     PaymentService(
             PaymentRepository paymentRepository,
             PaymentTransactionRepository paymentTransactionRepository,
+            PaymentConsistencyEvaluator paymentConsistencyEvaluator,
             Clock clock) {
 
         this.paymentRepository = paymentRepository;
         this.paymentTransactionRepository = paymentTransactionRepository;
+        this.paymentConsistencyEvaluator = paymentConsistencyEvaluator;
         this.clock = clock;
     }
 
@@ -373,6 +378,15 @@ public class PaymentService {
 
         Payment payment = authorizedPayments.getFirst();
 
+        if (payment.getProvider() != PaymentProvider.PAYJP
+                || payment.getPaymentMethod() != PaymentMethod.CARD) {
+
+            throw new IllegalStateException(
+                    "売上確定可能なカード決済ではありません。");
+        }
+
+        validateCaptureConsistency(order, payment);
+
         String providerPaymentId = payment.getProviderPaymentId();
 
         if (providerPaymentId == null
@@ -600,8 +614,24 @@ public class PaymentService {
 
         Payment payment = authorizedPayments.getFirst();
 
-        return payment.getProvider() == PaymentProvider.PAYJP
-                && payment.getPaymentMethod() == PaymentMethod.CARD;
+        if (payment.getProvider() != PaymentProvider.PAYJP
+                || payment.getPaymentMethod() != PaymentMethod.CARD) {
+            return false;
+        }
+
+        Order order = payment.getOrder();
+
+        return isCaptureConsistent(order, payment);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasAuthorizedCardPayment(Long orderId) {
+
+        List<Payment> payments = paymentRepository
+                .findByOrderIdOrderByCreatedAtAscIdAsc(orderId);
+
+        return payments.stream()
+                .anyMatch(this::isAuthorizedCardPayment);
     }
 
     @Transactional(readOnly = true)
@@ -611,9 +641,51 @@ public class PaymentService {
                 .findByOrderIdOrderByCreatedAtAscIdAsc(orderId);
 
         return payments.stream()
-                .anyMatch(payment -> payment.getProvider() == PaymentProvider.PAYJP
-                        && payment.getPaymentMethod() == PaymentMethod.CARD
-                        && payment.getStatus() == PaymentStatus.AUTHORIZED);
+                .anyMatch(this::isAuthorizedCardPayment);
+    }
+
+    private boolean isAuthorizedCardPayment(Payment payment) {
+        return payment.getProvider() == PaymentProvider.PAYJP
+                && payment.getPaymentMethod() == PaymentMethod.CARD
+                && payment.getStatus() == PaymentStatus.AUTHORIZED;
+    }
+
+    private void validateCaptureConsistency(
+            Order order,
+            Payment payment) {
+
+        PaymentConsistency consistency = findCaptureConsistency(order, payment)
+                .orElseThrow(() -> new IllegalStateException(
+                        "成功した与信情報が見つからないため、売上確定できません。"));
+
+        if (!consistency.canCapture()) {
+            throw new IllegalStateException(
+                    "注文内容とカード与信が一致しないため、売上確定できません。");
+        }
+    }
+
+    private boolean isCaptureConsistent(
+            Order order,
+            Payment payment) {
+
+        return findCaptureConsistency(order, payment)
+                .map(PaymentConsistency::canCapture)
+                .orElse(false);
+    }
+
+    private Optional<PaymentConsistency> findCaptureConsistency(
+            Order order,
+            Payment payment) {
+
+        return paymentTransactionRepository
+                .findByPaymentIdAndTransactionTypeAndStatus(
+                        payment.getId(),
+                        PaymentTransactionType.AUTHORIZE,
+                        PaymentTransactionStatus.SUCCEEDED)
+                .map(transaction -> paymentConsistencyEvaluator.evaluate(
+                        order,
+                        payment,
+                        transaction));
     }
 
 }
