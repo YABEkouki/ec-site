@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 import com.example.ecsite.security.AdminAuthenticationSuccessHandler;
 import com.example.ecsite.security.CustomerAuthenticationSuccessHandler;
@@ -38,6 +39,9 @@ public class SecurityConfig {
                         .permitAll()
                         .anyRequest()
                         .hasRole("ADMIN"))
+                .csrf(csrf -> csrf
+                        .ignoringRequestMatchers(
+                                new AntPathRequestMatcher("/webhooks/payjp", "POST")))
                 .formLogin(form -> form
                         .loginPage("/admin/login")
                         .loginProcessingUrl("/admin/login")
@@ -75,7 +79,8 @@ public class SecurityConfig {
                                 "/password/reset",
                                 "/403",
                                 "/css/**",
-                                "/product-images/**")
+                                "/product-images/**",
+                                "/webhooks/payjp")
                         .permitAll()
                         .requestMatchers(
                                 "/products",
