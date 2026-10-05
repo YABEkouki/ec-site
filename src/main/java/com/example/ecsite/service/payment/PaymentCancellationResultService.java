@@ -44,11 +44,12 @@ public class PaymentCancellationResultService {
                 paymentId,
                 orderId);
 
-        paymentService.applyCancellationResult(
+        boolean stateChanged = paymentService.applyCancellationResult(
                 paymentId,
                 result);
 
-        if (result.status() != CancellationResultStatus.CANCELLED) {
+        if (!stateChanged
+                || result.status() != CancellationResultStatus.CANCELLED) {
             return;
         }
 

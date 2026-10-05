@@ -29,14 +29,16 @@ public class AdminPaymentCancellationService {
             String username,
             String internalNote) {
 
-        PaymentCancellationStart start =
-                startService.start(orderId);
+        PaymentCancellationStart start = startService.start(
+                orderId,
+                accountId,
+                username,
+                internalNote);
 
-        CancellationResult result =
-                paymentGateway.cancelAuthorization(
-                        new CancellationRequest(
-                                start.providerPaymentId(),
-                                start.idempotencyKey()));
+        CancellationResult result = paymentGateway.cancelAuthorization(
+                new CancellationRequest(
+                        start.providerPaymentId(),
+                        start.idempotencyKey()));
 
         resultService.apply(
                 orderId,

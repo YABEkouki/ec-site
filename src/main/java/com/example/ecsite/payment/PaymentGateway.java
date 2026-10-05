@@ -6,6 +6,8 @@ public interface PaymentGateway {
 
     AuthorizationRecovery retrieveAuthorization(String providerPaymentId);
 
+    PaymentFlowState retrievePaymentFlow(String providerPaymentId);
+
     CancellationResult cancelAuthorization(CancellationRequest request);
 
     CaptureResult capture(CaptureRequest request);

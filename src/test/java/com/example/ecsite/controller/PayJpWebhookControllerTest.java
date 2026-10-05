@@ -13,19 +13,19 @@ import org.springframework.http.HttpStatus;
 import com.example.ecsite.payment.payjp.PayJpWebhookEvent;
 import com.example.ecsite.payment.payjp.PayJpWebhookPaymentFlow;
 import com.example.ecsite.payment.payjp.PayJpWebhookTokenVerifier;
-import com.example.ecsite.service.payment.PayJpWebhookAuthorizationSyncService;
+import com.example.ecsite.service.payment.PayJpWebhookSyncService;
 
 class PayJpWebhookControllerTest {
 
     private PayJpWebhookTokenVerifier tokenVerifier;
-    private PayJpWebhookAuthorizationSyncService syncService;
+    private PayJpWebhookSyncService syncService;
     private PayJpWebhookController controller;
 
     @BeforeEach
     void setUp() {
 
         tokenVerifier = mock(PayJpWebhookTokenVerifier.class);
-        syncService = mock(PayJpWebhookAuthorizationSyncService.class);
+        syncService = mock(PayJpWebhookSyncService.class);
 
         controller = new PayJpWebhookController(
                 tokenVerifier,

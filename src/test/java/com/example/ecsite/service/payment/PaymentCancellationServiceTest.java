@@ -49,21 +49,20 @@ class PaymentCancellationServiceTest {
         Long userId = 20L;
         String username = "testuser";
 
-        PaymentCancellationStart start =
-                new PaymentCancellationStart(
-                        30L,
-                        40L,
-                        "pf_test_123",
-                        "cancel-key-123");
+        PaymentCancellationStart start = new PaymentCancellationStart(
+                30L,
+                40L,
+                "pf_test_123",
+                "cancel-key-123");
 
-        CancellationResult result =
-                new CancellationResult(
-                        CancellationResultStatus.CANCELLED,
-                        "pf_test_123");
+        CancellationResult result = new CancellationResult(
+                CancellationResultStatus.CANCELLED,
+                "pf_test_123");
 
         when(startService.start(
                 orderId,
-                userId))
+                userId,
+                username))
                 .thenReturn(start);
 
         when(paymentGateway.cancelAuthorization(
@@ -71,19 +70,17 @@ class PaymentCancellationServiceTest {
                         CancellationRequest.class)))
                 .thenReturn(result);
 
-        CancellationResult actual =
-                service.cancelForUser(
-                        orderId,
-                        userId,
-                        username);
+        CancellationResult actual = service.cancelForUser(
+                orderId,
+                userId,
+                username);
 
         assertEquals(
                 result,
                 actual);
 
-        ArgumentCaptor<CancellationRequest> captor =
-                ArgumentCaptor.forClass(
-                        CancellationRequest.class);
+        ArgumentCaptor<CancellationRequest> captor = ArgumentCaptor.forClass(
+                CancellationRequest.class);
 
         verify(paymentGateway)
                 .cancelAuthorization(
@@ -104,6 +101,12 @@ class PaymentCancellationServiceTest {
                         userId,
                         username,
                         result);
+
+        verify(startService)
+                .start(
+                        orderId,
+                        userId,
+                        username);
     }
 
     @Test
@@ -113,16 +116,16 @@ class PaymentCancellationServiceTest {
         Long userId = 20L;
         String username = "testuser";
 
-        PaymentCancellationStart start =
-                new PaymentCancellationStart(
-                        30L,
-                        40L,
-                        "pf_test_123",
-                        "cancel-key-123");
+        PaymentCancellationStart start = new PaymentCancellationStart(
+                30L,
+                40L,
+                "pf_test_123",
+                "cancel-key-123");
 
         when(startService.start(
                 orderId,
-                userId))
+                userId,
+                username))
                 .thenReturn(start);
 
         when(paymentGateway.cancelAuthorization(

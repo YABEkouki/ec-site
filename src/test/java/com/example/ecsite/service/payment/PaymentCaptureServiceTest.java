@@ -28,14 +28,11 @@ class PaymentCaptureServiceTest {
     @BeforeEach
     void setUp() {
 
-        startService =
-                Mockito.mock(PaymentCaptureStartService.class);
+        startService = Mockito.mock(PaymentCaptureStartService.class);
 
-        paymentGateway =
-                Mockito.mock(PaymentGateway.class);
+        paymentGateway = Mockito.mock(PaymentGateway.class);
 
-        resultService =
-                Mockito.mock(PaymentCaptureResultService.class);
+        resultService = Mockito.mock(PaymentCaptureResultService.class);
 
         service = new PaymentCaptureService(
                 startService,
@@ -50,22 +47,24 @@ class PaymentCaptureServiceTest {
         Long paymentId = 20L;
         Long accountId = 30L;
 
-        PaymentCaptureStart start =
-                new PaymentCaptureStart(
-                        paymentId,
-                        40L,
-                        "pf_test_123",
-                        5_500,
-                        "capture-key-123");
+        PaymentCaptureStart start = new PaymentCaptureStart(
+                paymentId,
+                40L,
+                "pf_test_123",
+                5_500,
+                "capture-key-123");
 
-        CaptureResult result =
-                new CaptureResult(
-                        CaptureResultStatus.CAPTURED,
-                        "pf_test_123",
-                        null,
-                        null);
+        CaptureResult result = new CaptureResult(
+                CaptureResultStatus.CAPTURED,
+                "pf_test_123",
+                null,
+                null);
 
-        when(startService.start(orderId))
+        when(startService.start(
+                orderId,
+                accountId,
+                "admin",
+                "発送処理"))
                 .thenReturn(start);
 
         when(paymentGateway.capture(
@@ -75,12 +74,11 @@ class PaymentCaptureServiceTest {
                         "capture-key-123")))
                 .thenReturn(result);
 
-        CaptureResult actual =
-                service.captureForShipment(
-                        orderId,
-                        accountId,
-                        "admin",
-                        "発送処理");
+        CaptureResult actual = service.captureForShipment(
+                orderId,
+                accountId,
+                "admin",
+                "発送処理");
 
         assertEquals(result, actual);
 
@@ -90,7 +88,11 @@ class PaymentCaptureServiceTest {
                 resultService);
 
         inOrder.verify(startService)
-                .start(orderId);
+                .start(
+                        orderId,
+                        accountId,
+                        "admin",
+                        "発送処理");
 
         inOrder.verify(paymentGateway)
                 .capture(
@@ -114,22 +116,25 @@ class PaymentCaptureServiceTest {
 
         Long orderId = 10L;
         Long paymentId = 20L;
+        Long accountId = 30L;
 
-        PaymentCaptureStart start =
-                new PaymentCaptureStart(
-                        paymentId,
-                        40L,
-                        "pf_test_123",
-                        5_500,
-                        "capture-key-123");
+        PaymentCaptureStart start = new PaymentCaptureStart(
+                paymentId,
+                40L,
+                "pf_test_123",
+                5_500,
+                "capture-key-123");
 
-        when(startService.start(orderId))
+        when(startService.start(
+                orderId,
+                accountId,
+                "admin",
+                "発送処理"))
                 .thenReturn(start);
 
-        PaymentGatewayException exception =
-                new PaymentGatewayException(
-                        "Failed to capture PAY.JP Payment Flow",
-                        new RuntimeException("timeout"));
+        PaymentGatewayException exception = new PaymentGatewayException(
+                "Failed to capture PAY.JP Payment Flow",
+                new RuntimeException("timeout"));
 
         when(paymentGateway.capture(
                 new CaptureRequest(
@@ -138,14 +143,13 @@ class PaymentCaptureServiceTest {
                         "capture-key-123")))
                 .thenThrow(exception);
 
-        PaymentGatewayException thrown =
-                assertThrows(
-                        PaymentGatewayException.class,
-                        () -> service.captureForShipment(
-                                orderId,
-                                30L,
-                                "admin",
-                                "発送処理"));
+        PaymentGatewayException thrown = assertThrows(
+                PaymentGatewayException.class,
+                () -> service.captureForShipment(
+                        orderId,
+                        30L,
+                        "admin",
+                        "発送処理"));
 
         assertEquals(exception, thrown);
 

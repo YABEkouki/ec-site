@@ -5,6 +5,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
+import com.example.ecsite.entity.PaymentTransactionInitiator;
+import com.example.ecsite.entity.PaymentTransactionInitiatorType;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
@@ -24,7 +26,11 @@ public class PaymentCaptureStartService {
     }
 
     @Transactional
-    public PaymentCaptureStart start(Long orderId) {
+    public PaymentCaptureStart start(
+            Long orderId,
+            Long accountId,
+            String username,
+            String internalNote) {
 
         Order order = orderRepository
                 .findByIdForUpdate(orderId)
@@ -35,6 +41,12 @@ public class PaymentCaptureStartService {
                     "注文受付中の注文だけを売上確定できます。");
         }
 
-        return paymentService.startCapture(order);
+        return paymentService.startCapture(
+                order,
+                new PaymentTransactionInitiator(
+                        PaymentTransactionInitiatorType.ADMIN,
+                        accountId,
+                        username,
+                        internalNote));
     }
 }

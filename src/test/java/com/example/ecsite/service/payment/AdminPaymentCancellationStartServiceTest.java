@@ -2,6 +2,7 @@ package com.example.ecsite.service.payment;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.PaymentTransactionInitiatorType;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.repository.OrderRepository;
 
@@ -37,6 +39,9 @@ class AdminPaymentCancellationStartServiceTest {
     void cancellableOrderStartsCancellationAfterLockingOrder() {
 
         Long orderId = 1L;
+        Long accountId = 20L;
+        String username = "admin";
+        String internalNote = "管理者キャンセル";
 
         Order order = mock(Order.class);
         PaymentCancellationStart expected = mock(PaymentCancellationStart.class);
@@ -47,10 +52,16 @@ class AdminPaymentCancellationStartServiceTest {
         when(order.canCancel())
                 .thenReturn(true);
 
-        when(paymentService.startCancellation(order))
+        when(paymentService.startCancellation(
+                org.mockito.ArgumentMatchers.eq(order),
+                org.mockito.ArgumentMatchers.any()))
                 .thenReturn(expected);
 
-        PaymentCancellationStart actual = service.start(orderId);
+        PaymentCancellationStart actual = service.start(
+                orderId,
+                accountId,
+                username,
+                internalNote);
 
         assertSame(expected, actual);
 
@@ -58,7 +69,12 @@ class AdminPaymentCancellationStartServiceTest {
                 .findByIdForUpdate(orderId);
 
         verify(paymentService)
-                .startCancellation(order);
+                .startCancellation(
+                        org.mockito.ArgumentMatchers.eq(order),
+                        argThat(initiator -> initiator.type() == PaymentTransactionInitiatorType.ADMIN
+                                && accountId.equals(initiator.id())
+                                && username.equals(initiator.username())
+                                && internalNote.equals(initiator.internalNote())));
     }
 
     @Test
@@ -76,9 +92,15 @@ class AdminPaymentCancellationStartServiceTest {
 
         assertThrows(
                 InvalidOrderStatusException.class,
-                () -> service.start(orderId));
+                () -> service.start(
+                        orderId,
+                        20L,
+                        "admin",
+                        "管理者キャンセル"));
 
         verify(paymentService, never())
-                .startCancellation(order);
+                .startCancellation(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
     }
 }

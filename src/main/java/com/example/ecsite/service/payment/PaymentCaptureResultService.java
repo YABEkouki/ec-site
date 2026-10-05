@@ -44,11 +44,12 @@ public class PaymentCaptureResultService {
                 paymentId,
                 order.getId());
 
-        paymentService.applyCaptureResult(
+        boolean stateChanged = paymentService.applyCaptureResult(
                 paymentId,
                 result);
 
-        if (result.status() != CaptureResultStatus.CAPTURED) {
+        if (!stateChanged
+                || result.status() != CaptureResultStatus.CAPTURED) {
             return;
         }
 

@@ -53,12 +53,16 @@ class PaymentCaptureResultServiceTest {
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        CaptureResult result =
-                new CaptureResult(
-                        CaptureResultStatus.CAPTURED,
-                        "pf_test_123",
-                        null,
-                        null);
+        CaptureResult result = new CaptureResult(
+                CaptureResultStatus.CAPTURED,
+                "pf_test_123",
+                null,
+                null);
+
+        when(paymentService.applyCaptureResult(
+                20L,
+                result))
+                .thenReturn(true);
 
         service.apply(
                 orderId,
@@ -108,12 +112,11 @@ class PaymentCaptureResultServiceTest {
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        CaptureResult result =
-                new CaptureResult(
-                        CaptureResultStatus.PENDING,
-                        "pf_test_123",
-                        null,
-                        null);
+        CaptureResult result = new CaptureResult(
+                CaptureResultStatus.PENDING,
+                "pf_test_123",
+                null,
+                null);
 
         service.apply(
                 orderId,
@@ -155,12 +158,11 @@ class PaymentCaptureResultServiceTest {
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        CaptureResult result =
-                new CaptureResult(
-                        CaptureResultStatus.FAILED,
-                        "pf_test_123",
-                        "capture_failed",
-                        "Capture failed");
+        CaptureResult result = new CaptureResult(
+                CaptureResultStatus.FAILED,
+                "pf_test_123",
+                "capture_failed",
+                "Capture failed");
 
         service.apply(
                 orderId,
@@ -197,12 +199,11 @@ class PaymentCaptureResultServiceTest {
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        CaptureResult result =
-                new CaptureResult(
-                        CaptureResultStatus.CAPTURED,
-                        "pf_test_123",
-                        null,
-                        null);
+        CaptureResult result = new CaptureResult(
+                CaptureResultStatus.CAPTURED,
+                "pf_test_123",
+                null,
+                null);
 
         org.mockito.Mockito.doThrow(
                 new IllegalArgumentException(
@@ -234,4 +235,45 @@ class PaymentCaptureResultServiceTest {
                         "admin",
                         "発送処理");
     }
+
+    @Test
+    void alreadyAppliedCaptureDoesNotShipOrderAgain() {
+
+        Order order = mock(Order.class);
+
+        when(orderRepository.findByIdForUpdate(10L))
+                .thenReturn(Optional.of(order));
+
+        CaptureResult result = new CaptureResult(
+                CaptureResultStatus.CAPTURED,
+                "pf_test_123",
+                null,
+                null);
+
+        when(paymentService.applyCaptureResult(
+                20L,
+                result))
+                .thenReturn(false);
+
+        service.apply(
+                10L,
+                20L,
+                30L,
+                "admin",
+                "発送処理",
+                result);
+
+        verify(paymentService)
+                .applyCaptureResult(
+                        20L,
+                        result);
+
+        verify(orderService, never())
+                .markAsShippedAfterPaymentCapture(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
+    }
+
 }
