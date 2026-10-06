@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.Payment;
@@ -179,6 +180,103 @@ class PaymentTransactionRepositoryTest {
 
                     entityManager.flush();
                 });
+    }
+
+    @Test
+    void findPendingTransactionsBeforeCutoffReturnsOldestFirstWithinLimit() {
+
+        Payment payment = createPayment(
+                "payment-reconciliation-find-user");
+
+        PaymentTransaction oldestPending = paymentTransactionRepository.save(
+                new PaymentTransaction(
+                        payment,
+                        PaymentTransactionType.AUTHORIZE,
+                        10_000,
+                        0,
+                        "reconciliation-oldest-pending-key",
+                        LocalDateTime.of(2026, 10, 1, 9, 0)));
+
+        PaymentTransaction secondPending = paymentTransactionRepository.save(
+                new PaymentTransaction(
+                        payment,
+                        PaymentTransactionType.CAPTURE,
+                        10_000,
+                        0,
+                        "reconciliation-second-pending-key",
+                        LocalDateTime.of(2026, 10, 1, 9, 30)));
+
+        paymentTransactionRepository.save(
+                new PaymentTransaction(
+                        payment,
+                        PaymentTransactionType.CANCEL,
+                        10_000,
+                        0,
+                        "reconciliation-third-pending-key",
+                        LocalDateTime.of(2026, 10, 1, 9, 45)));
+
+        paymentTransactionRepository.save(
+                new PaymentTransaction(
+                        payment,
+                        PaymentTransactionType.AUTHORIZE,
+                        10_000,
+                        0,
+                        "reconciliation-new-pending-key",
+                        LocalDateTime.of(2026, 10, 1, 10, 30)));
+
+        PaymentTransaction completed = new PaymentTransaction(
+                payment,
+                PaymentTransactionType.AUTHORIZE,
+                10_000,
+                0,
+                "reconciliation-completed-key",
+                LocalDateTime.of(2026, 10, 1, 8, 30));
+
+        completed.markSucceeded(
+                null,
+                LocalDateTime.of(2026, 10, 1, 8, 35));
+
+        paymentTransactionRepository.save(completed);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<PaymentTransaction> transactions = paymentTransactionRepository
+                .findByStatusAndCreatedAtBeforeOrderByCreatedAtAscIdAsc(
+                        PaymentTransactionStatus.PENDING,
+                        LocalDateTime.of(2026, 10, 1, 10, 0),
+                        PageRequest.of(0, 2));
+
+        assertEquals(2, transactions.size());
+        assertEquals(oldestPending.getId(), transactions.get(0).getId());
+        assertEquals(secondPending.getId(), transactions.get(1).getId());
+    }
+
+    @Test
+    void findPendingTransactionsBeforeCutoffExcludesTransactionAtCutoff() {
+
+        Payment payment = createPayment(
+                "payment-reconciliation-cutoff-user");
+
+        paymentTransactionRepository.save(
+                new PaymentTransaction(
+                        payment,
+                        PaymentTransactionType.AUTHORIZE,
+                        10_000,
+                        0,
+                        "reconciliation-at-cutoff-key",
+                        LocalDateTime.of(2026, 10, 1, 10, 0)));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        List<PaymentTransaction> transactions = paymentTransactionRepository
+                .findByStatusAndCreatedAtBeforeOrderByCreatedAtAscIdAsc(
+                        PaymentTransactionStatus.PENDING,
+                        LocalDateTime.of(2026, 10, 1, 10, 0),
+                        PageRequest.of(0, 100));
+
+        assertTrue(transactions.isEmpty());
     }
 
     private Payment createPayment(String username) {
