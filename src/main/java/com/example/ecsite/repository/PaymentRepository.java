@@ -3,12 +3,14 @@ package com.example.ecsite.repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.example.ecsite.entity.Payment;
+import com.example.ecsite.entity.PaymentMethod;
 import com.example.ecsite.entity.PaymentProvider;
 
 import jakarta.persistence.LockModeType;
@@ -29,4 +31,10 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             """)
     Optional<Payment> findByIdForUpdate(
             @Param("paymentId") Long paymentId);
+
+    List<Payment> findByProviderAndPaymentMethodAndProviderPaymentIdIsNotNullAndIdGreaterThanOrderByIdAsc(
+            PaymentProvider provider,
+            PaymentMethod paymentMethod,
+            Long id,
+            Pageable pageable);
 }
