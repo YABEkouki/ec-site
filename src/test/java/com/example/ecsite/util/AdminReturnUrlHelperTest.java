@@ -121,4 +121,28 @@ class AdminReturnUrlHelperTest {
                 .isEqualTo("/admin/orders");
     }
 
+    @Test
+    void acceptsPaymentDiscrepancyListUrlForOrderReturn() {
+        String returnUrl = "/admin/payment-discrepancies";
+
+        assertThat(
+                AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl))
+                .isEqualTo(returnUrl);
+    }
+
+    @Test
+    void acceptsPaymentDiscrepancyListUrlWithQueryParametersForOrderReturn() {
+        String returnUrl = "/admin/payment-discrepancies"
+                + "?orderId=123"
+                + "&userId=456"
+                + "&localStatus=PENDING"
+                + "&providerStatus=REQUIRES_CAPTURE"
+                + "&page=2"
+                + "&size=10";
+
+        assertThat(
+                AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl))
+                .isEqualTo(returnUrl);
+    }
+
 }

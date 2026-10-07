@@ -84,6 +84,31 @@
             </a>
         </p>
 
+        <h2>決済要対応</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>状態</th>
+                    <th>件数</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>PAY.JP決済状態不整合</strong></td>
+                    <td>
+                        <strong th:text="${openPaymentDiscrepancyCount}">0</strong>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/payment-discrepancies}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
         <h2>注文対応状況</h2>
 
         <table>

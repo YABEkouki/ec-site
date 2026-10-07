@@ -1,28 +1,28 @@
 package com.example.ecsite.controller;
 
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
-
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
 import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.dto.AdminAssigneeActionRequiredSummary;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.security.AdminUserDetails;
+import com.example.ecsite.service.AdminPaymentDiscrepancyService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ProductService;
 
@@ -37,6 +37,9 @@ class AdminControllerTest {
 
     @MockitoBean
     private ProductService productService;
+
+    @MockitoBean
+    private AdminPaymentDiscrepancyService adminPaymentDiscrepancyService;
 
     @Test
     void indexAddsOrderSummariesToModel() throws Exception {
@@ -116,6 +119,9 @@ class AdminControllerTest {
         when(orderService.getActionRequiredOrderCountsByAssignee())
                 .thenReturn(assigneeSummaries);
 
+        when(adminPaymentDiscrepancyService.countOpen())
+                .thenReturn(1L);
+
         mockMvc.perform(
                 get("/admin").with(authentication(authentication)))
                 .andExpect(status().isOk())
@@ -129,7 +135,8 @@ class AdminControllerTest {
                 .andExpect(model().attribute("myAssignedActionRequiredAgingSummary", myAssignedAgingSummary))
                 .andExpect(model().attribute("unassignedActionRequiredOrderCount", 4L))
                 .andExpect(model().attribute("unassignedActionRequiredAgingSummary", unassignedAgingSummary))
-                .andExpect(model().attribute("assigneeActionRequiredSummaries", assigneeSummaries));
+                .andExpect(model().attribute("assigneeActionRequiredSummaries", assigneeSummaries))
+                .andExpect(model().attribute("openPaymentDiscrepancyCount", 1L));
 
         verify(orderService)
                 .getMyAssignedActionRequiredAgingSummary(adminId);
@@ -142,6 +149,9 @@ class AdminControllerTest {
 
         verify(orderService)
                 .getActionRequiredOrderCountsByAssignee();
+
+        verify(adminPaymentDiscrepancyService)
+                .countOpen();
     }
 
 }

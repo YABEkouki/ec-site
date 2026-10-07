@@ -9,6 +9,7 @@ import com.example.ecsite.dto.ActionRequiredAgingSummary;
 import com.example.ecsite.entity.OrderHandlingStatus;
 import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.security.AdminUserDetails;
+import com.example.ecsite.service.AdminPaymentDiscrepancyService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ProductService;
 
@@ -17,13 +18,16 @@ public class AdminController {
 
     private final OrderService orderService;
     private final ProductService productService;
+    private final AdminPaymentDiscrepancyService adminPaymentDiscrepancyService;
 
     public AdminController(
             OrderService orderService,
-            ProductService productService) {
+            ProductService productService,
+            AdminPaymentDiscrepancyService adminPaymentDiscrepancyService) {
 
         this.orderService = orderService;
         this.productService = productService;
+        this.adminPaymentDiscrepancyService = adminPaymentDiscrepancyService;
     }
 
     @GetMapping("/admin")
@@ -100,6 +104,10 @@ public class AdminController {
         model.addAttribute(
                 "lowStockThreshold",
                 lowStockThreshold);
+
+        model.addAttribute(
+                "openPaymentDiscrepancyCount",
+                adminPaymentDiscrepancyService.countOpen());
 
         return "admin/index";
     }

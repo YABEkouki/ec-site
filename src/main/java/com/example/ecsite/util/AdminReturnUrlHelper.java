@@ -4,6 +4,7 @@ public final class AdminReturnUrlHelper {
 
     private static final String ADMIN_PRODUCTS_PATH = "/admin/products";
     private static final String ADMIN_ORDERS_PATH = "/admin/orders";
+    private static final String ADMIN_PAYMENT_DISCREPANCIES_PATH = "/admin/payment-discrepancies";
 
     private AdminReturnUrlHelper() {
     }
@@ -27,7 +28,9 @@ public final class AdminReturnUrlHelper {
         }
 
         if (returnUrl.equals(ADMIN_ORDERS_PATH)
-                || returnUrl.startsWith(ADMIN_ORDERS_PATH + "?")) {
+                || returnUrl.startsWith(ADMIN_ORDERS_PATH + "?")
+                || returnUrl.equals(ADMIN_PAYMENT_DISCREPANCIES_PATH)
+                || returnUrl.startsWith(ADMIN_PAYMENT_DISCREPANCIES_PATH + "?")) {
             return returnUrl;
         }
 
