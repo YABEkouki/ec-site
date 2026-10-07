@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+
+<head>
+    <meta charset="UTF-8">
+    <title>決済要対応一覧</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>決済要対応一覧</h1>
+
+        <p>
+            PAY.JPとの決済状態に不整合が検知されている注文の一覧です。
+            この画面から決済状態の変更は行いません。
+        </p>
+
+        <form th:action="@{/admin/payment-discrepancies}" th:object="${searchForm}" method="get">
+
+            <div class="order-search-fields">
+
+                <div class="order-search-field">
+                    <label for="orderId">注文ID</label>
+                    <input id="orderId" type="number" min="1" th:field="*{orderId}">
+                </div>
+
+                <div class="order-search-field">
+                    <label for="userId">顧客ID</label>
+                    <input id="userId" type="number" min="1" th:field="*{userId}">
+                </div>
+
+                <div class="order-search-field">
+                    <label for="localStatus">ローカル状態</label>
+                    <select id="localStatus" th:field="*{localStatus}">
+                        <option value="">すべて</option>
+                        <option th:each="status : ${paymentStatuses}" th:value="${status}" th:text="${status}">
+                        </option>
+                    </select>
+                </div>
+
+                <div class="order-search-field">
+                    <label for="providerStatus">PAY.JP状態</label>
+                    <select id="providerStatus" th:field="*{providerStatus}">
+                        <option value="">すべて</option>
+                        <option th:each="status : ${paymentFlowStatuses}" th:value="${status}" th:text="${status}">
+                        </option>
+                    </select>
+                </div>
+
+            </div>
+
+            <input type="hidden" name="size" th:value="${page.size}">
+
+            <div class="actions">
+                <button type="submit" class="button-secondary">
+                    検索
+                </button>
+
+                <a th:href="@{/admin/payment-discrepancies}" class="button button-secondary">
+                    クリア
+                </a>
+            </div>
+
+        </form>
+        <p th:if="${page.totalElements > 0}">
+            <span th:text="${page.totalElements}"></span>
+            件の要対応決済があります。
+        </p>
+
+        <p th:if="${page.totalElements == 0}">
+            要対応の決済はありません。
+        </p>
+
+        <table th:if="${page.totalElements > 0}">
+            <thead>
+                <tr>
+                    <th>注文ID</th>
+                    <th>顧客ID</th>
+                    <th>ユーザー名</th>
+                    <th>ローカル状態</th>
+                    <th>PAY.JP状態</th>
+                    <th>初回検知日時</th>
+                    <th>最終検知日時</th>
+                    <th>検知回数</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr th:each="item : ${discrepancies}">
+                    <td>
+                        <a th:href="@{/admin/orders/{id}(
+                        id=${item.orderId},
+                        returnUrl=${returnUrl}
+                    )}" th:text="${item.orderId}">
+                        </a>
+                    </td>
+
+                    <td th:text="${item.userId}"></td>
+
+                    <td th:text="${item.username}"></td>
+
+                    <td th:text="${item.localStatus}"></td>
+
+                    <td th:text="${item.providerStatus}"></td>
+
+                    <td th:text="${#temporals.format(
+                    item.firstDetectedAt,
+                    'yyyy-MM-dd HH:mm:ss')}">
+                    </td>
+
+                    <td th:text="${#temporals.format(
+                    item.lastDetectedAt,
+                    'yyyy-MM-dd HH:mm:ss')}">
+                    </td>
+
+                    <td th:text="${item.detectionCount}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <nav th:if="${page.totalPages > 1}">
+
+            <a th:if="${page.hasPrevious()}" th:href="@{/admin/payment-discrepancies(
+                orderId=${searchForm.orderId},
+                userId=${searchForm.userId},
+                localStatus=${searchForm.localStatus},
+                providerStatus=${searchForm.providerStatus},
+                page=${page.number - 1},
+                size=${page.size})}" class="button button-secondary">
+                前へ
+            </a>
+
+            <span th:each="pageNumber :
+        ${#numbers.sequence(
+            0,
+            page.totalPages - 1)}">
+
+                <strong th:if="${pageNumber == page.number}" th:text="${pageNumber + 1}"
+                    class="button pagination-current">
+                </strong>
+
+                <a th:unless="${pageNumber == page.number}" th:href="@{/admin/payment-discrepancies(
+                    orderId=${searchForm.orderId},
+                    userId=${searchForm.userId},
+                    localStatus=${searchForm.localStatus},
+                    providerStatus=${searchForm.providerStatus},
+                    page=${pageNumber},
+                    size=${page.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
+                </a>
+
+            </span>
+
+            <a th:if="${page.hasNext()}" th:href="@{/admin/payment-discrepancies(
+                orderId=${searchForm.orderId},
+                userId=${searchForm.userId},
+                localStatus=${searchForm.localStatus},
+                providerStatus=${searchForm.providerStatus},
+                page=${page.number + 1},
+                size=${page.size})}" class="button button-secondary">
+                次へ
+            </a>
+
+        </nav>
+
+    </main>
+
+</body>
+
+</html>

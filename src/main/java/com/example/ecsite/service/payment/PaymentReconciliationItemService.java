@@ -1,6 +1,7 @@
 package com.example.ecsite.service.payment;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Payment;
 import com.example.ecsite.entity.PaymentProvider;
@@ -44,6 +45,7 @@ public class PaymentReconciliationItemService {
         this.adminCancellationResultService = adminCancellationResultService;
     }
 
+    @Transactional
     public void reconcile(Long transactionId) {
 
         PaymentTransaction transaction = paymentTransactionRepository
