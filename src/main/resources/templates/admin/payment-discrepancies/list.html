@@ -53,6 +53,16 @@
                     </select>
                 </div>
 
+                <div class="order-search-field">
+                    <label for="handlingStatus">管理者対応状態</label>
+                    <select id="handlingStatus" th:field="*{handlingStatus}">
+                        <option value="">すべて</option>
+                        <option th:each="status : ${paymentDiscrepancyHandlingStatuses}" th:value="${status}"
+                            th:text="${status}">
+                        </option>
+                    </select>
+                </div>
+
             </div>
 
             <input type="hidden" name="size" th:value="${page.size}">
@@ -85,9 +95,11 @@
                     <th>ユーザー名</th>
                     <th>ローカル状態</th>
                     <th>PAY.JP状態</th>
+                    <th>管理者対応状態</th>
                     <th>初回検知日時</th>
                     <th>最終検知日時</th>
                     <th>検知回数</th>
+                    <th>詳細</th>
                 </tr>
             </thead>
 
@@ -109,6 +121,8 @@
 
                     <td th:text="${item.providerStatus}"></td>
 
+                    <td th:text="${item.handlingStatus}"></td>
+
                     <td th:text="${#temporals.format(
                     item.firstDetectedAt,
                     'yyyy-MM-dd HH:mm:ss')}">
@@ -120,6 +134,16 @@
                     </td>
 
                     <td th:text="${item.detectionCount}"></td>
+
+                    <td>
+                        <a th:href="@{/admin/payment-discrepancies/{id}(
+                        id=${item.discrepancyId},
+                        returnUrl=${returnUrl}
+                        )}">
+                            詳細
+                        </a>
+                    </td>
+
                 </tr>
             </tbody>
         </table>
@@ -131,6 +155,7 @@
                 userId=${searchForm.userId},
                 localStatus=${searchForm.localStatus},
                 providerStatus=${searchForm.providerStatus},
+                handlingStatus=${searchForm.handlingStatus},
                 page=${page.number - 1},
                 size=${page.size})}" class="button button-secondary">
                 前へ
@@ -150,6 +175,7 @@
                     userId=${searchForm.userId},
                     localStatus=${searchForm.localStatus},
                     providerStatus=${searchForm.providerStatus},
+                    handlingStatus=${searchForm.handlingStatus},
                     page=${pageNumber},
                     size=${page.size})}" th:text="${pageNumber + 1}" class="button button-secondary">
                 </a>
@@ -161,6 +187,7 @@
                 userId=${searchForm.userId},
                 localStatus=${searchForm.localStatus},
                 providerStatus=${searchForm.providerStatus},
+                handlingStatus=${searchForm.handlingStatus},
                 page=${page.number + 1},
                 size=${page.size})}" class="button button-secondary">
                 次へ

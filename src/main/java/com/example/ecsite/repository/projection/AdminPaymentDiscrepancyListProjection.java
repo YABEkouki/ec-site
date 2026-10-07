@@ -16,6 +16,10 @@ public interface AdminPaymentDiscrepancyListProjection {
 
     String getProviderStatus();
 
+    String getHandlingStatus();
+
+    LocalDateTime getHandlingStatusUpdatedAt();
+
     LocalDateTime getFirstDetectedAt();
 
     LocalDateTime getLastDetectedAt();

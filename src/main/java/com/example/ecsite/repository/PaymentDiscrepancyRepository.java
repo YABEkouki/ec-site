@@ -35,6 +35,8 @@ public interface PaymentDiscrepancyRepository extends JpaRepository<PaymentDiscr
                 u.username AS username,
                 pd.local_status AS localStatus,
                 pd.provider_status AS providerStatus,
+                pd.handling_status AS handlingStatus,
+                pd.handling_status_updated_at AS handlingStatusUpdatedAt,
                 pd.first_detected_at AS firstDetectedAt,
                 pd.last_detected_at AS lastDetectedAt,
                 pd.detection_count AS detectionCount
@@ -50,6 +52,7 @@ public interface PaymentDiscrepancyRepository extends JpaRepository<PaymentDiscr
               AND (:userId IS NULL OR o.user_id = :userId)
               AND (:localStatus IS NULL OR pd.local_status = :localStatus)
               AND (:providerStatus IS NULL OR pd.provider_status = :providerStatus)
+              AND (:handlingStatus IS NULL OR pd.handling_status = :handlingStatus)
             ORDER BY pd.last_detected_at DESC, pd.id DESC
             """, countQuery = """
             SELECT COUNT(*)
@@ -65,14 +68,25 @@ public interface PaymentDiscrepancyRepository extends JpaRepository<PaymentDiscr
               AND (:userId IS NULL OR o.user_id = :userId)
               AND (:localStatus IS NULL OR pd.local_status = :localStatus)
               AND (:providerStatus IS NULL OR pd.provider_status = :providerStatus)
+              AND (:handlingStatus IS NULL OR pd.handling_status = :handlingStatus)
             """, nativeQuery = true)
     Page<AdminPaymentDiscrepancyListProjection> searchOpenForAdmin(
             @Param("orderId") Long orderId,
             @Param("userId") Long userId,
             @Param("localStatus") String localStatus,
             @Param("providerStatus") String providerStatus,
+            @Param("handlingStatus") String handlingStatus,
             Pageable pageable);
 
     long countByStatus(PaymentDiscrepancyRecordStatus status);
 
+    @Query("""
+            SELECT pd
+            FROM PaymentDiscrepancy pd
+            JOIN FETCH pd.payment p
+            JOIN FETCH p.order o
+            WHERE pd.id = :id
+            """)
+    Optional<PaymentDiscrepancy> findByIdWithPaymentAndOrder(
+            @Param("id") Long id);
 }
