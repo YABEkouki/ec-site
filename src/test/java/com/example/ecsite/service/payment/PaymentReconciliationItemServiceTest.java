@@ -1,14 +1,17 @@
 package com.example.ecsite.service.payment;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Method;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.Payment;
@@ -564,6 +567,16 @@ class PaymentReconciliationItemServiceTest {
         verify(paymentGateway, never())
                 .retrievePaymentFlow(
                         org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void reconcileRunsWithinTransaction() throws Exception {
+
+        Method method = PaymentReconciliationItemService.class
+                .getMethod("reconcile", Long.class);
+
+        assertThat(method.isAnnotationPresent(Transactional.class))
+                .isTrue();
     }
 
 }
