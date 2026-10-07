@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>決済不整合詳細</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>決済不整合詳細</h1>
+
+        <p th:if="${successMessage}" th:text="${successMessage}">
+        </p>
+
+        <p th:if="${errorMessage}" th:text="${errorMessage}">
+        </p>
+
+        <table>
+            <tbody>
+                <tr>
+                    <th>不整合ID</th>
+                    <td th:text="${discrepancy.id}"></td>
+                </tr>
+                <tr>
+                    <th>注文ID</th>
+                    <td>
+                        <a th:href="@{/admin/orders/{id}(
+                        id=${discrepancy.payment.order.id},
+                        returnUrl=${returnUrl}
+                        )}" th:text="${discrepancy.payment.order.id}">
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <th>システム状態</th>
+                    <td th:text="${discrepancy.status}"></td>
+                </tr>
+                <tr>
+                    <th>ローカル状態</th>
+                    <td th:text="${discrepancy.localStatus}"></td>
+                </tr>
+                <tr>
+                    <th>PAY.JP状態</th>
+                    <td th:text="${discrepancy.providerStatus}"></td>
+                </tr>
+                <tr>
+                    <th>管理者対応状態</th>
+                    <td th:text="${discrepancy.handlingStatus}"></td>
+                </tr>
+                <tr>
+                    <th>管理者対応更新日時</th>
+                    <td th:text="${discrepancy.handlingStatusUpdatedAt == null
+                        ? '-'
+                        : #temporals.format(
+                            discrepancy.handlingStatusUpdatedAt,
+                            'yyyy-MM-dd HH:mm:ss')}">
+                    </td>
+                </tr>
+                <tr>
+                    <th>初回検知日時</th>
+                    <td th:text="${#temporals.format(
+                        discrepancy.firstDetectedAt,
+                        'yyyy-MM-dd HH:mm:ss')}">
+                    </td>
+                </tr>
+                <tr>
+                    <th>最終検知日時</th>
+                    <td th:text="${#temporals.format(
+                        discrepancy.lastDetectedAt,
+                        'yyyy-MM-dd HH:mm:ss')}">
+                    </td>
+                </tr>
+                <tr>
+                    <th>検知回数</th>
+                    <td th:text="${discrepancy.detectionCount}"></td>
+                </tr>
+                <tr>
+                    <th>解消日時</th>
+                    <td th:text="${discrepancy.resolvedAt == null
+                        ? '-'
+                        : #temporals.format(
+                            discrepancy.resolvedAt,
+                            'yyyy-MM-dd HH:mm:ss')}">
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>管理者対応状態</h2>
+
+        <form th:action="@{/admin/payment-discrepancies/{id}/handling-status(
+                id=${discrepancy.id},
+                returnUrl=${returnUrl}
+            )}" th:object="${handlingStatusForm}" method="post">
+
+            <select th:field="*{handlingStatus}" required>
+                <option th:each="status : ${handlingStatuses}" th:value="${status}" th:text="${status}">
+                </option>
+            </select>
+
+            <button type="submit" class="button-secondary">
+                変更
+            </button>
+        </form>
+
+        <h2>管理者対応履歴</h2>
+
+        <p th:if="${#lists.isEmpty(handlingStatusHistories)}">
+            管理者対応履歴はありません。
+        </p>
+
+        <table th:unless="${#lists.isEmpty(handlingStatusHistories)}">
+            <thead>
+                <tr>
+                    <th>変更日時</th>
+                    <th>変更前</th>
+                    <th>変更後</th>
+                    <th>変更者</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="history : ${handlingStatusHistories}">
+                    <td th:text="${#temporals.format(
+                        history.changedAt,
+                        'yyyy-MM-dd HH:mm:ss')}">
+                    </td>
+                    <td th:text="${history.fromStatus}"></td>
+                    <td th:text="${history.toStatus}"></td>
+                    <td th:text="${history.changedByUsername}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="actions">
+            <a th:href="${returnUrl}" class="button button-secondary">
+                一覧へ戻る
+            </a>
+        </div>
+
+    </main>
+
+</body>
+
+</html>

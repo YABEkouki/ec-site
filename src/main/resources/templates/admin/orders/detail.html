@@ -611,10 +611,15 @@
     </table>
 
     <p>
-        <a th:href="${returnUrl}" class="button button-secondary">
+        <a th:href="${returnUrl}" class="button button-secondary" th:text="${#strings.startsWith(
+            returnUrl,
+            '/admin/payment-discrepancies')
+            ? '決済不整合一覧へ戻る'
+            : '注文一覧へ戻る'}">
             注文一覧へ戻る
         </a>
     </p>
+
 </body>
 
 </html>

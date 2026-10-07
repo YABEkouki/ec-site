@@ -40,6 +40,13 @@ public class PaymentDiscrepancy {
     @Column(nullable = false, length = 20)
     private PaymentDiscrepancyRecordStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "handling_status", nullable = false, length = 30)
+    private PaymentDiscrepancyHandlingStatus handlingStatus;
+
+    @Column(name = "handling_status_updated_at")
+    private LocalDateTime handlingStatusUpdatedAt;
+
     @Column(name = "first_detected_at", nullable = false)
     private LocalDateTime firstDetectedAt;
 
@@ -71,6 +78,7 @@ public class PaymentDiscrepancy {
         this.localStatus = localStatus;
         this.providerStatus = providerStatus;
         this.status = PaymentDiscrepancyRecordStatus.OPEN;
+        this.handlingStatus = PaymentDiscrepancyHandlingStatus.UNCONFIRMED;
         this.firstDetectedAt = detectedAt;
         this.lastDetectedAt = detectedAt;
         this.detectionCount = 1;
@@ -94,6 +102,14 @@ public class PaymentDiscrepancy {
         this.updatedAt = resolvedAt;
     }
 
+    public void changeHandlingStatus(
+            PaymentDiscrepancyHandlingStatus handlingStatus,
+            LocalDateTime changedAt) {
+
+        this.handlingStatus = handlingStatus;
+        this.handlingStatusUpdatedAt = changedAt;
+    }
+
     public Long getId() {
         return id;
     }
@@ -112,6 +128,14 @@ public class PaymentDiscrepancy {
 
     public PaymentDiscrepancyRecordStatus getStatus() {
         return status;
+    }
+
+    public PaymentDiscrepancyHandlingStatus getHandlingStatus() {
+        return handlingStatus;
+    }
+
+    public LocalDateTime getHandlingStatusUpdatedAt() {
+        return handlingStatusUpdatedAt;
     }
 
     public LocalDateTime getFirstDetectedAt() {

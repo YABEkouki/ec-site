@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.Payment;
 import com.example.ecsite.entity.PaymentDiscrepancy;
+import com.example.ecsite.entity.PaymentDiscrepancyHandlingStatus;
 import com.example.ecsite.entity.PaymentMethod;
 import com.example.ecsite.entity.PaymentProvider;
 import com.example.ecsite.entity.PaymentStatus;
@@ -76,6 +77,7 @@ class PaymentDiscrepancyRepositoryTest {
         Page<AdminPaymentDiscrepancyListProjection> result = paymentDiscrepancyRepository.searchOpenForAdmin(
                 null,
                 targetUser.getId(),
+                null,
                 null,
                 null,
                 PageRequest.of(0, 10));
@@ -150,6 +152,7 @@ class PaymentDiscrepancyRepositoryTest {
                 null,
                 null,
                 null,
+                null,
                 PageRequest.of(0, 10));
 
         assertEquals(0, result.getTotalElements());
@@ -183,6 +186,10 @@ class PaymentDiscrepancyRepositoryTest {
                         PaymentFlowStatus.SUCCEEDED,
                         detectedAt.plusMinutes(1)));
 
+        targetDiscrepancy.changeHandlingStatus(
+                PaymentDiscrepancyHandlingStatus.IN_PROGRESS,
+                detectedAt.plusMinutes(5));
+
         entityManager.flush();
         entityManager.clear();
 
@@ -191,6 +198,7 @@ class PaymentDiscrepancyRepositoryTest {
                 targetUser.getId(),
                 PaymentStatus.PENDING.name(),
                 PaymentFlowStatus.REQUIRES_CAPTURE.name(),
+                PaymentDiscrepancyHandlingStatus.IN_PROGRESS.name(),
                 PageRequest.of(0, 10));
 
         assertEquals(1, result.getTotalElements());
@@ -198,6 +206,14 @@ class PaymentDiscrepancyRepositoryTest {
         assertEquals(
                 targetDiscrepancy.getId(),
                 result.getContent().get(0).getDiscrepancyId());
+
+        assertEquals(
+                PaymentDiscrepancyHandlingStatus.IN_PROGRESS.name(),
+                result.getContent().get(0).getHandlingStatus());
+
+        assertEquals(
+                detectedAt.plusMinutes(5),
+                result.getContent().get(0).getHandlingStatusUpdatedAt());
     }
 
     @Test
@@ -230,6 +246,7 @@ class PaymentDiscrepancyRepositoryTest {
         entityManager.clear();
 
         Page<AdminPaymentDiscrepancyListProjection> result = paymentDiscrepancyRepository.searchOpenForAdmin(
+                null,
                 null,
                 null,
                 null,

@@ -37,4 +37,18 @@ public final class AdminReturnUrlHelper {
         return ADMIN_ORDERS_PATH;
     }
 
+    public static String resolvePaymentDiscrepancyListReturnUrl(String returnUrl) {
+        if (returnUrl == null || returnUrl.isBlank()) {
+            return ADMIN_PAYMENT_DISCREPANCIES_PATH;
+        }
+
+        if (returnUrl.equals(ADMIN_PAYMENT_DISCREPANCIES_PATH)
+                || returnUrl.startsWith(
+                        ADMIN_PAYMENT_DISCREPANCIES_PATH + "?")) {
+            return returnUrl;
+        }
+
+        return ADMIN_PAYMENT_DISCREPANCIES_PATH;
+    }
+
 }
