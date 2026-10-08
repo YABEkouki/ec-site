@@ -1,6 +1,7 @@
 package com.example.ecsite.repository;
 
 import java.util.List;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.example.ecsite.entity.PaymentDiscrepancy;
+import com.example.ecsite.entity.PaymentDiscrepancyHandlingStatus;
 import com.example.ecsite.entity.PaymentDiscrepancyRecordStatus;
 import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.payment.PaymentFlowStatus;
@@ -77,6 +79,16 @@ public interface PaymentDiscrepancyRepository extends JpaRepository<PaymentDiscr
             @Param("providerStatus") String providerStatus,
             @Param("handlingStatus") String handlingStatus,
             Pageable pageable);
+
+    @Query("""
+            select count(pd) from PaymentDiscrepancy pd
+            where pd.status = :status and pd.handlingStatus <> :completed
+              and pd.firstDetectedAt <= :cutoff
+            """)
+    long countLongUnhandled(
+            @Param("status") PaymentDiscrepancyRecordStatus status,
+            @Param("completed") PaymentDiscrepancyHandlingStatus completed,
+            @Param("cutoff") LocalDateTime cutoff);
 
     long countByStatus(PaymentDiscrepancyRecordStatus status);
 

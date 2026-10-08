@@ -34,7 +34,16 @@ class PaymentDiscrepancyAuditServiceTest {
     private final PaymentDiscrepancyAuditService service = new PaymentDiscrepancyAuditService(
             paymentRepository,
             itemService,
-            properties);
+            properties,
+            mock(PaymentDiscrepancyAuditRunRecordingService.class),
+            java.time.Clock.systemUTC());
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubSuccessfulResults() {
+        org.mockito.Mockito.when(itemService.auditWithResult(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(new PaymentDiscrepancyAuditResult(PaymentDiscrepancyAuditResult.Status.CONSISTENT,
+                        null, null, List.of()));
+    }
 
     @Test
     void auditsEligiblePaymentsInOrder() {
@@ -53,8 +62,8 @@ class PaymentDiscrepancyAuditServiceTest {
         service.auditPayments();
 
         InOrder order = inOrder(itemService);
-        order.verify(itemService).audit(10L);
-        order.verify(itemService).audit(20L);
+        order.verify(itemService).auditWithResult(10L);
+        order.verify(itemService).auditWithResult(20L);
     }
 
     @Test
@@ -85,9 +94,9 @@ class PaymentDiscrepancyAuditServiceTest {
         service.auditPayments();
 
         InOrder order = inOrder(itemService);
-        order.verify(itemService).audit(10L);
-        order.verify(itemService).audit(20L);
-        order.verify(itemService).audit(30L);
+        order.verify(itemService).auditWithResult(10L);
+        order.verify(itemService).auditWithResult(20L);
+        order.verify(itemService).auditWithResult(30L);
     }
 
     @Test
@@ -127,8 +136,8 @@ class PaymentDiscrepancyAuditServiceTest {
         service.auditPayments();
 
         verify(itemService, org.mockito.Mockito.times(2))
-                .audit(10L);
-        verify(itemService).audit(20L);
+                .auditWithResult(10L);
+        verify(itemService).auditWithResult(20L);
     }
 
     @Test
@@ -147,12 +156,12 @@ class PaymentDiscrepancyAuditServiceTest {
 
         doThrow(new RuntimeException("test"))
                 .when(itemService)
-                .audit(10L);
+                .auditWithResult(10L);
 
         service.auditPayments();
 
-        verify(itemService).audit(10L);
-        verify(itemService).audit(20L);
+        verify(itemService).auditWithResult(10L);
+        verify(itemService).auditWithResult(20L);
     }
 
     private Payment payment(Long id) {

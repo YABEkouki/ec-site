@@ -145,7 +145,7 @@ class PaymentDiscrepancyOptimisticLockPostgresTest {
                     """, Integer.class)).isZero();
             return null;
         });
-        Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
+        Flyway upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).target("48").load();
         assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
         upgrade.validate();
         assertThat(upgrade.info().current().getVersion().toString()).isEqualTo("48");
