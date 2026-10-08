@@ -71,7 +71,7 @@ import com.example.ecsite.service.payment.PaymentDiscrepancyConcurrencyPostgresT
         "spring.jpa.properties.hibernate.order_updates=true"
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({PaymentDiscrepancyAuditRetryFacade.class, AdminPaymentDiscrepancyReconciliationService.class, PaymentDiscrepancyAuditItemService.class, PaymentDiscrepancyEvaluator.class,
+@Import({PaymentDiscrepancyAuditRunRecordingService.class, PaymentDiscrepancyAuditRetryFacade.class, AdminPaymentDiscrepancyReconciliationService.class, PaymentDiscrepancyAuditItemService.class, PaymentDiscrepancyEvaluator.class,
         AdminPaymentDiscrepancyService.class, PaymentDiscrepancyConcurrencyPostgresTest.SynchronizationConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
@@ -100,6 +100,8 @@ class PaymentDiscrepancyAuditRetryPostgresTest {
     @Autowired private OrderRepository orders;
     @Autowired private UserRepository users;
     @Autowired private PaymentDiscrepancyAuditRetryFacade audit;
+    @Autowired private PaymentDiscrepancyAuditRunRecordingService recording;
+    @Autowired private java.time.Clock clock;
     @Autowired private AdminPaymentDiscrepancyReconciliationService reconciliation;
     @Autowired private EntityManager entityManager;
     @Autowired private AdminPaymentDiscrepancyService admin;
@@ -207,13 +209,17 @@ class PaymentDiscrepancyAuditRetryPostgresTest {
         provider(second, PaymentFlowStatus.SUCCEEDED);
         Collision collision = collideOnEachRead(first, 3);
         PaymentDiscrepancyAuditService batch = new PaymentDiscrepancyAuditService(payments, audit,
-                new PaymentDiscrepancyAuditProperties(true, Duration.ofMinutes(5), 2));
+                new PaymentDiscrepancyAuditProperties(true, Duration.ofMinutes(5), 2), recording, clock);
         org.springframework.test.util.ReflectionTestUtils.setField(batch, "lastPaymentId", first.paymentId() - 1);
         gate.role.set("retry");
         try { batch.auditPayments(); } finally { gate.role.remove(); }
         verify(gateway, times(3)).retrievePaymentFlow(first.providerId());
         verify(gateway, times(1)).retrievePaymentFlow(second.providerId());
         assertThat(collision.reads()).hasSize(3);
+        assertThat(tx(() -> jdbc.queryForMap("select * from payment_discrepancy_audit_runs order by id desc limit 1")))
+                .containsEntry("status", "PARTIAL_FAILURE").containsEntry("candidate_count", 2)
+                .containsEntry("success_count", 1).containsEntry("failure_count", 1)
+                .containsEntry("error_code", "ITEM_FAILURE");
         assertThat(row(first)).containsEntry("detection_count", 4).containsEntry("version", 3L);
         assertThat(row(second)).containsEntry("detection_count", 2).containsEntry("version", 1L);
         assertThat(protectedRows(first)).isEqualTo(beforeFirst);

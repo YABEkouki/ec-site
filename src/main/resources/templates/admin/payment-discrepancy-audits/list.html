@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><title>PAY.JP定期決済監査履歴</title><link rel="stylesheet" th:href="@{/css/style.css}">
+<style>
+    #latest-audit-summary { display: table; table-layout: fixed; white-space: normal; }
+    #latest-audit-summary th { width: 35%; }
+    #latest-audit-summary th, #latest-audit-summary td { overflow-wrap: anywhere; }
+    #audit-history-scroll { width: 100%; max-width: 100%; overflow-x: auto; }
+    #audit-history-scroll table { display: table; min-width: 1200px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<header th:replace="~{fragments/admin-header :: header}"></header>
+<main>
+    <h1>PAY.JP定期決済監査履歴</h1>
+    <p>日時はAsia/Tokyoで表示します。SUCCESSはバッチの正常終了を意味します。不整合を検知した場合や全件SKIPPEDの場合もSUCCESSとなり、すべてのPaymentの整合確認を意味しません。</p>
+    <p>不整合検知・IN_PROGRESS件数は成功件数の内数です。RUNNINGは終了記録がない状態であり、実際の処理中か残留かはこの画面では判定しません。</p>
+    <section aria-labelledby="monitoring-title">
+        <h2 id="monitoring-title">監視状況</h2>
+        <p th:text="${summary.schedulerEnabled ? '定期監査Scheduler：有効' : '定期監査Scheduler：無効'}"></p>
+        <p th:unless="${summary.schedulerEnabled}">Scheduler無効のため、履歴なし・監査遅延の警告を抑止しています。過去の履歴や未対応の決済不整合は引き続き表示します。</p>
+        <p>判定日時：<span th:text="${#temporals.format(summary.evaluatedAt, 'yyyy-MM-dd HH:mm:ss')}"></span></p>
+        <p th:if="${#lists.isEmpty(summary.warnings)}">現在、設定された監視条件に該当する警告はありません。</p>
+        <ul th:unless="${#lists.isEmpty(summary.warnings)}">
+            <li th:each="warning : ${summary.warnings}">
+                <strong class="action-required-warning" th:text="${warning.type.title}"></strong>
+                <p th:text="${warning.description}"></p>
+                <p th:if="${warning.relatedAt != null}">関連日時：<span th:text="${#temporals.format(warning.relatedAt, 'yyyy-MM-dd HH:mm:ss')}"></span></p>
+                <p th:if="${warning.count != null}">件数：<span th:text="${warning.count}"></span></p>
+                <p th:if="${warning.errorCode != null}">エラー分類：<span th:text="${warning.errorCode}"></span></p>
+                <a th:if="${warning.type.name() == 'LONG_UNHANDLED'}" th:href="@{/admin/payment-discrepancies}" class="button button-secondary">決済要対応一覧を確認</a>
+            </li>
+        </ul>
+    </section>
+    <h2>現在の決済不整合</h2>
+    <p>OPEN件数：<strong th:text="${summary.openCount}"></strong> 件 ／ 長期未対応件数：<strong th:text="${summary.longUnhandledCount}"></strong> 件</p>
+    <p>OPENは現在未解消の不整合レコード件数です。バッチの不整合検知Payment件数とは異なります。長期未対応はOPENかつ管理者対応がCOMPLETED以外で、初回検知から設定された長期未対応時間以上経過したレコードです。</p>
+    <a th:href="@{/admin/payment-discrepancies}" class="button button-secondary">決済要対応一覧</a>
+    <h2>最新定期監査概要</h2>
+    <p>最終SUCCESS終了日時：<span th:text="${summary.lastSuccessFinishedAt == null ? 'なし' : #temporals.format(summary.lastSuccessFinishedAt, 'yyyy-MM-dd HH:mm:ss')}"></span></p>
+    <p th:if="${summary.latestRun == null}">定期監査の実行記録はありません。</p>
+    <table id="latest-audit-summary" aria-label="最新定期監査概要" th:if="${summary.latestRun != null}" th:with="item=${summary.latestRun}">
+        <tbody>
+        <tr><th scope="row">開始日時</th><td th:text="${#temporals.format(item.startedAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+        <tr><th scope="row">終了日時</th><td th:text="${item.finishedAt == null ? '実行中' : #temporals.format(item.finishedAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+        <tr><th scope="row">実行状態</th><td th:text="${item.status}"></td></tr>
+        <tr><th scope="row">実行時間（ms）</th><td th:text="${item.durationMs == null ? '実行中' : item.durationMs}"></td></tr>
+        <tr><th scope="row">実行instance ID</th><td th:text="${item.instanceId}"></td></tr>
+        <tr><th scope="row">候補件数</th><td th:text="${item.candidateCount == null ? '未確定' : item.candidateCount}"></td></tr>
+        <tr><th scope="row">成功件数</th><td th:text="${item.successCount == null ? '未確定' : item.successCount}"></td></tr>
+        <tr><th scope="row">不整合検知（成功内数）件数</th><td th:text="${item.inconsistentCount == null ? '未確定' : item.inconsistentCount}"></td></tr>
+        <tr><th scope="row">IN_PROGRESS（成功内数）件数</th><td th:text="${item.inProgressCount == null ? '未確定' : item.inProgressCount}"></td></tr>
+        <tr><th scope="row">SKIPPED件数</th><td th:text="${item.skippedCount == null ? '未確定' : item.skippedCount}"></td></tr>
+        <tr><th scope="row">失敗件数</th><td th:text="${item.failureCount == null ? '未確定' : item.failureCount}"></td></tr>
+        <tr><th scope="row">未処理件数</th><td th:text="${item.unprocessedCount == null ? '未確定' : item.unprocessedCount}"></td></tr>
+        <tr><th scope="row">エラー分類</th><td th:text="${item.errorCode == null ? 'なし' : item.errorCode}"></td></tr>
+        <tr><th scope="row">エラー概要</th><td th:text="${item.errorSummary == null ? 'なし' : item.errorSummary}"></td></tr>
+        </tbody>
+    </table>
+    <h2>定期監査履歴</h2>
+    <form th:action="@{/admin/payment-discrepancy-audits}" th:object="${searchForm}" method="get">
+        <div class="order-search-fields">
+            <div class="order-search-field"><label for="status">実行状態</label><select th:field="*{status}"><option value="">すべて</option><option th:each="status : ${statuses}" th:value="${status}" th:text="${status}"></option></select></div>
+            <div class="order-search-field"><label for="from">開始日From</label><input type="date" th:field="*{from}"></div>
+            <div class="order-search-field"><label for="to">開始日To</label><input type="date" th:field="*{to}"></div>
+        </div>
+        <input type="hidden" name="size" th:value="${page.size}">
+        <div class="actions"><button type="submit" class="button-secondary">検索</button><a th:href="@{/admin/payment-discrepancy-audits}" class="button button-secondary">クリア</a></div>
+    </form>
+    <p th:if="${page.totalElements == 0}">定期監査の履歴はありません。</p>
+    <p th:if="${page.totalElements > 0}"><span th:text="${page.totalElements}"></span> 件</p>
+    <div id="audit-history-scroll" th:if="${page.totalElements > 0}" tabindex="0" role="region" aria-label="定期監査履歴（横スクロール可能）">
+        <table>
+            <thead><tr><th>実行ID</th><th>開始日時</th><th>終了日時</th><th>状態</th>
+                <th>候補</th>
+                <th>成功</th>
+                <th>不整合検知（成功内数）</th>
+                <th>IN_PROGRESS（成功内数）</th>
+                <th>SKIPPED</th>
+                <th>失敗</th>
+                <th>未処理</th>
+                <th>実行時間（ms）</th><th>エラー分類</th></tr></thead>
+            <tbody><tr th:each="item : ${runs}">
+                <td th:text="${item.id}"></td>
+                <td th:text="${#temporals.format(item.startedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                <td th:text="${item.finishedAt == null ? '実行中' : #temporals.format(item.finishedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                <td th:text="${item.status}"></td>
+                <td th:text="${item.candidateCount == null ? '未確定' : item.candidateCount}"></td>
+                <td th:text="${item.successCount == null ? '未確定' : item.successCount}"></td>
+                <td th:text="${item.inconsistentCount == null ? '未確定' : item.inconsistentCount}"></td>
+                <td th:text="${item.inProgressCount == null ? '未確定' : item.inProgressCount}"></td>
+                <td th:text="${item.skippedCount == null ? '未確定' : item.skippedCount}"></td>
+                <td th:text="${item.failureCount == null ? '未確定' : item.failureCount}"></td>
+                <td th:text="${item.unprocessedCount == null ? '未確定' : item.unprocessedCount}"></td>
+                <td th:text="${item.durationMs == null ? '実行中' : item.durationMs}"></td>
+                <td th:text="${item.errorCode == null ? 'なし' : item.errorCode}"></td>
+            </tr></tbody>
+        </table>
+    </div>
+    <nav th:if="${page.totalPages > 1}">
+        <a th:if="${page.hasPrevious()}" th:href="@{/admin/payment-discrepancy-audits(status=${searchForm.status},from=${searchForm.from},to=${searchForm.to},page=${page.number - 1},size=${page.size})}" class="button button-secondary">前へ</a>
+        <span th:each="pageNumber : ${#numbers.sequence(0, page.totalPages - 1)}">
+            <strong th:if="${pageNumber == page.number}" th:text="${pageNumber + 1}" class="button pagination-current"></strong>
+            <a th:unless="${pageNumber == page.number}" th:href="@{/admin/payment-discrepancy-audits(status=${searchForm.status},from=${searchForm.from},to=${searchForm.to},page=${pageNumber},size=${page.size})}" th:text="${pageNumber + 1}" class="button button-secondary"></a>
+        </span>
+        <a th:if="${page.hasNext()}" th:href="@{/admin/payment-discrepancy-audits(status=${searchForm.status},from=${searchForm.from},to=${searchForm.to},page=${page.number + 1},size=${page.size})}" class="button button-secondary">次へ</a>
+    </nav>
+</main>
+</body>
+</html>
