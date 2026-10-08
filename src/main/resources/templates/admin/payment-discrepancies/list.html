@@ -16,6 +16,8 @@
     <main>
         <h1>決済要対応一覧</h1>
 
+        <p th:if="${errorMessage}" th:text="${errorMessage}"></p>
+
         <p>
             PAY.JPとの決済状態に不整合が検知されている注文の一覧です。
             この画面から決済状態の変更は行いません。

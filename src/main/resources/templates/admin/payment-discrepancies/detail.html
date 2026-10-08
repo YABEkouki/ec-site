@@ -42,11 +42,11 @@
                     <td th:text="${discrepancy.status}"></td>
                 </tr>
                 <tr>
-                    <th>ローカル状態</th>
+                    <th>検知時のローカル状態</th>
                     <td th:text="${discrepancy.localStatus}"></td>
                 </tr>
                 <tr>
-                    <th>PAY.JP状態</th>
+                    <th>検知時のPAY.JP状態</th>
                     <td th:text="${discrepancy.providerStatus}"></td>
                 </tr>
                 <tr>
@@ -91,6 +91,44 @@
                 </tr>
             </tbody>
         </table>
+
+        <section aria-labelledby="payment-recheck-heading">
+            <h2 id="payment-recheck-heading">PAY.JP状態の再照合</h2>
+
+            <p>
+                PAY.JPの最新状態を取得して、不整合を再判定します。
+                Capture（売上確定）・Cancel（決済取消）・再与信は実行しません。
+                注文・決済・管理者対応状態は変更しません。
+                整合が確認された場合は不整合記録をRESOLVEDにしますが、管理者対応状態は自動でCOMPLETEDになりません。
+            </p>
+
+            <form id="payment-recheck-form"
+                th:action="@{/admin/payment-discrepancies/{id}/recheck(id=${discrepancy.id})}" method="post">
+                <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+                <button type="submit" class="button-secondary">PAY.JP最新状態で再照合</button>
+            </form>
+
+            <p th:if="${recheckMessage}" th:text="${recheckMessage}"></p>
+
+            <div th:if="${recheckResult != null}">
+                <h3>今回の再照合結果</h3>
+                <dl>
+                    <dt>判定結果</dt>
+                    <dd id="recheck-status" th:text="${recheckResult.status}"></dd>
+                    <dt>今回取得したPAY.JP状態</dt>
+                    <dd id="recheck-provider-status"
+                        th:text="${recheckResult.providerStatus == null ? '未取得' : recheckResult.providerStatus}"></dd>
+                    <dt>関連する不整合ID</dt>
+                    <dd id="recheck-discrepancies">
+                        <span th:if="${#lists.isEmpty(recheckResult.discrepancyIds)}">なし</span>
+                        <span th:each="relatedId, iteration : ${recheckResult.discrepancyIds}">
+                            <a th:href="@{/admin/payment-discrepancies/{id}(id=${relatedId},returnUrl=${returnUrl})}"
+                                th:text="${relatedId}"></a><span th:if="${!iteration.last}">、</span>
+                        </span>
+                    </dd>
+                </dl>
+            </div>
+        </section>
 
         <h2>管理者対応状態</h2>
 

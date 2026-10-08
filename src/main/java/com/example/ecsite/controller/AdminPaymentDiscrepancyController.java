@@ -3,6 +3,8 @@ package com.example.ecsite.controller;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
@@ -25,17 +27,24 @@ import com.example.ecsite.payment.PaymentFlowStatus;
 import com.example.ecsite.repository.projection.AdminPaymentDiscrepancyListProjection;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminPaymentDiscrepancyService;
+import com.example.ecsite.service.AdminPaymentDiscrepancyReconciliationService;
+import com.example.ecsite.service.payment.PaymentDiscrepancyAuditResult;
 import com.example.ecsite.util.AdminReturnUrlHelper;
 
 @Controller
 @RequestMapping("/admin/payment-discrepancies")
 public class AdminPaymentDiscrepancyController {
 
+    private static final Logger logger = LoggerFactory.getLogger(AdminPaymentDiscrepancyController.class);
+
     private final AdminPaymentDiscrepancyService service;
+    private final AdminPaymentDiscrepancyReconciliationService reconciliationService;
 
     public AdminPaymentDiscrepancyController(
-            AdminPaymentDiscrepancyService service) {
+            AdminPaymentDiscrepancyService service,
+            AdminPaymentDiscrepancyReconciliationService reconciliationService) {
         this.service = service;
+        this.reconciliationService = reconciliationService;
     }
 
     @GetMapping
@@ -201,6 +210,44 @@ public class AdminPaymentDiscrepancyController {
         return redirectToDetail(
                 id,
                 returnUrl);
+    }
+
+    @PostMapping("/{id}/recheck")
+    public String recheck(
+            @PathVariable Long id,
+            @RequestParam(required = false) String returnUrl,
+            RedirectAttributes redirectAttributes) {
+
+        try {
+            try {
+                service.findById(id);
+            } catch (IllegalArgumentException e) {
+                redirectAttributes.addFlashAttribute(
+                        "errorMessage", "対象の決済不整合が見つからないため、再照合できませんでした。");
+                return "redirect:" + AdminReturnUrlHelper.resolvePaymentDiscrepancyListReturnUrl(returnUrl);
+            }
+
+            PaymentDiscrepancyAuditResult result = reconciliationService.reconcile(id);
+            String message = switch (result.status()) {
+                case CONSISTENT -> "PAY.JPの最新状態との整合を確認しました。管理者対応状態は変更していません。";
+                case INCONSISTENT -> "PAY.JPの最新状態を確認しましたが、不整合が継続しています。";
+                case IN_PROGRESS -> "PAY.JPの決済処理が進行中のため、判定を保留しました。";
+                case SKIPPED -> switch (result.skipReason()) {
+                    case PAYMENT_NOT_FOUND -> "対象の決済が見つからないため、再照合できませんでした。";
+                    case UNSUPPORTED_PAYMENT -> "PAY.JPのカード決済ではないため、再照合できませんでした。";
+                    case MISSING_PROVIDER_PAYMENT_ID -> "PAY.JP決済IDが未設定のため、再照合できませんでした。";
+                    case PENDING_TRANSACTION -> "処理中の決済取引があるため、再照合できませんでした。";
+                };
+            };
+            redirectAttributes.addFlashAttribute("recheckMessage", message);
+            redirectAttributes.addFlashAttribute("recheckResult", result);
+        } catch (Exception e) {
+            logger.error("Manual payment discrepancy recheck failed. discrepancyId={}", id, e);
+            redirectAttributes.addFlashAttribute(
+                    "errorMessage", "再照合できませんでした。時間をおいて再度お試しください。");
+        }
+
+        return redirectToDetail(id, returnUrl);
     }
 
     private String redirectToDetail(

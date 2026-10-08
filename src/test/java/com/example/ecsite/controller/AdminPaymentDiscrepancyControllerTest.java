@@ -1,17 +1,23 @@
 package com.example.ecsite.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,17 +25,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.config.SecurityConfig;
 import com.example.ecsite.entity.Payment;
 import com.example.ecsite.entity.PaymentDiscrepancy;
 import com.example.ecsite.entity.PaymentDiscrepancyHandlingStatus;
@@ -37,10 +51,18 @@ import com.example.ecsite.entity.PaymentDiscrepancyHandlingStatusHistory;
 import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.form.AdminPaymentDiscrepancySearchForm;
 import com.example.ecsite.payment.PaymentFlowStatus;
+import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.repository.projection.AdminPaymentDiscrepancyListProjection;
 import com.example.ecsite.service.AdminPaymentDiscrepancyService;
+import com.example.ecsite.service.AdminPaymentDiscrepancyReconciliationService;
+import com.example.ecsite.service.AdminUserDetailsService;
+import com.example.ecsite.service.CustomUserDetailsService;
+import com.example.ecsite.security.AdminAuthenticationSuccessHandler;
+import com.example.ecsite.security.CustomerAuthenticationSuccessHandler;
+import com.example.ecsite.service.payment.PaymentDiscrepancyAuditResult;
 
 @WebMvcTest(AdminPaymentDiscrepancyController.class)
+@Import(SecurityConfig.class)
 class AdminPaymentDiscrepancyControllerTest {
 
     @Autowired
@@ -48,6 +70,21 @@ class AdminPaymentDiscrepancyControllerTest {
 
     @MockitoBean
     private AdminPaymentDiscrepancyService service;
+
+    @MockitoBean
+    private AdminPaymentDiscrepancyReconciliationService reconciliationService;
+
+    @MockitoBean
+    private AdminUserDetailsService adminUserDetailsService;
+
+    @MockitoBean
+    private CustomUserDetailsService customUserDetailsService;
+
+    @MockitoBean
+    private AdminAuthenticationSuccessHandler adminAuthenticationSuccessHandler;
+
+    @MockitoBean
+    private CustomerAuthenticationSuccessHandler customerAuthenticationSuccessHandler;
 
     @MockitoBean
     private AdminPaymentDiscrepancyListProjection discrepancy;
@@ -328,7 +365,7 @@ class AdminPaymentDiscrepancyControllerTest {
                                         "admin",
                                         "password",
                                         true,
-                                        List.of()))))
+                                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))))))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(
                         flash().attribute(
@@ -370,7 +407,7 @@ class AdminPaymentDiscrepancyControllerTest {
                                         "admin",
                                         "password",
                                         true,
-                                        List.of()))))
+                                        List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))))))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(
                         flash().attribute(
@@ -419,4 +456,211 @@ class AdminPaymentDiscrepancyControllerTest {
                                 "/admin/payment-discrepancies"));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "CONSISTENT, REQUIRES_CAPTURE, PAY.JPの最新状態との整合を確認しました。管理者対応状態は変更していません。",
+            "INCONSISTENT, SUCCEEDED, PAY.JPの最新状態を確認しましたが、不整合が継続しています。",
+            "IN_PROGRESS, PROCESSING, PAY.JPの決済処理が進行中のため、判定を保留しました。"
+    })
+    void recheckReturnsResultMessageAndPreservesReturnUrl(
+            PaymentDiscrepancyAuditResult.Status auditStatus,
+            PaymentFlowStatus providerStatus,
+            String message) throws Exception {
+        PaymentDiscrepancyAuditResult result = new PaymentDiscrepancyAuditResult(
+                auditStatus, null, providerStatus,
+                auditStatus == PaymentDiscrepancyAuditResult.Status.IN_PROGRESS ? List.of() : List.of(10L));
+        when(reconciliationService.reconcile(10L)).thenReturn(result);
+
+        mockMvc.perform(post("/admin/payment-discrepancies/10/recheck")
+                        .param("returnUrl", "/admin/payment-discrepancies?handlingStatus=IN_PROGRESS&page=2")
+                        .with(user("admin").roles("ADMIN")).with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(flash().attribute("recheckMessage", message))
+                .andExpect(flash().attribute("recheckResult", result))
+                .andExpect(redirectedUrl("/admin/payment-discrepancies/10"
+                        + "?returnUrl=%2Fadmin%2Fpayment-discrepancies%3FhandlingStatus%3DIN_PROGRESS%26page%3D2"));
+
+        verify(reconciliationService).reconcile(10L);
+        verify(service).findById(10L);
+        verifyNoMoreInteractions(service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "PAYMENT_NOT_FOUND, 対象の決済が見つからないため、再照合できませんでした。",
+            "UNSUPPORTED_PAYMENT, PAY.JPのカード決済ではないため、再照合できませんでした。",
+            "MISSING_PROVIDER_PAYMENT_ID, PAY.JP決済IDが未設定のため、再照合できませんでした。",
+            "PENDING_TRANSACTION, 処理中の決済取引があるため、再照合できませんでした。"
+    })
+    void recheckShowsSkipReason(PaymentDiscrepancyAuditResult.SkipReason reason, String message)
+            throws Exception {
+        PaymentDiscrepancyAuditResult result = new PaymentDiscrepancyAuditResult(
+                PaymentDiscrepancyAuditResult.Status.SKIPPED, reason, null, List.of());
+        when(reconciliationService.reconcile(10L)).thenReturn(result);
+
+        mockMvc.perform(post("/admin/payment-discrepancies/10/recheck")
+                        .with(user("admin").roles("ADMIN")).with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(flash().attribute("recheckMessage", message))
+                .andExpect(flash().attribute("recheckResult", result))
+                .andExpect(redirectedUrl("/admin/payment-discrepancies/10"
+                        + "?returnUrl=%2Fadmin%2Fpayment-discrepancies"));
+        verify(service).findById(10L);
+        verifyNoMoreInteractions(service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void recheckHidesExceptionDetails(boolean apiFailure) throws Exception {
+        PaymentDiscrepancy record = detailRecord();
+        when(service.findById(10L)).thenReturn(record);
+        RuntimeException failure = apiFailure
+                ? new PaymentGatewayException("secret-provider-detail")
+                : new IllegalArgumentException("internal-record-detail");
+        when(reconciliationService.reconcile(10L)).thenThrow(failure);
+
+        mockMvc.perform(post("/admin/payment-discrepancies/10/recheck")
+                        .param("returnUrl", "/admin/payment-discrepancies?page=2")
+                        .with(user("admin").roles("ADMIN")).with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(flash().attribute("errorMessage", "再照合できませんでした。時間をおいて再度お試しください。"))
+                .andExpect(flash().attributeCount(1))
+                .andExpect(redirectedUrl("/admin/payment-discrepancies/10"
+                        + "?returnUrl=%2Fadmin%2Fpayment-discrepancies%3Fpage%3D2"));
+        verify(service).findById(10L);
+        verifyNoMoreInteractions(service);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "/admin/payment-discrepancies?page=2, /admin/payment-discrepancies?page=2",
+            "https://example.com/evil, /admin/payment-discrepancies",
+            "//example.com/evil, /admin/payment-discrepancies"
+    })
+    void missingDiscrepancyReturnsToSafeListAndDisplaysError(String returnUrl, String expectedUrl)
+            throws Exception {
+        when(service.findById(999L)).thenThrow(new IllegalArgumentException("internal-record-detail"));
+
+        var response = mockMvc.perform(post("/admin/payment-discrepancies/999/recheck")
+                        .param("returnUrl", returnUrl).with(user("admin").roles("ADMIN")).with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl(expectedUrl))
+                .andExpect(flash().attribute("errorMessage", "対象の決済不整合が見つからないため、再照合できませんでした。"))
+                .andExpect(flash().attributeCount(1))
+                .andReturn();
+        verifyNoInteractions(reconciliationService);
+        when(service.search(any(AdminPaymentDiscrepancySearchForm.class), any(Integer.class), any(Integer.class)))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get(expectedUrl).flashAttrs(response.getFlashMap())
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("対象の決済不整合が見つからないため、再照合できませんでした。")))
+                .andExpect(content().string(not(containsString("internal-record-detail"))));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"https://example.com/evil", "//example.com/evil", "/admin/orders", "/admin/payment-discrepancies/10", "/admin/payment-discrepancies-evil"})
+    void recheckRejectsUnsafeReturnUrl(String returnUrl) throws Exception {
+        when(reconciliationService.reconcile(10L)).thenReturn(new PaymentDiscrepancyAuditResult(
+                PaymentDiscrepancyAuditResult.Status.CONSISTENT, null, PaymentFlowStatus.REQUIRES_CAPTURE, List.of()));
+
+        mockMvc.perform(post("/admin/payment-discrepancies/10/recheck")
+                        .param("returnUrl", returnUrl).with(user("admin").roles("ADMIN")).with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/payment-discrepancies/10"
+                        + "?returnUrl=%2Fadmin%2Fpayment-discrepancies"));
+    }
+
+    @Test
+    void recheckRequiresCsrf() throws Exception {
+        mockMvc.perform(post("/admin/payment-discrepancies/10/recheck")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(reconciliationService, service);
+    }
+
+    @Test
+    void recheckRejectsNonAdmin() throws Exception {
+        mockMvc.perform(post("/admin/payment-discrepancies/10/recheck")
+                        .with(user("customer").roles("USER")).with(csrf()))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(reconciliationService, service);
+    }
+
+    @Test
+    void recheckRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/admin/payment-discrepancies/10/recheck").with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/login"));
+        verifyNoInteractions(reconciliationService, service);
+    }
+
+    @Test
+    void detailRendersRecheckResultSeparatelyAndIncludesPostFormWithCsrf() throws Exception {
+        PaymentDiscrepancy record = detailRecord();
+        when(service.findById(10L)).thenReturn(record);
+        when(service.findHandlingStatusHistories(10L)).thenReturn(List.of());
+        PaymentDiscrepancyAuditResult result = new PaymentDiscrepancyAuditResult(
+                PaymentDiscrepancyAuditResult.Status.CONSISTENT, null, PaymentFlowStatus.REQUIRES_CAPTURE, List.of(10L, 11L));
+
+        String html = mockMvc.perform(get("/admin/payment-discrepancies/10")
+                        .param("returnUrl", "/admin/payment-discrepancies?page=2")
+                        .flashAttr("recheckResult", result)
+                        .flashAttr("recheckMessage", "整合を確認しました。")
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("検知時のPAY.JP状態")))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(html).contains(
+                "<dd id=\"recheck-provider-status\">REQUIRES_CAPTURE</dd>",
+                "<dd id=\"recheck-status\">CONSISTENT</dd>");
+        String relatedRecords = renderedElement(html, "dd", "recheck-discrepancies");
+        assertThat(relatedRecords).contains(
+                "href=\"/admin/payment-discrepancies/10?returnUrl=/admin/payment-discrepancies?page%3D2\"",
+                "href=\"/admin/payment-discrepancies/11?returnUrl=/admin/payment-discrepancies?page%3D2\"");
+        assertThat(relatedRecords).contains("、");
+        String form = renderedElement(html, "form", "payment-recheck-form");
+        assertThat(form).contains(
+                "method=\"post\"", "action=\"/admin/payment-discrepancies/10/recheck\"",
+                "name=\"_csrf\"", "name=\"returnUrl\" value=\"/admin/payment-discrepancies?page=2\"");
+        verifyNoInteractions(reconciliationService);
+    }
+
+    @Test
+    void detailRendersSkippedResultWithoutPretendingProviderWasRetrieved() throws Exception {
+        PaymentDiscrepancy record = detailRecord();
+        when(service.findById(10L)).thenReturn(record);
+        when(service.findHandlingStatusHistories(10L)).thenReturn(List.of());
+
+        String html = mockMvc.perform(get("/admin/payment-discrepancies/10")
+                        .flashAttr("recheckResult", new PaymentDiscrepancyAuditResult(
+                                PaymentDiscrepancyAuditResult.Status.SKIPPED,
+                                PaymentDiscrepancyAuditResult.SkipReason.PENDING_TRANSACTION, null, List.of()))
+                        .with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(not(containsString("secret-provider-detail"))))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("<dd id=\"recheck-provider-status\">未取得</dd>");
+        assertThat(renderedElement(html, "dd", "recheck-discrepancies")).contains("なし").doesNotContain("<a ");
+    }
+
+    private String renderedElement(String html, String tag, String id) {
+        Matcher matcher = Pattern.compile("(?s)<" + tag + " id=\"" + id + "\".*?</" + tag + ">")
+                .matcher(html);
+        assertThat(matcher.find()).as("rendered element %s", id).isTrue();
+        return matcher.group();
+    }
+
+    private PaymentDiscrepancy detailRecord() {
+        Order order = mock(Order.class);
+        Payment payment = mock(Payment.class);
+        when(order.getId()).thenReturn(123L);
+        when(payment.getOrder()).thenReturn(order);
+        PaymentDiscrepancy record = new PaymentDiscrepancy(payment, PaymentStatus.AUTHORIZED,
+                PaymentFlowStatus.SUCCEEDED, LocalDateTime.of(2026, 10, 7, 10, 0));
+        org.springframework.test.util.ReflectionTestUtils.setField(record, "id", 10L);
+        return record;
+    }
 }
