@@ -24,7 +24,7 @@ class PaymentDiscrepancyAuditServiceTest {
 
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
 
-    private final PaymentDiscrepancyAuditItemService itemService = mock(PaymentDiscrepancyAuditItemService.class);
+    private final PaymentDiscrepancyAuditRetryFacade itemService = mock(PaymentDiscrepancyAuditRetryFacade.class);
 
     private final PaymentDiscrepancyAuditProperties properties = new PaymentDiscrepancyAuditProperties(
             true,

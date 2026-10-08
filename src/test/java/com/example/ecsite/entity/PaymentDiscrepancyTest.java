@@ -133,6 +133,49 @@ class PaymentDiscrepancyTest {
                 discrepancy.getUpdatedAt());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {-5, 0, 5})
+    void redetectionKeepsTimestampsMonotonicAndAlwaysCountsDetection(int minutes) {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 6, 12, 0);
+        PaymentDiscrepancy entity = discrepancyAt(first);
+        entity.detectAgain(first.plusMinutes(minutes));
+        LocalDateTime expected = minutes > 0 ? first.plusMinutes(5) : first;
+        assertEquals(first, entity.getFirstDetectedAt());
+        assertEquals(first, entity.getCreatedAt());
+        assertEquals(expected, entity.getLastDetectedAt());
+        assertEquals(expected, entity.getUpdatedAt());
+        assertEquals(2, entity.getDetectionCount());
+    }
+
+    @Test
+    void olderResolutionRecordsActualTimeWithoutMovingUpdatedAtBackwards() {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 6, 12, 0);
+        PaymentDiscrepancy entity = discrepancyAt(first);
+        entity.resolve(first.minusMinutes(5));
+        assertEquals(first.minusMinutes(5), entity.getResolvedAt());
+        assertEquals(first, entity.getUpdatedAt());
+        assertEquals(first, entity.getFirstDetectedAt());
+        assertEquals(first, entity.getLastDetectedAt());
+        assertEquals(1, entity.getDetectionCount());
+        entity.resolve(first.plusMinutes(10));
+        assertEquals(first.minusMinutes(5), entity.getResolvedAt());
+        assertEquals(first, entity.getUpdatedAt());
+    }
+
+    @Test
+    void handlingChangesKeepHandlingTimestampMonotonicAndAuditTimestampsUnchanged() {
+        LocalDateTime first = LocalDateTime.of(2026, 10, 6, 12, 0);
+        PaymentDiscrepancy entity = discrepancyAt(first);
+        entity.changeHandlingStatus(PaymentDiscrepancyHandlingStatus.CONFIRMED, first.plusMinutes(5));
+        entity.changeHandlingStatus(PaymentDiscrepancyHandlingStatus.UNCONFIRMED, first.minusMinutes(5));
+        assertEquals(PaymentDiscrepancyHandlingStatus.UNCONFIRMED, entity.getHandlingStatus());
+        assertEquals(first.plusMinutes(5), entity.getHandlingStatusUpdatedAt());
+        assertEquals(first, entity.getUpdatedAt());
+        assertEquals(first, entity.getFirstDetectedAt());
+        assertEquals(first, entity.getLastDetectedAt());
+        assertEquals(1, entity.getDetectionCount());
+    }
+
     private PaymentDiscrepancy discrepancyAt(
             LocalDateTime detectedAt) {
 

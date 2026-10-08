@@ -298,6 +298,8 @@ class AdminPaymentDiscrepancyControllerTest {
                 PaymentFlowStatus.REQUIRES_CAPTURE,
                 LocalDateTime.of(2026, 10, 7, 10, 0));
 
+        org.springframework.test.util.ReflectionTestUtils.setField(paymentDiscrepancy, "version", 7L);
+
         List<PaymentDiscrepancyHandlingStatusHistory> histories = List.of();
 
         when(service.findById(10L))
@@ -314,6 +316,11 @@ class AdminPaymentDiscrepancyControllerTest {
                                         + "?handlingStatus=IN_PROGRESS")
                         .with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
+                .andExpect(model().attribute("handlingStatusForm", org.hamcrest.Matchers.hasProperty(
+                        "expectedVersion", org.hamcrest.Matchers.is(7L))))
+                .andExpect(result -> assertThat(Pattern.compile(
+                        "<input\\b(?=[^>]*type=\"hidden\")(?=[^>]*name=\"expectedVersion\")(?=[^>]*value=\"7\")[^>]*>")
+                        .matcher(result.getResponse().getContentAsString()).find()).isTrue())
                 .andExpect(
                         view().name(
                                 "admin/payment-discrepancies/detail"))
@@ -344,6 +351,7 @@ class AdminPaymentDiscrepancyControllerTest {
 
         when(service.changeHandlingStatus(
                 10L,
+                0L,
                 PaymentDiscrepancyHandlingStatus.IN_PROGRESS,
                 100L,
                 "admin"))
@@ -351,6 +359,7 @@ class AdminPaymentDiscrepancyControllerTest {
 
         mockMvc.perform(
                 post("/admin/payment-discrepancies/10/handling-status")
+                        .param("expectedVersion", "0")
                         .param(
                                 "handlingStatus",
                                 PaymentDiscrepancyHandlingStatus.IN_PROGRESS.name())
@@ -379,6 +388,7 @@ class AdminPaymentDiscrepancyControllerTest {
 
         verify(service).changeHandlingStatus(
                 10L,
+                0L,
                 PaymentDiscrepancyHandlingStatus.IN_PROGRESS,
                 100L,
                 "admin");
@@ -390,6 +400,7 @@ class AdminPaymentDiscrepancyControllerTest {
 
         when(service.changeHandlingStatus(
                 10L,
+                0L,
                 PaymentDiscrepancyHandlingStatus.UNCONFIRMED,
                 100L,
                 "admin"))
@@ -397,6 +408,7 @@ class AdminPaymentDiscrepancyControllerTest {
 
         mockMvc.perform(
                 post("/admin/payment-discrepancies/10/handling-status")
+                        .param("expectedVersion", "0")
                         .param(
                                 "handlingStatus",
                                 PaymentDiscrepancyHandlingStatus.UNCONFIRMED.name())
@@ -417,6 +429,80 @@ class AdminPaymentDiscrepancyControllerTest {
                         redirectedUrl(
                                 "/admin/payment-discrepancies/10"
                                         + "?returnUrl=%2Fadmin%2Fpayment-discrepancies"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "-1", "invalid", "9223372036854775808"})
+    void rejectsMissingOrMalformedExpectedVersion(String version) throws Exception {
+        var request = post("/admin/payment-discrepancies/10/handling-status")
+                .param("handlingStatus", "CONFIRMED").with(csrf()).with(user(adminPrincipal()));
+        if (!version.isEmpty()) request.param("expectedVersion", version);
+        mockMvc.perform(request)
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/payment-discrepancies/10?returnUrl=%2Fadmin%2Fpayment-discrepancies"))
+                .andExpect(flash().attribute("errorMessage",
+                        "入力内容が不正です。最新の状態を確認して、もう一度操作してください。"))
+                .andExpect(result -> assertThat(result.getFlashMap().keySet()).doesNotContain("successMessage", "handlingStatusForm"));
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "INVALID"})
+    void rejectsMissingOrInvalidHandlingStatus(String handling) throws Exception {
+        var request = post("/admin/payment-discrepancies/10/handling-status")
+                .param("expectedVersion", "0").with(csrf()).with(user(adminPrincipal()));
+        if (!handling.isEmpty()) request.param("handlingStatus", handling);
+        mockMvc.perform(request).andExpect(status().is3xxRedirection())
+                .andExpect(flash().attribute("errorMessage",
+                        "入力内容が不正です。最新の状態を確認して、もう一度操作してください。"))
+                .andExpect(result -> assertThat(result.getFlashMap().keySet()).doesNotContain("successMessage"));
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void notifiesBothVersionMismatchAndCommitConflictAndReloadsLatestForm(boolean commitConflict) throws Exception {
+        RuntimeException conflict = commitConflict
+                ? new org.springframework.orm.ObjectOptimisticLockingFailureException(PaymentDiscrepancy.class, 10L)
+                : new com.example.ecsite.service.PaymentDiscrepancyConflictException(10L);
+        when(service.changeHandlingStatus(10L, 7L, PaymentDiscrepancyHandlingStatus.CONFIRMED, 100L, "admin"))
+                .thenThrow(conflict);
+        var result = mockMvc.perform(post("/admin/payment-discrepancies/10/handling-status")
+                        .param("expectedVersion", "7").param("handlingStatus", "CONFIRMED")
+                        .param("returnUrl", "/admin/payment-discrepancies?handlingStatus=UNCONFIRMED")
+                        .with(csrf()).with(user(adminPrincipal())))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/admin/payment-discrepancies/10?returnUrl=%2Fadmin%2Fpayment-discrepancies%3FhandlingStatus%3DUNCONFIRMED"))
+                .andExpect(flash().attribute("errorMessage",
+                        "対象データが更新されたため、変更できませんでした。最新の状態を確認して、もう一度操作してください。"))
+                .andExpect(response -> assertThat(response.getFlashMap().keySet()).doesNotContain("successMessage", "handlingStatusForm"))
+                .andReturn();
+        verify(service, org.mockito.Mockito.times(1)).changeHandlingStatus(10L, 7L,
+                PaymentDiscrepancyHandlingStatus.CONFIRMED, 100L, "admin");
+
+        Payment payment = mock(Payment.class);
+        Order order = mock(Order.class);
+        when(payment.getOrder()).thenReturn(order);
+        when(order.getId()).thenReturn(123L);
+        PaymentDiscrepancy latest = new PaymentDiscrepancy(payment, PaymentStatus.PENDING,
+                PaymentFlowStatus.REQUIRES_CAPTURE, LocalDateTime.of(2026, 10, 7, 10, 0));
+        latest.changeHandlingStatus(PaymentDiscrepancyHandlingStatus.IN_PROGRESS, LocalDateTime.of(2026, 10, 7, 11, 0));
+        org.springframework.test.util.ReflectionTestUtils.setField(latest, "version", 8L);
+        when(service.findById(10L)).thenReturn(latest);
+        when(service.findHandlingStatusHistories(10L)).thenReturn(List.of());
+        mockMvc.perform(get(result.getResponse().getRedirectedUrl()).flashAttrs(result.getFlashMap())
+                        .with(user(adminPrincipal())))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("handlingStatusForm", org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.hasProperty("expectedVersion", org.hamcrest.Matchers.is(8L)),
+                        org.hamcrest.Matchers.hasProperty("handlingStatus", org.hamcrest.Matchers.is(PaymentDiscrepancyHandlingStatus.IN_PROGRESS)))))
+                .andExpect(content().string(containsString("対象データが更新されたため、変更できませんでした。")))
+                .andExpect(content().string(not(containsString("管理者対応状態を変更しました。"))));
+    }
+
+    private com.example.ecsite.security.AdminUserDetails adminPrincipal() {
+        return new com.example.ecsite.security.AdminUserDetails(100L, "admin", "password", true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
     }
 
     @Test

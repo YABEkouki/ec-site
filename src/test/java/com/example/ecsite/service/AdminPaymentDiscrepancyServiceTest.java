@@ -136,11 +136,14 @@ class AdminPaymentDiscrepancyServiceTest {
                 PaymentFlowStatus.REQUIRES_CAPTURE,
                 LocalDateTime.of(2026, 10, 7, 10, 0));
 
+        org.springframework.test.util.ReflectionTestUtils.setField(discrepancy, "version", 0L);
+
         when(paymentDiscrepancyRepository.findById(10L))
                 .thenReturn(Optional.of(discrepancy));
 
         boolean changed = service.changeHandlingStatus(
                 10L,
+                0L,
                 PaymentDiscrepancyHandlingStatus.CONFIRMED,
                 100L,
                 "admin");
@@ -194,11 +197,14 @@ class AdminPaymentDiscrepancyServiceTest {
                 PaymentFlowStatus.REQUIRES_CAPTURE,
                 LocalDateTime.of(2026, 10, 7, 10, 0));
 
+        org.springframework.test.util.ReflectionTestUtils.setField(discrepancy, "version", 0L);
+
         when(paymentDiscrepancyRepository.findById(10L))
                 .thenReturn(Optional.of(discrepancy));
 
         boolean changed = service.changeHandlingStatus(
                 10L,
+                0L,
                 PaymentDiscrepancyHandlingStatus.UNCONFIRMED,
                 100L,
                 "admin");
@@ -224,11 +230,14 @@ class AdminPaymentDiscrepancyServiceTest {
                 PaymentDiscrepancyHandlingStatus.COMPLETED,
                 LocalDateTime.of(2026, 10, 7, 10, 10));
 
+        org.springframework.test.util.ReflectionTestUtils.setField(discrepancy, "version", 0L);
+
         when(paymentDiscrepancyRepository.findById(10L))
                 .thenReturn(Optional.of(discrepancy));
 
         boolean changed = service.changeHandlingStatus(
                 10L,
+                0L,
                 PaymentDiscrepancyHandlingStatus.IN_PROGRESS,
                 100L,
                 "admin");
@@ -259,6 +268,7 @@ class AdminPaymentDiscrepancyServiceTest {
 
         assertThatThrownBy(() -> service.changeHandlingStatus(
                 10L,
+                0L,
                 null,
                 100L,
                 "admin"))
@@ -280,6 +290,7 @@ class AdminPaymentDiscrepancyServiceTest {
 
         assertThatThrownBy(() -> service.changeHandlingStatus(
                 999L,
+                0L,
                 PaymentDiscrepancyHandlingStatus.CONFIRMED,
                 100L,
                 "admin"))
@@ -288,6 +299,34 @@ class AdminPaymentDiscrepancyServiceTest {
 
         verify(paymentDiscrepancyHandlingStatusHistoryRepository, never())
                 .save(any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = PaymentDiscrepancyHandlingStatus.class,
+            names = {"UNCONFIRMED", "CONFIRMED"})
+    void staleVersionRejectsBothChangedAndUnchangedStatus(PaymentDiscrepancyHandlingStatus requested) {
+        PaymentDiscrepancy entity = new PaymentDiscrepancy(org.mockito.Mockito.mock(Payment.class),
+                PaymentStatus.PENDING, PaymentFlowStatus.REQUIRES_CAPTURE, LocalDateTime.of(2026, 10, 7, 10, 0));
+        org.springframework.test.util.ReflectionTestUtils.setField(entity, "version", 1L);
+        when(paymentDiscrepancyRepository.findById(10L)).thenReturn(Optional.of(entity));
+
+        assertThatThrownBy(() -> service.changeHandlingStatus(10L, 0L, requested, 100L, "admin"))
+                .isInstanceOf(PaymentDiscrepancyConflictException.class);
+        assertThat(entity.getHandlingStatus()).isEqualTo(PaymentDiscrepancyHandlingStatus.UNCONFIRMED);
+        assertThat(entity.getHandlingStatusUpdatedAt()).isNull();
+        assertThat(entity.getVersion()).isEqualTo(1L);
+        org.mockito.Mockito.verifyNoInteractions(paymentDiscrepancyHandlingStatusHistoryRepository);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
+    @org.junit.jupiter.params.provider.ValueSource(longs = {-1L})
+    void rejectsMissingOrNegativeVersionBeforeLoadingEntity(Long version) {
+        assertThatThrownBy(() -> service.changeHandlingStatus(10L, version,
+                PaymentDiscrepancyHandlingStatus.CONFIRMED, 100L, "admin"))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.mockito.Mockito.verifyNoInteractions(paymentDiscrepancyRepository,
+                paymentDiscrepancyHandlingStatusHistoryRepository);
     }
 
     @Test

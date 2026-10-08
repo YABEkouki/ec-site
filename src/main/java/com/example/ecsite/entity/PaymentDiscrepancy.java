@@ -15,6 +15,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "payment_discrepancies")
@@ -23,6 +24,10 @@ public class PaymentDiscrepancy {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Version
+    @Column(nullable = false)
+    private Long version;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "payment_id", nullable = false)
@@ -87,9 +92,9 @@ public class PaymentDiscrepancy {
     }
 
     public void detectAgain(LocalDateTime detectedAt) {
-        this.lastDetectedAt = detectedAt;
+        this.lastDetectedAt = later(this.lastDetectedAt, detectedAt);
         this.detectionCount++;
-        this.updatedAt = detectedAt;
+        this.updatedAt = later(this.updatedAt, detectedAt);
     }
 
     public void resolve(LocalDateTime resolvedAt) {
@@ -99,7 +104,7 @@ public class PaymentDiscrepancy {
 
         this.status = PaymentDiscrepancyRecordStatus.RESOLVED;
         this.resolvedAt = resolvedAt;
-        this.updatedAt = resolvedAt;
+        this.updatedAt = later(this.updatedAt, resolvedAt);
     }
 
     public void changeHandlingStatus(
@@ -107,11 +112,19 @@ public class PaymentDiscrepancy {
             LocalDateTime changedAt) {
 
         this.handlingStatus = handlingStatus;
-        this.handlingStatusUpdatedAt = changedAt;
+        this.handlingStatusUpdatedAt = later(this.handlingStatusUpdatedAt, changedAt);
+    }
+
+    private static LocalDateTime later(LocalDateTime existing, LocalDateTime incoming) {
+        return existing == null || incoming.isAfter(existing) ? incoming : existing;
     }
 
     public Long getId() {
         return id;
+    }
+
+    public Long getVersion() {
+        return version;
     }
 
     public Payment getPayment() {
