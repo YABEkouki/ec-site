@@ -46,22 +46,31 @@ public class PaymentDiscrepancyAuditItemService {
 
     @Transactional
     public void audit(Long paymentId) {
+        doAudit(paymentId);
+    }
+
+    @Transactional
+    public PaymentDiscrepancyAuditResult auditWithResult(Long paymentId) {
+        return doAudit(paymentId);
+    }
+
+    private PaymentDiscrepancyAuditResult doAudit(Long paymentId) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElse(null);
 
         if (payment == null) {
-            return;
+            return skipped(PaymentDiscrepancyAuditResult.SkipReason.PAYMENT_NOT_FOUND);
         }
 
         if (payment.getProvider() != PaymentProvider.PAYJP
                 || payment.getPaymentMethod() != PaymentMethod.CARD) {
-            return;
+            return skipped(PaymentDiscrepancyAuditResult.SkipReason.UNSUPPORTED_PAYMENT);
         }
 
         String providerPaymentId = payment.getProviderPaymentId();
 
         if (providerPaymentId == null || providerPaymentId.isBlank()) {
-            return;
+            return skipped(PaymentDiscrepancyAuditResult.SkipReason.MISSING_PROVIDER_PAYMENT_ID);
         }
 
         boolean hasPendingTransaction =
@@ -73,7 +82,7 @@ public class PaymentDiscrepancyAuditItemService {
                                         == PaymentTransactionStatus.PENDING);
 
         if (hasPendingTransaction) {
-            return;
+            return skipped(PaymentDiscrepancyAuditResult.SkipReason.PENDING_TRANSACTION);
         }
 
         PaymentFlowState providerState =
@@ -86,41 +95,48 @@ public class PaymentDiscrepancyAuditItemService {
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        switch (result) {
-            case CONSISTENT -> resolveOpenDiscrepancies(paymentId, now);
-
-            case IN_PROGRESS -> {
-                // 状態確定前なので監査情報は変更しない
-            }
-
-            case INCONSISTENT ->
-                    recordDiscrepancy(payment, providerState, now);
-        }
+        return switch (result) {
+            case CONSISTENT -> new PaymentDiscrepancyAuditResult(
+                    PaymentDiscrepancyAuditResult.Status.CONSISTENT,
+                    null, providerState.status(), resolveOpenDiscrepancies(paymentId, now));
+            case IN_PROGRESS -> new PaymentDiscrepancyAuditResult(
+                    PaymentDiscrepancyAuditResult.Status.IN_PROGRESS,
+                    null, providerState.status(), List.of());
+            case INCONSISTENT -> new PaymentDiscrepancyAuditResult(
+                    PaymentDiscrepancyAuditResult.Status.INCONSISTENT,
+                    null, providerState.status(), List.of(recordDiscrepancy(payment, providerState, now)));
+        };
     }
 
-    private void recordDiscrepancy(
+    private PaymentDiscrepancyAuditResult skipped(PaymentDiscrepancyAuditResult.SkipReason reason) {
+        return new PaymentDiscrepancyAuditResult(
+                PaymentDiscrepancyAuditResult.Status.SKIPPED, reason, null, List.of());
+    }
+
+    private Long recordDiscrepancy(
             Payment payment,
             PaymentFlowState providerState,
             LocalDateTime detectedAt) {
 
-        discrepancyRepository
+        PaymentDiscrepancy discrepancy = discrepancyRepository
                 .findByPaymentIdAndLocalStatusAndProviderStatusAndStatus(
                         payment.getId(),
                         payment.getStatus(),
                         providerState.status(),
                         PaymentDiscrepancyRecordStatus.OPEN)
-                .ifPresentOrElse(
-                        discrepancy ->
-                                discrepancy.detectAgain(detectedAt),
-                        () -> discrepancyRepository.save(
-                                new PaymentDiscrepancy(
-                                        payment,
-                                        payment.getStatus(),
-                                        providerState.status(),
-                                        detectedAt)));
+                .orElse(null);
+
+        if (discrepancy != null) {
+            discrepancy.detectAgain(detectedAt);
+        } else {
+            discrepancy = discrepancyRepository.save(new PaymentDiscrepancy(
+                    payment, payment.getStatus(), providerState.status(), detectedAt));
+        }
+
+        return discrepancy.getId();
     }
 
-    private void resolveOpenDiscrepancies(
+    private List<Long> resolveOpenDiscrepancies(
             Long paymentId,
             LocalDateTime resolvedAt) {
 
@@ -131,5 +147,7 @@ public class PaymentDiscrepancyAuditItemService {
 
         openDiscrepancies.forEach(
                 discrepancy -> discrepancy.resolve(resolvedAt));
+
+        return openDiscrepancies.stream().map(PaymentDiscrepancy::getId).toList();
     }
 }
