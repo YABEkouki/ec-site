@@ -137,6 +137,8 @@
                 returnUrl=${returnUrl}
             )}" th:object="${handlingStatusForm}" method="post">
 
+            <input type="hidden" th:field="*{expectedVersion}">
+
             <select th:field="*{handlingStatus}" required>
                 <option th:each="status : ${handlingStatuses}" th:value="${status}" th:text="${status}">
                 </option>

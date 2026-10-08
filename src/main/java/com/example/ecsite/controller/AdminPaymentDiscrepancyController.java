@@ -6,9 +6,11 @@ import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,9 +29,12 @@ import com.example.ecsite.payment.PaymentFlowStatus;
 import com.example.ecsite.repository.projection.AdminPaymentDiscrepancyListProjection;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminPaymentDiscrepancyService;
+import com.example.ecsite.service.PaymentDiscrepancyConflictException;
 import com.example.ecsite.service.AdminPaymentDiscrepancyReconciliationService;
 import com.example.ecsite.service.payment.PaymentDiscrepancyAuditResult;
 import com.example.ecsite.util.AdminReturnUrlHelper;
+
+import jakarta.validation.Valid;
 
 @Controller
 @RequestMapping("/admin/payment-discrepancies")
@@ -152,6 +157,7 @@ public class AdminPaymentDiscrepancyController {
 
         handlingStatusForm.setHandlingStatus(
                 discrepancy.getHandlingStatus());
+        handlingStatusForm.setExpectedVersion(discrepancy.getVersion());
 
         model.addAttribute(
                 "discrepancy",
@@ -179,14 +185,22 @@ public class AdminPaymentDiscrepancyController {
     @PostMapping("/{id}/handling-status")
     public String changeHandlingStatus(
             @PathVariable Long id,
-            @ModelAttribute AdminPaymentDiscrepancyHandlingStatusForm form,
+            @Valid @ModelAttribute("handlingStatusForm") AdminPaymentDiscrepancyHandlingStatusForm form,
+            BindingResult bindingResult,
             @RequestParam(required = false) String returnUrl,
             @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
 
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "入力内容が不正です。最新の状態を確認して、もう一度操作してください。");
+            return redirectToDetail(id, returnUrl);
+        }
+
         try {
             boolean changed = service.changeHandlingStatus(
                     id,
+                    form.getExpectedVersion(),
                     form.getHandlingStatus(),
                     loginUser.getId(),
                     loginUser.getUsername());
@@ -201,6 +215,9 @@ public class AdminPaymentDiscrepancyController {
                         "管理者対応状態は変更されていません。");
             }
 
+        } catch (PaymentDiscrepancyConflictException | OptimisticLockingFailureException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "対象データが更新されたため、変更できませんでした。最新の状態を確認して、もう一度操作してください。");
         } catch (IllegalArgumentException e) {
             redirectAttributes.addFlashAttribute(
                     "errorMessage",

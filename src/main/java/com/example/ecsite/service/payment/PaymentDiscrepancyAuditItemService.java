@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import com.example.ecsite.entity.Payment;
 import com.example.ecsite.entity.PaymentDiscrepancy;
@@ -44,12 +45,12 @@ public class PaymentDiscrepancyAuditItemService {
         this.clock = clock;
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void audit(Long paymentId) {
         doAudit(paymentId);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentDiscrepancyAuditResult auditWithResult(Long paymentId) {
         return doAudit(paymentId);
     }

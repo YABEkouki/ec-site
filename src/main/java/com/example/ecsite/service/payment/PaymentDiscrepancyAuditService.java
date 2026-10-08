@@ -19,14 +19,14 @@ public class PaymentDiscrepancyAuditService {
     private static final Logger log = LoggerFactory.getLogger(PaymentDiscrepancyAuditService.class);
 
     private final PaymentRepository paymentRepository;
-    private final PaymentDiscrepancyAuditItemService itemService;
+    private final PaymentDiscrepancyAuditRetryFacade itemService;
     private final PaymentDiscrepancyAuditProperties properties;
 
     private long lastPaymentId;
 
     public PaymentDiscrepancyAuditService(
             PaymentRepository paymentRepository,
-            PaymentDiscrepancyAuditItemService itemService,
+            PaymentDiscrepancyAuditRetryFacade itemService,
             PaymentDiscrepancyAuditProperties properties) {
         this.paymentRepository = paymentRepository;
         this.itemService = itemService;

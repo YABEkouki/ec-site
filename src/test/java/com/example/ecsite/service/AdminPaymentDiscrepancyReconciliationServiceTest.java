@@ -26,13 +26,13 @@ import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.payment.PaymentFlowStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.repository.PaymentDiscrepancyRepository;
-import com.example.ecsite.service.payment.PaymentDiscrepancyAuditItemService;
+import com.example.ecsite.service.payment.PaymentDiscrepancyAuditRetryFacade;
 import com.example.ecsite.service.payment.PaymentDiscrepancyAuditResult;
 
 class AdminPaymentDiscrepancyReconciliationServiceTest {
 
     private final PaymentDiscrepancyRepository repository = mock(PaymentDiscrepancyRepository.class);
-    private final PaymentDiscrepancyAuditItemService auditService = mock(PaymentDiscrepancyAuditItemService.class);
+    private final PaymentDiscrepancyAuditRetryFacade auditService = mock(PaymentDiscrepancyAuditRetryFacade.class);
     private final AdminPaymentDiscrepancyReconciliationService service =
             new AdminPaymentDiscrepancyReconciliationService(repository, auditService);
 

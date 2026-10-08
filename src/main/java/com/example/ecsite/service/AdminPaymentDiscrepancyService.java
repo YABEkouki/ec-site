@@ -85,6 +85,7 @@ public class AdminPaymentDiscrepancyService {
     @Transactional
     public boolean changeHandlingStatus(
             Long discrepancyId,
+            Long expectedVersion,
             PaymentDiscrepancyHandlingStatus newStatus,
             Long changedByAccountId,
             String changedByUsername) {
@@ -93,10 +94,18 @@ public class AdminPaymentDiscrepancyService {
             throw new IllegalArgumentException("管理者対応状態は必須です。");
         }
 
+        if (expectedVersion == null || expectedVersion < 0) {
+            throw new IllegalArgumentException("対象データのバージョンが不正です。");
+        }
+
         PaymentDiscrepancy discrepancy = paymentDiscrepancyRepository
                 .findById(discrepancyId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "決済不整合が見つかりません。id=" + discrepancyId));
+
+        if (!expectedVersion.equals(discrepancy.getVersion())) {
+            throw new PaymentDiscrepancyConflictException(discrepancyId);
+        }
 
         PaymentDiscrepancyHandlingStatus currentStatus = discrepancy.getHandlingStatus();
 
