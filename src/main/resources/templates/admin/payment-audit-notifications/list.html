@@ -13,6 +13,7 @@
 <header th:replace="~{fragments/admin-header :: header}"></header>
 <main>
     <h1>決済監査メール通知送信履歴</h1>
+    <div class="actions"><a th:href="@{/admin/payment-discrepancy-audits}" class="button button-secondary">決済監査実行履歴を見る</a></div>
     <p>日時はJST（Asia/Tokyo）で表示します。対象警告件数は通知に保存されたitemの件数で、除外済みの警告も含みます。</p>
     <section th:unless="${#lists.isEmpty(inputErrors)}" role="alert" aria-labelledby="input-errors-title">
         <h2 id="input-errors-title">入力内容を確認してください</h2>

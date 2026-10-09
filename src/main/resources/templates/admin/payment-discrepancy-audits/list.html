@@ -13,6 +13,7 @@
 <header th:replace="~{fragments/admin-header :: header}"></header>
 <main>
     <h1>PAY.JP定期決済監査履歴</h1>
+    <div class="actions"><a th:href="@{/admin/payment-audit-notifications}" class="button button-secondary">決済監査メール通知履歴を見る</a></div>
     <p>日時はAsia/Tokyoで表示します。SUCCESSはバッチの正常終了を意味します。不整合を検知した場合や全件SKIPPEDの場合もSUCCESSとなり、すべてのPaymentの整合確認を意味しません。</p>
     <p>不整合検知・IN_PROGRESS件数は成功件数の内数です。RUNNINGは終了記録がない状態であり、実際の処理中か残留かはこの画面では判定しません。</p>
     <section aria-labelledby="monitoring-title">

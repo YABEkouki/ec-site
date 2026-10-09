@@ -153,4 +153,34 @@ class AdminPaymentAuditNotificationControllerTest {
     @Test void unknownNotificationIdIsAnEmptyResult() throws Exception {
         assertThat(html("?notificationId=99999")).contains("検索結果はありません").doesNotContain("入力内容を確認してください");
     }
+    @Test void sharedHeaderAddsNotificationHistoryAndPreservesEveryExistingMenu() throws Exception {
+        String body=html("");
+        String header=body.substring(body.indexOf("<header"),body.indexOf("</header>"));
+        var matcher=java.util.regex.Pattern.compile("<a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>",java.util.regex.Pattern.DOTALL).matcher(header);
+        java.util.Map<String,String> links=new java.util.LinkedHashMap<>();
+        while(matcher.find()) links.put(matcher.group(1),matcher.group(2).trim());
+        String[][] existing={{"/admin","管理TOP"},{"/admin/products","商品管理"},{"/admin/categories","カテゴリ管理"},
+            {"/admin/products/new","商品登録"},{"/admin/products/inactive","非公開商品"},{"/admin/orders","注文管理"},
+            {"/admin/orders/action-required","要対応注文一覧"},{"/admin/payment-discrepancies","決済要対応一覧"},
+            {"/admin/payment-discrepancy-audits","決済監査履歴"},{"/admin/order-status-histories","注文ステータス変更履歴"},
+            {"/admin/order-handling-status-histories","注文対応状況変更履歴"},{"/admin/order-assignee-histories/list","担当管理者変更履歴"},
+            {"/admin/sales","売上ダッシュボード"},{"/admin/customers","顧客管理"},
+            {"/admin/user-enabled-histories","ユーザーアカウント状態変更履歴"},{"/admin/announcements","お知らせ管理"},
+            {"/admin/accounts","管理者アカウント"}};
+        for(String[] menu:existing) assertThat(links).containsEntry(menu[0],menu[1]);
+        assertThat(links).containsEntry("/admin/payment-audit-notifications","決済監査メール通知履歴");
+        assertThat(header.indexOf("決済監査履歴")).isLessThan(header.indexOf("決済監査メール通知履歴"));
+        assertThat(header.indexOf("決済監査メール通知履歴")).isLessThan(header.indexOf("注文ステータス変更履歴"));
+        assertThat(header).contains("ECサイト管理","/admin/logout","ログアウト");
+    }
+    @Test void auditShortcutKeepsNotificationSearchAndPaging() throws Exception {
+        doReturn(new PageImpl<>(List.of(item(PaymentAuditNotificationStatus.SENT,false)),PageRequest.of(1,20),61))
+            .when(service).search(any(),eq(1),eq(20));
+        String body=html("?notificationId=42&status=SENT&warningType=LATEST_FAILURE&from=2026-10-08&to=2026-10-09&page=1");
+        String main=body.substring(body.indexOf("<main>"));
+        assertThat(main).contains("href=\"/admin/payment-discrepancy-audits\"", "決済監査実行履歴を見る",
+            "notificationId=42","status=SENT","warningType=LATEST_FAILURE","from=2026-10-08","to=2026-10-09","page=2","size=20");
+        verify(service).search(any(),eq(1),eq(20));verifyNoMoreInteractions(service);
+    }
+
 }
