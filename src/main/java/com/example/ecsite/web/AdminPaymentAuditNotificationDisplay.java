@@ -2,6 +2,9 @@ package com.example.ecsite.web;
 
 import org.springframework.stereotype.Component;
 import com.example.ecsite.entity.PaymentAuditNotificationStatus;
+import com.example.ecsite.entity.PaymentAuditNotificationCloseReason;
+import com.example.ecsite.entity.PaymentAuditNotificationItemStatus;
+import com.example.ecsite.entity.PaymentAuditNotificationAttemptResult;
 import com.example.ecsite.entity.PaymentAuditNotificationWarningType;
 import com.example.ecsite.dto.AdminPaymentDiscrepancyAuditWarning;
 
@@ -30,4 +33,27 @@ public class AdminPaymentAuditNotificationDisplay {
     public String warningLabel(PaymentAuditNotificationWarningType type) {
         return AdminPaymentDiscrepancyAuditWarning.Type.valueOf(type.name()).getTitle();
     }
+    public String closeReasonLabel(PaymentAuditNotificationCloseReason reason) {
+        if (reason == null) return "—";
+        return switch (reason) {
+            case RESOLVED -> "対象警告の解消";
+            case NO_VALID_RECIPIENTS -> "有効な送信先なし";
+            case MAX_ATTEMPTS -> "最大試行回数到達";
+        };
+    }
+    public String itemStatusLabel(PaymentAuditNotificationItemStatus status) {
+        return switch (status) {
+            case INCLUDED -> "通知対象に含む";
+            case REMOVED_RESOLVED -> "解消により除外";
+        };
+    }
+    public String attemptResultLabel(PaymentAuditNotificationAttemptResult result) {
+        return switch (result) {
+            case IN_PROGRESS -> "処理中";
+            case SUCCESS -> "送信成功";
+            case FAILURE -> "送信失敗";
+            case UNKNOWN -> "結果不明";
+        };
+    }
+
 }

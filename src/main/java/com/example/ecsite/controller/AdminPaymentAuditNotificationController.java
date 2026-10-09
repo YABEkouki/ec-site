@@ -10,6 +10,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.util.UriComponentsBuilder;
+import com.example.ecsite.exception.PaymentAuditNotificationNotFoundException;
+import com.example.ecsite.util.AdminReturnUrlHelper;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 import com.example.ecsite.entity.PaymentAuditNotificationStatus;
@@ -44,6 +49,12 @@ public class AdminPaymentAuditNotificationController {
         for (String name : new String[]{"notificationId","status","warningType","from","to"}) {
             values.put(name, request.getParameter(name) == null ? "" : request.getParameter(name));
         }
+        var returnUrl = UriComponentsBuilder.fromPath("/admin/payment-audit-notifications");
+        if (errors.isEmpty()) {
+            values.forEach((name, value) -> { if (!value.isBlank()) returnUrl.queryParam(name, value); });
+            returnUrl.queryParam("page", result.getNumber()).queryParam("size", result.getSize());
+        }
+        model.addAttribute("returnUrl", returnUrl.build().encode().toUriString());
         model.addAttribute("values", values);
         model.addAttribute("inputErrors", errors);
         model.addAttribute("notifications", result.getContent());
@@ -52,6 +63,28 @@ public class AdminPaymentAuditNotificationController {
         model.addAttribute("warningTypes", PaymentAuditNotificationWarningType.values());
         return "admin/payment-audit-notifications/list";
     }
+
+    @GetMapping("/{id}")
+    public String detail(@PathVariable Long id, @RequestParam(required=false) String returnUrl, Model model) {
+        if (id <= 0) throw new PaymentAuditNotificationInvalidIdException();
+        model.addAttribute("notification", service.findById(id));
+        model.addAttribute("returnUrl", AdminReturnUrlHelper.resolvePaymentAuditNotificationListReturnUrl(returnUrl));
+        return "admin/payment-audit-notifications/detail";
+    }
+
+    @ExceptionHandler(PaymentAuditNotificationNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public String notificationNotFound() {
+        return "error/not_found";
+    }
+
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class, PaymentAuditNotificationInvalidIdException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public String invalidId() {
+        return "error/not_found";
+    }
+
+    private static final class PaymentAuditNotificationInvalidIdException extends RuntimeException {}
 
     private static int number(String value, String label, java.util.List<String> errors) {
         try {

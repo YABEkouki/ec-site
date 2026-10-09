@@ -48,7 +48,7 @@
         <table>
             <thead><tr><th>通知ID</th><th>作成日時（JST）</th><th>通知ステータス</th><th>対象警告種別・件数</th><th>送信試行回数／最大回数</th><th>送信成功日時（JST）</th><th>送信予定日時（JST）</th><th>配送結果</th></tr></thead>
             <tbody><tr th:each="item : ${notifications}">
-                <td><a th:href="@{/admin/payment-audit-notifications/{id}(id=${item.id})}" th:text="${item.id}"></a></td>
+                <td><a th:href="@{/admin/payment-audit-notifications/{id}(id=${item.id},returnUrl=${returnUrl})}" th:text="${item.id}"></a></td>
                 <td th:text="${#temporals.format(item.createdAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
                 <td><span class="status-badge" th:classappend="${@notificationDisplay.statusClass(item.status)}" th:text="${@notificationDisplay.statusLabel(item.status)}"></span></td>
                 <td><ul><li th:each="type : ${item.warningTypes}" th:text="${@notificationDisplay.warningLabel(type)}"></li></ul><span th:text="${item.warningItemCount + ' 件'}"></span></td>

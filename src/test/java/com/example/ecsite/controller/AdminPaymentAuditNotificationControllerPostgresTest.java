@@ -67,4 +67,51 @@ class AdminPaymentAuditNotificationControllerPostgresTest {
         assertThat(context.getBeansOfType(PaymentAuditNotificationScheduler.class)).isEmpty();
         assertThat(context.getBeansOfType(PaymentAuditNotificationSmtpExecutor.class)).isEmpty();
     }
+    private java.util.Map<String,String> snapshot() {
+        java.util.Map<String,String> snapshot=new java.util.LinkedHashMap<>();
+        for(String table:java.util.List.of("payment_audit_notifications","payment_audit_notification_items",
+                "payment_audit_notification_attempts","payment_audit_notification_states")) {
+            snapshot.put(table,jdbc.queryForObject("select md5(coalesce(string_agg(row_to_json(t)::text,'' order by row_to_json(t)::text),'')) from "+table+" t",String.class));
+        }
+        return snapshot;
+    }
+    @Test void detailUsesHistoricalSnapshotsAndOrderedAttemptsWithoutMutatingAnyTable() throws Exception {
+        long id=fixtures.notification("SENT",PaymentAuditNotificationHistoryFixtures.NOW,3);
+        fixtures.item(id,"LATEST_FAILURE",false);fixtures.item(id,"LONG_UNHANDLED",true);
+        fixtures.attempt(id,3,"SUCCESS");fixtures.attempt(id,1,"FAILURE");fixtures.attempt(id,2,"UNKNOWN");
+        jdbc.update("update payment_audit_notifications set delivery_uncertain=true where id=?",id);
+        jdbc.update("update payment_audit_notification_states set active=true,episode_no=999,first_observed_at=now(),last_observed_at=now(),resolved_at=null where warning_type='LATEST_FAILURE'");
+        var before=snapshot();
+        String body=html("/"+id);
+        assertThat(body).contains("2026-10-09 10:00:00","配送結果不確実","通知対象に含む","解消により除外",
+            "警告関連件数","結果不明","SMTP_SEND_FAILED","SEND_DEADLINE_EXCEEDED");
+        assertThat(body).doesNotContain("hidden-from","hidden-first","hidden-second","hidden-actual","hidden-body","hidden-subject",
+            "claim_token","claimed_by","recipient_set_hash",">999<");
+        int start=body.indexOf("<section id=\"notification-attempts\"");
+        String attempts=body.substring(start);
+        assertThat(attempts.indexOf("送信失敗")).isLessThan(attempts.indexOf("結果不明</"));
+        assertThat(attempts.indexOf("結果不明</")).isLessThan(attempts.indexOf("送信成功"));
+        assertThat(snapshot()).isEqualTo(before);
+        assertThat(context.getBeansOfType(PaymentAuditNotificationDeliveryService.class)).isEmpty();
+        assertThat(context.getBeansOfType(PaymentDiscrepancyAuditNotificationMailClient.class)).isEmpty();
+        assertThat(context.getBeansOfType(PaymentAuditNotificationScheduler.class)).isEmpty();
+        assertThat(context.getBeansOfType(PaymentAuditNotificationSmtpExecutor.class)).isEmpty();
+    }
+    @Test void realMissingNotificationReturns404() throws Exception {
+        mvc.perform(get("/admin/payment-audit-notifications/999999").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isNotFound());
+    }
+    @Test void listDetailRoundTripRetainsFiltersAndCorrectedPage() throws Exception {
+        long id=fixtures.notification("SENT",PaymentAuditNotificationHistoryFixtures.NOW);
+        fixtures.item(id,"LATEST_FAILURE",true);
+        String list=html("?notificationId="+id+"&status=SENT&warningType=LATEST_FAILURE&from=2026-10-09&to=2026-10-09&page=999&size=50");
+        var matcher=java.util.regex.Pattern.compile("href=\"([^\"]*payment-audit-notifications/"+id+"[^\"]*)\"").matcher(list);
+        assertThat(matcher.find()).isTrue();
+        String link=org.springframework.web.util.HtmlUtils.htmlUnescape(matcher.group(1));
+        var result=mvc.perform(get(java.net.URI.create(link)).with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andReturn();
+        assertThat(result.getModelAndView().getModel().get("returnUrl")).isEqualTo(
+            "/admin/payment-audit-notifications?notificationId="+id+"&status=SENT&warningType=LATEST_FAILURE&from=2026-10-09&to=2026-10-09&page=0&size=50");
+    }
+
 }
