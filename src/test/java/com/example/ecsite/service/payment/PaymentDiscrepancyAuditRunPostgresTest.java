@@ -63,7 +63,7 @@ class PaymentDiscrepancyAuditRunPostgresTest {
     void flywayCreatesAuditRunsTable() {
         assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'payment_discrepancy_audit_runs'", Integer.class)).isEqualTo(1);
         flyway.validate();
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("49");
+        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("50");
         assertThat(jdbc.queryForObject("select data_type from information_schema.columns where table_name = 'payment_discrepancy_audit_runs' and column_name = 'started_at'", String.class))
             .isEqualTo("timestamp with time zone");
     }
