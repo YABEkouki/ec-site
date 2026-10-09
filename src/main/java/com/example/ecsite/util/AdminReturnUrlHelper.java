@@ -51,4 +51,23 @@ public final class AdminReturnUrlHelper {
         return ADMIN_PAYMENT_DISCREPANCIES_PATH;
     }
 
+    /** Exact local list path only; no authority, fragments, controls or ambiguous separators. */
+    public static String resolvePaymentAuditNotificationListReturnUrl(String returnUrl) {
+        String fallback = "/admin/payment-audit-notifications";
+        if (returnUrl == null || returnUrl.isBlank()) return fallback;
+        try {
+            java.net.URI uri = new java.net.URI(returnUrl);
+            String decoded = uri.getQuery();
+            if (uri.isAbsolute() || uri.getRawAuthority() != null || uri.getRawFragment() != null
+                    || !fallback.equals(uri.getRawPath())
+                    || returnUrl.chars().anyMatch(c -> Character.isISOControl(c) || c == '\\')
+                    || decoded != null && decoded.chars().anyMatch(c -> Character.isISOControl(c) || c == '\\' || c == 0xfffd)) {
+                return fallback;
+            }
+            return returnUrl;
+        } catch (java.net.URISyntaxException e) {
+            return fallback;
+        }
+    }
+
 }

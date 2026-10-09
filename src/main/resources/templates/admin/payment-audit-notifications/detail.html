@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>決済監査メール通知詳細</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <style>
+        #notification-summary table { display: table; table-layout: fixed; white-space: normal; }
+        #notification-summary th { width: 35%; }
+        #notification-summary th, #notification-summary td { overflow-wrap: anywhere; }
+        .notification-detail-scroll { width: 100%; max-width: 100%; overflow-x: auto; }
+        .notification-detail-scroll table { display: table; white-space: nowrap; }
+    </style>
+</head>
+<body>
+<header th:replace="~{fragments/admin-header :: header}"></header>
+<main>
+    <h1>決済監査メール通知詳細</h1>
+    <p>日時はJST（Asia/Tokyo）で表示します。</p>
+    <section id="notification-summary" aria-labelledby="notification-summary-title" th:with="item=${notification}">
+        <h2 id="notification-summary-title">通知基本情報</h2>
+        <table aria-label="通知基本情報"><tbody>
+            <tr><th scope="row">通知ID</th><td th:text="${item.id}"></td></tr>
+            <tr><th scope="row">通知ステータス</th><td><span class="status-badge" th:classappend="${@notificationDisplay.statusClass(item.status)}" th:text="${@notificationDisplay.statusLabel(item.status)}"></span></td></tr>
+            <tr><th scope="row">作成日時（JST）</th><td th:text="${item.createdAt == null ? '—' : #temporals.format(item.createdAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+            <tr><th scope="row">更新日時（JST）</th><td th:text="${item.updatedAt == null ? '—' : #temporals.format(item.updatedAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+            <tr><th scope="row">監査評価日時（JST）</th><td th:text="${item.evaluatedAt == null ? '—' : #temporals.format(item.evaluatedAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+            <tr><th scope="row">送信試行回数／最大回数</th><td th:text="${item.attemptCount + ' / ' + item.maxAttempts}"></td></tr>
+            <tr><th scope="row">送信成功日時（JST）</th><td th:text="${item.sentAt == null ? '—' : #temporals.format(item.sentAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+            <tr th:if="${item.status.name() == 'PENDING'}"><th scope="row">初回送信予定（JST）</th><td th:text="${item.nextAttemptAt == null ? '—' : #temporals.format(item.nextAttemptAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+            <tr th:if="${item.status.name() == 'RETRY_WAIT'}"><th scope="row">次回再試行予定（JST）</th><td th:text="${item.nextAttemptAt == null ? '—' : #temporals.format(item.nextAttemptAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+            <tr><th scope="row">終了日時（JST）</th><td th:text="${item.closedAt == null ? '—' : #temporals.format(item.closedAt, 'yyyy-MM-dd HH:mm:ss')}"></td></tr>
+            <tr><th scope="row">終了理由</th><td th:text="${@notificationDisplay.closeReasonLabel(item.closeReason)}"></td></tr>
+            <tr th:if="${item.deliveryUncertain}"><th scope="row">配送結果不確実</th><td><strong class="action-required-warning">配送結果不確実</strong></td></tr>
+            <tr><th scope="row">通知作成時の送信先件数</th><td th:text="${item.recipientCount}"></td></tr>
+        </tbody></table>
+    </section>
+    <section id="notification-warnings" aria-labelledby="notification-warnings-title">
+        <h2 id="notification-warnings-title">対象警告・エピソード情報</h2>
+        <p>この画面は通知に保存された警告情報を表示しています。現在の警告状態とは異なる場合があります。</p>
+        <p>「通知対象に含む」は、現在も警告が発生していることを意味しません。</p>
+        <p th:if="${#lists.isEmpty(notification.warnings)}">対象警告情報はありません。</p>
+        <div class="notification-detail-scroll" th:unless="${#lists.isEmpty(notification.warnings)}" tabindex="0" role="region" aria-label="対象警告（横スクロール可能）">
+            <table><thead><tr><th>警告種別</th><th>エピソード番号</th><th>item状態</th><th>初回観測日時（JST）</th><th>通知関連日時（JST）</th><th>警告関連件数</th><th>エラーコード</th><th>解消記録日時（JST）</th><th>通知対象からの除外日時（JST）</th></tr></thead>
+                <tbody><tr th:each="item : ${notification.warnings}">
+                    <td th:text="${@notificationDisplay.warningLabel(item.warningType)}"></td>
+                    <td th:text="${item.episodeNo}"></td>
+                    <td th:text="${@notificationDisplay.itemStatusLabel(item.itemStatus)}"></td>
+                    <td th:text="${item.firstObservedAt == null ? '—' : #temporals.format(item.firstObservedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                    <td th:text="${item.relatedAt == null ? '—' : #temporals.format(item.relatedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                    <td th:text="${item.warningCount == null ? '—' : item.warningCount}"></td>
+                    <td th:text="${item.errorCode == null ? '—' : item.errorCode}"></td>
+                    <td th:text="${item.resolvedAt == null ? '—' : #temporals.format(item.resolvedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                    <td th:text="${item.removedAt == null ? '—' : #temporals.format(item.removedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                </tr></tbody>
+            </table>
+        </div>
+    </section>
+    <section id="notification-attempts" aria-labelledby="notification-attempts-title">
+        <h2 id="notification-attempts-title">送信試行履歴</h2>
+        <p>終了日時は実際のメール送信時刻とは限りません。UNKNOWN（結果不明）では、結果確定・回収の日時です。</p>
+        <p th:if="${#lists.isEmpty(notification.attempts)}">送信試行履歴はありません。</p>
+        <div class="notification-detail-scroll" th:unless="${#lists.isEmpty(notification.attempts)}" tabindex="0" role="region" aria-label="送信試行履歴（横スクロール可能）">
+            <table><thead><tr><th>試行番号</th><th>試行結果</th><th>開始日時（JST）</th><th>終了日時（JST）</th><th>失敗理由コード</th></tr></thead>
+                <tbody><tr th:each="item : ${notification.attempts}">
+                    <td th:text="${item.attemptNo}"></td>
+                    <td th:text="${@notificationDisplay.attemptResultLabel(item.result)}"></td>
+                    <td th:text="${item.startedAt == null ? '—' : #temporals.format(item.startedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                    <td th:text="${item.finishedAt == null ? '—' : #temporals.format(item.finishedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                    <td th:text="${item.failureCode == null ? '—' : item.failureCode}"></td>
+                </tr></tbody>
+            </table>
+        </div>
+    </section>
+    <div class="actions"><a th:href="${returnUrl}" class="button button-secondary">通知履歴一覧に戻る</a></div>
+</main>
+</body>
+</html>

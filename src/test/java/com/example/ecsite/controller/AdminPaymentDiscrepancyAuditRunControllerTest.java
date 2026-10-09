@@ -174,4 +174,18 @@ class AdminPaymentDiscrepancyAuditRunControllerTest {
             });
     }
 
+    @Test void notificationShortcutKeepsAuditSearchAndPaging() throws Exception {
+        var run=PaymentDiscrepancyAuditRun.start("node",Instant.parse("2026-10-08T00:00:00Z"));
+        var row=AdminPaymentDiscrepancyAuditRunListItem.from(run);
+        when(service.search(any(),eq(1),eq(20))).thenReturn(new PageImpl<>(List.of(row),PageRequest.of(1,20),41));
+        String body=mvc.perform(get("/admin/payment-discrepancy-audits").param("status","RUNNING")
+                .param("from","2026-10-08").param("to","2026-10-09").param("page","1").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String main=body.substring(body.indexOf("<main>"));
+        assertThat(main).contains("href=\"/admin/payment-audit-notifications\"","決済監査メール通知履歴を見る",
+            "status=RUNNING","from=2026-10-08","to=2026-10-09","page=2","size=20");
+        verify(service).search(any(),eq(1),eq(20));
+        verify(service).monitoringSummary();verifyNoMoreInteractions(service);
+    }
+
 }
