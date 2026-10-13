@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.ui.Model;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -60,6 +62,17 @@ public class GlobalExceptionHandler {
     public String handleAnnouncementNotFound(AnnouncementNotFoundException e) {
 
         return "error/not_found";
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
+    public String handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException e,
+            HttpServletResponse response) {
+
+        // Spring derives Allow from the matching controller's supported methods.
+        e.getHeaders().forEach((name, values) -> response.setHeader(name, String.join(", ", values)));
+        return "error/method-not-allowed";
     }
 
     @ExceptionHandler(Exception.class)

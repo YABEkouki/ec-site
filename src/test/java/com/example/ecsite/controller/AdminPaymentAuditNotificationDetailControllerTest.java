@@ -149,4 +149,11 @@ class AdminPaymentAuditNotificationDetailControllerTest {
         if(available) assertThat(body).contains("name=\"snapshotToken\"","name=\"_csrf\"","signed-token");
         else assertThat(body).doesNotContain("name=\"snapshotToken\"");
     }
+    @Test void handlingGetReturns405WithoutCallingReadOrUpdateService() throws Exception {
+        mvc.perform(get(URL+"/handling").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isMethodNotAllowed())
+            .andExpect(header().string(org.springframework.http.HttpHeaders.ALLOW,"POST"))
+            .andExpect(view().name("error/method-not-allowed"));
+        verifyNoInteractions(service);
+    }
 }

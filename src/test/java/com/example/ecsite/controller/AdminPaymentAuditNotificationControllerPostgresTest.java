@@ -114,4 +114,18 @@ class AdminPaymentAuditNotificationControllerPostgresTest {
             "/admin/payment-audit-notifications?notificationId="+id+"&status=SENT&warningType=LATEST_FAILURE&from=2026-10-09&to=2026-10-09&page=0&size=50");
     }
 
+    @Test void handlingGetReturns405WithoutMutatingHistoryOrDelivery() throws Exception {
+        long id=fixtures.notification("EXHAUSTED",PaymentAuditNotificationHistoryFixtures.NOW);
+        var before=snapshot();
+        var handlingBefore=new java.util.LinkedHashMap<String,String>();
+        for(String table:java.util.List.of("payment_audit_notification_handlings",
+                "payment_audit_notification_handling_histories","payment_audit_notification_handling_history_unknowns")) {
+            handlingBefore.put(table,jdbc.queryForObject("select md5(coalesce(string_agg(row_to_json(t)::text,'' order by row_to_json(t)::text),'')) from "+table+" t",String.class));
+        }
+        mvc.perform(get("/admin/payment-audit-notifications/"+id+"/handling").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isMethodNotAllowed())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string(org.springframework.http.HttpHeaders.ALLOW,"POST"));
+        assertThat(snapshot()).isEqualTo(before);
+        handlingBefore.forEach((table,value)->assertThat(jdbc.queryForObject("select md5(coalesce(string_agg(row_to_json(t)::text,'' order by row_to_json(t)::text),'')) from "+table+" t",String.class)).isEqualTo(value));
+    }
 }
