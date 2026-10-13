@@ -56,4 +56,7 @@ public class AdminPaymentAuditNotificationDisplay {
         };
     }
 
+    public String handlingLabel(com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus status) {
+        return switch(status) { case UNREVIEWED -> "未確認"; case IN_PROGRESS -> "対応中"; case RESOLVED -> "対応完了"; };
+    }
 }

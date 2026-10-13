@@ -72,6 +72,34 @@
             </table>
         </div>
     </section>
+    <p th:if="${successMessage}" class="message-success" role="status" th:text="${successMessage}"></p>
+    <p th:if="${errorMessage}" class="message-error" role="alert" th:text="${errorMessage}"></p>
+    <section th:if="${notification.handling != null}" th:with="handling=${notification.handling}" aria-labelledby="handling-title">
+        <h2 id="handling-title">管理者対応</h2>
+        <p>管理者対応状態は配送状態・警告の解消状態とは独立しています。</p>
+        <dl>
+            <dt>管理対象</dt><dd th:text="${handling.actionable ? '管理対象' : '対象外'}"></dd>
+            <dt>対応状態</dt><dd th:text="${@notificationDisplay.handlingLabel(handling.handlingStatus)}"></dd>
+            <dt>最終対応日時（JST）</dt><dd th:text="${handling.handlingUpdatedAt == null ? '—' : #temporals.format(handling.handlingUpdatedAt,'yyyy-MM-dd HH:mm:ss')}"></dd>
+            <dt>最終対応者</dt><dd th:text="${handling.lastActorUsername == null ? '—' : handling.lastActorUsername}"></dd>
+            <dt>現在のUNKNOWN試行番号</dt><dd th:text="${#lists.isEmpty(handling.currentUnknowns) ? '—' : #strings.listJoin(handling.currentUnknowns, ', ')}"></dd>
+            <dt>最後のRESOLVED時に確認したUNKNOWN試行番号</dt><dd th:text="${#lists.isEmpty(handling.confirmedUnknowns) ? '—' : #strings.listJoin(handling.confirmedUnknowns, ', ')}"></dd>
+        </dl>
+        <p th:if="${handling.requiresRecheck}" class="action-required-warning">再確認必要：新しい結果不明の試行があります。コメントを付けて再オープンし、確認後に再度「対応完了」へ変更してください。</p>
+        <p th:if="${handling.actionable and !handling.handlingOperationAvailable}">現在は閲覧のみ可能です。署名鍵の設定を管理者に確認してください。</p>
+        <form th:if="${handling.handlingOperationAvailable}" th:action="@{/admin/payment-audit-notifications/{id}/handling(id=${notification.id})}" method="post">
+            <input type="hidden" name="snapshotToken" th:value="${handling.snapshotToken}">
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+            <label for="handling-status">変更先状態</label><select id="handling-status" name="status" required><option value="">選択してください</option><option th:each="status : ${handlingStatuses}" th:if="${status != handling.handlingStatus}" th:value="${status}" th:text="${@notificationDisplay.handlingLabel(status)}"></option></select>
+            <label for="handling-comment">コメント</label><textarea id="handling-comment" name="comment" rows="4" th:required="${handling.handlingStatus.name() == 'RESOLVED'}"></textarea>
+            <p>対応完了への変更・対応完了からの再オープンにはコメントが必要です。最大1,000 Unicodeコードポイントです。APIキー、認証情報、カード情報、顧客情報などの機密情報を記載しないでください。</p>
+            <button type="submit">対応状態を変更</button>
+        </form>
+        <h3>対応状態変更履歴</h3>
+        <p th:if="${#lists.isEmpty(handling.histories)}">対応状態変更履歴はありません。</p>
+        <div class="notification-detail-scroll" th:unless="${#lists.isEmpty(handling.histories)}" tabindex="0" role="region" aria-label="管理者対応履歴（横スクロール可能）"><table><thead><tr><th>日時（JST）</th><th>操作者</th><th>変更前</th><th>変更後</th><th>コメント</th></tr></thead><tbody><tr th:each="history : ${handling.histories}"><td th:text="${history.changedAt == null ? '—' : #temporals.format(history.changedAt,'yyyy-MM-dd HH:mm:ss')}"></td><td th:text="${history.actorUsername}"></td><td th:text="${@notificationDisplay.handlingLabel(history.fromStatus)}"></td><td th:text="${@notificationDisplay.handlingLabel(history.toStatus)}"></td><td th:text="${history.comment == null ? '—' : history.comment}"></td></tr></tbody></table></div>
+    </section>
+    <div class="actions"><a th:href="@{/admin/payment-discrepancy-audits}" class="button button-secondary">決済監査実行履歴を見る</a></div>
     <div class="actions"><a th:href="${returnUrl}" class="button button-secondary">通知履歴一覧に戻る</a></div>
 </main>
 </body>

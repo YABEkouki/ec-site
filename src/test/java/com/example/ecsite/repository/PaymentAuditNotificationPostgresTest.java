@@ -258,7 +258,7 @@ class PaymentAuditNotificationPostgresTest {
         old.migrate();
         jdbc.update("insert into " + schema + ".payment_discrepancy_audit_runs (execution_type,status,started_at,instance_id) values ('SCHEDULED','RUNNING',now(),'existing-process')");
         var upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-            .schemas(schema).defaultSchema(schema).load();
+            .schemas(schema).defaultSchema(schema).target("50").load();
         upgrade.migrate();
         upgrade.validate();
         assertThat(upgrade.info().current().getVersion().toString()).isEqualTo("50");

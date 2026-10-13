@@ -9,6 +9,16 @@ import com.example.ecsite.entity.PaymentAuditNotificationWarningType;
 
 /** Typed binding leaves malformed dates/enums/IDs as binding errors for the future controller. */
 public class AdminPaymentAuditNotificationSearchForm {
+    private com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus handlingStatus;
+    private boolean actionableOnly;
+    private boolean requiresRecheck;
+    public com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus getHandlingStatus() { return handlingStatus; }
+    public void setHandlingStatus(com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus value) { handlingStatus = value; }
+    public boolean isActionableOnly() { return actionableOnly; }
+    public void setActionableOnly(boolean value) { actionableOnly = value; }
+    public boolean isRequiresRecheck() { return requiresRecheck; }
+    public void setRequiresRecheck(boolean value) { requiresRecheck = value; }
+
     @Positive(message = "通知IDは正の整数で指定してください。")
     private Long notificationId;
     private PaymentAuditNotificationStatus status;
