@@ -11,6 +11,9 @@ public final class PaymentAuditNotificationHistoryFixtures {
     private final JdbcTemplate jdbc;
     public PaymentAuditNotificationHistoryFixtures(JdbcTemplate jdbc) { this.jdbc = jdbc; }
     public void clear() {
+        jdbc.update("delete from payment_audit_notification_handling_history_unknowns");
+        jdbc.update("delete from payment_audit_notification_handlings");
+        jdbc.update("delete from payment_audit_notification_handling_histories");
         jdbc.update("delete from payment_audit_notification_attempts");
         jdbc.update("delete from payment_audit_notification_items");
         jdbc.update("delete from payment_audit_notifications");

@@ -26,8 +26,10 @@ import com.example.ecsite.service.AdminPaymentAuditNotificationService;
 @RequestMapping("/admin/payment-audit-notifications")
 public class AdminPaymentAuditNotificationController {
     private final AdminPaymentAuditNotificationService service;
-    public AdminPaymentAuditNotificationController(AdminPaymentAuditNotificationService service) {
-        this.service = service;
+    private final com.example.ecsite.service.AdminPaymentAuditNotificationHandlingService handlingService;
+    @org.springframework.beans.factory.annotation.Autowired
+    public AdminPaymentAuditNotificationController(AdminPaymentAuditNotificationService service, @org.springframework.lang.Nullable com.example.ecsite.service.AdminPaymentAuditNotificationHandlingService handlingService) {
+        this.service = service; this.handlingService = handlingService;
     }
 
     @GetMapping
@@ -46,7 +48,7 @@ public class AdminPaymentAuditNotificationController {
         var result = errors.isEmpty() ? service.search(form, requestedPage, safeSize)
             : Page.empty(PageRequest.of(0, safeSize));
         Map<String, String> values = new LinkedHashMap<>();
-        for (String name : new String[]{"notificationId","status","warningType","from","to"}) {
+        for (String name : new String[]{"notificationId","status","warningType","from","to","handlingStatus","actionableOnly","requiresRecheck"}) {
             values.put(name, request.getParameter(name) == null ? "" : request.getParameter(name));
         }
         var returnUrl = UriComponentsBuilder.fromPath("/admin/payment-audit-notifications");
@@ -59,17 +61,51 @@ public class AdminPaymentAuditNotificationController {
         model.addAttribute("inputErrors", errors);
         model.addAttribute("notifications", result.getContent());
         model.addAttribute("page", result);
+        model.addAttribute("handlingStatuses", com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.values());
         model.addAttribute("statuses", PaymentAuditNotificationStatus.values());
         model.addAttribute("warningTypes", PaymentAuditNotificationWarningType.values());
         return "admin/payment-audit-notifications/list";
     }
 
     @GetMapping("/{id}")
-    public String detail(@PathVariable Long id, @RequestParam(required=false) String returnUrl, Model model) {
+    public String detail(@PathVariable Long id, @RequestParam(required=false) String returnUrl, @org.springframework.security.core.annotation.AuthenticationPrincipal Object principal, Model model) {
         if (id <= 0) throw new PaymentAuditNotificationInvalidIdException();
-        model.addAttribute("notification", service.findById(id));
+        model.addAttribute("notification", principal instanceof com.example.ecsite.security.AdminUserDetails admin
+            ? service.findById(id,admin.getId()) : service.findById(id));
+        model.addAttribute("handlingStatuses", com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.values());
         model.addAttribute("returnUrl", AdminReturnUrlHelper.resolvePaymentAuditNotificationListReturnUrl(returnUrl));
         return "admin/payment-audit-notifications/detail";
+    }
+
+    @PostMapping("/{id}/handling")
+    public String handling(@PathVariable Long id,
+        @Valid @ModelAttribute("handlingForm") com.example.ecsite.form.AdminPaymentAuditNotificationHandlingForm form,
+        BindingResult binding, @RequestParam(required=false) String returnUrl,
+        @org.springframework.security.core.annotation.AuthenticationPrincipal com.example.ecsite.security.AdminUserDetails admin,
+        org.springframework.web.servlet.mvc.support.RedirectAttributes flash) {
+        if(id<=0) throw new PaymentAuditNotificationInvalidIdException();
+        String message;
+        boolean success=false;
+        if(binding.hasErrors()) message="入力内容を確認してください。詳細を再読み込みして再操作してください。";
+        else if(admin==null || handlingService==null) message="現在は閲覧のみ可能です。";
+        else try {
+            boolean changed=handlingService.changeStatus(id,admin.getId(),admin.getUsername(),form.getSnapshotToken(),form.getStatus(),form.getComment());
+            message=changed?"管理者対応状態を変更しました。":"管理者対応状態は変更されていません。"; success=true;
+        } catch(com.example.ecsite.service.PaymentAuditNotificationHandlingToken.InvalidSnapshotException e) {
+            message="署名トークンが不正または期限切れです。詳細を再読み込みしてください。";
+        } catch(com.example.ecsite.service.PaymentAuditNotificationHandlingConflictException e) {
+            message=e.isUnknownChanged()?"新しい結果不明の配送試行があります。詳細を再読み込みして確認してください。":"他の管理者により対応状態が更新されています。詳細を再読み込みしてください。";
+        } catch(org.springframework.dao.OptimisticLockingFailureException e) {
+            message="他の管理者により対応状態が更新されています。詳細を再読み込みしてください。";
+        } catch(IllegalArgumentException e) {
+            message="コメント・変更先状態・管理対象条件を確認して入力内容を修正してください。";
+        } catch(IllegalStateException e) {
+            message="対応操作を利用できません。管理者に設定の確認を依頼してください。";
+        }
+        flash.addFlashAttribute(success?"successMessage":"errorMessage",message);
+        String safe=AdminReturnUrlHelper.resolvePaymentAuditNotificationListReturnUrl(returnUrl);
+        return "redirect:"+UriComponentsBuilder.fromPath("/admin/payment-audit-notifications/"+id)
+            .queryParam("returnUrl",safe).build().encode().toUriString();
     }
 
     @ExceptionHandler(PaymentAuditNotificationNotFoundException.class)

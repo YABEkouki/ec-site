@@ -18,4 +18,7 @@ public interface AdminPaymentAuditNotificationProjection {
     PaymentAuditNotificationCloseReason getCloseReason();
     Boolean getDeliveryUncertain();
     Integer getRecipientCount();
+    PaymentAuditNotificationHandlingStatus getHandlingStatus();
+    Instant getHandlingUpdatedAt();
+    Boolean getRequiresRecheck();
 }

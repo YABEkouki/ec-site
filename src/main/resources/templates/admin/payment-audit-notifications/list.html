@@ -37,6 +37,9 @@
                     <option th:each="type : ${warningTypes}" th:value="${type}" th:text="${@notificationDisplay.warningLabel(type)}" th:selected="${values.warningType == type.name()}"></option>
                 </select>
             </div>
+            <div class="order-search-field"><label for="handlingStatus">管理者対応状態</label><select id="handlingStatus" name="handlingStatus"><option value="">すべて</option><option th:if="${#fields.hasErrors('searchForm.handlingStatus')}" th:value="${values.handlingStatus}" th:text="${values.handlingStatus}" selected></option><option th:each="handling : ${handlingStatuses}" th:value="${handling}" th:text="${@notificationDisplay.handlingLabel(handling)}" th:selected="${values.handlingStatus == handling.name()}"></option></select></div>
+            <label><input type="checkbox" name="actionableOnly" value="true" th:checked="${searchForm.actionableOnly}">管理対象のみ</label>
+            <label><input type="checkbox" name="requiresRecheck" value="true" th:checked="${searchForm.requiresRecheck}">再確認必要のみ</label>
             <div class="order-search-field"><label for="from">作成日From</label><input id="from" name="from" type="text" placeholder="yyyy-MM-dd" th:value="${values.from}"></div>
             <div class="order-search-field"><label for="to">作成日To</label><input id="to" name="to" type="text" placeholder="yyyy-MM-dd" th:value="${values.to}"></div>
             <div class="order-search-field"><label for="size">表示件数</label><select id="size" name="size" onchange="this.form.requestSubmit()"><option th:each="size : ${ {20,50,100} }" th:value="${size}" th:text="${size}" th:selected="${size == page.size}"></option></select></div>
@@ -47,7 +50,7 @@
     <p><span th:text="${page.totalElements}"></span> 件 ／ 現在ページ <span th:text="${page.number + 1}"></span> / <span th:text="${page.totalPages == 0 ? 1 : page.totalPages}"></span></p>
     <div id="notification-history-scroll" th:if="${page.totalElements > 0}" tabindex="0" role="region" aria-label="通知送信履歴（横スクロール可能）">
         <table>
-            <thead><tr><th>通知ID</th><th>作成日時（JST）</th><th>通知ステータス</th><th>対象警告種別・件数</th><th>送信試行回数／最大回数</th><th>送信成功日時（JST）</th><th>送信予定日時（JST）</th><th>配送結果</th></tr></thead>
+            <thead><tr><th>通知ID</th><th>作成日時（JST）</th><th>通知ステータス</th><th>対象警告種別・件数</th><th>送信試行回数／最大回数</th><th>送信成功日時（JST）</th><th>送信予定日時（JST）</th><th>配送結果</th><th>管理対象</th><th>管理者対応状態</th><th>再確認必要</th><th>最終対応日時（JST）</th></tr></thead>
             <tbody><tr th:each="item : ${notifications}">
                 <td><a th:href="@{/admin/payment-audit-notifications/{id}(id=${item.id},returnUrl=${returnUrl})}" th:text="${item.id}"></a></td>
                 <td th:text="${#temporals.format(item.createdAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
@@ -61,14 +64,18 @@
                     <span th:unless="${item.status.name() == 'PENDING' or item.status.name() == 'RETRY_WAIT'}">—</span>
                 </td>
                 <td><strong th:if="${item.deliveryUncertain}" class="action-required-warning">配送結果不確実</strong></td>
+                <td th:text="${item.actionable ? '管理対象' : '対象外'}"></td>
+                <td th:text="${@notificationDisplay.handlingLabel(item.handlingStatus)}"></td>
+                <td th:text="${item.requiresRecheck ? '再確認必要' : '—'}"></td>
+                <td th:text="${item.handlingUpdatedAt == null ? '—' : #temporals.format(item.handlingUpdatedAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
             </tr></tbody>
         </table>
     </div>
     <nav th:if="${page.totalPages > 1}" aria-label="通知履歴ページ切り替え">
-        <a th:if="${page.hasPrevious()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},page=${0},size=${page.size})}" class="button button-secondary">先頭</a>
-        <a th:if="${page.hasPrevious()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},page=${page.number - 1},size=${page.size})}" class="button button-secondary">前へ</a>
-        <a th:if="${page.hasNext()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},page=${page.number + 1},size=${page.size})}" class="button button-secondary">次へ</a>
-        <a th:if="${page.hasNext()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},page=${page.totalPages - 1},size=${page.size})}" class="button button-secondary">最終</a>
+        <a th:if="${page.hasPrevious()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},handlingStatus=${searchForm.handlingStatus},actionableOnly=${searchForm.actionableOnly},requiresRecheck=${searchForm.requiresRecheck},page=${0},size=${page.size})}" class="button button-secondary">先頭</a>
+        <a th:if="${page.hasPrevious()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},handlingStatus=${searchForm.handlingStatus},actionableOnly=${searchForm.actionableOnly},requiresRecheck=${searchForm.requiresRecheck},page=${page.number - 1},size=${page.size})}" class="button button-secondary">前へ</a>
+        <a th:if="${page.hasNext()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},handlingStatus=${searchForm.handlingStatus},actionableOnly=${searchForm.actionableOnly},requiresRecheck=${searchForm.requiresRecheck},page=${page.number + 1},size=${page.size})}" class="button button-secondary">次へ</a>
+        <a th:if="${page.hasNext()}" th:href="@{/admin/payment-audit-notifications(notificationId=${searchForm.notificationId},status=${searchForm.status},warningType=${searchForm.warningType},from=${searchForm.from},to=${searchForm.to},handlingStatus=${searchForm.handlingStatus},actionableOnly=${searchForm.actionableOnly},requiresRecheck=${searchForm.requiresRecheck},page=${page.totalPages - 1},size=${page.size})}" class="button button-secondary">最終</a>
     </nav>
 </main>
 </body>

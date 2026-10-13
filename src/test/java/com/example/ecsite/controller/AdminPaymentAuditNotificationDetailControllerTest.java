@@ -138,4 +138,22 @@ class AdminPaymentAuditNotificationDetailControllerTest {
         String body=html("/admin/payment-audit-notifications?status=%22%3E%3Cscript%3E&size=20");
         assertThat(body).contains("&amp;size=20").doesNotContain("<script>","hidden-from","hidden-first","hidden-body","hidden-subject","claim_token","lease_owner","recipient_set_hash");
     }
+    @ParameterizedTest @CsvSource({"true,true","true,false","false,false"})
+    void handlingFormVisibilityAndEscaping(boolean actionable,boolean available) throws Exception {
+        var history=new AdminPaymentAuditNotificationHandlingHistoryItem(1L,PaymentAuditNotificationHandlingStatus.UNREVIEWED,PaymentAuditNotificationHandlingStatus.RESOLVED,TIME,7L,"admin","<script>alert(1)</script>");
+        var handling=new AdminPaymentAuditNotificationHandlingDetail(actionable,PaymentAuditNotificationHandlingStatus.RESOLVED,true,TIME,7L,"admin",List.of(history),List.of(1),List.of(1,2),available?"signed-token":null,available);
+        var base=detail(PaymentAuditNotificationStatus.SENT,null,List.of(),List.of());
+        var full=new AdminPaymentAuditNotificationDetail(base.id(),base.status(),base.createdAt(),base.updatedAt(),base.evaluatedAt(),base.attemptCount(),base.maxAttempts(),base.sentAt(),base.nextAttemptAt(),base.closedAt(),base.closeReason(),true,2,List.of(),List.of(),handling);
+        when(service.findById(42L)).thenReturn(full);
+        String body=html(null);assertThat(body).contains("再確認必要","&lt;script&gt;","UNKNOWN試行番号").doesNotContain("<script>alert(1)</script>");
+        if(available) assertThat(body).contains("name=\"snapshotToken\"","name=\"_csrf\"","signed-token");
+        else assertThat(body).doesNotContain("name=\"snapshotToken\"");
+    }
+    @Test void handlingGetReturns405WithoutCallingReadOrUpdateService() throws Exception {
+        mvc.perform(get(URL+"/handling").with(user("admin").roles("ADMIN")))
+            .andExpect(status().isMethodNotAllowed())
+            .andExpect(header().string(org.springframework.http.HttpHeaders.ALLOW,"POST"))
+            .andExpect(view().name("error/method-not-allowed"));
+        verifyNoInteractions(service);
+    }
 }

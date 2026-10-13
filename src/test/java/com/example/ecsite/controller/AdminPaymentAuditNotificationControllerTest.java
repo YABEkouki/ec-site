@@ -34,6 +34,7 @@ class AdminPaymentAuditNotificationControllerTest {
     private static final String URL="/admin/payment-audit-notifications";
     @Autowired MockMvc mvc;
     @MockitoBean AdminPaymentAuditNotificationService service;
+    @MockitoBean AdminPaymentAuditNotificationHandlingService handlingService;
     @MockitoBean AdminUserDetailsService adminUserDetailsService;
     @MockitoBean CustomUserDetailsService customUserDetailsService;
     @MockitoBean AdminAuthenticationSuccessHandler adminAuthenticationSuccessHandler;
@@ -183,4 +184,48 @@ class AdminPaymentAuditNotificationControllerTest {
         verify(service).search(any(),eq(1),eq(20));verifyNoMoreInteractions(service);
     }
 
+    private AdminUserDetails handlingAdmin() { return new AdminUserDetails(7L,"admin","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))); }
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder handlingPost() {
+        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(URL+"/42/handling").with(user(handlingAdmin()))
+            .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+            .param("status","RESOLVED").param("comment","確認済み").param("snapshotToken","signed-token").param("returnUrl",URL+"?handlingStatus=RESOLVED&page=2");
+    }
+    @Test void handlingUsesPrincipalAndPrg() throws Exception {
+        when(handlingService.changeStatus(42,7,"admin","signed-token",PaymentAuditNotificationHandlingStatus.RESOLVED,"確認済み")).thenReturn(true);
+        mvc.perform(handlingPost().param("actorId","999")).andExpect(status().is3xxRedirection()).andExpect(flash().attribute("successMessage","管理者対応状態を変更しました。"))
+            .andExpect(header().string("Location",org.hamcrest.Matchers.not(containsString("signed-token"))));
+        verify(handlingService).changeStatus(42,7,"admin","signed-token",PaymentAuditNotificationHandlingStatus.RESOLVED,"確認済み");
+    }
+    @Test void handlingRejectsCsrfAndUser() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(URL+"/42/handling").with(user(handlingAdmin()))).andExpect(status().isForbidden());
+        mvc.perform(handlingPost().with(user("user").roles("USER"))).andExpect(status().isForbidden());verifyNoInteractions(handlingService);
+    }
+    @ParameterizedTest @ValueSource(booleans={true,false}) void handlingConflictMessages(boolean unknownChanged) throws Exception {
+        when(handlingService.changeStatus(anyLong(),anyLong(),anyString(),anyString(),any(),any())).thenThrow(new PaymentAuditNotificationHandlingConflictException(unknownChanged));
+        mvc.perform(handlingPost()).andExpect(status().is3xxRedirection()).andExpect(flash().attribute("errorMessage",containsString(unknownChanged?"配送試行":"他の管理者")));
+    }
+    @Test void invalidInputRejectsExternalReturnUrl() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(URL+"/42/handling").with(user(handlingAdmin())).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()).param("status","BAD").param("snapshotToken","signed-token").param("returnUrl","https://example.org")).andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("errorMessage"))
+            .andExpect(header().string("Location",org.hamcrest.Matchers.not(containsString("example.org"))));verifyNoInteractions(handlingService);
+    }
+    @Test void newFiltersAreBoundAndRetained() throws Exception {
+        assertThat(html("?handlingStatus=RESOLVED&actionableOnly=true&requiresRecheck=true")).contains("管理者対応状態","再確認必要のみ");
+        var c=ArgumentCaptor.forClass(AdminPaymentAuditNotificationSearchForm.class);verify(service).search(c.capture(),eq(0),eq(20));
+        assertThat(c.getValue().getHandlingStatus()).isEqualTo(PaymentAuditNotificationHandlingStatus.RESOLVED);assertThat(c.getValue().isRequiresRecheck()).isTrue();assertThat(c.getValue().isActionableOnly()).isTrue();
+    }
+    @Test void expiredSnapshotUsesSafeReloadMessage() throws Exception {
+        var time=java.time.Clock.fixed(java.time.Instant.parse("2026-10-13T00:00:00Z"),java.time.ZoneOffset.UTC);
+        String key=Base64.getEncoder().encodeToString(new byte[32]);
+        String token=new PaymentAuditNotificationHandlingToken(key,time).issue(42,7,false,0,List.of());
+        var expired=new PaymentAuditNotificationHandlingToken(key,java.time.Clock.offset(time,java.time.Duration.ofMinutes(15)));
+        RuntimeException failure=null;
+        try { expired.verify(token,42,7); } catch(RuntimeException e) { failure=e; }
+        when(handlingService.changeStatus(anyLong(),anyLong(),anyString(),anyString(),any(),any())).thenThrow(failure);
+        mvc.perform(handlingPost()).andExpect(status().is3xxRedirection()).andExpect(flash().attribute("errorMessage",containsString("期限切れ")));
+    }
+    @Test void invalidCommentDoesNotExposeExceptionDetails() throws Exception {
+        when(handlingService.changeStatus(anyLong(),anyLong(),anyString(),anyString(),any(),any())).thenThrow(new IllegalArgumentException("secret-detail"));
+        mvc.perform(handlingPost()).andExpect(status().is3xxRedirection()).andExpect(flash().attribute("errorMessage",containsString("入力内容")))
+            .andExpect(flash().attribute("errorMessage",org.hamcrest.Matchers.not(containsString("secret-detail"))));
+    }
 }
