@@ -17,7 +17,7 @@ class PaymentReconciliationItemServiceTest {
     PaymentCaptureResultService capture=mock(PaymentCaptureResultService.class);
     PaymentCancellationResultService userCancel=mock(PaymentCancellationResultService.class);
     AdminPaymentCancellationResultService adminCancel=mock(AdminPaymentCancellationResultService.class);
-    PaymentReconciliationItemService service=new PaymentReconciliationItemService(snapshots,new PaymentOperationSyncService(gateway,authorization,capture,userCancel,adminCancel));
+    PaymentReconciliationItemService service=new PaymentReconciliationItemService(snapshots,new PaymentOperationSyncService(gateway,authorization,capture,userCancel,adminCancel), org.mockito.Mockito.mock(PaymentPostGuardService.class));
 
     @ParameterizedTest @EnumSource(value=PaymentTransactionType.class,names={"AUTHORIZE","CAPTURE","CANCEL"})
     void pendingOperationRefetchesAndPassesExactSnapshot(PaymentTransactionType type) {

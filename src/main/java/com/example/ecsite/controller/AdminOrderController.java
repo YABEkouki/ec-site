@@ -38,6 +38,7 @@ import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.CaptureResult;
 import com.example.ecsite.payment.CaptureResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
+import com.example.ecsite.payment.PaymentSafetyMessages;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
@@ -456,8 +457,7 @@ public class AdminOrderController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "売上確定結果を確認できませんでした。"
-                            + "注文はまだ発送済みに変更していません。");
+                    PaymentSafetyMessages.administrator(id, e));
         }
 
         return redirectToDetail(
@@ -505,8 +505,7 @@ public class AdminOrderController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "決済取消結果を確認できませんでした。"
-                            + "注文はまだキャンセルしていません。");
+                    PaymentSafetyMessages.administrator(id, e));
         }
 
         return redirectToDetail(

@@ -2007,9 +2007,8 @@ class AdminOrderControllerTest {
 
         verify(redirectAttributes)
                 .addFlashAttribute(
-                        "errorMessage",
-                        "決済取消結果を確認できませんでした。"
-                                + "注文はまだキャンセルしていません。");
+                        org.mockito.ArgumentMatchers.eq("errorMessage"),
+                        org.mockito.ArgumentMatchers.argThat(message -> ((String) message).contains("失敗確定ではありません") && ((String) message).contains("再送を停止") && ((String) message).contains("注文番号")));
     }
 
 }

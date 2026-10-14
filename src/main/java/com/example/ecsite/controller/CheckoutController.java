@@ -25,6 +25,7 @@ import com.example.ecsite.form.CheckoutForm;
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.AuthorizationResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
+import com.example.ecsite.payment.PaymentSafetyMessages;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
@@ -260,8 +261,7 @@ public class CheckoutController {
 
                 redirectAttributes.addFlashAttribute(
                         "errorMessage",
-                        "注文は受け付けましたが、カード決済を開始できませんでした。"
-                                + "注文詳細からカード決済を再開してください。");
+                        PaymentSafetyMessages.customer(order.getId(), ex));
 
                 return "redirect:/orders/" + order.getId();
             }
@@ -341,12 +341,11 @@ public class CheckoutController {
                             orderId,
                             paymentId);
 
-        } catch (PaymentGatewayException e) {
+        } catch (PaymentGatewayException | com.example.ecsite.service.payment.PaymentSafetyStopException e) {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "決済状況を確認できませんでした。"
-                            + "しばらくしてからもう一度お試しください。");
+                    PaymentSafetyMessages.customer(orderId, e));
 
             return "redirect:/checkout/payment";
         }

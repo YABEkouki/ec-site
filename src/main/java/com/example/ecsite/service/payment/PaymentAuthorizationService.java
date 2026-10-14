@@ -20,6 +20,7 @@ public class PaymentAuthorizationService {
     private final PaymentService paymentService;
     private final PaymentOperationSnapshotService snapshots;
     private final PaymentGateway paymentGateway;
+    private final PaymentPostGuardService postGuard;
     private final PaymentAuthorizationResultService paymentAuthorizationResultService;
 
     public PaymentAuthorizationService(
@@ -27,9 +28,10 @@ public class PaymentAuthorizationService {
             PaymentService paymentService,
             PaymentGateway paymentGateway,
             PaymentAuthorizationResultService paymentAuthorizationResultService,
-            PaymentOperationSnapshotService snapshots) {
+            PaymentOperationSnapshotService snapshots, PaymentPostGuardService postGuard) {
 
         this.snapshots = snapshots;
+        this.postGuard = postGuard;
         this.startService = startService;
         this.paymentService = paymentService;
         this.paymentGateway = paymentGateway;
@@ -45,10 +47,10 @@ public class PaymentAuthorizationService {
             PaymentOperationSnapshot snapshot = start.snapshot();
             String providerId = snapshot.providerPaymentId();
             if (providerId == null || providerId.isBlank()) {
-                throw new IllegalStateException("決済開始結果が不明のため、カード与信の再送を停止しています。");
+                throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.PROVIDER_ID_MISSING, order.getId());
             }
             AuthorizationRecovery recovery = paymentGateway.retrieveAuthorization(providerId);
-            paymentAuthorizationResultService.apply(snapshot, recovery.result()).requireAccepted();
+            applySafely(snapshot, recovery.result());
             if (recovery.result().status() == AuthorizationResultStatus.AUTHORIZED
                     || recovery.result().status() == AuthorizationResultStatus.FAILED) {
                 throw new IllegalStateException("カード与信は確定済みです。注文詳細を確認してください。");
@@ -56,12 +58,18 @@ public class PaymentAuthorizationService {
             return new PaymentAuthorizationPreparation(start.paymentId(), recovery.clientSecret());
         }
 
+        postGuard.beforeNewPost(start.snapshot());
+
         AuthorizationPreparation preparation = paymentGateway.prepareAuthorization(
                 new AuthorizationRequest(
                         start.amount(),
                         start.idempotencyKey()));
 
-        paymentAuthorizationResultService.setProviderPaymentId(start.snapshot(), preparation.providerPaymentId()).requireAccepted();
+        try {
+            paymentAuthorizationResultService.setProviderPaymentId(start.snapshot(), preparation.providerPaymentId()).requireAccepted();
+        } catch (RuntimeException failure) {
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.RESULT_PERSISTENCE_UNKNOWN, order.getId());
+        }
 
         return new PaymentAuthorizationPreparation(
                 start.paymentId(),
@@ -77,8 +85,7 @@ public class PaymentAuthorizationService {
 
         AuthorizationResult result = recovery.result();
 
-        paymentAuthorizationResultService.apply(
-                snapshot, result).requireAccepted();
+        applySafely(snapshot, result);
 
         return result;
     }
@@ -94,13 +101,21 @@ public class PaymentAuthorizationService {
 
         AuthorizationResult result = recovery.result();
 
-        paymentAuthorizationResultService.apply(snapshot, result).requireAccepted();
+        applySafely(snapshot, result);
 
         return new PaymentAuthorizationRecovery(
                 paymentId,
                 recovery.result(),
                 recovery.clientSecret(),
                 determineRecoveryAction(result.status()));
+    }
+
+    private void applySafely(PaymentOperationSnapshot snapshot, AuthorizationResult result) {
+        try {
+            paymentAuthorizationResultService.apply(snapshot, result).requireAccepted();
+        } catch (RuntimeException failure) {
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.RESULT_PERSISTENCE_UNKNOWN, snapshot.orderId());
+        }
     }
 
     private PaymentAuthorizationRecoveryAction determineRecoveryAction(

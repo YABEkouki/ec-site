@@ -17,13 +17,15 @@ public class PaymentCancellationService {
 
     private final PaymentCancellationStartService startService;
     private final PaymentGateway paymentGateway;
+    private final PaymentPostGuardService postGuard;
     private final PaymentCancellationCompletionService resultService;
 
     public PaymentCancellationService(
             PaymentCancellationStartService startService,
             PaymentGateway paymentGateway,
-            PaymentCancellationCompletionService resultService) {
+            PaymentCancellationCompletionService resultService, PaymentPostGuardService postGuard) {
 
+        this.postGuard = postGuard;
         this.startService = startService;
         this.paymentGateway = paymentGateway;
         this.resultService = resultService;
@@ -41,10 +43,11 @@ public class PaymentCancellationService {
 
         CancellationResult result;
         if (start.disposition() == PaymentStartDisposition.NEW) {
+            postGuard.beforeNewPost(start.snapshot());
             result = paymentGateway.cancelAuthorization(new CancellationRequest(
                     start.providerPaymentId(), start.idempotencyKey()));
         } else {
-            requireProviderId(start.providerPaymentId());
+            requireProviderId(start.providerPaymentId(), orderId);
             PaymentFlowState state = paymentGateway.retrievePaymentFlow(start.providerPaymentId());
             result = new CancellationResult(state.status() == PaymentFlowStatus.CANCELED
                     ? CancellationResultStatus.CANCELLED
@@ -54,14 +57,18 @@ public class PaymentCancellationService {
             }
         }
 
+        try {
         resultService.apply(orderId, start, result);
+        } catch (RuntimeException failure) {
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.RESULT_PERSISTENCE_UNKNOWN, orderId);
+        }
 
         return result;
     }
 
-    private void requireProviderId(String providerId) {
+    private void requireProviderId(String providerId, Long orderId) {
         if (providerId == null || providerId.isBlank()) {
-            throw new IllegalStateException("決済IDが未設定のため、決済操作の再送を停止しています。");
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.PROVIDER_ID_MISSING, orderId);
         }
     }
 }

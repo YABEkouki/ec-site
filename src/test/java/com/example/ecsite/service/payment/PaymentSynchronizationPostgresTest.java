@@ -315,6 +315,69 @@ class PaymentSynchronizationPostgresTest {
         }
         return state;
     }
+    @Autowired PaymentAuthorizationService authorizationApi;
+    @Autowired PaymentCaptureService captureApi;
+    @Autowired PaymentPostGuardService postGuard;
+
+    @ParameterizedTest @EnumSource(value=PaymentGatewayErrorCategory.class)
+    void uncertainAuthorizationKeepsSinglePendingAndStopsProviderlessResume(PaymentGatewayErrorCategory category) {
+        Fixture f=fixture(false);
+        when(gateway.prepareAuthorization(any())).thenAnswer(inv -> {
+            assertApiOutsideTransaction();
+            assertThat(jdbc.queryForObject("select count(*) from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? and t.status='PENDING'",Integer.class,f.orderId)).isEqualTo(1);
+            throw new PaymentGatewayException(category,409,"test",true);
+        });
+        var order=orders.findById(f.orderId).orElseThrow();
+        assertThatThrownBy(()->authorizationApi.prepareAuthorization(order)).isInstanceOf(PaymentGatewayException.class);
+        var original=jdbc.queryForMap("select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=?",f.orderId);
+        assertThatThrownBy(()->authorizationApi.prepareAuthorization(order)).isInstanceOf(PaymentSafetyStopException.class);
+        assertThat(jdbc.queryForMap("select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=?",f.orderId)).isEqualTo(original);
+        assertThat(original.get("status")).isEqualTo("PENDING");
+        assertThat(number("order_status_histories",f)).isZero();
+        verify(gateway,times(1)).prepareAuthorization(any());verify(gateway,never()).retrieveAuthorization(anyString());
+    }
+    @ParameterizedTest @EnumSource(value=PaymentTransactionType.class,names={"CAPTURE","CANCEL"})
+    void uncertainPostRecoversByGetWithOriginalTransaction(PaymentTransactionType type) {
+        Fixture f=fixture(true);
+        var failure=new PaymentGatewayException(PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN,null,null,true);
+        if(type==PaymentTransactionType.CAPTURE) when(gateway.capture(any())).thenAnswer(inv->{assertApiOutsideTransaction();throw failure;});
+        else when(gateway.cancelAuthorization(any())).thenAnswer(inv->{assertApiOutsideTransaction();throw failure;});
+        assertThatThrownBy(()->{if(type==PaymentTransactionType.CAPTURE)captureApi.captureForShipment(f.orderId,1L,"admin",null);else userCancel.cancelForUser(f.orderId,f.userId,"user");}).isSameAs(failure);
+        var pending=jdbc.queryForMap("select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? and t.transaction_type=?",f.orderId,type.name());
+        assertThat(pending.get("status")).isEqualTo("PENDING");
+        assertThat(number("order_status_histories",f)).isZero();
+        when(gateway.retrievePaymentFlow(f.providerId)).thenAnswer(inv->{assertApiOutsideTransaction();return new PaymentFlowState(f.providerId,type==PaymentTransactionType.CAPTURE?PaymentFlowStatus.SUCCEEDED:PaymentFlowStatus.CANCELED,null,null);});
+        if(type==PaymentTransactionType.CAPTURE)captureApi.captureForShipment(f.orderId,1L,"admin",null);else userCancel.cancelForUser(f.orderId,f.userId,"user");
+        var current=jdbc.queryForMap("select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? and t.transaction_type=?",f.orderId,type.name());
+        for(String key:List.of("id","amount","order_content_revision","idempotency_key"))assertThat(current.get(key)).isEqualTo(pending.get(key));
+        assertThat(current.get("status")).isEqualTo("SUCCEEDED");
+        assertThat(number("order_status_histories",f)).isEqualTo(1);
+        if(type==PaymentTransactionType.CAPTURE)verify(gateway,times(1)).capture(any());else verify(gateway,times(1)).cancelAuthorization(any());
+    }
+    @Test void delayedNewSnapshotStopsBeforePostWithoutChangingPending() {
+        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);
+        jdbc.update("update payment_transactions set created_at=created_at - interval '24 hours' where id=?",start.transactionId());
+        assertThatThrownBy(()->postGuard.beforeNewPost(start.snapshot())).isInstanceOf(PaymentSafetyStopException.class);
+        assertThat(jdbc.queryForObject("select status from payment_transactions where id=?",String.class,start.transactionId())).isEqualTo("PENDING");
+        verifyNoPost();
+    }
+    @MockitoSpyBean PaymentService paymentServiceSpy;
+    @Test void successfulAuthorizationPostThenProviderSaveRollbackStopsFuturePost() {
+        Fixture f=fixture(false);
+        when(gateway.prepareAuthorization(any())).thenAnswer(inv->{assertApiOutsideTransaction();return new AuthorizationPreparation(f.providerId,"private-client-secret");});
+        doAnswer(inv->{
+            Object result=inv.callRealMethod();
+            throw new org.springframework.dao.DataAccessResourceFailureException("simulated DB failure");
+        }).when(paymentServiceSpy).setProviderPaymentId(any(Order.class),any(PaymentOperationSnapshot.class),eq(f.providerId));
+        var order=orders.findById(f.orderId).orElseThrow();
+        assertThatThrownBy(()->authorizationApi.prepareAuthorization(order)).isInstanceOf(PaymentSafetyStopException.class);
+        assertThat(jdbc.queryForObject("select provider_payment_id from payments where order_id=?",String.class,f.orderId)).isNull();
+        assertThat(jdbc.queryForObject("select status from payments where order_id=?",String.class,f.orderId)).isEqualTo("PENDING");
+        assertThatThrownBy(()->authorizationApi.prepareAuthorization(order)).isInstanceOf(PaymentSafetyStopException.class);
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=?",Integer.class,f.orderId)).isEqualTo(1);
+        verify(gateway,times(1)).prepareAuthorization(any());
+        assertThat(number("stock_movements",f)).isZero();
+    }
     private Fixture fixture(boolean authorized) {
         return tx(() -> {
             String unique=UUID.randomUUID().toString();LocalDateTime now=LocalDateTime.now();

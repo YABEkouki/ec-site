@@ -39,7 +39,7 @@ class PaymentCancellationServiceTest {
         service = new PaymentCancellationService(
                 startService,
                 paymentGateway,
-                resultService);
+                resultService, org.mockito.Mockito.mock(com.example.ecsite.service.payment.PaymentPostGuardService.class));
     }
 
     @Test

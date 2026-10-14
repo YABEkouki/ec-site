@@ -11,9 +11,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentReconciliationItemService {
     private static final Logger log = LoggerFactory.getLogger(PaymentReconciliationItemService.class);
     private final PaymentOperationSnapshotService snapshots;
+    private final PaymentPostGuardService diagnostics;
     private final PaymentOperationSyncService synchronization;
 
-    public PaymentReconciliationItemService(PaymentOperationSnapshotService snapshots, PaymentOperationSyncService synchronization) {
+    public PaymentReconciliationItemService(PaymentOperationSnapshotService snapshots, PaymentOperationSyncService synchronization, PaymentPostGuardService diagnostics) {
+        this.diagnostics = diagnostics;
         this.snapshots = snapshots;
         this.synchronization = synchronization;
     }
@@ -24,6 +26,8 @@ public class PaymentReconciliationItemService {
             log.debug("Payment reconciliation skipped: transactionId={}, reason=NOT_FOUND", transactionId);
             return PaymentSynchronizationOutcome.SKIPPED;
         }
+        if (snapshot.providerPaymentId() == null || snapshot.providerPaymentId().isBlank())
+            diagnostics.identifyStoppedPending(transactionId);
         return synchronization.synchronize(snapshot);
     }
 }

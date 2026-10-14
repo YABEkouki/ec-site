@@ -1869,8 +1869,8 @@ class OrderControllerTest {
 
         verify(redirectAttributes)
                 .addFlashAttribute(
-                        "errorMessage",
-                        "カード決済を開始できませんでした。しばらくしてからもう一度お試しください。");
+                        org.mockito.ArgumentMatchers.eq("errorMessage"),
+                        org.mockito.ArgumentMatchers.argThat(message -> ((String) message).contains("失敗確定ではありません") && ((String) message).contains("再送を停止") && ((String) message).contains("注文番号")));
     }
 
     @Test
@@ -2192,9 +2192,8 @@ class OrderControllerTest {
 
         verify(redirectAttributes)
                 .addFlashAttribute(
-                        "errorMessage",
-                        "カード決済を開始できませんでした。"
-                                + "しばらくしてからもう一度お試しください。");
+                        org.mockito.ArgumentMatchers.eq("errorMessage"),
+                        org.mockito.ArgumentMatchers.argThat(message -> ((String) message).contains("失敗確定ではありません") && ((String) message).contains("再送を停止") && ((String) message).contains("注文番号")));
     }
 
 }

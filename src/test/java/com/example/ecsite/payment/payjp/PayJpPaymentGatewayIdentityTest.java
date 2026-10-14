@@ -18,10 +18,10 @@ class PayJpPaymentGatewayIdentityTest {
         var builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();
         try(var factory=mockStatic(RestClient.class)) {
             factory.when(RestClient::builder).thenReturn(builder);
-            var gateway=new PayJpPaymentGateway(new PayJpProperties("dummy","dummy","http://localhost:1","dummy"),new PayJpAuthorizationMapper());
+            var gateway=new PayJpPaymentGateway(builder.baseUrl("http://localhost:1").build(), new PayJpAuthorizationMapper());
             server.expect(requestTo("http://localhost:1/v2/payment_flows/pf_expected"))
                     .andRespond(withSuccess("{\"id\":\""+id+"\",\"status\":\"requires_capture\"}",MediaType.APPLICATION_JSON));
-            assertThatThrownBy(()->gateway.retrieveAuthorization("pf_expected")).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(()->gateway.retrieveAuthorization("pf_expected")).isInstanceOf(com.example.ecsite.payment.PaymentGatewayException.class);
             server.verify();
         }
     }
@@ -29,10 +29,24 @@ class PayJpPaymentGatewayIdentityTest {
         var builder=RestClient.builder();var server=MockRestServiceServer.bindTo(builder).build();
         try(var factory=mockStatic(RestClient.class)) {
             factory.when(RestClient::builder).thenReturn(builder);
-            var gateway=new PayJpPaymentGateway(new PayJpProperties("dummy","dummy","http://localhost:1","dummy"),new PayJpAuthorizationMapper());
+            var gateway=new PayJpPaymentGateway(builder.baseUrl("http://localhost:1").build(), new PayJpAuthorizationMapper());
             server.expect(requestTo("http://localhost:1/v2/payment_flows/pf_expected"))
                     .andRespond(withSuccess("{\"id\":\"pf_other\",\"status\":\"succeeded\"}",MediaType.APPLICATION_JSON));
-            assertThatThrownBy(()->gateway.retrievePaymentFlow("pf_expected")).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(()->gateway.retrievePaymentFlow("pf_expected")).isInstanceOf(com.example.ecsite.payment.PaymentGatewayException.class);
+            server.verify();
+        }
+    }
+    @Test void httpFailureDoesNotExposeRawSensitiveResponse() {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        try (var factory = mockStatic(RestClient.class)) {
+            factory.when(RestClient::builder).thenReturn(builder);
+            var gateway = new PayJpPaymentGateway(builder.baseUrl("http://localhost:1").build(), new PayJpAuthorizationMapper());
+            server.expect(requestTo("http://localhost:1/v2/payment_flows/pf_expected"))
+                    .andRespond(withServerError().body("sensitive-client-secret"));
+            var failure = catchThrowable(() -> gateway.retrievePaymentFlow("pf_expected"));
+            assertThat(failure).hasNoCause();
+            assertThat(failure.toString()).doesNotContain("sensitive-client-secret");
             server.verify();
         }
     }

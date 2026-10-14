@@ -23,6 +23,7 @@ import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
+import com.example.ecsite.payment.PaymentSafetyMessages;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderService;
@@ -229,8 +230,7 @@ public class OrderController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "決済の取消結果を確認できませんでした。"
-                            + "注文はまだキャンセルされていません。");
+                    PaymentSafetyMessages.customer(id, e));
         }
 
         return "redirect:/orders/" + id;
@@ -319,8 +319,7 @@ public class OrderController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "カード決済を開始できませんでした。"
-                            + "しばらくしてからもう一度お試しください。");
+                    PaymentSafetyMessages.customer(id, ex));
 
             return "redirect:/orders/" + id;
         }

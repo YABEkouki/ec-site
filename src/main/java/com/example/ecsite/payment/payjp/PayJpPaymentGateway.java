@@ -1,5 +1,19 @@
 package com.example.ecsite.payment.payjp;
 
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.core5.util.Timeout;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
+import com.example.ecsite.config.PayJpSafetyProperties;
+import com.example.ecsite.payment.PaymentGatewayErrorCategory;
+import tools.jackson.databind.json.JsonMapper;
+import jakarta.annotation.PreDestroy;
 import java.util.List;
 import java.util.Map;
 
@@ -30,18 +44,35 @@ public class PayJpPaymentGateway implements PaymentGateway {
     private final RestClient restClient;
     private final PayJpAuthorizationMapper authorizationMapper;
 
-    public PayJpPaymentGateway(
-            PayJpProperties properties,
-            PayJpAuthorizationMapper authorizationMapper) {
+    private CloseableHttpClient httpClient;
 
+    @Autowired
+    public PayJpPaymentGateway(PayJpProperties properties,
+            PayJpAuthorizationMapper authorizationMapper, PayJpSafetyProperties safety) {
+        if (!safety.isValid()) throw new IllegalArgumentException("Invalid PAY.JP safety configuration");
         this.authorizationMapper = authorizationMapper;
+        var connections = PoolingHttpClientConnectionManagerBuilder.create()
+                .setDefaultConnectionConfig(ConnectionConfig.custom()
+                        .setConnectTimeout(Timeout.ofMilliseconds(safety.connectTimeout().toMillis()))
+                        .setSocketTimeout(Timeout.ofMilliseconds(safety.readTimeout().toMillis())).build()).build();
+        httpClient = HttpClients.custom().setConnectionManager(connections)
+                .disableAutomaticRetries().disableRedirectHandling()
+                .setDefaultRequestConfig(RequestConfig.custom()
+                        .setResponseTimeout(Timeout.ofMilliseconds(safety.readTimeout().toMillis())).build()).build();
+        restClient = RestClient.builder().baseUrl(properties.apiBaseUrl())
+                .requestFactory(new HttpComponentsClientHttpRequestFactory(httpClient))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.secretKey()).build();
+    }
 
-        this.restClient = RestClient.builder()
-                .baseUrl(properties.apiBaseUrl())
-                .defaultHeader(
-                        HttpHeaders.AUTHORIZATION,
-                        "Bearer " + properties.secretKey())
-                .build();
+    // Package-private seam for deterministic response/identity tests.
+    PayJpPaymentGateway(RestClient client, PayJpAuthorizationMapper mapper) {
+        restClient = client;
+        authorizationMapper = mapper;
+    }
+
+    @PreDestroy
+    public void close() throws java.io.IOException {
+        if (httpClient != null) httpClient.close();
     }
 
     @Override
@@ -63,8 +94,8 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     .body(PayJpPaymentFlowResponse.class);
 
             if (response == null
-                    || response.id() == null
-                    || response.clientSecret() == null) {
+                    || response.id() == null || response.id().isBlank()
+                    || response.clientSecret() == null || response.clientSecret().isBlank()) {
                 throw new IllegalStateException(
                         "PAY.JP returned an invalid Payment Flow response");
             }
@@ -74,8 +105,9 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     response.clientSecret());
 
         } catch (RestClientException e) {
-            throw new PaymentGatewayException(
-                    "Failed to create PAY.JP Payment Flow", e);
+            throw classify(e);
+        } catch (IllegalStateException e) {
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE, null, null, true);
         }
     }
 
@@ -107,9 +139,9 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     error != null ? error.message() : null);
 
         } catch (RestClientException e) {
-            throw new PaymentGatewayException(
-                    "Failed to retrieve PAY.JP Payment Flow",
-                    e);
+            throw classify(e);
+        } catch (IllegalStateException e) {
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE, null, null, true);
         }
     }
 
@@ -137,8 +169,9 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     response.clientSecret());
 
         } catch (RestClientException e) {
-            throw new PaymentGatewayException(
-                    "Failed to retrieve PAY.JP Payment Flow", e);
+            throw classify(e);
+        } catch (IllegalStateException e) {
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE, null, null, true);
         }
 
     }
@@ -169,6 +202,7 @@ public class PayJpPaymentGateway implements PaymentGateway {
                         "PAY.JP returned an invalid Payment Flow response");
             }
 
+            mapPaymentFlowStatus(response.status());
             if ("canceled".equals(response.status())) {
                 return new CancellationResult(
                         CancellationResultStatus.CANCELLED,
@@ -180,9 +214,9 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     response.id());
 
         } catch (RestClientException e) {
-            throw new PaymentGatewayException(
-                    "Failed to cancel PAY.JP Payment Flow",
-                    e);
+            throw classify(e);
+        } catch (IllegalStateException e) {
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE, null, null, true);
         }
     }
 
@@ -211,6 +245,7 @@ public class PayJpPaymentGateway implements PaymentGateway {
                         "PAY.JP returned an invalid Payment Flow response");
             }
 
+            mapPaymentFlowStatus(response.status());
             if ("succeeded".equals(response.status())) {
                 return new CaptureResult(
                         CaptureResultStatus.CAPTURED,
@@ -226,10 +261,33 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     null);
 
         } catch (RestClientException e) {
-            throw new PaymentGatewayException(
-                    "Failed to capture PAY.JP Payment Flow",
-                    e);
+            throw classify(e);
+        } catch (IllegalStateException e) {
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE, null, null, true);
         }
+    }
+
+    private PaymentGatewayException classify(RestClientException failure) {
+        if (failure instanceof RestClientResponseException response) {
+            int status = response.getStatusCode().value();
+            String code = null;
+            try {
+                var value = JsonMapper.builder().build().readTree(response.getResponseBodyAsByteArray()).path("code");
+                if (value.isString() && value.asString().matches("[a-z][a-z0-9_]{0,79}")) code = value.asString();
+            } catch (RuntimeException ignored) { /* Never retain or log raw bodies. */ }
+            PaymentGatewayErrorCategory category = status >= 500
+                    ? PaymentGatewayErrorCategory.SERVER_RESULT_UNKNOWN
+                    : status == 409 && "idempotency_conflict".equals(code)
+                            ? PaymentGatewayErrorCategory.IDEMPOTENCY_PARAMETER_CONFLICT
+                    : status == 409 && "idempotency_timeout".equals(code)
+                            ? PaymentGatewayErrorCategory.IDEMPOTENCY_WAIT_TIMEOUT
+                            : PaymentGatewayErrorCategory.OTHER_HTTP_ERROR;
+            // HTTP errors do not establish the persisted payment's final state.
+            return new PaymentGatewayException(category, status, code, true);
+        }
+        return new PaymentGatewayException(failure instanceof ResourceAccessException
+                ? PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN
+                : PaymentGatewayErrorCategory.INVALID_RESPONSE, null, null, true);
     }
 
     private PaymentFlowStatus mapPaymentFlowStatus(String status) {
