@@ -5,5 +5,7 @@ public record PaymentCaptureStart(
         Long transactionId,
         String providerPaymentId,
         int amount,
-        String idempotencyKey) {
+        String idempotencyKey,
+        PaymentStartDisposition disposition,
+        PaymentOperationSnapshot snapshot) {
 }

@@ -52,12 +52,7 @@ class PaymentCaptureStartServiceTest {
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        PaymentCaptureStart expected = new PaymentCaptureStart(
-                20L,
-                30L,
-                "pf_test_123",
-                5_500,
-                "capture-key-123");
+        PaymentCaptureStart expected = new PaymentCaptureStart(20L, 30L, "pf_test_123", 5_500, "capture-key-123", PaymentStartDisposition.NEW, new PaymentOperationSnapshot(10L, 20L, 30L, com.example.ecsite.entity.PaymentTransactionType.CAPTURE, "capture-key-123", 5_500, 0, "pf_test_123", com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, 30L, "admin", null));
 
         when(paymentService.startCapture(
                 org.mockito.ArgumentMatchers.eq(order),

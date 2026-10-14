@@ -157,7 +157,12 @@
             </a>
         </p>
 
-        <form th:if="${canResumePayment}" th:action="@{/orders/{id}/payment/resume(id=${order.id})}" method="post"
+        <p th:if="${requiresPaymentConfirmation}" class="alert alert-warning">
+            決済結果を確認中です。失敗が確定したわけではありません。安全のため決済の再送を停止しています。
+            解消しない場合は、注文番号「<span th:text="${order.id}"></span>」を添えて管理者へお問い合わせください。
+        </p>
+
+        <form th:if="${canResumePayment and !requiresPaymentConfirmation}" th:action="@{/orders/{id}/payment/resume(id=${order.id})}" method="post"
             class="d-inline">
             <button type="submit" class="btn btn-primary">
                 カード決済を再開

@@ -1,6 +1,7 @@
 package com.example.ecsite.service.payment;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -20,7 +21,7 @@ class AdminPaymentCancellationServiceTest {
 
     private AdminPaymentCancellationStartService startService;
     private PaymentGateway paymentGateway;
-    private AdminPaymentCancellationResultService resultService;
+    private PaymentCancellationCompletionService resultService;
     private AdminPaymentCancellationService service;
 
     @BeforeEach
@@ -30,12 +31,12 @@ class AdminPaymentCancellationServiceTest {
 
         paymentGateway = mock(PaymentGateway.class);
 
-        resultService = mock(AdminPaymentCancellationResultService.class);
+        resultService = mock(PaymentCancellationCompletionService.class);
 
         service = new AdminPaymentCancellationService(
                 startService,
                 paymentGateway,
-                resultService);
+                resultService, org.mockito.Mockito.mock(com.example.ecsite.service.payment.PaymentPostGuardService.class));
     }
 
     @Test
@@ -45,11 +46,7 @@ class AdminPaymentCancellationServiceTest {
         Long paymentId = 10L;
         Long accountId = 20L;
 
-        PaymentCancellationStart start = new PaymentCancellationStart(
-                paymentId,
-                100L,
-                "payjp-payment-id",
-                "idempotency-key");
+        PaymentCancellationStart start = new PaymentCancellationStart(paymentId, 100L, "payjp-payment-id", "idempotency-key", PaymentStartDisposition.NEW, new PaymentOperationSnapshot(10L, paymentId, 100L, com.example.ecsite.entity.PaymentTransactionType.CANCEL, "idempotency-key", 3300, 0, "payjp-payment-id", com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, 30L, "admin", null));
 
         CancellationResult result = new CancellationResult(
                 CancellationResultStatus.CANCELLED,
@@ -60,7 +57,7 @@ class AdminPaymentCancellationServiceTest {
                 accountId,
                 "admin",
                 "管理者キャンセル"))
-                .thenReturn(start);
+                .thenReturn(AdminCancellationStart.provider(start));
 
         when(paymentGateway.cancelAuthorization(
                 new CancellationRequest(
@@ -77,13 +74,7 @@ class AdminPaymentCancellationServiceTest {
         assertSame(result, actual);
 
         verify(resultService)
-                .apply(
-                        orderId,
-                        paymentId,
-                        accountId,
-                        "admin",
-                        "管理者キャンセル",
-                        result);
+                .apply(orderId, start, result);
 
         verify(startService)
                 .start(
@@ -99,18 +90,14 @@ class AdminPaymentCancellationServiceTest {
         Long orderId = 1L;
         Long accountId = 20L;
 
-        PaymentCancellationStart start = new PaymentCancellationStart(
-                10L,
-                100L,
-                "payjp-payment-id",
-                "idempotency-key");
+        PaymentCancellationStart start = new PaymentCancellationStart(10L, 100L, "payjp-payment-id", "idempotency-key", PaymentStartDisposition.NEW, new PaymentOperationSnapshot(10L, 10L, 100L, com.example.ecsite.entity.PaymentTransactionType.CANCEL, "idempotency-key", 3300, 0, "payjp-payment-id", com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, 30L, "admin", null));
 
         when(startService.start(
                 orderId,
                 accountId,
                 "admin",
                 "管理者キャンセル"))
-                .thenReturn(start);
+                .thenReturn(AdminCancellationStart.provider(start));
 
         when(paymentGateway.cancelAuthorization(
                 new CancellationRequest(
@@ -128,12 +115,27 @@ class AdminPaymentCancellationServiceTest {
                         "管理者キャンセル"));
 
         verify(resultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void reusedPendingRetrievesSuccessWithoutPosting() {
+        String providerId = "pf_existing";
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(AdminCancellationStart.provider(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED, new PaymentOperationSnapshot(10L, 20L, 40L, com.example.ecsite.entity.PaymentTransactionType.CANCEL, "saved-key", 3300, 0, providerId, com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, 30L, "admin", null))));
+        when(paymentGateway.retrievePaymentFlow(providerId)).thenReturn(
+                new com.example.ecsite.payment.PaymentFlowState(providerId,
+                        com.example.ecsite.payment.PaymentFlowStatus.CANCELED, null, null));
+        assertEquals(CancellationResultStatus.CANCELLED, service.cancel(10L, 30L, "admin", null).status());
+        verify(paymentGateway, never()).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        verify(paymentGateway).retrievePaymentFlow(providerId);
+    }
+
+    @Test
+    void reusedPendingWithoutProviderIdStopsWithoutPosting() {
+        String providerId = null;
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(AdminCancellationStart.provider(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED, new PaymentOperationSnapshot(10L, 20L, 40L, com.example.ecsite.entity.PaymentTransactionType.CANCEL, "saved-key", 3300, 0, providerId, com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, 30L, "admin", null))));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.cancel(10L, 30L, "admin", null));
+        org.mockito.Mockito.verifyNoInteractions(paymentGateway, resultService);
     }
 }

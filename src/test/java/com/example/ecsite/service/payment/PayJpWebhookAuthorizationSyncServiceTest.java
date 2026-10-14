@@ -1,157 +1,27 @@
 package com.example.ecsite.service.payment;
-
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 import java.util.Optional;
-
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import com.example.ecsite.entity.Order;
-import com.example.ecsite.entity.Payment;
-import com.example.ecsite.entity.PaymentProvider;
-import com.example.ecsite.entity.PaymentStatus;
-import com.example.ecsite.payment.AuthorizationRecovery;
-import com.example.ecsite.payment.AuthorizationResult;
-import com.example.ecsite.payment.AuthorizationResultStatus;
-import com.example.ecsite.payment.PaymentGateway;
-import com.example.ecsite.repository.PaymentRepository;
-
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import com.example.ecsite.entity.*;
 class PayJpWebhookAuthorizationSyncServiceTest {
-
-    private PaymentRepository paymentRepository;
-    private PaymentGateway paymentGateway;
-    private PaymentAuthorizationResultService resultService;
-    private PayJpWebhookAuthorizationSyncService service;
-
-    @BeforeEach
-    void setUp() {
-
-        paymentRepository = mock(PaymentRepository.class);
-        paymentGateway = mock(PaymentGateway.class);
-        resultService = mock(PaymentAuthorizationResultService.class);
-
-        service = new PayJpWebhookAuthorizationSyncService(
-                paymentRepository,
-                paymentGateway,
-                resultService);
+    PaymentOperationSnapshotService snapshots=mock(PaymentOperationSnapshotService.class);
+    PaymentOperationSyncService synchronization=mock(PaymentOperationSyncService.class);
+    PayJpWebhookAuthorizationSyncService service=new PayJpWebhookAuthorizationSyncService(snapshots,synchronization);
+    @ParameterizedTest @EnumSource(PaymentSynchronizationOutcome.class)
+    void delegatesExactSnapshotAndKeepsNormalConcurrentOutcomes(PaymentSynchronizationOutcome outcome) {
+        var snapshot=PaymentSnapshotFixtures.of(10L,20L,100L,PaymentTransactionType.AUTHORIZE,"key",3300,0,"pf",PaymentTransactionInitiatorType.ADMIN,30L,"saved","memo");
+        when(snapshots.pendingForProvider("pf",PaymentTransactionType.AUTHORIZE)).thenReturn(Optional.of(snapshot));
+        when(synchronization.synchronize(snapshot)).thenReturn(outcome);
+        if(outcome==PaymentSynchronizationOutcome.CONFLICT) assertThatThrownBy(()->service.synchronize("payment_flow.processing","pf")).isInstanceOf(IllegalStateException.class);
+        else assertThat(service.synchronize("payment_flow.processing","pf")).isEqualTo(outcome);
+        verify(synchronization).synchronize(snapshot);
     }
-
-    @Test
-    void authorizationEventRefetchesLatestStateAndAppliesIt() {
-
-        Payment payment = mock(Payment.class);
-        Order order = mock(Order.class);
-
-        when(payment.getId()).thenReturn(20L);
-        when(payment.getOrder()).thenReturn(order);
-        when(payment.getStatus()).thenReturn(PaymentStatus.PENDING);
-        when(order.getId()).thenReturn(10L);
-
-        when(paymentRepository.findByProviderAndProviderPaymentId(
-                PaymentProvider.PAYJP,
-                "pf_test_123"))
-                .thenReturn(Optional.of(payment));
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.AUTHORIZED,
-                "pf_test_123",
-                null,
-                null);
-
-        when(paymentGateway.retrieveAuthorization("pf_test_123"))
-                .thenReturn(new AuthorizationRecovery(
-                        result,
-                        null));
-
-        service.synchronize(
-                "payment_flow.amount_capturable_updated",
-                "pf_test_123");
-
-        verify(paymentGateway)
-                .retrieveAuthorization("pf_test_123");
-
-        verify(resultService)
-                .apply(
-                        10L,
-                        20L,
-                        result);
+    @Test void noEligibleOperationDoesNotCallProvider() {
+        when(snapshots.pendingForProvider("pf",PaymentTransactionType.AUTHORIZE)).thenReturn(Optional.empty());
+        assertThat(service.synchronize("payment_flow.processing","pf")).isEqualTo(PaymentSynchronizationOutcome.SKIPPED);verifyNoInteractions(synchronization);
     }
-
-    @Test
-    void completedLocalAuthorizationIgnoresDelayedAuthorizationWebhook() {
-
-        Payment payment = mock(Payment.class);
-
-        when(payment.getStatus())
-                .thenReturn(PaymentStatus.AUTHORIZED);
-
-        when(paymentRepository.findByProviderAndProviderPaymentId(
-                PaymentProvider.PAYJP,
-                "pf_test_123"))
-                .thenReturn(Optional.of(payment));
-
-        service.synchronize(
-                "payment_flow.amount_capturable_updated",
-                "pf_test_123");
-
-        verify(paymentGateway, never())
-                .retrieveAuthorization("pf_test_123");
-    }
-
-    @Test
-    void unrelatedEventIsAcknowledgedWithoutLookingUpPayment() {
-
-        service.synchronize(
-                "payment_flow.created",
-                "pf_test_123");
-
-        verify(paymentRepository, never())
-                .findByProviderAndProviderPaymentId(
-                        PaymentProvider.PAYJP,
-                        "pf_test_123");
-
-        verify(paymentGateway, never())
-                .retrieveAuthorization("pf_test_123");
-    }
-
-    @Test
-    void captureAndCancellationEventsAreNotAppliedAsAuthorizationResults() {
-
-        service.synchronize(
-                "payment_flow.succeeded",
-                "pf_test_123");
-
-        service.synchronize(
-                "payment_flow.canceled",
-                "pf_test_123");
-
-        verify(paymentGateway, never())
-                .retrieveAuthorization("pf_test_123");
-
-        verify(resultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.any());
-    }
-
-    @Test
-    void missingLocalPaymentDoesNotCallPayJp() {
-
-        when(paymentRepository.findByProviderAndProviderPaymentId(
-                PaymentProvider.PAYJP,
-                "pf_unknown"))
-                .thenReturn(Optional.empty());
-
-        service.synchronize(
-                "payment_flow.processing",
-                "pf_unknown");
-
-        verify(paymentGateway, never())
-                .retrieveAuthorization("pf_unknown");
-    }
+    @Test void unrelatedAuthorizationEventDoesNotReadDatabaseOrCallProvider() { assertThat(service.synchronize("payment_flow.other","pf")).isEqualTo(PaymentSynchronizationOutcome.SKIPPED);verifyNoInteractions(snapshots,synchronization); }
 }

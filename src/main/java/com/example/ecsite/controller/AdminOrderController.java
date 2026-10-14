@@ -38,6 +38,8 @@ import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.CaptureResult;
 import com.example.ecsite.payment.CaptureResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
+import com.example.ecsite.payment.PaymentSafetyMessages;
+import com.example.ecsite.service.payment.PaymentSafetyStopException;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
@@ -445,6 +447,8 @@ public class AdminOrderController {
                                 + "注文はまだ発送済みに変更していません。");
             }
 
+        } catch (PaymentSafetyStopException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", PaymentSafetyMessages.administrator(id, e));
         } catch (InvalidOrderStatusException
                 | IllegalStateException e) {
 
@@ -456,8 +460,7 @@ public class AdminOrderController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "売上確定結果を確認できませんでした。"
-                            + "注文はまだ発送済みに変更していません。");
+                    PaymentSafetyMessages.administrator(id, e));
         }
 
         return redirectToDetail(
@@ -485,40 +488,19 @@ public class AdminOrderController {
         }
 
         try {
-            if (paymentService.requiresAuthorizationCancellation(id)) {
-
-                CancellationResult result = adminPaymentCancellationService.cancel(
-                        id,
-                        loginUser.getId(),
-                        loginUser.getUsername(),
-                        form.getInternalNote());
-
-                if (result.status() == CancellationResultStatus.CANCELLED) {
-
-                    redirectAttributes.addFlashAttribute(
-                            "successMessage",
-                            "決済与信を取り消し、注文をキャンセルしました。");
-
-                } else {
-
-                    redirectAttributes.addFlashAttribute(
-                            "errorMessage",
-                            "決済取消結果を確認中です。"
-                                    + "注文はまだキャンセルしていません。");
-                }
-
+            CancellationResult result = adminPaymentCancellationService.cancel(
+                    id, loginUser.getId(), loginUser.getUsername(), form.getInternalNote());
+            if (result.status() == CancellationResultStatus.CANCELLED) {
+                redirectAttributes.addFlashAttribute("successMessage",
+                        result.providerTransactionId() == null ? "注文をキャンセルしました。"
+                                : "決済与信を取り消し、注文をキャンセルしました。");
             } else {
-                orderService.cancelOrder(
-                        id,
-                        loginUser.getId(),
-                        loginUser.getUsername(),
-                        form.getInternalNote());
-
-                redirectAttributes.addFlashAttribute(
-                        "successMessage",
-                        "注文をキャンセルしました。");
+                redirectAttributes.addFlashAttribute("errorMessage",
+                        "決済取消結果を確認中です。注文はまだキャンセルしていません。");
             }
 
+        } catch (PaymentSafetyStopException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", PaymentSafetyMessages.administrator(id, e));
         } catch (InvalidOrderStatusException
                 | IllegalStateException e) {
             redirectAttributes.addFlashAttribute(
@@ -528,8 +510,7 @@ public class AdminOrderController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "決済取消結果を確認できませんでした。"
-                            + "注文はまだキャンセルしていません。");
+                    PaymentSafetyMessages.administrator(id, e));
         }
 
         return redirectToDetail(

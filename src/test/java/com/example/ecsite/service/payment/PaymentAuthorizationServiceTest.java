@@ -28,6 +28,9 @@ import com.example.ecsite.payment.PaymentGatewayException;
 class PaymentAuthorizationServiceTest {
 
     @Mock
+    private PaymentAuthorizationStartService startService;
+
+    @Mock
     private PaymentService paymentService;
 
     @Mock
@@ -37,6 +40,9 @@ class PaymentAuthorizationServiceTest {
     private PaymentAuthorizationResultService paymentAuthorizationResultService;
 
     @Mock
+    private PaymentOperationSnapshotService snapshots;
+
+    @Mock
     private Order order;
 
     private PaymentAuthorizationService service;
@@ -44,10 +50,13 @@ class PaymentAuthorizationServiceTest {
     @BeforeEach
     void setUp() {
 
+        org.mockito.Mockito.lenient().when(paymentAuthorizationResultService.apply(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any())).thenReturn(PaymentResultApplication.APPLIED);
+        org.mockito.Mockito.lenient().when(paymentAuthorizationResultService.setProviderPaymentId(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any())).thenReturn(PaymentResultApplication.APPLIED);
         service = new PaymentAuthorizationService(
+                startService,
                 paymentService,
                 paymentGateway,
-                paymentAuthorizationResultService);
+                paymentAuthorizationResultService, snapshots, org.mockito.Mockito.mock(com.example.ecsite.service.payment.PaymentPostGuardService.class));
     }
 
     @Test
@@ -60,21 +69,15 @@ class PaymentAuthorizationServiceTest {
         String providerPaymentId = "pf_test_123";
         String clientSecret = "client_secret_test";
 
-        PaymentAuthorizationStart start = new PaymentAuthorizationStart(
-                paymentId,
-                transactionId,
-                amount,
-                idempotencyKey);
+        PaymentAuthorizationStart start = new PaymentAuthorizationStart(paymentId, transactionId, amount, idempotencyKey, PaymentStartDisposition.NEW, new PaymentOperationSnapshot(10L, paymentId, transactionId, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE, idempotencyKey, amount, 0, null, com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, null, null, null, null));
 
         AuthorizationPreparation preparation = new AuthorizationPreparation(
                 providerPaymentId,
                 clientSecret);
 
-        when(paymentService.startAuthorization(order))
+        when(startService.start(order.getId()))
                 .thenReturn(start);
 
-        when(paymentService.findProviderPaymentId(paymentId))
-                .thenReturn(java.util.Optional.empty());
 
         when(paymentGateway.prepareAuthorization(
                 new com.example.ecsite.payment.AuthorizationRequest(
@@ -93,11 +96,12 @@ class PaymentAuthorizationServiceTest {
                 actual.clientSecret());
 
         InOrder inOrder = inOrder(
+                startService,
                 paymentService,
-                paymentGateway);
+                paymentGateway, paymentAuthorizationResultService);
 
-        inOrder.verify(paymentService)
-                .startAuthorization(order);
+        inOrder.verify(startService)
+                .start(order.getId());
 
         inOrder.verify(paymentGateway)
                 .prepareAuthorization(
@@ -105,10 +109,8 @@ class PaymentAuthorizationServiceTest {
                                 amount,
                                 idempotencyKey));
 
-        inOrder.verify(paymentService)
-                .setProviderPaymentId(
-                        paymentId,
-                        providerPaymentId);
+        inOrder.verify(paymentAuthorizationResultService)
+                .setProviderPaymentId(start.snapshot(), providerPaymentId);
     }
 
     @Test
@@ -119,17 +121,11 @@ class PaymentAuthorizationServiceTest {
         int amount = 3300;
         String idempotencyKey = "authorization-idempotency-key";
 
-        PaymentAuthorizationStart start = new PaymentAuthorizationStart(
-                paymentId,
-                transactionId,
-                amount,
-                idempotencyKey);
+        PaymentAuthorizationStart start = new PaymentAuthorizationStart(paymentId, transactionId, amount, idempotencyKey, PaymentStartDisposition.NEW, new PaymentOperationSnapshot(10L, paymentId, transactionId, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE, idempotencyKey, amount, 0, null, com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, null, null, null, null));
 
-        when(paymentService.startAuthorization(order))
+        when(startService.start(order.getId()))
                 .thenReturn(start);
 
-        when(paymentService.findProviderPaymentId(paymentId))
-                .thenReturn(java.util.Optional.empty());
 
         when(paymentGateway.prepareAuthorization(
                 new com.example.ecsite.payment.AuthorizationRequest(
@@ -144,8 +140,8 @@ class PaymentAuthorizationServiceTest {
                 () -> service.prepareAuthorization(
                         order));
 
-        verify(paymentService)
-                .startAuthorization(order);
+        verify(startService)
+                .start(order.getId());
 
         verify(paymentGateway)
                 .prepareAuthorization(
@@ -153,10 +149,8 @@ class PaymentAuthorizationServiceTest {
                                 amount,
                                 idempotencyKey));
 
-        verify(paymentService, never())
-                .setProviderPaymentId(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString());
+        verify(paymentAuthorizationResultService, never())
+                .setProviderPaymentId(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.anyString());
 
         verifyNoInteractions(
                 paymentAuthorizationResultService);
@@ -176,9 +170,7 @@ class PaymentAuthorizationServiceTest {
                 null,
                 null);
 
-        when(paymentService.getProviderPaymentId(
-                paymentId))
-                .thenReturn(providerPaymentId);
+        when(snapshots.authorization(orderId, paymentId)).thenReturn(PaymentSnapshotFixtures.authorization(orderId, paymentId));
 
         AuthorizationRecovery recovery = new AuthorizationRecovery(
                 result,
@@ -197,13 +189,12 @@ class PaymentAuthorizationServiceTest {
                 actual);
 
         InOrder inOrder = inOrder(
+                startService,
                 paymentService,
                 paymentGateway,
-                paymentAuthorizationResultService);
+                paymentAuthorizationResultService, snapshots);
 
-        inOrder.verify(paymentService)
-                .getProviderPaymentId(
-                        paymentId);
+        inOrder.verify(snapshots).authorization(orderId, paymentId);
 
         inOrder.verify(paymentGateway)
                 .retrieveAuthorization(
@@ -211,10 +202,7 @@ class PaymentAuthorizationServiceTest {
 
         inOrder.verify(
                 paymentAuthorizationResultService)
-                .apply(
-                        orderId,
-                        paymentId,
-                        result);
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), orderId) && java.util.Objects.equals(s.paymentId(), paymentId)), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -225,9 +213,7 @@ class PaymentAuthorizationServiceTest {
 
         String providerPaymentId = "pf_test_123";
 
-        when(paymentService.getProviderPaymentId(
-                paymentId))
-                .thenReturn(providerPaymentId);
+        when(snapshots.authorization(orderId, paymentId)).thenReturn(PaymentSnapshotFixtures.authorization(orderId, paymentId));
 
         when(paymentGateway.retrieveAuthorization(
                 providerPaymentId))
@@ -241,9 +227,7 @@ class PaymentAuthorizationServiceTest {
                         orderId,
                         paymentId));
 
-        verify(paymentService)
-                .getProviderPaymentId(
-                        paymentId);
+        verify(snapshots).authorization(orderId, paymentId);
 
         verify(paymentGateway)
                 .retrieveAuthorization(
@@ -254,91 +238,22 @@ class PaymentAuthorizationServiceTest {
     }
 
     @Test
-    void prepareAuthorizationRetriesPendingAuthorizationWithoutProviderPaymentId() {
-
-        Long paymentId = 10L;
-        Long transactionId = 20L;
-        int amount = 3300;
-        String idempotencyKey = "existing-authorization-key";
-        String providerPaymentId = "pf_test_123";
-        String clientSecret = "client_secret_test";
-
-        PaymentAuthorizationStart start = new PaymentAuthorizationStart(
-                paymentId,
-                transactionId,
-                amount,
-                idempotencyKey);
-
-        AuthorizationPreparation preparation = new AuthorizationPreparation(
-                providerPaymentId,
-                clientSecret);
-
-        when(paymentService.startAuthorization(order))
-                .thenReturn(start);
-
-        when(paymentService.findProviderPaymentId(paymentId))
-                .thenReturn(java.util.Optional.empty());
-
-        when(paymentGateway.prepareAuthorization(
-                new com.example.ecsite.payment.AuthorizationRequest(
-                        amount,
-                        idempotencyKey)))
-                .thenReturn(preparation);
-
-        PaymentAuthorizationPreparation actual = service.prepareAuthorization(order);
-
-        org.junit.jupiter.api.Assertions.assertEquals(
-                paymentId,
-                actual.paymentId());
-
-        org.junit.jupiter.api.Assertions.assertEquals(
-                clientSecret,
-                actual.clientSecret());
-
-        verify(paymentGateway)
-                .prepareAuthorization(
-                        new com.example.ecsite.payment.AuthorizationRequest(
-                                amount,
-                                idempotencyKey));
-
-        verify(paymentService)
-                .setProviderPaymentId(
-                        paymentId,
-                        providerPaymentId);
+    void reusedAuthorizationWithoutProviderIdStopsWithoutPosting() {
+        when(startService.start(order.getId())).thenReturn(new PaymentAuthorizationStart(10L, 20L, 3300, "existing-key", PaymentStartDisposition.REUSED, new PaymentOperationSnapshot(10L, 10L, 20L, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE, "existing-key", 3300, 0, null, com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, null, null, null, null)));
+        assertThrows(IllegalStateException.class, () -> service.prepareAuthorization(order));
+        verifyNoInteractions(paymentGateway, paymentAuthorizationResultService);
+        verify(paymentAuthorizationResultService, never()).setProviderPaymentId(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
-    void prepareAuthorizationRejectsRetryWhenProviderPaymentIdAlreadyExists() {
-
-        Long paymentId = 10L;
-        Long transactionId = 20L;
-        int amount = 3300;
-        String idempotencyKey = "existing-authorization-key";
-
-        PaymentAuthorizationStart start = new PaymentAuthorizationStart(
-                paymentId,
-                transactionId,
-                amount,
-                idempotencyKey);
-
-        when(paymentService.startAuthorization(order))
-                .thenReturn(start);
-
-        when(paymentService.findProviderPaymentId(paymentId))
-                .thenReturn(java.util.Optional.of("pf_test_123"));
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> service.prepareAuthorization(order));
-
-        verify(paymentGateway, never())
-                .prepareAuthorization(
-                        org.mockito.ArgumentMatchers.any());
-
-        verify(paymentService, never())
-                .setProviderPaymentId(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString());
+    void reusedAuthorizationWithProviderIdRetrievesExistingFlow() {
+        when(order.getId()).thenReturn(10L);
+        when(startService.start(order.getId())).thenReturn(new PaymentAuthorizationStart(10L, 20L, 3300, "existing-key", PaymentStartDisposition.REUSED, new PaymentOperationSnapshot(10L, 10L, 20L, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE, "existing-key", 3300, 0, "pf_existing", com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, null, null, null, null)));
+        AuthorizationResult result = new AuthorizationResult(AuthorizationResultStatus.REQUIRES_ACTION, null, null, null);
+        when(paymentGateway.retrieveAuthorization("pf_existing")).thenReturn(new AuthorizationRecovery(result, "existing-secret"));
+        assertEquals(new PaymentAuthorizationPreparation(10L, "existing-secret"), service.prepareAuthorization(order));
+        verify(paymentGateway, never()).prepareAuthorization(org.mockito.ArgumentMatchers.any());
+        verify(paymentAuthorizationResultService).apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), order.getId()) && java.util.Objects.equals(s.paymentId(), 10L)), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -353,8 +268,7 @@ class PaymentAuthorizationServiceTest {
         when(paymentService.getRecoverableAuthorizationPaymentId(order))
                 .thenReturn(paymentId);
 
-        when(paymentService.getProviderPaymentId(paymentId))
-                .thenReturn("pf_test_123");
+        when(snapshots.authorization(order.getId(), paymentId)).thenAnswer(inv -> PaymentSnapshotFixtures.authorization(inv.getArgument(0), inv.getArgument(1)));
 
         AuthorizationResult result = new AuthorizationResult(
                 AuthorizationResultStatus.REQUIRES_ACTION,
@@ -390,17 +304,13 @@ class PaymentAuthorizationServiceTest {
         verify(paymentService)
                 .getRecoverableAuthorizationPaymentId(order);
 
-        verify(paymentService)
-                .getProviderPaymentId(paymentId);
+        verify(snapshots).authorization(orderId, paymentId);
 
         verify(paymentGateway)
                 .retrieveAuthorization("pf_test_123");
 
         verify(paymentAuthorizationResultService)
-                .apply(
-                        orderId,
-                        paymentId,
-                        result);
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), orderId) && java.util.Objects.equals(s.paymentId(), paymentId)), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -415,8 +325,7 @@ class PaymentAuthorizationServiceTest {
         when(paymentService.getRecoverableAuthorizationPaymentId(order))
                 .thenReturn(paymentId);
 
-        when(paymentService.getProviderPaymentId(paymentId))
-                .thenReturn("pf_test_123");
+        when(snapshots.authorization(order.getId(), paymentId)).thenAnswer(inv -> PaymentSnapshotFixtures.authorization(inv.getArgument(0), inv.getArgument(1)));
 
         AuthorizationResult result = new AuthorizationResult(
                 AuthorizationResultStatus.AUTHORIZED,
@@ -446,10 +355,7 @@ class PaymentAuthorizationServiceTest {
                 actual.result());
 
         verify(paymentAuthorizationResultService)
-                .apply(
-                        orderId,
-                        paymentId,
-                        result);
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), orderId) && java.util.Objects.equals(s.paymentId(), paymentId)), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -464,8 +370,7 @@ class PaymentAuthorizationServiceTest {
         when(paymentService.getRecoverableAuthorizationPaymentId(order))
                 .thenReturn(paymentId);
 
-        when(paymentService.getProviderPaymentId(paymentId))
-                .thenReturn("pf_test_123");
+        when(snapshots.authorization(order.getId(), paymentId)).thenAnswer(inv -> PaymentSnapshotFixtures.authorization(inv.getArgument(0), inv.getArgument(1)));
 
         AuthorizationResult result = new AuthorizationResult(
                 AuthorizationResultStatus.FAILED,
@@ -495,10 +400,7 @@ class PaymentAuthorizationServiceTest {
                 actual.result());
 
         verify(paymentAuthorizationResultService)
-                .apply(
-                        orderId,
-                        paymentId,
-                        result);
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), orderId) && java.util.Objects.equals(s.paymentId(), paymentId)), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -509,8 +411,7 @@ class PaymentAuthorizationServiceTest {
         when(paymentService.getRecoverableAuthorizationPaymentId(order))
                 .thenReturn(paymentId);
 
-        when(paymentService.getProviderPaymentId(paymentId))
-                .thenReturn("pf_test_123");
+        when(snapshots.authorization(order.getId(), paymentId)).thenAnswer(inv -> PaymentSnapshotFixtures.authorization(inv.getArgument(0), inv.getArgument(1)));
 
         AuthorizationResult result = new AuthorizationResult(
                 AuthorizationResultStatus.PENDING,
@@ -529,7 +430,7 @@ class PaymentAuthorizationServiceTest {
                 PaymentAuthorizationRecoveryAction.WAIT,
                 actual.action());
 
-        verifyNoInteractions(paymentAuthorizationResultService);
+        verify(paymentAuthorizationResultService).apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -540,8 +441,7 @@ class PaymentAuthorizationServiceTest {
         when(paymentService.getRecoverableAuthorizationPaymentId(order))
                 .thenReturn(paymentId);
 
-        when(paymentService.getProviderPaymentId(paymentId))
-                .thenReturn("pf_test_123");
+        when(snapshots.authorization(order.getId(), paymentId)).thenAnswer(inv -> PaymentSnapshotFixtures.authorization(inv.getArgument(0), inv.getArgument(1)));
 
         AuthorizationResult result = new AuthorizationResult(
                 AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,
@@ -560,7 +460,7 @@ class PaymentAuthorizationServiceTest {
                 PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT,
                 actual.action());
 
-        verifyNoInteractions(paymentAuthorizationResultService);
+        verify(paymentAuthorizationResultService).apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -571,8 +471,7 @@ class PaymentAuthorizationServiceTest {
         when(paymentService.getRecoverableAuthorizationPaymentId(order))
                 .thenReturn(paymentId);
 
-        when(paymentService.getProviderPaymentId(paymentId))
-                .thenReturn("pf_test_123");
+        when(snapshots.authorization(order.getId(), paymentId)).thenAnswer(inv -> PaymentSnapshotFixtures.authorization(inv.getArgument(0), inv.getArgument(1)));
 
         AuthorizationResult result = new AuthorizationResult(
                 AuthorizationResultStatus.REQUIRES_CONFIRMATION,
@@ -591,7 +490,18 @@ class PaymentAuthorizationServiceTest {
                 PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT,
                 actual.action());
 
-        verifyNoInteractions(paymentAuthorizationResultService);
+        verify(paymentAuthorizationResultService).apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.eq(result));
     }
 
+    @Test
+    void reusedAuthorizationKeepsTheStartingSnapshot() {
+        var snapshot=PaymentSnapshotFixtures.authorization(10L,20L);
+        var start=new PaymentAuthorizationStart(20L,100L,3300,"auth-key",PaymentStartDisposition.REUSED,snapshot);
+        when(order.getId()).thenReturn(10L);when(startService.start(10L)).thenReturn(start);
+        var result=new AuthorizationResult(AuthorizationResultStatus.REQUIRES_ACTION,null,null,null);
+        when(paymentGateway.retrieveAuthorization("pf_test_123")).thenReturn(new AuthorizationRecovery(result,"secret"));
+        service.prepareAuthorization(order);
+        verify(paymentAuthorizationResultService).apply(snapshot,result);
+        verifyNoInteractions(snapshots);
+    }
 }

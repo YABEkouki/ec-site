@@ -1,73 +1,37 @@
 package com.example.ecsite.service.payment;
 
-import java.util.Optional;
-import java.util.Set;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
-import com.example.ecsite.entity.Payment;
-import com.example.ecsite.entity.PaymentProvider;
-import com.example.ecsite.entity.PaymentStatus;
-import com.example.ecsite.payment.AuthorizationRecovery;
-import com.example.ecsite.payment.AuthorizationResult;
-import com.example.ecsite.payment.PaymentGateway;
-import com.example.ecsite.repository.PaymentRepository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import com.example.ecsite.entity.PaymentTransactionType;
 
 @Service
+@Transactional(propagation = Propagation.NEVER)
 public class PayJpWebhookAuthorizationSyncService {
+    private static final Logger log = LoggerFactory.getLogger(PayJpWebhookAuthorizationSyncService.class);
+    private static final java.util.Set<String> AUTHORIZATION_EVENTS = java.util.Set.of(
+            "payment_flow.requires_action", "payment_flow.processing",
+            "payment_flow.amount_capturable_updated", "payment_flow.payment_failed");
+    private final PaymentOperationSnapshotService snapshots;
+    private final PaymentOperationSyncService synchronization;
 
-    private static final Set<String> AUTHORIZATION_EVENTS = Set.of(
-            "payment_flow.requires_action",
-            "payment_flow.processing",
-            "payment_flow.amount_capturable_updated",
-            "payment_flow.payment_failed");
-
-    private final PaymentRepository paymentRepository;
-    private final PaymentGateway paymentGateway;
-    private final PaymentAuthorizationResultService resultService;
-
-    public PayJpWebhookAuthorizationSyncService(
-            PaymentRepository paymentRepository,
-            PaymentGateway paymentGateway,
-            PaymentAuthorizationResultService resultService) {
-
-        this.paymentRepository = paymentRepository;
-        this.paymentGateway = paymentGateway;
-        this.resultService = resultService;
+    public PayJpWebhookAuthorizationSyncService(PaymentOperationSnapshotService snapshots, PaymentOperationSyncService synchronization) {
+        this.snapshots = snapshots;
+        this.synchronization = synchronization;
     }
 
-    public void synchronize(
-            String eventType,
-            String providerPaymentId) {
-
-        if (!AUTHORIZATION_EVENTS.contains(eventType)) {
-            return;
+    public PaymentSynchronizationOutcome synchronize(String eventType, String providerPaymentId) {
+        if (!AUTHORIZATION_EVENTS.contains(eventType)) return PaymentSynchronizationOutcome.SKIPPED;
+        PaymentOperationSnapshot snapshot = snapshots.pendingForProvider(providerPaymentId, PaymentTransactionType.AUTHORIZE).orElse(null);
+        if (snapshot == null) {
+            log.debug("Webhook synchronization skipped: operation=AUTHORIZE, reason=NO_PENDING_OPERATION");
+            return PaymentSynchronizationOutcome.SKIPPED;
         }
-
-        Optional<Payment> paymentOptional =
-                paymentRepository.findByProviderAndProviderPaymentId(
-                        PaymentProvider.PAYJP,
-                        providerPaymentId);
-
-        if (paymentOptional.isEmpty()) {
-            return;
-        }
-
-        Payment payment = paymentOptional.get();
-
-        if (payment.getStatus() != PaymentStatus.PENDING
-                && payment.getStatus() != PaymentStatus.REQUIRES_ACTION) {
-            return;
-        }
-
-        AuthorizationRecovery recovery =
-                paymentGateway.retrieveAuthorization(providerPaymentId);
-
-        AuthorizationResult result = recovery.result();
-
-        resultService.apply(
-                payment.getOrder().getId(),
-                payment.getId(),
-                result);
+        PaymentSynchronizationOutcome outcome = synchronization.synchronize(snapshot);
+        if (outcome == PaymentSynchronizationOutcome.CONFLICT)
+            throw new IllegalStateException("決済結果と現在の操作が一致しません。");
+        return outcome;
     }
 }

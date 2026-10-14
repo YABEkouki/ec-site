@@ -17,11 +17,14 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.PaymentTransactionInitiatorType;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.service.OrderService;
 
 class AdminPaymentCancellationStartServiceTest {
 
     private OrderRepository orderRepository;
     private PaymentService paymentService;
+    private OrderPaymentGuard guard;
+    private OrderService orderService;
     private AdminPaymentCancellationStartService service;
 
     @BeforeEach
@@ -30,9 +33,11 @@ class AdminPaymentCancellationStartServiceTest {
         orderRepository = mock(OrderRepository.class);
         paymentService = mock(PaymentService.class);
 
+        guard = mock(OrderPaymentGuard.class);
+        orderService = mock(OrderService.class);
         service = new AdminPaymentCancellationStartService(
                 orderRepository,
-                paymentService);
+                paymentService, guard, orderService);
     }
 
     @Test
@@ -57,13 +62,15 @@ class AdminPaymentCancellationStartServiceTest {
                 org.mockito.ArgumentMatchers.any()))
                 .thenReturn(expected);
 
-        PaymentCancellationStart actual = service.start(
+        when(guard.requiresProviderCancellation(order)).thenReturn(true);
+
+        AdminCancellationStart actual = service.start(
                 orderId,
                 accountId,
                 username,
                 internalNote);
 
-        assertSame(expected, actual);
+        assertSame(expected, actual.paymentStart());
 
         verify(orderRepository)
                 .findByIdForUpdate(orderId);

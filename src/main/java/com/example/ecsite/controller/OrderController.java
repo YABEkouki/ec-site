@@ -23,6 +23,7 @@ import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
+import com.example.ecsite.payment.PaymentSafetyMessages;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.OrderContentChangeHistoryService;
 import com.example.ecsite.service.OrderService;
@@ -111,6 +112,8 @@ public class OrderController {
                 || paymentService.canRecoverAuthorization(order);
 
         model.addAttribute("order", order);
+        boolean requiresPaymentConfirmation = paymentService.requiresAuthorizationConfirmation(order);
+        model.addAttribute("requiresPaymentConfirmation", requiresPaymentConfirmation);
 
         model.addAttribute(
                 "withinModificationPeriod",
@@ -138,7 +141,7 @@ public class OrderController {
 
         model.addAttribute(
                 "canResumePayment",
-                canResumePayment);
+                canResumePayment && !requiresPaymentConfirmation);
 
         return "orders/detail";
     }
@@ -229,8 +232,7 @@ public class OrderController {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "決済の取消結果を確認できませんでした。"
-                            + "注文はまだキャンセルされていません。");
+                    PaymentSafetyMessages.customer(id, e));
         }
 
         return "redirect:/orders/" + id;
@@ -249,20 +251,7 @@ public class OrderController {
 
         try {
 
-            if (paymentService.canResumeAuthorization(order)) {
-
-                PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
-
-                setCheckoutSession(
-                        session,
-                        id,
-                        preparation.paymentId(),
-                        preparation.clientSecret());
-
-                return "redirect:/checkout/payment";
-            }
-
-            if (paymentService.canRecoverAuthorization(order)) {
+            if (paymentService.canResumeAuthorization(order) || paymentService.canRecoverAuthorization(order)) {
 
                 PaymentAuthorizationRecovery recovery = paymentAuthorizationService.recoverAuthorization(order);
 
@@ -315,12 +304,11 @@ public class OrderController {
 
             return "redirect:/orders/" + id;
 
-        } catch (PaymentGatewayException ex) {
+        } catch (PaymentGatewayException | IllegalStateException ex) {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
-                    "カード決済を開始できませんでした。"
-                            + "しばらくしてからもう一度お試しください。");
+                    PaymentSafetyMessages.customer(id, ex));
 
             return "redirect:/orders/" + id;
         }

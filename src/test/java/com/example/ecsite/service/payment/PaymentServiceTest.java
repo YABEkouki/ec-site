@@ -78,10 +78,10 @@ class PaymentServiceTest {
         when(order.getId()).thenReturn(100L);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of());
 
-        paymentService.startAuthorization(order);
+        PaymentAuthorizationStart result = paymentService.startAuthorization(order);
 
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
 
@@ -117,6 +117,7 @@ class PaymentServiceTest {
         assertEquals(
                 transaction.getIdempotencyKey().trim(),
                 transaction.getIdempotencyKey());
+        assertEquals(PaymentStartDisposition.NEW, result.disposition());
     }
 
     @Test
@@ -142,7 +143,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -175,6 +176,7 @@ class PaymentServiceTest {
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
+        assertEquals(PaymentStartDisposition.REUSED, result.disposition());
     }
 
     @Test
@@ -188,7 +190,7 @@ class PaymentServiceTest {
         Payment payment2 = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(
                         payment1,
                         payment2));
@@ -211,7 +213,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -276,12 +278,10 @@ class PaymentServiceTest {
                 12_345,
                 LocalDateTime.of(2026, 10, 1, 9, 0));
 
-        when(paymentRepository.findById(10L))
+        when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
-        paymentService.setProviderPaymentId(
-                10L,
-                "pf_test_123");
+        paymentService.setProviderPaymentId(order, assignmentSnapshot(payment), "pf_test_123");
 
         assertEquals(
                 "pf_test_123",
@@ -292,31 +292,7 @@ class PaymentServiceTest {
                 payment.getUpdatedAt());
     }
 
-    @Test
-    void setProviderPaymentIdRejectsBlankProviderPaymentId() {
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> paymentService.setProviderPaymentId(
-                        10L,
-                        " "));
-
-        verify(paymentRepository, never())
-                .findById(any());
-    }
-
-    @Test
-    void setProviderPaymentIdRejectsUnknownPayment() {
-
-        when(paymentRepository.findById(10L))
-                .thenReturn(Optional.empty());
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> paymentService.setProviderPaymentId(
-                        10L,
-                        "pf_test_123"));
-    }
 
     @Test
     void pendingAuthorizationResultDoesNotChangePaymentOrTransaction() {
@@ -335,9 +311,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.PENDING,
                         null,
                         null,
@@ -372,9 +346,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,
                         null,
                         "card_declined",
@@ -412,9 +384,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.REQUIRES_CONFIRMATION,
                         null,
                         null,
@@ -452,9 +422,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.REQUIRES_ACTION,
                         null,
                         null,
@@ -473,6 +441,10 @@ class PaymentServiceTest {
                 payment.getUpdatedAt());
 
         assertNull(transaction.getCompletedAt());
+        assertEquals(PaymentResultApplication.ALREADY_APPLIED,
+                paymentService.applyAuthorizationResult(order,
+                        resultSnapshot(payment, PaymentTransactionType.AUTHORIZE),
+                        new AuthorizationResult(AuthorizationResultStatus.REQUIRES_ACTION, null, null, null)));
     }
 
     @Test
@@ -492,9 +464,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.AUTHORIZED,
                         null,
                         null,
@@ -534,9 +504,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.FAILED,
                         null,
                         "card_declined",
@@ -595,9 +563,7 @@ class PaymentServiceTest {
         when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.AUTHORIZED,
                         null,
                         null,
@@ -632,9 +598,7 @@ class PaymentServiceTest {
         when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
 
-        paymentService.applyAuthorizationResult(
-                10L,
-                new AuthorizationResult(
+        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
                         AuthorizationResultStatus.FAILED,
                         null,
                         "card_declined",
@@ -729,7 +693,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(2026, 10, 1, 9, 20));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -793,6 +757,7 @@ class PaymentServiceTest {
         assertEquals(
                 transaction.getIdempotencyKey(),
                 result.idempotencyKey());
+        assertEquals(PaymentStartDisposition.NEW, result.disposition());
     }
 
     @Test
@@ -801,6 +766,7 @@ class PaymentServiceTest {
         Order order = mock(Order.class);
 
         when(order.getId()).thenReturn(100L);
+        when(order.getContentRevision()).thenReturn(2);
 
         Payment payment = createPayment(order);
 
@@ -821,7 +787,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -845,6 +811,7 @@ class PaymentServiceTest {
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
+        assertEquals(PaymentStartDisposition.REUSED, result.disposition());
     }
 
     @Test
@@ -857,7 +824,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         assertThrows(
@@ -899,9 +866,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyCancellationResult(
-                10L,
-                new CancellationResult(
+        paymentService.applyCancellationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CANCEL), new CancellationResult(
                         CancellationResultStatus.CANCELLED,
                         "pf_test_123"));
 
@@ -951,9 +916,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyCancellationResult(
-                10L,
-                new CancellationResult(
+        paymentService.applyCancellationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CANCEL), new CancellationResult(
                         CancellationResultStatus.PENDING,
                         "pf_test_123"));
 
@@ -993,7 +956,7 @@ class PaymentServiceTest {
                 3);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1071,6 +1034,7 @@ class PaymentServiceTest {
         assertEquals(
                 transaction.getIdempotencyKey(),
                 result.idempotencyKey());
+        assertEquals(PaymentStartDisposition.NEW, result.disposition());
     }
 
     @Test
@@ -1106,7 +1070,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1144,6 +1108,7 @@ class PaymentServiceTest {
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
+        assertEquals(PaymentStartDisposition.REUSED, result.disposition());
     }
 
     @Test
@@ -1179,7 +1144,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1216,7 +1181,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         assertThrows(
@@ -1246,7 +1211,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(2026, 10, 1, 9, 25));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(
                         payment1,
                         payment2));
@@ -1290,9 +1255,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyCaptureResult(
-                10L,
-                new CaptureResult(
+        paymentService.applyCaptureResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CAPTURE), new CaptureResult(
                         CaptureResultStatus.CAPTURED,
                         "pf_test_123",
                         null,
@@ -1348,9 +1311,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyCaptureResult(
-                10L,
-                new CaptureResult(
+        paymentService.applyCaptureResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CAPTURE), new CaptureResult(
                         CaptureResultStatus.PENDING,
                         "pf_test_123",
                         null,
@@ -1401,9 +1362,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyCaptureResult(
-                10L,
-                new CaptureResult(
+        paymentService.applyCaptureResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CAPTURE), new CaptureResult(
                         CaptureResultStatus.FAILED,
                         "pf_test_123",
                         "capture_failed",
@@ -1497,7 +1456,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void canResumeAuthorizationReturnsTrueForPendingPayJpCardAuthorization() {
+    void canResumeAuthorizationReturnsFalseForProviderlessPendingPayJpCardAuthorization() {
 
         Order order = mock(Order.class);
         when(order.getId()).thenReturn(100L);
@@ -1517,7 +1476,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        assertTrue(
+        assertFalse(
                 paymentService.canResumeAuthorization(order));
     }
 
@@ -1562,10 +1521,11 @@ class PaymentServiceTest {
     }
 
     @Test
-    void canResumeAuthorizationReturnsFalseWhenProviderPaymentIdAlreadyExists() {
+    void canResumeAuthorizationReturnsTrueWhenProviderPaymentIdExists() {
 
         Order order = mock(Order.class);
         when(order.getId()).thenReturn(100L);
+        when(order.getTotalAmount()).thenReturn(12_345);
 
         Payment payment = createPayment(order);
 
@@ -1585,7 +1545,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        assertFalse(
+        assertTrue(
                 paymentService.canResumeAuthorization(order));
     }
 
@@ -1844,7 +1804,7 @@ class PaymentServiceTest {
                 0);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1894,7 +1854,7 @@ class PaymentServiceTest {
                 0);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1938,7 +1898,7 @@ class PaymentServiceTest {
                 0);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -2097,4 +2057,42 @@ class PaymentServiceTest {
             "test-admin",
             "test");
 
+
+    private PaymentOperationSnapshot resultSnapshot(Payment payment, PaymentTransactionType type) {
+        Order order = payment.getOrder();
+        org.springframework.test.util.ReflectionTestUtils.setField(payment,"id",10L);
+        when(order.getId()).thenReturn(1L);
+        PaymentTransaction transaction = paymentTransactionRepository.findByPaymentIdAndTransactionTypeAndStatus(
+                10L,type,PaymentTransactionStatus.PENDING).orElseGet(() -> new PaymentTransaction(payment,type,12345,2,"fixture-key",LocalDateTime.of(2026,10,1,9,0)));
+        org.springframework.test.util.ReflectionTestUtils.setField(transaction,"id",100L);
+        when(paymentTransactionRepository.findById(100L)).thenReturn(Optional.of(transaction));
+        when(paymentTransactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(10L)).thenReturn(java.util.List.of(transaction));
+        when(order.getTotalAmount()).thenReturn(transaction.getAmount());
+        when(order.getContentRevision()).thenReturn(transaction.getOrderContentRevision());
+        when(order.getStatus()).thenReturn(com.example.ecsite.entity.OrderStatus.ORDERED);
+        if(payment.getProviderPaymentId()==null) payment.setProviderPaymentId("pf_test_123",payment.getUpdatedAt());
+        if(payment.getStatus()==PaymentStatus.AUTHORIZED && type==PaymentTransactionType.AUTHORIZE) transaction.markSucceeded(null,payment.getUpdatedAt());
+        if(payment.getStatus()==PaymentStatus.FAILED) {
+            transaction.markFailed(null,"card_declined","Card was declined",payment.getUpdatedAt());
+            when(order.getStatus()).thenReturn(com.example.ecsite.entity.OrderStatus.CANCELLED);
+        }
+        org.mockito.Mockito.clearInvocations(paymentTransactionRepository);
+        return PaymentOperationSnapshot.from(transaction);
+    }
+    private PaymentOperationSnapshot assignmentSnapshot(Payment payment) {
+        var snapshot = resultSnapshot(payment, PaymentTransactionType.AUTHORIZE);
+        org.springframework.test.util.ReflectionTestUtils.setField(payment,"providerPaymentId",null);
+        return new PaymentOperationSnapshot(snapshot.orderId(),snapshot.paymentId(),snapshot.transactionId(),snapshot.type(),snapshot.idempotencyKey(),snapshot.amount(),snapshot.orderContentRevision(),null,snapshot.provider(),snapshot.status(),snapshot.initiatorType(),snapshot.initiatorId(),snapshot.initiatorUsername(),snapshot.internalNote());
+    }
+    @Test void providerlessPendingRequiresConfirmation() {
+        Order order=mock(Order.class);when(order.getId()).thenReturn(100L);
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L)).thenReturn(List.of(createPayment(order)));
+        assertTrue(paymentService.requiresAuthorizationConfirmation(order));
+    }
+    @Test void providerKnownDoesNotRequireMissingIdConfirmation() {
+        Order order=mock(Order.class);when(order.getId()).thenReturn(100L);
+        Payment payment=createPayment(order);payment.setProviderPaymentId("pf",LocalDateTime.of(2026,10,1,10,0));
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L)).thenReturn(List.of(payment));
+        assertFalse(paymentService.requiresAuthorizationConfirmation(order));
+    }
 }

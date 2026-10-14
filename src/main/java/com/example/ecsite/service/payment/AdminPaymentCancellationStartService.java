@@ -9,23 +9,30 @@ import com.example.ecsite.entity.PaymentTransactionInitiatorType;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
+import com.example.ecsite.service.OrderService;
 
 @Service
 public class AdminPaymentCancellationStartService {
 
     private final OrderRepository orderRepository;
     private final PaymentService paymentService;
+    private final OrderPaymentGuard guard;
+    private final OrderService orderService;
 
     public AdminPaymentCancellationStartService(
             OrderRepository orderRepository,
-            PaymentService paymentService) {
+            PaymentService paymentService,
+            OrderPaymentGuard guard,
+            OrderService orderService) {
 
         this.orderRepository = orderRepository;
         this.paymentService = paymentService;
+        this.guard = guard;
+        this.orderService = orderService;
     }
 
     @Transactional
-    public PaymentCancellationStart start(
+    public AdminCancellationStart start(
             Long orderId,
             Long accountId,
             String username,
@@ -40,12 +47,17 @@ public class AdminPaymentCancellationStartService {
                     "注文受付中の注文だけをキャンセルできます。");
         }
 
-        return paymentService.startCancellation(
+        if (!guard.requiresProviderCancellation(order)) {
+            orderService.cancelOrder(orderId, accountId, username, internalNote);
+            return AdminCancellationStart.local();
+        }
+
+        return AdminCancellationStart.provider(paymentService.startCancellation(
                 order,
                 new PaymentTransactionInitiator(
                         PaymentTransactionInitiatorType.ADMIN,
                         accountId,
                         username,
-                        internalNote));
+                        internalNote)));
     }
 }

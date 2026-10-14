@@ -62,6 +62,7 @@ import com.example.ecsite.repository.OrderContentChangeHistoryRepository;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
+import com.example.ecsite.service.payment.OrderPaymentGuard;
 import com.example.ecsite.service.order.OrderAmountSnapshot;
 import com.example.ecsite.service.order.OrderChargeSnapshot;
 import com.example.ecsite.service.order.OrderItemSnapshot;
@@ -86,6 +87,7 @@ public class OrderService {
     private final OrderDeadlineCalculator orderDeadlineCalculator;
     private final TaxCategoryService taxCategoryService;
     private final OrderAmountCalculator orderAmountCalculator;
+    private final OrderPaymentGuard orderPaymentGuard;
     private final Clock clock;
 
     @Autowired
@@ -101,7 +103,8 @@ public class OrderService {
             AdminAccountService adminAccountService,
             OrderDeadlineCalculator orderDeadlineCalculator,
             TaxCategoryService taxCategoryService,
-            OrderAmountCalculator orderAmountCalculator) {
+            OrderAmountCalculator orderAmountCalculator,
+            OrderPaymentGuard orderPaymentGuard) {
 
         this(
                 orderRepository,
@@ -116,6 +119,7 @@ public class OrderService {
                 orderDeadlineCalculator,
                 taxCategoryService,
                 orderAmountCalculator,
+                orderPaymentGuard,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -132,6 +136,7 @@ public class OrderService {
             OrderDeadlineCalculator orderDeadlineCalculator,
             TaxCategoryService taxCategoryService,
             OrderAmountCalculator orderAmountCalculator,
+            OrderPaymentGuard orderPaymentGuard,
             Clock clock) {
 
         this.orderRepository = orderRepository;
@@ -146,6 +151,7 @@ public class OrderService {
         this.orderDeadlineCalculator = orderDeadlineCalculator;
         this.taxCategoryService = taxCategoryService;
         this.orderAmountCalculator = orderAmountCalculator;
+        this.orderPaymentGuard = orderPaymentGuard;
         this.clock = clock;
     }
 
@@ -422,6 +428,7 @@ public class OrderService {
             String internalNote) {
 
         Order order = findOrderForUpdate(id);
+        orderPaymentGuard.validateManualPayment(order);
 
         OrderStatus fromStatus = order.getStatus();
 
@@ -445,6 +452,7 @@ public class OrderService {
             String internalNote) {
 
         Order order = findOrderForUpdate(id);
+        orderPaymentGuard.validateManualShipment(order);
 
         OrderStatus fromStatus = order.getStatus();
 
@@ -505,6 +513,7 @@ public class OrderService {
             String internalNote) {
 
         Order order = findOrderForUpdate(id);
+        orderPaymentGuard.validateLocalCancellation(order);
 
         cancelAndRestoreStock(
                 order,
@@ -1037,6 +1046,8 @@ public class OrderService {
                     "この注文の変更受付は終了しています。");
         }
 
+        orderPaymentGuard.validateLocalCancellation(order);
+
         cancelAndRestoreStock(
                 order,
                 OrderStatusHistoryActorType.USER,
@@ -1184,6 +1195,8 @@ public class OrderService {
                         orderId,
                         userId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        orderPaymentGuard.validateItemChange(order);
 
         // items / charges をトランザクション内で読み込む
         order.getItems().size();

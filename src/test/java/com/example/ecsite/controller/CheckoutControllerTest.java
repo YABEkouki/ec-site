@@ -330,12 +330,9 @@ class CheckoutControllerTest {
                 "redirect:/orders/" + order.getId(),
                 view);
 
-        assertEquals(
-                "注文は受け付けましたが、カード決済を開始できませんでした。"
-                        + "注文詳細からカード決済を再開してください。",
-                redirectAttributes
-                        .getFlashAttributes()
-                        .get("errorMessage"));
+        org.assertj.core.api.Assertions.assertThat((String) redirectAttributes.getFlashAttributes().get("errorMessage"))
+                .contains("失敗確定ではありません", "再送を停止", "注文番号「" + order.getId() + "」")
+                .doesNotContain("もう一度注文", "カード決済を再開してください");
 
         verify(orderService)
                 .createOrder(

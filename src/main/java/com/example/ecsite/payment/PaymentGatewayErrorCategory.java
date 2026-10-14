@@ -1,0 +1,10 @@
+package com.example.ecsite.payment;
+
+public enum PaymentGatewayErrorCategory {
+    TRANSPORT_RESULT_UNKNOWN,
+    IDEMPOTENCY_PARAMETER_CONFLICT,
+    IDEMPOTENCY_WAIT_TIMEOUT,
+    SERVER_RESULT_UNKNOWN,
+    INVALID_RESPONSE,
+    OTHER_HTTP_ERROR
+}

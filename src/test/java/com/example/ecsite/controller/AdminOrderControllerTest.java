@@ -541,6 +541,9 @@ class AdminOrderControllerTest {
 
         BindingResult bindingResult = mock(BindingResult.class);
 
+        when(adminPaymentCancellationService.cancel(orderId, ADMIN_ID, ADMIN_USERNAME, null))
+                .thenReturn(new CancellationResult(CancellationResultStatus.CANCELLED, null));
+
         String viewName = adminOrderController.cancel(
                 orderId,
                 form,
@@ -554,8 +557,8 @@ class AdminOrderControllerTest {
                         + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
-        verify(orderService)
-                .cancelOrder(
+        verify(adminPaymentCancellationService)
+                .cancel(
                         orderId,
                         ADMIN_ID,
                         ADMIN_USERNAME,
@@ -768,8 +771,8 @@ class AdminOrderControllerTest {
                 "注文受付中の注文だけをキャンセルできます。");
 
         doThrow(exception)
-                .when(orderService)
-                .cancelOrder(
+                .when(adminPaymentCancellationService)
+                .cancel(
                         orderId,
                         ADMIN_ID,
                         ADMIN_USERNAME,
@@ -1735,6 +1738,9 @@ class AdminOrderControllerTest {
 
         String returnUrl = "/admin/orders?page=3&size=10";
 
+        when(adminPaymentCancellationService.cancel(orderId, ADMIN_ID, ADMIN_USERNAME, null))
+                .thenReturn(new CancellationResult(CancellationResultStatus.CANCELLED, null));
+
         String viewName = adminOrderController.cancel(
                 orderId,
                 form,
@@ -1836,8 +1842,6 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-        when(paymentService.requiresAuthorizationCancellation(orderId))
-                .thenReturn(true);
 
         CancellationResult result = new CancellationResult(
                 CancellationResultStatus.CANCELLED,
@@ -1901,8 +1905,6 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-        when(paymentService.requiresAuthorizationCancellation(orderId))
-                .thenReturn(true);
 
         CancellationResult result = new CancellationResult(
                 CancellationResultStatus.PENDING,
@@ -1949,8 +1951,9 @@ class AdminOrderControllerTest {
                                 + "注文はまだキャンセルしていません。");
     }
 
-    @Test
-    void cancelAuthorizedCardPaymentDisplaysErrorWhenGatewayFails() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={false,true})
+    void cancelAuthorizedCardPaymentDisplaysSafeGuidance(boolean safetyStop) {
 
         when(loginUser.getId())
                 .thenReturn(ADMIN_ID);
@@ -1967,16 +1970,15 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-        when(paymentService.requiresAuthorizationCancellation(orderId))
-                .thenReturn(true);
 
         when(adminPaymentCancellationService.cancel(
                 orderId,
                 ADMIN_ID,
                 ADMIN_USERNAME,
                 "管理者キャンセル"))
-                .thenThrow(new PaymentGatewayException(
-                        "PAY.JP cancellation failed"));
+                .thenThrow(safetyStop ? new com.example.ecsite.service.payment.PaymentSafetyStopException(
+                        com.example.ecsite.service.payment.PaymentSafetyStopException.Reason.PROVIDER_ID_MISSING,orderId)
+                        : new PaymentGatewayException("PAY.JP cancellation failed"));
 
         String viewName = adminOrderController.cancel(
                 orderId,
@@ -2007,9 +2009,23 @@ class AdminOrderControllerTest {
 
         verify(redirectAttributes)
                 .addFlashAttribute(
-                        "errorMessage",
-                        "決済取消結果を確認できませんでした。"
-                                + "注文はまだキャンセルしていません。");
+                        org.mockito.ArgumentMatchers.eq("errorMessage"),
+                        org.mockito.ArgumentMatchers.argThat(message -> ((String) message).contains("失敗確定ではありません") && ((String) message).contains("再送を停止") && ((String) message).contains("注文番号") && ((String) message).contains("決済不整合一覧")));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={false,true})
+    void captureSafetyStopIsHandledBeforeGeneralStateError(boolean safetyStop) {
+        when(loginUser.getId()).thenReturn(ADMIN_ID);when(loginUser.getUsername()).thenReturn(ADMIN_USERNAME);
+        var form=new AdminOrderStatusChangeForm();var binding=mock(BindingResult.class);
+        var attributes=new org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap();
+        RuntimeException failure=safetyStop ? new com.example.ecsite.service.payment.PaymentSafetyStopException(
+                com.example.ecsite.service.payment.PaymentSafetyStopException.Reason.RESULT_PERSISTENCE_UNKNOWN,1L)
+                : new IllegalStateException("existing general validation");
+        when(paymentCaptureService.captureForShipment(1L,ADMIN_ID,ADMIN_USERNAME,null)).thenThrow(failure);
+        adminOrderController.captureAndShip(1L,form,binding,null,loginUser,attributes);
+        String message=(String)attributes.getFlashAttributes().get("errorMessage");
+        if(safetyStop) org.assertj.core.api.Assertions.assertThat(message).contains("注文番号「1」","管理者確認","決済不整合一覧");
+        else assertEquals("existing general validation",message);
+    }
 }
