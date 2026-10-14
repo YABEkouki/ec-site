@@ -541,6 +541,9 @@ class AdminOrderControllerTest {
 
         BindingResult bindingResult = mock(BindingResult.class);
 
+        when(adminPaymentCancellationService.cancel(orderId, ADMIN_ID, ADMIN_USERNAME, null))
+                .thenReturn(new CancellationResult(CancellationResultStatus.CANCELLED, null));
+
         String viewName = adminOrderController.cancel(
                 orderId,
                 form,
@@ -554,8 +557,8 @@ class AdminOrderControllerTest {
                         + "?returnUrl=%2Fadmin%2Forders",
                 viewName);
 
-        verify(orderService)
-                .cancelOrder(
+        verify(adminPaymentCancellationService)
+                .cancel(
                         orderId,
                         ADMIN_ID,
                         ADMIN_USERNAME,
@@ -768,8 +771,8 @@ class AdminOrderControllerTest {
                 "注文受付中の注文だけをキャンセルできます。");
 
         doThrow(exception)
-                .when(orderService)
-                .cancelOrder(
+                .when(adminPaymentCancellationService)
+                .cancel(
                         orderId,
                         ADMIN_ID,
                         ADMIN_USERNAME,
@@ -1735,6 +1738,9 @@ class AdminOrderControllerTest {
 
         String returnUrl = "/admin/orders?page=3&size=10";
 
+        when(adminPaymentCancellationService.cancel(orderId, ADMIN_ID, ADMIN_USERNAME, null))
+                .thenReturn(new CancellationResult(CancellationResultStatus.CANCELLED, null));
+
         String viewName = adminOrderController.cancel(
                 orderId,
                 form,
@@ -1836,8 +1842,6 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-        when(paymentService.requiresAuthorizationCancellation(orderId))
-                .thenReturn(true);
 
         CancellationResult result = new CancellationResult(
                 CancellationResultStatus.CANCELLED,
@@ -1901,8 +1905,6 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-        when(paymentService.requiresAuthorizationCancellation(orderId))
-                .thenReturn(true);
 
         CancellationResult result = new CancellationResult(
                 CancellationResultStatus.PENDING,
@@ -1967,8 +1969,6 @@ class AdminOrderControllerTest {
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
-        when(paymentService.requiresAuthorizationCancellation(orderId))
-                .thenReturn(true);
 
         when(adminPaymentCancellationService.cancel(
                 orderId,

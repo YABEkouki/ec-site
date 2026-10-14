@@ -79,6 +79,7 @@ import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.repository.projection.ActionRequiredAgingSummaryProjection;
 import com.example.ecsite.repository.projection.AdminActionRequiredOrderSearchProjection;
 import com.example.ecsite.repository.projection.AdminAssigneeActionRequiredCountProjection;
+import com.example.ecsite.service.payment.OrderPaymentGuard;
 import com.example.ecsite.service.pricing.ChargeTaxSnapshot;
 import com.example.ecsite.service.pricing.OrderAmount;
 import com.example.ecsite.service.pricing.OrderAmountCalculator;
@@ -119,6 +120,9 @@ class OrderServiceTest {
 
     @Mock
     private OrderContentChangeHistoryRepository orderContentChangeHistoryRepository;
+
+    @Mock
+    private OrderPaymentGuard orderPaymentGuard;
 
     private OrderService orderService;
 
@@ -4269,6 +4273,7 @@ class OrderServiceTest {
                 orderDeadlineCalculator,
                 taxCategoryService,
                 orderAmountCalculator,
+                orderPaymentGuard,
                 clock);
     }
 

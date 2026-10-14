@@ -21,7 +21,7 @@ class AdminPaymentCancellationServiceTest {
 
     private AdminPaymentCancellationStartService startService;
     private PaymentGateway paymentGateway;
-    private AdminPaymentCancellationResultService resultService;
+    private PaymentCancellationCompletionService resultService;
     private AdminPaymentCancellationService service;
 
     @BeforeEach
@@ -31,7 +31,7 @@ class AdminPaymentCancellationServiceTest {
 
         paymentGateway = mock(PaymentGateway.class);
 
-        resultService = mock(AdminPaymentCancellationResultService.class);
+        resultService = mock(PaymentCancellationCompletionService.class);
 
         service = new AdminPaymentCancellationService(
                 startService,
@@ -62,7 +62,7 @@ class AdminPaymentCancellationServiceTest {
                 accountId,
                 "admin",
                 "管理者キャンセル"))
-                .thenReturn(start);
+                .thenReturn(AdminCancellationStart.provider(start));
 
         when(paymentGateway.cancelAuthorization(
                 new CancellationRequest(
@@ -79,13 +79,7 @@ class AdminPaymentCancellationServiceTest {
         assertSame(result, actual);
 
         verify(resultService)
-                .apply(
-                        orderId,
-                        paymentId,
-                        accountId,
-                        "admin",
-                        "管理者キャンセル",
-                        result);
+                .apply(orderId, start, result);
 
         verify(startService)
                 .start(
@@ -113,7 +107,7 @@ class AdminPaymentCancellationServiceTest {
                 accountId,
                 "admin",
                 "管理者キャンセル"))
-                .thenReturn(start);
+                .thenReturn(AdminCancellationStart.provider(start));
 
         when(paymentGateway.cancelAuthorization(
                 new CancellationRequest(
@@ -131,19 +125,13 @@ class AdminPaymentCancellationServiceTest {
                         "管理者キャンセル"));
 
         verify(resultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
     void reusedPendingRetrievesSuccessWithoutPosting() {
         String providerId = "pf_existing";
-        when(startService.start(10L, 30L, "admin", null)).thenReturn(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED));
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(AdminCancellationStart.provider(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED)));
         when(paymentGateway.retrievePaymentFlow(providerId)).thenReturn(
                 new com.example.ecsite.payment.PaymentFlowState(providerId,
                         com.example.ecsite.payment.PaymentFlowStatus.CANCELED, null, null));
@@ -155,7 +143,7 @@ class AdminPaymentCancellationServiceTest {
     @Test
     void reusedPendingWithoutProviderIdStopsWithoutPosting() {
         String providerId = null;
-        when(startService.start(10L, 30L, "admin", null)).thenReturn(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED));
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(AdminCancellationStart.provider(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED)));
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
                 () -> service.cancel(10L, 30L, "admin", null));
         org.mockito.Mockito.verifyNoInteractions(paymentGateway, resultService);

@@ -29,7 +29,7 @@ class PaymentCancellationServiceTest {
     private PaymentGateway paymentGateway;
 
     @Mock
-    private PaymentCancellationResultService resultService;
+    private PaymentCancellationCompletionService resultService;
 
     private PaymentCancellationService service;
 
@@ -96,12 +96,7 @@ class PaymentCancellationServiceTest {
                 captor.getValue().idempotencyKey());
 
         verify(resultService)
-                .apply(
-                        orderId,
-                        30L,
-                        userId,
-                        username,
-                        result);
+                .apply(orderId, start, result);
 
         verify(startService)
                 .start(
@@ -145,12 +140,7 @@ class PaymentCancellationServiceTest {
                         username));
 
         verify(resultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test

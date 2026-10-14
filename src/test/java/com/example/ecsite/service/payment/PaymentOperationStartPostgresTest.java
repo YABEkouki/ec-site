@@ -33,7 +33,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @DataJpaTest(showSql = false, properties = {"spring.jpa.show-sql=false", "spring.sql.init.mode=never"})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
+@Import({OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
         PaymentAuthorizationService.class, PaymentCaptureService.class, PaymentCaptureStartService.class,
         PaymentCancellationService.class, PaymentCancellationStartService.class,
         AdminPaymentCancellationService.class, AdminPaymentCancellationStartService.class})
@@ -66,6 +66,7 @@ class PaymentOperationStartPostgresTest {
     @Autowired PlatformTransactionManager manager;
     @Autowired JdbcTemplate jdbc;
     @Autowired javax.sql.DataSource dataSource;
+    @MockitoBean com.example.ecsite.service.OrderService orderService;
     @MockitoBean PaymentGateway gateway;
     @MockitoBean PaymentAuthorizationResultService authorizationResult;
     @MockitoBean PaymentCaptureResultService captureResult;
@@ -148,7 +149,8 @@ class PaymentOperationStartPostgresTest {
             assertThatThrownBy(() -> {
                 if (captureFirst) adminCancellation.cancel(f.order.getId(), 1L, "admin", null);
                 else capture.captureForShipment(f.order.getId(), 1L, "admin", null);
-            }).isInstanceOf(IllegalStateException.class);
+            }).isInstanceOf(captureFirst ? com.example.ecsite.exception.InvalidOrderStatusException.class
+                    : IllegalStateException.class);
             release.countDown(); first.get(20, TimeUnit.SECONDS);
         }
         verify(gateway).capture(any()); verify(gateway).cancelAuthorization(any());

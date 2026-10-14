@@ -645,6 +645,18 @@ public class PaymentService {
     }
 
     @Transactional(readOnly = true)
+    public PaymentTransactionInitiator getCancellationInitiator(Long transactionId, Long paymentId) {
+        PaymentTransaction transaction = paymentTransactionRepository.findById(transactionId)
+                .orElseThrow(() -> new IllegalStateException("取消操作が見つかりません。"));
+        if (transaction.getTransactionType() != PaymentTransactionType.CANCEL
+                || !transaction.getPayment().getId().equals(paymentId)) {
+            throw new IllegalStateException("取消操作と決済が一致しません。");
+        }
+        return new PaymentTransactionInitiator(transaction.getInitiatorType(), transaction.getInitiatorId(),
+                transaction.getInitiatorUsername(), transaction.getInternalNote());
+    }
+
+    @Transactional(readOnly = true)
     public boolean canCaptureForShipment(Long orderId) {
 
         List<Payment> payments = paymentRepository

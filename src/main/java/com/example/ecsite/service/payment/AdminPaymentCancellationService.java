@@ -17,12 +17,12 @@ public class AdminPaymentCancellationService {
 
     private final AdminPaymentCancellationStartService startService;
     private final PaymentGateway paymentGateway;
-    private final AdminPaymentCancellationResultService resultService;
+    private final PaymentCancellationCompletionService resultService;
 
     public AdminPaymentCancellationService(
             AdminPaymentCancellationStartService startService,
             PaymentGateway paymentGateway,
-            AdminPaymentCancellationResultService resultService) {
+            PaymentCancellationCompletionService resultService) {
 
         this.startService = startService;
         this.paymentGateway = paymentGateway;
@@ -35,11 +35,15 @@ public class AdminPaymentCancellationService {
             String username,
             String internalNote) {
 
-        PaymentCancellationStart start = startService.start(
+        AdminCancellationStart decision = startService.start(
                 orderId,
                 accountId,
                 username,
                 internalNote);
+        if (decision.localCancelled()) {
+            return new CancellationResult(CancellationResultStatus.CANCELLED, null);
+        }
+        PaymentCancellationStart start = decision.paymentStart();
 
         CancellationResult result;
         if (start.disposition() == PaymentStartDisposition.NEW) {
@@ -56,13 +60,7 @@ public class AdminPaymentCancellationService {
             }
         }
 
-        resultService.apply(
-                orderId,
-                start.paymentId(),
-                accountId,
-                username,
-                internalNote,
-                result);
+        resultService.apply(orderId, start, result);
 
         return result;
     }

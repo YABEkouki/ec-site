@@ -17,12 +17,12 @@ public class PaymentCancellationService {
 
     private final PaymentCancellationStartService startService;
     private final PaymentGateway paymentGateway;
-    private final PaymentCancellationResultService resultService;
+    private final PaymentCancellationCompletionService resultService;
 
     public PaymentCancellationService(
             PaymentCancellationStartService startService,
             PaymentGateway paymentGateway,
-            PaymentCancellationResultService resultService) {
+            PaymentCancellationCompletionService resultService) {
 
         this.startService = startService;
         this.paymentGateway = paymentGateway;
@@ -54,12 +54,7 @@ public class PaymentCancellationService {
             }
         }
 
-        resultService.apply(
-                orderId,
-                start.paymentId(),
-                userId,
-                username,
-                result);
+        resultService.apply(orderId, start, result);
 
         return result;
     }
