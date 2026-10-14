@@ -6,5 +6,6 @@ public record PaymentCaptureStart(
         String providerPaymentId,
         int amount,
         String idempotencyKey,
-        PaymentStartDisposition disposition) {
+        PaymentStartDisposition disposition,
+        PaymentOperationSnapshot snapshot) {
 }

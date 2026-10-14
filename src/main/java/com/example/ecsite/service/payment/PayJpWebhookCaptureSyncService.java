@@ -70,6 +70,7 @@ public class PayJpWebhookCaptureSyncService {
         }
 
         PaymentTransaction transaction = transactionOptional.get();
+        PaymentOperationSnapshot snapshot = PaymentOperationSnapshot.from(payment, transaction);
 
         if (transaction.getInitiatorType() != PaymentTransactionInitiatorType.ADMIN) {
             return;
@@ -82,15 +83,11 @@ public class PayJpWebhookCaptureSyncService {
         }
 
         resultService.apply(
-                payment.getOrder().getId(),
-                payment.getId(),
-                transaction.getInitiatorId(),
-                transaction.getInitiatorUsername(),
-                transaction.getInternalNote(),
+                snapshot,
                 new CaptureResult(
                         CaptureResultStatus.CAPTURED,
                         state.providerPaymentId(),
                         null,
-                        null));
+                        null)).requireAccepted();
     }
 }

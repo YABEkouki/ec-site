@@ -75,6 +75,7 @@ public class PayJpWebhookCancellationSyncService {
         }
 
         PaymentTransaction transaction = transactionOptional.get();
+        PaymentOperationSnapshot snapshot = PaymentOperationSnapshot.from(payment, transaction);
 
         PaymentFlowState state =
                 paymentGateway.retrievePaymentFlow(providerPaymentId);
@@ -91,11 +92,8 @@ public class PayJpWebhookCancellationSyncService {
                 == PaymentTransactionInitiatorType.USER) {
 
             userResultService.apply(
-                    payment.getOrder().getId(),
-                    payment.getId(),
-                    transaction.getInitiatorId(),
-                    transaction.getInitiatorUsername(),
-                    result);
+                    snapshot,
+                    result).requireAccepted();
 
             return;
         }
@@ -104,12 +102,8 @@ public class PayJpWebhookCancellationSyncService {
                 == PaymentTransactionInitiatorType.ADMIN) {
 
             adminResultService.apply(
-                    payment.getOrder().getId(),
-                    payment.getId(),
-                    transaction.getInitiatorId(),
-                    transaction.getInitiatorUsername(),
-                    transaction.getInternalNote(),
-                    result);
+                    snapshot,
+                    result).requireAccepted();
         }
     }
 }

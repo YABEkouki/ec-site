@@ -5,5 +5,6 @@ public record PaymentAuthorizationStart(
         Long transactionId,
         int amount,
         String idempotencyKey,
-        PaymentStartDisposition disposition) {
+        PaymentStartDisposition disposition,
+        PaymentOperationSnapshot snapshot) {
 }

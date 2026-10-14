@@ -92,7 +92,7 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     .body(PayJpPaymentFlowResponse.class);
 
             if (response == null
-                    || response.id() == null
+                    || !providerPaymentId.equals(response.id())
                     || response.status() == null) {
                 throw new IllegalStateException(
                         "PAY.JP returned an invalid Payment Flow response");
@@ -124,7 +124,8 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     .retrieve()
                     .body(PayJpPaymentFlowResponse.class);
 
-            if (response == null || response.status() == null) {
+            if (response == null || response.status() == null
+                    || !providerPaymentId.equals(response.id())) {
                 throw new IllegalStateException(
                         "PAY.JP returned an invalid Payment Flow response");
             }
@@ -162,7 +163,8 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     .retrieve()
                     .body(PayJpPaymentFlowResponse.class);
 
-            if (response == null || response.status() == null) {
+            if (response == null || response.status() == null
+                    || !request.providerPaymentId().equals(response.id())) {
                 throw new IllegalStateException(
                         "PAY.JP returned an invalid Payment Flow response");
             }
@@ -203,7 +205,8 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     .retrieve()
                     .body(PayJpPaymentFlowResponse.class);
 
-            if (response == null || response.status() == null) {
+            if (response == null || response.status() == null
+                    || !request.providerPaymentId().equals(response.id())) {
                 throw new IllegalStateException(
                         "PAY.JP returned an invalid Payment Flow response");
             }

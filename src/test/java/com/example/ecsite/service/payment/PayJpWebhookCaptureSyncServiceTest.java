@@ -43,6 +43,7 @@ class PayJpWebhookCaptureSyncServiceTest {
         paymentGateway = mock(PaymentGateway.class);
         resultService = mock(PaymentCaptureResultService.class);
 
+        org.mockito.Mockito.lenient().when(resultService.apply(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(PaymentResultApplication.APPLIED);
         service = new PayJpWebhookCaptureSyncService(
                 paymentRepository,
                 paymentTransactionRepository,
@@ -80,17 +81,11 @@ class PayJpWebhookCaptureSyncServiceTest {
         service.synchronize("pf_test_123");
 
         verify(resultService)
-                .apply(
-                        10L,
-                        20L,
-                        30L,
-                        "admin",
-                        "発送処理",
-                        new CaptureResult(
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), 10L) && java.util.Objects.equals(s.paymentId(), 20L) && java.util.Objects.equals(s.initiatorId(), 30L) && java.util.Objects.equals(s.initiatorUsername(), "admin") && java.util.Objects.equals(s.internalNote(), "発送処理")), org.mockito.ArgumentMatchers.eq(new CaptureResult(
                                 CaptureResultStatus.CAPTURED,
                                 "pf_test_123",
                                 null,
-                                null));
+                                null)));
     }
 
     @Test
@@ -149,13 +144,7 @@ class PayJpWebhookCaptureSyncServiceTest {
                 .retrievePaymentFlow("pf_test_123");
 
         verify(resultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -213,13 +202,7 @@ class PayJpWebhookCaptureSyncServiceTest {
         service.synchronize("pf_test_123");
 
         verify(resultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
     }
 
     private Payment authorizedPayment() {

@@ -47,6 +47,8 @@ class PayJpWebhookCancellationSyncServiceTest {
         adminResultService =
                 mock(AdminPaymentCancellationResultService.class);
 
+        org.mockito.Mockito.lenient().when(userResultService.apply(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(PaymentResultApplication.APPLIED);
+        org.mockito.Mockito.lenient().when(adminResultService.apply(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(PaymentResultApplication.APPLIED);
         service = new PayJpWebhookCancellationSyncService(
                 paymentRepository,
                 paymentTransactionRepository,
@@ -74,23 +76,12 @@ class PayJpWebhookCancellationSyncServiceTest {
         service.synchronize("pf_test_123");
 
         verify(userResultService)
-                .apply(
-                        10L,
-                        20L,
-                        30L,
-                        "testuser",
-                        new CancellationResult(
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), 10L) && java.util.Objects.equals(s.paymentId(), 20L) && java.util.Objects.equals(s.initiatorId(), 30L) && java.util.Objects.equals(s.initiatorUsername(), "testuser")), org.mockito.ArgumentMatchers.eq(new CancellationResult(
                                 CancellationResultStatus.CANCELLED,
-                                "pf_test_123"));
+                                "pf_test_123")));
 
         verify(adminResultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -112,23 +103,12 @@ class PayJpWebhookCancellationSyncServiceTest {
         service.synchronize("pf_test_123");
 
         verify(adminResultService)
-                .apply(
-                        10L,
-                        20L,
-                        40L,
-                        "admin",
-                        "管理者キャンセル",
-                        new CancellationResult(
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), 10L) && java.util.Objects.equals(s.paymentId(), 20L) && java.util.Objects.equals(s.initiatorId(), 40L) && java.util.Objects.equals(s.initiatorUsername(), "admin") && java.util.Objects.equals(s.internalNote(), "管理者キャンセル")), org.mockito.ArgumentMatchers.eq(new CancellationResult(
                                 CancellationResultStatus.CANCELLED,
-                                "pf_test_123"));
+                                "pf_test_123")));
 
         verify(userResultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -210,21 +190,10 @@ class PayJpWebhookCancellationSyncServiceTest {
         service.synchronize("pf_test_123");
 
         verify(userResultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
 
         verify(adminResultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -246,21 +215,10 @@ class PayJpWebhookCancellationSyncServiceTest {
         service.synchronize("pf_test_123");
 
         verify(userResultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
 
         verify(adminResultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
     }
 
     private Payment authorizedPayment() {

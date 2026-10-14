@@ -1,182 +1,44 @@
 package com.example.ecsite.service.payment;
-
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 import java.util.Optional;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
-
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import com.example.ecsite.entity.*;
 import com.example.ecsite.entity.Order;
-import com.example.ecsite.payment.CancellationResult;
-import com.example.ecsite.payment.CancellationResultStatus;
+import com.example.ecsite.payment.*;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.service.OrderService;
-
 class AdminPaymentCancellationResultServiceTest {
-
-    private OrderRepository orderRepository;
-    private PaymentService paymentService;
-    private OrderService orderService;
-    private AdminPaymentCancellationResultService service;
-
-    @BeforeEach
-    void setUp() {
-
-        orderRepository = mock(OrderRepository.class);
-        paymentService = mock(PaymentService.class);
-        orderService = mock(OrderService.class);
-
-        service = new AdminPaymentCancellationResultService(
-                orderRepository,
-                paymentService,
-                orderService);
+    OrderRepository orders=mock(OrderRepository.class);
+    PaymentService payment=mock(PaymentService.class);
+    OrderService orderService=mock(OrderService.class);
+    Order order=mock(Order.class);
+    AdminPaymentCancellationResultService service=new AdminPaymentCancellationResultService(orders,payment,orderService);
+    PaymentOperationSnapshot snapshot=PaymentSnapshotFixtures.of(10L,20L,100L,PaymentTransactionType.CANCEL,"key",3300,2,"pf_test_123",PaymentTransactionInitiatorType.ADMIN,30L,"saved","memo");
+    @BeforeEach void setup() { when(orders.findByIdForUpdate(10L)).thenReturn(Optional.of(order)); when(order.getUserId()).thenReturn(30L); }
+    @ParameterizedTest @EnumSource(PaymentResultApplication.class)
+    void onlyAppliedResultPerformsOrderSideEffects(PaymentResultApplication outcome) {
+        var result=new CancellationResult(CancellationResultStatus.CANCELLED,"pf_test_123");
+        when(payment.applyCancellationResult(order,snapshot,result)).thenReturn(outcome);
+        assertThat(service.apply(snapshot,result)).isEqualTo(outcome);
+        var sequence=inOrder(orders,payment,orderService);
+        sequence.verify(orders).findByIdForUpdate(10L);
+        sequence.verify(payment).applyCancellationResult(order,snapshot,result);
+        if(outcome==PaymentResultApplication.APPLIED) sequence.verify(orderService).cancelOrderAfterPaymentCancellation(order,30L,"saved","memo");
+        else verifyNoInteractions(orderService);
     }
-
-    @Test
-    void cancelledResultUpdatesPaymentThenCancelsOrder() {
-
-        Long orderId = 1L;
-        Long paymentId = 10L;
-        Long accountId = 20L;
-
-        Order order = mock(Order.class);
-
-        when(order.getId())
-                .thenReturn(orderId);
-
-        when(orderRepository.findByIdForUpdate(orderId))
-                .thenReturn(Optional.of(order));
-
-        CancellationResult result = new CancellationResult(
-                CancellationResultStatus.CANCELLED,
-                "provider-transaction-id");
-
-        when(paymentService.applyCancellationResult(
-                10L,
-                result))
-                .thenReturn(true);
-
-        service.apply(
-                orderId,
-                paymentId,
-                accountId,
-                "admin",
-                "管理者キャンセル",
-                result);
-
-        InOrder inOrder = inOrder(
-                orderRepository,
-                paymentService,
-                orderService);
-
-        inOrder.verify(orderRepository)
-                .findByIdForUpdate(orderId);
-
-        inOrder.verify(paymentService)
-                .validatePaymentBelongsToOrder(
-                        paymentId,
-                        orderId);
-
-        inOrder.verify(paymentService)
-                .applyCancellationResult(
-                        paymentId,
-                        result);
-
-        inOrder.verify(orderService)
-                .cancelOrderAfterPaymentCancellation(
-                        order,
-                        accountId,
-                        "admin",
-                        "管理者キャンセル");
+    @Test void resultFailureRollsBackByPropagatingException() {
+        var result=new CancellationResult(CancellationResultStatus.CANCELLED,"pf_test_123");
+        when(payment.applyCancellationResult(order,snapshot,result)).thenThrow(new IllegalStateException("conflict"));
+        assertThatThrownBy(()->service.apply(snapshot,result)).isInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(orderService);
     }
-
-    @Test
-    void pendingResultUpdatesPaymentButDoesNotCancelOrder() {
-
-        Long orderId = 1L;
-        Long paymentId = 10L;
-
-        Order order = mock(Order.class);
-
-        when(order.getId())
-                .thenReturn(orderId);
-
-        when(orderRepository.findByIdForUpdate(orderId))
-                .thenReturn(Optional.of(order));
-
-        CancellationResult result = new CancellationResult(
-                CancellationResultStatus.PENDING,
-                "provider-transaction-id");
-
-        service.apply(
-                orderId,
-                paymentId,
-                20L,
-                "admin",
-                "管理者キャンセル",
-                result);
-
-        verify(paymentService)
-                .applyCancellationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService, never())
-                .cancelOrderAfterPaymentCancellation(
-                        order,
-                        20L,
-                        "admin",
-                        "管理者キャンセル");
+    @Test void pendingResultDoesNotPerformOrderSideEffects() {
+        var result=new CancellationResult(CancellationResultStatus.PENDING,"pf_test_123");
+        when(payment.applyCancellationResult(order,snapshot,result)).thenReturn(PaymentResultApplication.APPLIED);
+        assertThat(service.apply(snapshot,result)).isEqualTo(PaymentResultApplication.APPLIED);
+        verifyNoInteractions(orderService);
     }
-
-    @Test
-    void alreadyAppliedCancellationDoesNotCancelOrderAgain() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-        Long accountId = 30L;
-        String username = "admin";
-        String internalNote = "管理者キャンセル";
-
-        Order order = mock(Order.class);
-
-        when(orderRepository.findByIdForUpdate(orderId))
-                .thenReturn(Optional.of(order));
-
-        CancellationResult result = new CancellationResult(
-                CancellationResultStatus.CANCELLED,
-                "provider-transaction-id");
-
-        when(paymentService.applyCancellationResult(
-                paymentId,
-                result))
-                .thenReturn(false);
-
-        service.apply(
-                orderId,
-                paymentId,
-                accountId,
-                username,
-                internalNote,
-                result);
-
-        verify(paymentService)
-                .applyCancellationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService, never())
-                .cancelOrderAfterPaymentCancellation(
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.anyString());
-    }
-
 }

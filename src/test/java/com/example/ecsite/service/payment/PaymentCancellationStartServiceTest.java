@@ -59,12 +59,7 @@ class PaymentCancellationStartServiceTest {
 
         Order order = org.mockito.Mockito.mock(Order.class);
 
-        PaymentCancellationStart expected = new PaymentCancellationStart(
-                30L,
-                40L,
-                "pf_test_123",
-                "cancel-key-123",
-                PaymentStartDisposition.NEW);
+        PaymentCancellationStart expected = new PaymentCancellationStart(30L, 40L, "pf_test_123", "cancel-key-123", PaymentStartDisposition.NEW, new PaymentOperationSnapshot(10L, 30L, 40L, com.example.ecsite.entity.PaymentTransactionType.CANCEL, "cancel-key-123", 3300, 0, "pf_test_123", com.example.ecsite.entity.PaymentProvider.PAYJP, com.example.ecsite.entity.PaymentTransactionStatus.PENDING, com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, 30L, "admin", null));
 
         when(orderRepository.findByIdAndUserIdForUpdate(
                 orderId,

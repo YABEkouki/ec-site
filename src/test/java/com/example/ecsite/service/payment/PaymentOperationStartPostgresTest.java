@@ -33,7 +33,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @DataJpaTest(showSql = false, properties = {"spring.jpa.show-sql=false", "spring.sql.init.mode=never"})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
+@Import({PaymentOperationSnapshotService.class, PaymentAuthorizationResultService.class,OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
         PaymentAuthorizationService.class, PaymentCaptureService.class, PaymentCaptureStartService.class,
         PaymentCancellationService.class, PaymentCancellationStartService.class,
         AdminPaymentCancellationService.class, AdminPaymentCancellationStartService.class})
@@ -68,13 +68,16 @@ class PaymentOperationStartPostgresTest {
     @Autowired javax.sql.DataSource dataSource;
     @MockitoBean com.example.ecsite.service.OrderService orderService;
     @MockitoBean PaymentGateway gateway;
-    @MockitoBean PaymentAuthorizationResultService authorizationResult;
+    @Autowired PaymentAuthorizationResultService authorizationResult;
     @MockitoBean PaymentCaptureResultService captureResult;
     @MockitoBean PaymentCancellationResultService cancellationResult;
     @MockitoBean AdminPaymentCancellationResultService adminCancellationResult;
     ExecutorService workers;
     CountDownLatch entered, release;
     @BeforeEach void setup() {
+        when(captureResult.apply(any(),any())).thenReturn(PaymentResultApplication.APPLIED);
+        when(cancellationResult.apply(any(),any())).thenReturn(PaymentResultApplication.APPLIED);
+        when(adminCancellationResult.apply(any(),any())).thenReturn(PaymentResultApplication.APPLIED);
         workers = Executors.newFixedThreadPool(2);
         entered = new CountDownLatch(1); release = new CountDownLatch(1);
     }

@@ -26,6 +26,7 @@ class PayJpWebhookAuthorizationSyncServiceTest {
     private PaymentGateway paymentGateway;
     private PaymentAuthorizationResultService resultService;
     private PayJpWebhookAuthorizationSyncService service;
+    private PaymentOperationSnapshotService snapshots;
 
     @BeforeEach
     void setUp() {
@@ -34,10 +35,14 @@ class PayJpWebhookAuthorizationSyncServiceTest {
         paymentGateway = mock(PaymentGateway.class);
         resultService = mock(PaymentAuthorizationResultService.class);
 
+        org.mockito.Mockito.lenient().when(resultService.apply(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(PaymentResultApplication.APPLIED);
+        snapshots = mock(PaymentOperationSnapshotService.class);
+        when(snapshots.authorization(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> PaymentSnapshotFixtures.authorization(inv.getArgument(0),inv.getArgument(1)));
         service = new PayJpWebhookAuthorizationSyncService(
                 paymentRepository,
                 paymentGateway,
-                resultService);
+                resultService, snapshots);
     }
 
     @Test
@@ -75,10 +80,7 @@ class PayJpWebhookAuthorizationSyncServiceTest {
                 .retrieveAuthorization("pf_test_123");
 
         verify(resultService)
-                .apply(
-                        10L,
-                        20L,
-                        result);
+                .apply(org.mockito.ArgumentMatchers.argThat(s -> java.util.Objects.equals(s.orderId(), 10L) && java.util.Objects.equals(s.paymentId(), 20L)), org.mockito.ArgumentMatchers.eq(result));
     }
 
     @Test
@@ -133,10 +135,7 @@ class PayJpWebhookAuthorizationSyncServiceTest {
                 .retrieveAuthorization("pf_test_123");
 
         verify(resultService, never())
-                .apply(
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.anyLong(),
-                        org.mockito.ArgumentMatchers.any());
+                .apply(org.mockito.ArgumentMatchers.any(PaymentOperationSnapshot.class), org.mockito.ArgumentMatchers.any());
     }
 
     @Test

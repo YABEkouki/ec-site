@@ -23,14 +23,16 @@ public class PayJpWebhookAuthorizationSyncService {
             "payment_flow.payment_failed");
 
     private final PaymentRepository paymentRepository;
+    private final PaymentOperationSnapshotService snapshots;
     private final PaymentGateway paymentGateway;
     private final PaymentAuthorizationResultService resultService;
 
     public PayJpWebhookAuthorizationSyncService(
             PaymentRepository paymentRepository,
             PaymentGateway paymentGateway,
-            PaymentAuthorizationResultService resultService) {
+            PaymentAuthorizationResultService resultService, PaymentOperationSnapshotService snapshots) {
 
+        this.snapshots = snapshots;
         this.paymentRepository = paymentRepository;
         this.paymentGateway = paymentGateway;
         this.resultService = resultService;
@@ -60,14 +62,13 @@ public class PayJpWebhookAuthorizationSyncService {
             return;
         }
 
+        PaymentOperationSnapshot snapshot = snapshots.authorization(payment.getOrder().getId(), payment.getId());
         AuthorizationRecovery recovery =
                 paymentGateway.retrieveAuthorization(providerPaymentId);
 
         AuthorizationResult result = recovery.result();
 
         resultService.apply(
-                payment.getOrder().getId(),
-                payment.getId(),
-                result);
+                snapshot, result).requireAccepted();
     }
 }

@@ -1,265 +1,44 @@
 package com.example.ecsite.service.payment;
-
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.verify;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import com.example.ecsite.payment.AuthorizationResult;
-import com.example.ecsite.payment.AuthorizationResultStatus;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import java.util.Optional;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import com.example.ecsite.entity.*;
+import com.example.ecsite.entity.Order;
+import com.example.ecsite.payment.*;
+import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.service.OrderService;
-
-@ExtendWith(MockitoExtension.class)
 class PaymentAuthorizationResultServiceTest {
-
-    @Mock
-    private PaymentService paymentService;
-
-    @Mock
-    private OrderService orderService;
-
-    private PaymentAuthorizationResultService service;
-
-    @BeforeEach
-    void setUp() {
-
-        service = new PaymentAuthorizationResultService(
-                paymentService,
-                orderService);
+    OrderRepository orders=mock(OrderRepository.class);
+    PaymentService payment=mock(PaymentService.class);
+    OrderService orderService=mock(OrderService.class);
+    Order order=mock(Order.class);
+    PaymentAuthorizationResultService service=new PaymentAuthorizationResultService(orders,payment,orderService);
+    PaymentOperationSnapshot snapshot=PaymentSnapshotFixtures.of(10L,20L,100L,PaymentTransactionType.AUTHORIZE,"key",3300,2,"pf_test_123",null,30L,"saved","memo");
+    @BeforeEach void setup() { when(orders.findByIdForUpdate(10L)).thenReturn(Optional.of(order)); when(order.getUserId()).thenReturn(30L); }
+    @ParameterizedTest @EnumSource(PaymentResultApplication.class)
+    void onlyAppliedResultPerformsOrderSideEffects(PaymentResultApplication outcome) {
+        var result=new AuthorizationResult(AuthorizationResultStatus.FAILED,"pf_test_123","failure","reason");
+        when(payment.applyAuthorizationResult(order,snapshot,result)).thenReturn(outcome);
+        assertThat(service.apply(snapshot,result)).isEqualTo(outcome);
+        var sequence=inOrder(orders,payment,orderService);
+        sequence.verify(orders).findByIdForUpdate(10L);
+        sequence.verify(payment).applyAuthorizationResult(order,snapshot,result);
+        if(outcome==PaymentResultApplication.APPLIED) sequence.verify(orderService).cancelOrderForPaymentFailure(10L);
+        else verifyNoInteractions(orderService);
     }
-
-    @Test
-    void applyAuthorizedUpdatesPaymentWithoutCancellingOrder() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.AUTHORIZED,
-                null,
-                null,
-                null);
-
-        service.apply(
-                orderId,
-                paymentId,
-                result);
-
-        verify(paymentService)
-                .applyAuthorizationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService, never())
-                .cancelOrderForPaymentFailure(
-                        orderId);
-
-        verify(paymentService)
-                .validatePaymentBelongsToOrder(
-                        paymentId,
-                        orderId);
+    @Test void resultFailureRollsBackByPropagatingException() {
+        var result=new AuthorizationResult(AuthorizationResultStatus.FAILED,"pf_test_123","failure","reason");
+        when(payment.applyAuthorizationResult(order,snapshot,result)).thenThrow(new IllegalStateException("conflict"));
+        assertThatThrownBy(()->service.apply(snapshot,result)).isInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(orderService);
     }
-
-    @Test
-    void applyFailedUpdatesPaymentAndCancelsOrder() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.FAILED,
-                null,
-                "card_declined",
-                "Card was declined");
-
-        when(paymentService.applyAuthorizationResult(
-                paymentId,
-                result))
-                .thenReturn(true);
-
-        service.apply(
-                orderId,
-                paymentId,
-                result);
-
-        verify(paymentService)
-                .applyAuthorizationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService)
-                .cancelOrderForPaymentFailure(
-                        orderId);
-
-        verify(paymentService)
-                .validatePaymentBelongsToOrder(
-                        paymentId,
-                        orderId);
+    @Test void pendingResultDoesNotPerformOrderSideEffects() {
+        var result=new AuthorizationResult(AuthorizationResultStatus.PENDING,"pf_test_123",null,null);
+        when(payment.applyAuthorizationResult(order,snapshot,result)).thenReturn(PaymentResultApplication.APPLIED);
+        assertThat(service.apply(snapshot,result)).isEqualTo(PaymentResultApplication.APPLIED);
+        verifyNoInteractions(orderService);
     }
-
-    @Test
-    void repeatedFailedResultDoesNotCancelOrderAgain() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.FAILED,
-                null,
-                "card_declined",
-                "Card was declined");
-
-        when(paymentService.applyAuthorizationResult(
-                paymentId,
-                result))
-                .thenReturn(false);
-
-        service.apply(
-                orderId,
-                paymentId,
-                result);
-
-        verify(orderService, never())
-                .cancelOrderForPaymentFailure(orderId);
-    }
-
-    @Test
-    void applyRequiresActionUpdatesPaymentWithoutCancellingOrder() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.REQUIRES_ACTION,
-                null,
-                null,
-                null);
-
-        service.apply(
-                orderId,
-                paymentId,
-                result);
-
-        verify(paymentService)
-                .applyAuthorizationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService, never())
-                .cancelOrderForPaymentFailure(
-                        orderId);
-
-        verify(paymentService)
-                .validatePaymentBelongsToOrder(
-                        paymentId,
-                        orderId);
-    }
-
-    @Test
-    void applyDoesNotUpdateAnythingWhenPaymentDoesNotBelongToOrder() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.FAILED,
-                null,
-                "card_declined",
-                "Card was declined");
-
-        doThrow(new IllegalArgumentException(
-                "決済情報と注文が一致しません。"))
-                .when(paymentService)
-                .validatePaymentBelongsToOrder(
-                        paymentId,
-                        orderId);
-
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.apply(
-                        orderId,
-                        paymentId,
-                        result));
-
-        verify(paymentService, never())
-                .applyAuthorizationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService, never())
-                .cancelOrderForPaymentFailure(
-                        orderId);
-    }
-
-    @Test
-    void applyRequiresPaymentMethodDoesNotCancelOrder() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,
-                null,
-                "card_declined",
-                "Card was declined");
-
-        service.apply(
-                orderId,
-                paymentId,
-                result);
-
-        verify(paymentService)
-                .validatePaymentBelongsToOrder(
-                        paymentId,
-                        orderId);
-
-        verify(paymentService)
-                .applyAuthorizationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService, never())
-                .cancelOrderForPaymentFailure(
-                        orderId);
-    }
-
-    @Test
-    void applyRequiresConfirmationDoesNotCancelOrder() {
-
-        Long orderId = 10L;
-        Long paymentId = 20L;
-
-        AuthorizationResult result = new AuthorizationResult(
-                AuthorizationResultStatus.REQUIRES_CONFIRMATION,
-                null,
-                null,
-                null);
-
-        service.apply(
-                orderId,
-                paymentId,
-                result);
-
-        verify(paymentService)
-                .validatePaymentBelongsToOrder(
-                        paymentId,
-                        orderId);
-
-        verify(paymentService)
-                .applyAuthorizationResult(
-                        paymentId,
-                        result);
-
-        verify(orderService, never())
-                .cancelOrderForPaymentFailure(
-                        orderId);
-    }
-
 }

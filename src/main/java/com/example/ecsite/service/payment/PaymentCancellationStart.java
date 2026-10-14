@@ -5,5 +5,6 @@ public record PaymentCancellationStart(
         Long transactionId,
         String providerPaymentId,
         String idempotencyKey,
-        PaymentStartDisposition disposition) {
+        PaymentStartDisposition disposition,
+        PaymentOperationSnapshot snapshot) {
 }

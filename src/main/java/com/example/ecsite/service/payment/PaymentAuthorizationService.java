@@ -18,6 +18,7 @@ public class PaymentAuthorizationService {
 
     private final PaymentAuthorizationStartService startService;
     private final PaymentService paymentService;
+    private final PaymentOperationSnapshotService snapshots;
     private final PaymentGateway paymentGateway;
     private final PaymentAuthorizationResultService paymentAuthorizationResultService;
 
@@ -25,8 +26,10 @@ public class PaymentAuthorizationService {
             PaymentAuthorizationStartService startService,
             PaymentService paymentService,
             PaymentGateway paymentGateway,
-            PaymentAuthorizationResultService paymentAuthorizationResultService) {
+            PaymentAuthorizationResultService paymentAuthorizationResultService,
+            PaymentOperationSnapshotService snapshots) {
 
+        this.snapshots = snapshots;
         this.startService = startService;
         this.paymentService = paymentService;
         this.paymentGateway = paymentGateway;
@@ -39,11 +42,13 @@ public class PaymentAuthorizationService {
         PaymentAuthorizationStart start = startService.start(order.getId());
 
         if (start.disposition() == PaymentStartDisposition.REUSED) {
-            String providerId = paymentService.findProviderPaymentId(start.paymentId())
-                    .orElseThrow(() -> new IllegalStateException(
-                            "決済開始結果が不明のため、カード与信の再送を停止しています。"));
+            PaymentOperationSnapshot snapshot = start.snapshot();
+            String providerId = snapshot.providerPaymentId();
+            if (providerId == null || providerId.isBlank()) {
+                throw new IllegalStateException("決済開始結果が不明のため、カード与信の再送を停止しています。");
+            }
             AuthorizationRecovery recovery = paymentGateway.retrieveAuthorization(providerId);
-            paymentAuthorizationResultService.apply(order.getId(), start.paymentId(), recovery.result());
+            paymentAuthorizationResultService.apply(snapshot, recovery.result()).requireAccepted();
             if (recovery.result().status() == AuthorizationResultStatus.AUTHORIZED
                     || recovery.result().status() == AuthorizationResultStatus.FAILED) {
                 throw new IllegalStateException("カード与信は確定済みです。注文詳細を確認してください。");
@@ -56,9 +61,7 @@ public class PaymentAuthorizationService {
                         start.amount(),
                         start.idempotencyKey()));
 
-        paymentService.setProviderPaymentId(
-                start.paymentId(),
-                preparation.providerPaymentId());
+        paymentAuthorizationResultService.setProviderPaymentId(start.snapshot(), preparation.providerPaymentId()).requireAccepted();
 
         return new PaymentAuthorizationPreparation(
                 start.paymentId(),
@@ -67,16 +70,15 @@ public class PaymentAuthorizationService {
 
     public AuthorizationResult refreshAuthorization(Long orderId, Long paymentId) {
 
-        String providerPaymentId = paymentService.getProviderPaymentId(paymentId);
+        PaymentOperationSnapshot snapshot = snapshots.authorization(orderId, paymentId);
+        String providerPaymentId = snapshot.providerPaymentId();
 
         AuthorizationRecovery recovery = paymentGateway.retrieveAuthorization(providerPaymentId);
 
         AuthorizationResult result = recovery.result();
 
         paymentAuthorizationResultService.apply(
-                orderId,
-                paymentId,
-                result);
+                snapshot, result).requireAccepted();
 
         return result;
     }
@@ -85,21 +87,14 @@ public class PaymentAuthorizationService {
 
         Long paymentId = paymentService.getRecoverableAuthorizationPaymentId(order);
 
-        String providerPaymentId = paymentService.getProviderPaymentId(paymentId);
+        PaymentOperationSnapshot snapshot = snapshots.authorization(order.getId(), paymentId);
+        String providerPaymentId = snapshot.providerPaymentId();
 
         AuthorizationRecovery recovery = paymentGateway.retrieveAuthorization(providerPaymentId);
 
         AuthorizationResult result = recovery.result();
 
-        if (result.status() == AuthorizationResultStatus.REQUIRES_ACTION
-                || result.status() == AuthorizationResultStatus.AUTHORIZED
-                || result.status() == AuthorizationResultStatus.FAILED) {
-
-            paymentAuthorizationResultService.apply(
-                    order.getId(),
-                    paymentId,
-                    result);
-        }
+        paymentAuthorizationResultService.apply(snapshot, result).requireAccepted();
 
         return new PaymentAuthorizationRecovery(
                 paymentId,

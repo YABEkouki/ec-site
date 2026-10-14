@@ -58,12 +58,7 @@ public class PaymentCaptureService {
         }
 
         resultService.apply(
-                orderId,
-                start.paymentId(),
-                accountId,
-                username,
-                internalNote,
-                result);
+                start.snapshot(), result).requireAccepted();
 
         return result;
     }
