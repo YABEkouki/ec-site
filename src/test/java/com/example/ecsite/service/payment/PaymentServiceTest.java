@@ -1456,7 +1456,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void canResumeAuthorizationReturnsTrueForPendingPayJpCardAuthorization() {
+    void canResumeAuthorizationReturnsFalseForProviderlessPendingPayJpCardAuthorization() {
 
         Order order = mock(Order.class);
         when(order.getId()).thenReturn(100L);
@@ -1476,7 +1476,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        assertTrue(
+        assertFalse(
                 paymentService.canResumeAuthorization(order));
     }
 
@@ -1521,10 +1521,11 @@ class PaymentServiceTest {
     }
 
     @Test
-    void canResumeAuthorizationReturnsFalseWhenProviderPaymentIdAlreadyExists() {
+    void canResumeAuthorizationReturnsTrueWhenProviderPaymentIdExists() {
 
         Order order = mock(Order.class);
         when(order.getId()).thenReturn(100L);
+        when(order.getTotalAmount()).thenReturn(12_345);
 
         Payment payment = createPayment(order);
 
@@ -1544,7 +1545,7 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        assertFalse(
+        assertTrue(
                 paymentService.canResumeAuthorization(order));
     }
 
@@ -2082,5 +2083,16 @@ class PaymentServiceTest {
         var snapshot = resultSnapshot(payment, PaymentTransactionType.AUTHORIZE);
         org.springframework.test.util.ReflectionTestUtils.setField(payment,"providerPaymentId",null);
         return new PaymentOperationSnapshot(snapshot.orderId(),snapshot.paymentId(),snapshot.transactionId(),snapshot.type(),snapshot.idempotencyKey(),snapshot.amount(),snapshot.orderContentRevision(),null,snapshot.provider(),snapshot.status(),snapshot.initiatorType(),snapshot.initiatorId(),snapshot.initiatorUsername(),snapshot.internalNote());
+    }
+    @Test void providerlessPendingRequiresConfirmation() {
+        Order order=mock(Order.class);when(order.getId()).thenReturn(100L);
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L)).thenReturn(List.of(createPayment(order)));
+        assertTrue(paymentService.requiresAuthorizationConfirmation(order));
+    }
+    @Test void providerKnownDoesNotRequireMissingIdConfirmation() {
+        Order order=mock(Order.class);when(order.getId()).thenReturn(100L);
+        Payment payment=createPayment(order);payment.setProviderPaymentId("pf",LocalDateTime.of(2026,10,1,10,0));
+        when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L)).thenReturn(List.of(payment));
+        assertFalse(paymentService.requiresAuthorizationConfirmation(order));
     }
 }

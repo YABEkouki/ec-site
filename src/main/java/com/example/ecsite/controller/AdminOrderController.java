@@ -39,6 +39,7 @@ import com.example.ecsite.payment.CaptureResult;
 import com.example.ecsite.payment.CaptureResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.payment.PaymentSafetyMessages;
+import com.example.ecsite.service.payment.PaymentSafetyStopException;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminAccountService;
 import com.example.ecsite.service.OrderAssigneeHistoryService;
@@ -446,6 +447,8 @@ public class AdminOrderController {
                                 + "注文はまだ発送済みに変更していません。");
             }
 
+        } catch (PaymentSafetyStopException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", PaymentSafetyMessages.administrator(id, e));
         } catch (InvalidOrderStatusException
                 | IllegalStateException e) {
 
@@ -496,6 +499,8 @@ public class AdminOrderController {
                         "決済取消結果を確認中です。注文はまだキャンセルしていません。");
             }
 
+        } catch (PaymentSafetyStopException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", PaymentSafetyMessages.administrator(id, e));
         } catch (InvalidOrderStatusException
                 | IllegalStateException e) {
             redirectAttributes.addFlashAttribute(

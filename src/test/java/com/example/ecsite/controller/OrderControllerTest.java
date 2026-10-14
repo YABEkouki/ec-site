@@ -1710,7 +1710,7 @@ class OrderControllerTest {
     }
 
     @Test
-    void resumePaymentRestartsPendingAuthorizationAndRedirectsToPayment() {
+    void resumePaymentUsesGetRecoveryAndRedirectsToPayment() {
 
         Long orderId = 100L;
         Long userId = 10L;
@@ -1718,9 +1718,9 @@ class OrderControllerTest {
 
         Order order = mock(Order.class);
 
-        PaymentAuthorizationPreparation preparation = new PaymentAuthorizationPreparation(
-                paymentId,
-                "client-secret-123");
+        PaymentAuthorizationRecovery preparation = new PaymentAuthorizationRecovery(paymentId,
+                new AuthorizationResult(AuthorizationResultStatus.REQUIRES_ACTION,null,null,null),
+                "client-secret-123",PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT);
 
         RedirectAttributes redirectAttributes = mock(RedirectAttributes.class);
 
@@ -1737,7 +1737,7 @@ class OrderControllerTest {
         when(paymentService.canResumeAuthorization(order))
                 .thenReturn(true);
 
-        when(paymentAuthorizationService.prepareAuthorization(order))
+        when(paymentAuthorizationService.recoverAuthorization(order))
                 .thenReturn(preparation);
 
         String viewName = orderController.resumePayment(
@@ -1759,7 +1759,7 @@ class OrderControllerTest {
                 .canResumeAuthorization(order);
 
         verify(paymentAuthorizationService)
-                .prepareAuthorization(order);
+                .recoverAuthorization(order);
 
         verify(session)
                 .setAttribute(
@@ -1848,7 +1848,7 @@ class OrderControllerTest {
         when(paymentService.canResumeAuthorization(order))
                 .thenReturn(true);
 
-        when(paymentAuthorizationService.prepareAuthorization(order))
+        when(paymentAuthorizationService.recoverAuthorization(order))
                 .thenThrow(new PaymentGatewayException(
                         "PAY.JPとの通信に失敗しました。"));
 
@@ -2196,4 +2196,12 @@ class OrderControllerTest {
                         org.mockito.ArgumentMatchers.argThat(message -> ((String) message).contains("失敗確定ではありません") && ((String) message).contains("再送を停止") && ((String) message).contains("注文番号")));
     }
 
+    @Test void detailShowsProviderlessConfirmationWithoutResume() {
+        Order order=mock(Order.class);when(loginUser.getId()).thenReturn(10L);
+        when(orderService.findOrderByIdAndUserId(100L,10L)).thenReturn(order);
+        when(paymentService.requiresAuthorizationConfirmation(order)).thenReturn(true);
+        assertEquals("orders/detail",orderController.detail(100L,loginUser,model));
+        verify(model).addAttribute("canResumePayment",false);
+        verify(model).addAttribute("requiresPaymentConfirmation",true);
+    }
 }

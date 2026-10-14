@@ -112,6 +112,8 @@ public class OrderController {
                 || paymentService.canRecoverAuthorization(order);
 
         model.addAttribute("order", order);
+        boolean requiresPaymentConfirmation = paymentService.requiresAuthorizationConfirmation(order);
+        model.addAttribute("requiresPaymentConfirmation", requiresPaymentConfirmation);
 
         model.addAttribute(
                 "withinModificationPeriod",
@@ -139,7 +141,7 @@ public class OrderController {
 
         model.addAttribute(
                 "canResumePayment",
-                canResumePayment);
+                canResumePayment && !requiresPaymentConfirmation);
 
         return "orders/detail";
     }
@@ -249,20 +251,7 @@ public class OrderController {
 
         try {
 
-            if (paymentService.canResumeAuthorization(order)) {
-
-                PaymentAuthorizationPreparation preparation = paymentAuthorizationService.prepareAuthorization(order);
-
-                setCheckoutSession(
-                        session,
-                        id,
-                        preparation.paymentId(),
-                        preparation.clientSecret());
-
-                return "redirect:/checkout/payment";
-            }
-
-            if (paymentService.canRecoverAuthorization(order)) {
+            if (paymentService.canResumeAuthorization(order) || paymentService.canRecoverAuthorization(order)) {
 
                 PaymentAuthorizationRecovery recovery = paymentAuthorizationService.recoverAuthorization(order);
 

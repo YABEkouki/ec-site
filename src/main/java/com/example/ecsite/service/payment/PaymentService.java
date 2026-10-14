@@ -152,41 +152,16 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public boolean canResumeAuthorization(Order order) {
+        // Resume only by GET; a providerless persisted PENDING cannot authorize another POST.
+        return findRecoverableAuthorizationPayment(order).isPresent();
+    }
 
-        List<Payment> pendingPayments = paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(order.getId())
-                .stream()
-                .filter(payment -> payment.getProvider() == PaymentProvider.PAYJP)
-                .filter(payment -> payment.getPaymentMethod() == PaymentMethod.CARD)
-                .filter(payment -> payment.getStatus() == PaymentStatus.PENDING)
-                .toList();
-
-        if (pendingPayments.size() != 1) {
-            return false;
-        }
-
-        Payment payment = pendingPayments.getFirst();
-
-        if (payment.getAmount() != order.getTotalAmount()) {
-            return false;
-        }
-
-        if (payment.getProviderPaymentId() != null
-                && !payment.getProviderPaymentId().isBlank()) {
-            return false;
-        }
-
-        Optional<PaymentTransaction> transaction = paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.AUTHORIZE,
-                        PaymentTransactionStatus.PENDING);
-
-        if (transaction.isEmpty()) {
-            return false;
-        }
-
-        return transaction.get().getOrderContentRevision() == order.getContentRevision();
+    @Transactional(readOnly = true)
+    public boolean requiresAuthorizationConfirmation(Order order) {
+        return paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(order.getId()).stream()
+                .anyMatch(p -> p.getProvider() == PaymentProvider.PAYJP && p.getPaymentMethod() == PaymentMethod.CARD
+                        && (p.getStatus() == PaymentStatus.PENDING || p.getStatus() == PaymentStatus.REQUIRES_ACTION)
+                        && (p.getProviderPaymentId() == null || p.getProviderPaymentId().isBlank()));
     }
 
     @Transactional(readOnly = true)
