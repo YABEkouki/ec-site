@@ -1,0 +1,8 @@
+<!DOCTYPE html><html lang="ja" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><title>手動再送内容確認</title><link rel="stylesheet" th:href="@{/css/style.css}"></head><body><header th:replace="~{fragments/admin-header :: header}"></header><main>
+<h1>手動再送内容確認</h1><dl><dt>通知ID</dt><dd th:text="${manualResend.notificationId}"></dd><dt>要求番号</dt><dd th:text="${manualResend.nextRequestNo}"></dd><dt>送信予定先件数</dt><dd th:text="${#lists.size(manualResend.maskedRecipients)}"></dd><dt>宛先（マスク表示）</dt><dd><ul><li th:each="address : ${manualResend.maskedRecipients}" th:text="${address}"></li></ul></dd><dt>再送理由</dt><dd style="white-space:pre-wrap" th:text="${resendForm.reason}"></dd></dl>
+<p>表示している宛先は現在の設定に基づく送信予定先です。実際の送信時には宛先を再確認するため、設定変更などにより送信先や件数が変わる場合があります。</p>
+<p>ここで受け付けるのは再送要求です。メール送信成功を保証するものではありません。</p>
+<p th:if="${manualResend.eligibility.riskAcknowledgementRequired}">前回の送信は失敗として記録されていますが、受信側に届いている可能性があります。再送すると同じメールが重複して届く場合があります。</p>
+<form th:action="@{/admin/payment-audit-notifications/{id}/manual-resend/submit(id=${manualResend.notificationId})}" method="post" th:object="${resendForm}"><input type="hidden" th:field="*{reason}"><input type="hidden" th:field="*{snapshotToken}"><input type="hidden" th:field="*{riskAcknowledged}"><input type="hidden" name="returnUrl" th:value="${returnUrl}"><button type="submit">再送要求を送信</button></form>
+<form th:action="@{/admin/payment-audit-notifications/{id}/manual-resend/back(id=${manualResend.notificationId})}" method="post"><input type="hidden" name="reason" th:value="${resendForm.reason}"><input type="hidden" name="riskAcknowledged" th:value="${resendForm.riskAcknowledged}"><input type="hidden" name="returnUrl" th:value="${returnUrl}"><button type="submit">理由入力に戻る</button></form>
+</main></body></html>

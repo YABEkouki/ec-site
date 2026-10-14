@@ -16,10 +16,11 @@ public class AdminPaymentAuditNotificationHandlingService {
     private final PaymentAuditNotificationHandlingHistoryRepository histories;
     private final PaymentAuditNotificationHandlingHistoryUnknownRepository unknowns;
     private final EntityManager entities;
+    private final PaymentAuditNotificationManualResendAttemptRepository manualAttempts;
     public AdminPaymentAuditNotificationHandlingService(PaymentAuditNotificationHandlingToken tokens,
         PaymentAuditNotificationHandlingRepository handlings,PaymentAuditNotificationHandlingHistoryRepository histories,
-        PaymentAuditNotificationHandlingHistoryUnknownRepository unknowns,EntityManager entities) {
-        this.tokens=tokens; this.handlings=handlings; this.histories=histories; this.unknowns=unknowns; this.entities=entities;
+        PaymentAuditNotificationHandlingHistoryUnknownRepository unknowns,EntityManager entities,PaymentAuditNotificationManualResendAttemptRepository manualAttempts) {
+        this.tokens=tokens; this.handlings=handlings; this.histories=histories; this.unknowns=unknowns; this.entities=entities; this.manualAttempts=manualAttempts;
     }
     @Transactional(isolation=Isolation.READ_COMMITTED)
     public boolean changeStatus(long id,long actorId,String actorUsername,String token,
@@ -31,9 +32,11 @@ public class AdminPaymentAuditNotificationHandlingService {
         var existing=handlings.findById(id);
         if(existing.isPresent()!=snapshot.handlingExists() || existing.isPresent() && existing.get().getVersion()!=snapshot.version())
             throw new PaymentAuditNotificationHandlingConflictException();
-        var currentUnknowns=handlings.findUnknownAttemptNumbers(id);
-        if(!currentUnknowns.equals(snapshot.unknowns())) throw new PaymentAuditNotificationHandlingConflictException(true);
+        var currentUnknowns=handlings.findUnknownAttemptNumbers(id).stream().distinct().sorted().toList();
+        var manualUnknowns=manualAttempts.findUnknownIdsByNotificationId(id).stream().distinct().sorted().toList();
+        if(!currentUnknowns.equals(snapshot.unknowns()) || !manualUnknowns.equals(snapshot.manualUnknowns())) throw new PaymentAuditNotificationHandlingConflictException(true);
         var current=existing.map(PaymentAuditNotificationHandling::getHandlingStatus).orElse(PaymentAuditNotificationHandlingStatus.UNREVIEWED);
+        if(current!=snapshot.handlingStatus()) throw new PaymentAuditNotificationHandlingConflictException();
         if(target==null) throw new IllegalArgumentException("対応状態が必要です。");
         if(current==target) return false;
         PaymentAuditNotificationHandlingComments.validate(comment,current==PaymentAuditNotificationHandlingStatus.RESOLVED || target==PaymentAuditNotificationHandlingStatus.RESOLVED);
@@ -51,6 +54,11 @@ public class AdminPaymentAuditNotificationHandlingService {
             for(int number:currentUnknowns) {
                 var member=new PaymentAuditNotificationHandlingHistoryUnknown();
                 member.setHistoryId(history.getId()); member.setNotificationId(id); member.setAttemptNo(number);
+                entities.persist(member);
+            }
+            for(long attemptId:manualUnknowns) {
+                var member=new PaymentAuditNotificationHandlingHistoryManualUnknown();
+                member.setHistoryId(history.getId()); member.setNotificationId(id); member.setManualAttemptId(attemptId);
                 entities.persist(member);
             }
             handling.setLastResolvedHistoryId(history.getId());

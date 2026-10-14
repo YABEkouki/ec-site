@@ -27,9 +27,10 @@ import com.example.ecsite.service.AdminPaymentAuditNotificationService;
 public class AdminPaymentAuditNotificationController {
     private final AdminPaymentAuditNotificationService service;
     private final com.example.ecsite.service.AdminPaymentAuditNotificationHandlingService handlingService;
+    private final com.example.ecsite.service.AdminPaymentAuditNotificationManualResendViewService resendViews;
     @org.springframework.beans.factory.annotation.Autowired
-    public AdminPaymentAuditNotificationController(AdminPaymentAuditNotificationService service, @org.springframework.lang.Nullable com.example.ecsite.service.AdminPaymentAuditNotificationHandlingService handlingService) {
-        this.service = service; this.handlingService = handlingService;
+    public AdminPaymentAuditNotificationController(AdminPaymentAuditNotificationService service, @org.springframework.lang.Nullable com.example.ecsite.service.AdminPaymentAuditNotificationHandlingService handlingService, @org.springframework.lang.Nullable com.example.ecsite.service.AdminPaymentAuditNotificationManualResendViewService resendViews) {
+        this.service = service; this.handlingService = handlingService; this.resendViews=resendViews;
     }
 
     @GetMapping
@@ -72,6 +73,7 @@ public class AdminPaymentAuditNotificationController {
         if (id <= 0) throw new PaymentAuditNotificationInvalidIdException();
         model.addAttribute("notification", principal instanceof com.example.ecsite.security.AdminUserDetails admin
             ? service.findById(id,admin.getId()) : service.findById(id));
+        if(resendViews!=null && principal instanceof com.example.ecsite.security.AdminUserDetails admin) model.addAttribute("manualResend",resendViews.read(id,admin.getId(),false));
         model.addAttribute("handlingStatuses", com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.values());
         model.addAttribute("returnUrl", AdminReturnUrlHelper.resolvePaymentAuditNotificationListReturnUrl(returnUrl));
         return "admin/payment-audit-notifications/detail";

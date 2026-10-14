@@ -18,9 +18,10 @@ class AdminPaymentAuditNotificationHandlingServiceTest {
     @Mock PaymentAuditNotificationHandlingHistoryRepository histories;
     @Mock PaymentAuditNotificationHandlingHistoryUnknownRepository unknowns;
     @Mock EntityManager entities;
+    @Mock PaymentAuditNotificationManualResendAttemptRepository manualAttempts;
     @InjectMocks AdminPaymentAuditNotificationHandlingService service;
     void setup(PaymentAuditNotificationHandling h,List<Integer> numbers) {
-        when(tokens.verify("token",1,2)).thenReturn(new PaymentAuditNotificationHandlingToken.Snapshot(h!=null,0,numbers==null?List.of():numbers));
+        when(tokens.verify("token",1,2)).thenReturn(new PaymentAuditNotificationHandlingToken.Snapshot(h!=null,0,numbers==null?List.of():numbers,List.of(),h==null?PaymentAuditNotificationHandlingStatus.UNREVIEWED:h.getHandlingStatus()));
         var n=new PaymentAuditNotification(); n.setStatus(PaymentAuditNotificationStatus.EXHAUSTED);
         when(handlings.lockNotification(1)).thenReturn(Optional.of(n));
         when(handlings.findById(1L)).thenReturn(Optional.ofNullable(h));

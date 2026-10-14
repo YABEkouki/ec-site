@@ -33,4 +33,15 @@ class PaymentAuditNotificationHandlingTokenTest {
         assertThatThrownBy(()->PaymentAuditNotificationHandlingComments.validate("😀".repeat(1001),true)).isInstanceOf(IllegalArgumentException.class);
         PaymentAuditNotificationHandlingComments.validate(null,false);
     }
+    @Test void manualIdsAreSeparateAndNormalized() {
+        var t=tokens(clock);String token=t.issue(1,2,false,0,List.of(3,1),List.of(3L,1L,3L));
+        assertThat(t.verify(token,1,2).unknowns()).containsExactly(1,3);
+        assertThat(t.verify(token,1,2).manualUnknowns()).containsExactly(1L,3L);
+    }
+    @Test void rejectsAuthenticallySignedLegacyToken() throws Exception {
+        byte[] payload="1|1|2|false|0||1791504000|1791504900".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var mac=javax.crypto.Mac.getInstance("HmacSHA256");mac.init(new javax.crypto.spec.SecretKeySpec(new byte[32],"HmacSHA256"));
+        String old=Base64.getUrlEncoder().withoutPadding().encodeToString(payload)+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(payload));
+        assertThatThrownBy(()->tokens(clock).verify(old,1,2)).isInstanceOf(IllegalArgumentException.class);
+    }
 }

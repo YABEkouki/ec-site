@@ -25,12 +25,13 @@ import com.example.ecsite.service.*;
 import com.example.ecsite.web.AdminPaymentAuditNotificationDisplay;
 
 @WebMvcTest(value=AdminPaymentAuditNotificationController.class,properties="app.payment.discrepancy-audit.notification.enabled=false")
-@Import({SecurityConfig.class,AdminPaymentAuditNotificationDisplay.class})
+@Import({SecurityConfig.class,AdminPaymentAuditNotificationDisplay.class,com.example.ecsite.web.AdminPaymentAuditNotificationManualResendDisplay.class})
 class AdminPaymentAuditNotificationDetailControllerTest {
     private static final String URL="/admin/payment-audit-notifications/42";
     private static final LocalDateTime TIME=LocalDateTime.of(2026,10,9,10,11,12);
     @Autowired MockMvc mvc;
     @MockitoBean AdminPaymentAuditNotificationService service;
+    @MockitoBean AdminPaymentAuditNotificationManualResendViewService resendViews;
     @MockitoBean AdminUserDetailsService adminUserDetailsService;
     @MockitoBean CustomUserDetailsService customUserDetailsService;
     @MockitoBean AdminAuthenticationSuccessHandler adminAuthenticationSuccessHandler;
@@ -155,5 +156,42 @@ class AdminPaymentAuditNotificationDetailControllerTest {
             .andExpect(header().string(org.springframework.http.HttpHeaders.ALLOW,"POST"))
             .andExpect(view().name("error/method-not-allowed"));
         verifyNoInteractions(service);
+    }
+
+    private String manualHtml(AdminPaymentAuditNotificationManualResendViewService.View view) throws Exception {
+        var admin=new AdminUserDetails(7L,"admin","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        when(service.findById(42L,7L)).thenReturn(detail(PaymentAuditNotificationStatus.EXHAUSTED,PaymentAuditNotificationCloseReason.MAX_ATTEMPTS,List.of(),List.of()));
+        when(resendViews.read(42,7,false)).thenReturn(view);
+        return section(mvc.perform(get(URL).with(user(admin))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(),"manual-resend-history");
+    }
+    private AdminPaymentAuditNotificationManualResendViewService.View manualView(boolean eligible,boolean key,PaymentAuditNotificationManualResendRejectedException.Reason reason,List<AdminPaymentAuditNotificationManualResendViewService.History> histories) {
+        return new AdminPaymentAuditNotificationManualResendViewService.View(42,new AdminPaymentAuditNotificationManualResendService.Eligibility(eligible,reason,key,false,null),1,List.of("***@***"),histories);
+    }
+    @ParameterizedTest @CsvSource({"PENDING,送信待ち","CLAIMED,配送準備中","SENDING,送信処理中","SENT,送信済み","FAILED,送信失敗","UNKNOWN,結果不明","CANCELLED,送信取消"})
+    void manualHistoryStatesEscapeTextAndNullDates(PaymentAuditNotificationManualResendStatus status,String label) throws Exception {
+        var history=new AdminPaymentAuditNotificationManualResendViewService.History(1,TIME,"<img src=x>","<script>reason</script>",status,null,null,null,null);
+        String body=manualHtml(manualView(false,true,PaymentAuditNotificationManualResendRejectedException.Reason.LIMIT_REACHED,List.of(history)));
+        assertThat(body).contains(label,"2026-10-09 10:11:12","&lt;img src=x&gt;","&lt;script&gt;reason&lt;/script&gt;","—").doesNotContain("<img src=x>","<script>","***@***","hidden-first@example.com","hidden-body","hidden-subject");
+        if(status==PaymentAuditNotificationManualResendStatus.UNKNOWN)assertThat(body).contains("受信側に届いた可能性があるため、再送できません。");
+        else assertThat(body).doesNotContain("受信側に届いた可能性があるため、再送できません。");
+    }
+    @ParameterizedTest @CsvSource({"IN_PROGRESS,処理中","SUCCESS,送信成功","FAILURE,送信失敗","UNKNOWN,結果不明"})
+    void manualAttemptsStayLinkedAndOrdered(PaymentAuditNotificationAttemptResult result,String label) throws Exception {
+        var first=new AdminPaymentAuditNotificationManualResendViewService.History(1,TIME,"actor-one","reason-one",PaymentAuditNotificationManualResendStatus.FAILED,TIME,TIME.plusSeconds(1),"SMTP_SEND_FAILED",PaymentAuditNotificationAttemptResult.FAILURE);
+        var second=new AdminPaymentAuditNotificationManualResendViewService.History(2,TIME.plusMinutes(30),"actor-two","reason-two",PaymentAuditNotificationManualResendStatus.SENDING,TIME.plusMinutes(31),null,null,result);
+        String body=manualHtml(manualView(false,true,PaymentAuditNotificationManualResendRejectedException.Reason.LIMIT_REACHED,List.of(first,second)));
+        assertThat(body.indexOf("reason-one")).isLessThan(body.indexOf("reason-two"));
+        String row=body.substring(body.lastIndexOf("<tr>"));assertThat(row).contains("actor-two","reason-two",label,"2026-10-09 10:42:12");
+        assertThat(body).contains("SMTP_SEND_FAILED");
+    }
+    @ParameterizedTest @CsvSource({"NOT_EXHAUSTED,元通知が再試行上限到達ではありません","DELIVERY_UNCERTAIN,結果不明または配送結果不確実のため再送できません","UNKNOWN_PRESENT,結果不明または配送結果不確実のため再送できません","HANDLING_RESOLVED,管理者対応が対応完了です","NOTIFICATION_DISABLED,通知機能がOFFです","LIMIT_REACHED,最大2回に到達しています","TOO_SOON,前回要求から30分経過していません","ACTIVE_REQUEST,手動再送処理中です","PREVIOUS_RESULT,前回要求が送信済み等のため再送できません","RISK_ACKNOWLEDGEMENT_REQUIRED,重複配信リスクの確認が必要です","STALE_SNAPSHOT,状態が更新されています。詳細を再読み込みしてください","NONCE_CONFLICT,再送要求の内容が一致しません。詳細を再読み込みしてください"})
+    void manualRejectionReasonHidesButton(PaymentAuditNotificationManualResendRejectedException.Reason reason,String message) throws Exception {
+        assertThat(manualHtml(manualView(false,true,reason,List.of()))).contains(message,"手動再送要求履歴はありません。").doesNotContain("/42/manual-resend?");
+    }
+    @Test void manualSigningUnavailableRemainsReadOnly() throws Exception {
+        assertThat(manualHtml(manualView(true,false,null,List.of()))).contains("署名鍵未設定のため閲覧のみ可能です。").doesNotContain("/42/manual-resend?");
+    }
+    @Test void eligibleManualButtonPreservesReturnRoute() throws Exception {
+        assertThat(manualHtml(manualView(true,true,null,List.of()))).contains("/42/manual-resend?returnUrl=","手動再送要求履歴はありません。");
     }
 }
