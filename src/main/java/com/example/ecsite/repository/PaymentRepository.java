@@ -19,6 +19,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     List<Payment> findByOrderIdOrderByCreatedAtAscIdAsc(Long orderId);
 
+    /** Start callers must lock Order first; lock payments in stable ID order. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Payment p where p.order.id = :orderId order by p.id asc")
+    List<Payment> findByOrderIdForUpdate(@Param("orderId") Long orderId);
+
     Optional<Payment> findByProviderAndProviderPaymentId(
             PaymentProvider provider,
             String providerPaymentId);

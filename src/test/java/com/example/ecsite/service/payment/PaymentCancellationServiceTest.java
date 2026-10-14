@@ -53,7 +53,8 @@ class PaymentCancellationServiceTest {
                 30L,
                 40L,
                 "pf_test_123",
-                "cancel-key-123");
+                "cancel-key-123",
+                PaymentStartDisposition.NEW);
 
         CancellationResult result = new CancellationResult(
                 CancellationResultStatus.CANCELLED,
@@ -120,7 +121,8 @@ class PaymentCancellationServiceTest {
                 30L,
                 40L,
                 "pf_test_123",
-                "cancel-key-123");
+                "cancel-key-123",
+                PaymentStartDisposition.NEW);
 
         when(startService.start(
                 orderId,
@@ -149,5 +151,26 @@ class PaymentCancellationServiceTest {
                         org.mockito.ArgumentMatchers.anyLong(),
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void reusedPendingRetrievesSuccessWithoutPosting() {
+        String providerId = "pf_existing";
+        when(startService.start(10L, 30L, "user")).thenReturn(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED));
+        when(paymentGateway.retrievePaymentFlow(providerId)).thenReturn(
+                new com.example.ecsite.payment.PaymentFlowState(providerId,
+                        com.example.ecsite.payment.PaymentFlowStatus.CANCELED, null, null));
+        assertEquals(CancellationResultStatus.CANCELLED, service.cancelForUser(10L, 30L, "user").status());
+        verify(paymentGateway, never()).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        verify(paymentGateway).retrievePaymentFlow(providerId);
+    }
+
+    @Test
+    void reusedPendingWithoutProviderIdStopsWithoutPosting() {
+        String providerId = null;
+        when(startService.start(10L, 30L, "user")).thenReturn(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.cancelForUser(10L, 30L, "user"));
+        org.mockito.Mockito.verifyNoInteractions(paymentGateway, resultService);
     }
 }

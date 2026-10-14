@@ -52,7 +52,8 @@ class PaymentCaptureServiceTest {
                 40L,
                 "pf_test_123",
                 5_500,
-                "capture-key-123");
+                "capture-key-123",
+                PaymentStartDisposition.NEW);
 
         CaptureResult result = new CaptureResult(
                 CaptureResultStatus.CAPTURED,
@@ -123,7 +124,8 @@ class PaymentCaptureServiceTest {
                 40L,
                 "pf_test_123",
                 5_500,
-                "capture-key-123");
+                "capture-key-123",
+                PaymentStartDisposition.NEW);
 
         when(startService.start(
                 orderId,
@@ -161,5 +163,26 @@ class PaymentCaptureServiceTest {
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void reusedPendingRetrievesSuccessWithoutPosting() {
+        String providerId = "pf_existing";
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(new PaymentCaptureStart(20L, 40L, providerId, 5500, "saved-key", PaymentStartDisposition.REUSED));
+        when(paymentGateway.retrievePaymentFlow(providerId)).thenReturn(
+                new com.example.ecsite.payment.PaymentFlowState(providerId,
+                        com.example.ecsite.payment.PaymentFlowStatus.SUCCEEDED, null, null));
+        assertEquals(CaptureResultStatus.CAPTURED, service.captureForShipment(10L, 30L, "admin", null).status());
+        verify(paymentGateway, never()).capture(org.mockito.ArgumentMatchers.any());
+        verify(paymentGateway).retrievePaymentFlow(providerId);
+    }
+
+    @Test
+    void reusedPendingWithoutProviderIdStopsWithoutPosting() {
+        String providerId = null;
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(new PaymentCaptureStart(20L, 40L, providerId, 5500, "saved-key", PaymentStartDisposition.REUSED));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.captureForShipment(10L, 30L, "admin", null));
+        org.mockito.Mockito.verifyNoInteractions(paymentGateway, resultService);
     }
 }

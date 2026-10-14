@@ -57,7 +57,8 @@ class PaymentCaptureStartServiceTest {
                 30L,
                 "pf_test_123",
                 5_500,
-                "capture-key-123");
+                "capture-key-123",
+                PaymentStartDisposition.NEW);
 
         when(paymentService.startCapture(
                 org.mockito.ArgumentMatchers.eq(order),

@@ -256,7 +256,7 @@ public class CheckoutController {
 
                 return "redirect:/checkout/payment";
 
-            } catch (PaymentGatewayException ex) {
+            } catch (PaymentGatewayException | IllegalStateException ex) {
 
                 redirectAttributes.addFlashAttribute(
                         "errorMessage",

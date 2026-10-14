@@ -63,7 +63,8 @@ class PaymentCancellationStartServiceTest {
                 30L,
                 40L,
                 "pf_test_123",
-                "cancel-key-123");
+                "cancel-key-123",
+                PaymentStartDisposition.NEW);
 
         when(orderRepository.findByIdAndUserIdForUpdate(
                 orderId,

@@ -1,6 +1,7 @@
 package com.example.ecsite.service.payment;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -49,7 +50,8 @@ class AdminPaymentCancellationServiceTest {
                 paymentId,
                 100L,
                 "payjp-payment-id",
-                "idempotency-key");
+                "idempotency-key",
+                PaymentStartDisposition.NEW);
 
         CancellationResult result = new CancellationResult(
                 CancellationResultStatus.CANCELLED,
@@ -103,7 +105,8 @@ class AdminPaymentCancellationServiceTest {
                 10L,
                 100L,
                 "payjp-payment-id",
-                "idempotency-key");
+                "idempotency-key",
+                PaymentStartDisposition.NEW);
 
         when(startService.start(
                 orderId,
@@ -135,5 +138,26 @@ class AdminPaymentCancellationServiceTest {
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void reusedPendingRetrievesSuccessWithoutPosting() {
+        String providerId = "pf_existing";
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED));
+        when(paymentGateway.retrievePaymentFlow(providerId)).thenReturn(
+                new com.example.ecsite.payment.PaymentFlowState(providerId,
+                        com.example.ecsite.payment.PaymentFlowStatus.CANCELED, null, null));
+        assertEquals(CancellationResultStatus.CANCELLED, service.cancel(10L, 30L, "admin", null).status());
+        verify(paymentGateway, never()).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        verify(paymentGateway).retrievePaymentFlow(providerId);
+    }
+
+    @Test
+    void reusedPendingWithoutProviderIdStopsWithoutPosting() {
+        String providerId = null;
+        when(startService.start(10L, 30L, "admin", null)).thenReturn(new PaymentCancellationStart(20L, 40L, providerId, "saved-key", PaymentStartDisposition.REUSED));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> service.cancel(10L, 30L, "admin", null));
+        org.mockito.Mockito.verifyNoInteractions(paymentGateway, resultService);
     }
 }

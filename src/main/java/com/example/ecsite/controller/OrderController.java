@@ -315,7 +315,7 @@ public class OrderController {
 
             return "redirect:/orders/" + id;
 
-        } catch (PaymentGatewayException ex) {
+        } catch (PaymentGatewayException | IllegalStateException ex) {
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",

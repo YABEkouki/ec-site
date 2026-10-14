@@ -66,23 +66,30 @@ public class PaymentService {
     public PaymentAuthorizationStart startAuthorization(Order order) {
 
         List<Payment> payments = paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(
+                .findByOrderIdForUpdate(
                         order.getId());
+        validateInactivePayments(payments);
 
-        List<Payment> pendingPayments = payments.stream()
-                .filter(payment -> payment.getProvider() == PaymentProvider.PAYJP)
-                .filter(payment -> payment.getPaymentMethod() == PaymentMethod.CARD)
-                .filter(payment -> payment.getStatus() == PaymentStatus.PENDING)
+        List<Payment> activePayments = payments.stream()
+                .filter(payment -> payment.getStatus() != PaymentStatus.FAILED
+                        && payment.getStatus() != PaymentStatus.CANCELLED)
                 .toList();
 
-        if (pendingPayments.size() > 1) {
+        if (activePayments.size() > 1) {
             throw new IllegalStateException(
                     "複数の処理中決済が存在するため、与信を開始できません。");
         }
 
-        if (pendingPayments.size() == 1) {
+        if (activePayments.size() == 1) {
 
-            Payment payment = pendingPayments.getFirst();
+            Payment payment = activePayments.getFirst();
+            if (payment.getProvider() != PaymentProvider.PAYJP
+                    || payment.getPaymentMethod() != PaymentMethod.CARD
+                    || (payment.getStatus() != PaymentStatus.PENDING
+                        && payment.getStatus() != PaymentStatus.REQUIRES_ACTION)) {
+                throw new IllegalStateException("既存の有効な決済があるため、新しい与信を開始できません。");
+            }
+            validatePendingOperations(payment, PaymentTransactionType.AUTHORIZE);
 
             PaymentTransaction transaction = paymentTransactionRepository
                     .findByPaymentIdAndTransactionTypeAndStatus(
@@ -92,11 +99,13 @@ public class PaymentService {
                     .orElseThrow(() -> new IllegalStateException(
                             "処理中決済に対応する与信操作が見つかりません。"));
 
+            validatePendingSnapshot(order, payment, transaction, true);
             return new PaymentAuthorizationStart(
                     payment.getId(),
                     transaction.getId(),
                     payment.getAmount(),
-                    transaction.getIdempotencyKey());
+                    transaction.getIdempotencyKey(),
+                    PaymentStartDisposition.REUSED);
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
@@ -124,7 +133,8 @@ public class PaymentService {
                 payment.getId(),
                 transaction.getId(),
                 payment.getAmount(),
-                transaction.getIdempotencyKey());
+                transaction.getIdempotencyKey(),
+                PaymentStartDisposition.NEW);
     }
 
     @Transactional(readOnly = true)
@@ -367,8 +377,9 @@ public class PaymentService {
             PaymentTransactionInitiator initiator) {
 
         List<Payment> payments = paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(
+                .findByOrderIdForUpdate(
                         order.getId());
+        validateInactivePayments(payments);
 
         List<Payment> authorizedPayments = payments.stream()
                 .filter(payment -> payment.getStatus() == PaymentStatus.AUTHORIZED)
@@ -384,7 +395,12 @@ public class PaymentService {
                     "複数の与信済み決済が存在するため、発送できません。");
         }
 
+        validateSingleActivePayment(payments);
         Payment payment = authorizedPayments.getFirst();
+        if (payment.getStatus() != PaymentStatus.AUTHORIZED) {
+            throw new IllegalStateException("与信済み決済ではありません。");
+        }
+        validatePendingOperations(payment, PaymentTransactionType.CAPTURE);
 
         if (payment.getProvider() != PaymentProvider.PAYJP
                 || payment.getPaymentMethod() != PaymentMethod.CARD) {
@@ -425,13 +441,15 @@ public class PaymentService {
         if (existingTransaction.isPresent()) {
 
             PaymentTransaction transaction = existingTransaction.get();
+            validatePendingSnapshot(order, payment, transaction, true);
 
             return new PaymentCaptureStart(
                     payment.getId(),
                     transaction.getId(),
                     providerPaymentId,
                     transaction.getAmount(),
-                    transaction.getIdempotencyKey());
+                    transaction.getIdempotencyKey(),
+                    PaymentStartDisposition.REUSED);
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
@@ -452,7 +470,8 @@ public class PaymentService {
                 transaction.getId(),
                 providerPaymentId,
                 transaction.getAmount(),
-                transaction.getIdempotencyKey());
+                transaction.getIdempotencyKey(),
+                PaymentStartDisposition.NEW);
     }
 
     @Transactional
@@ -512,14 +531,20 @@ public class PaymentService {
             Order order,
             PaymentTransactionInitiator initiator) {
 
-        List<Payment> payments = paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(
+        List<Payment> payments = paymentRepository.findByOrderIdForUpdate(
                 order.getId());
+        validateInactivePayments(payments);
 
+        validateSingleActivePayment(payments);
         Payment payment = payments.stream()
                 .filter(p -> p.getStatus() == PaymentStatus.AUTHORIZED)
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
                         "取消可能な与信済み決済が見つかりません。"));
+        if (!isAuthorizedCardPayment(payment)) {
+            throw new IllegalStateException("取消可能なカード与信ではありません。");
+        }
+        validatePendingOperations(payment, PaymentTransactionType.CANCEL);
 
         String providerPaymentId = payment.getProviderPaymentId();
 
@@ -551,12 +576,14 @@ public class PaymentService {
         if (existingTransaction.isPresent()) {
 
             PaymentTransaction transaction = existingTransaction.get();
+            validatePendingSnapshot(order, payment, transaction, false);
 
             return new PaymentCancellationStart(
                     payment.getId(),
                     transaction.getId(),
                     providerPaymentId,
-                    transaction.getIdempotencyKey());
+                    transaction.getIdempotencyKey(),
+                    PaymentStartDisposition.REUSED);
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
@@ -576,7 +603,8 @@ public class PaymentService {
                 payment.getId(),
                 transaction.getId(),
                 providerPaymentId,
-                transaction.getIdempotencyKey());
+                transaction.getIdempotencyKey(),
+                PaymentStartDisposition.NEW);
     }
 
     @Transactional
@@ -660,6 +688,45 @@ public class PaymentService {
 
         return payments.stream()
                 .anyMatch(this::isAuthorizedCardPayment);
+    }
+
+    private void validateInactivePayments(List<Payment> payments) {
+        for (Payment payment : payments) {
+            if ((payment.getStatus() == PaymentStatus.FAILED || payment.getStatus() == PaymentStatus.CANCELLED)
+                    && paymentTransactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(payment.getId())
+                        .stream().anyMatch(t -> t.getStatus() == PaymentTransactionStatus.PENDING)) {
+                throw new IllegalStateException("終了済み決済に処理中の操作が残っているため、決済操作を開始できません。");
+            }
+        }
+    }
+
+    private void validateSingleActivePayment(List<Payment> payments) {
+        long active = payments.stream()
+                .filter(p -> p.getStatus() != PaymentStatus.FAILED && p.getStatus() != PaymentStatus.CANCELLED)
+                .count();
+        if (active != 1) {
+            throw new IllegalStateException("有効な決済が一意でないため、決済操作を開始できません。");
+        }
+    }
+
+    private void validatePendingOperations(Payment payment, PaymentTransactionType type) {
+        List<PaymentTransaction> pending = paymentTransactionRepository
+                .findByPaymentIdOrderByCreatedAtAscIdAsc(payment.getId()).stream()
+                .filter(t -> t.getStatus() == PaymentTransactionStatus.PENDING).toList();
+        if (pending.size() > 1 || pending.stream().anyMatch(t -> t.getTransactionType() != type)) {
+            throw new IllegalStateException("競合する処理中の決済操作が存在します。");
+        }
+    }
+
+    private void validatePendingSnapshot(Order order, Payment payment,
+            PaymentTransaction transaction, boolean matchOrderAmount) {
+        int expectedAmount = matchOrderAmount ? order.getTotalAmount() : payment.getAmount();
+        if (transaction.getAmount() != expectedAmount
+                || transaction.getOrderContentRevision() != order.getContentRevision()
+                || (transaction.getTransactionType() == PaymentTransactionType.AUTHORIZE
+                    && payment.getAmount() != expectedAmount)) {
+            throw new IllegalStateException("処理中の決済操作と現在の注文内容が一致しません。");
+        }
     }
 
     private boolean isAuthorizedCardPayment(Payment payment) {

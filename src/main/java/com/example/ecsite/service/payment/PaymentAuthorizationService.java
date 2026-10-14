@@ -1,6 +1,8 @@
 package com.example.ecsite.service.payment;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.payment.AuthorizationPreparation;
@@ -11,17 +13,21 @@ import com.example.ecsite.payment.AuthorizationResultStatus;
 import com.example.ecsite.payment.PaymentGateway;
 
 @Service
+@Transactional(propagation = Propagation.NEVER)
 public class PaymentAuthorizationService {
 
+    private final PaymentAuthorizationStartService startService;
     private final PaymentService paymentService;
     private final PaymentGateway paymentGateway;
     private final PaymentAuthorizationResultService paymentAuthorizationResultService;
 
     public PaymentAuthorizationService(
+            PaymentAuthorizationStartService startService,
             PaymentService paymentService,
             PaymentGateway paymentGateway,
             PaymentAuthorizationResultService paymentAuthorizationResultService) {
 
+        this.startService = startService;
         this.paymentService = paymentService;
         this.paymentGateway = paymentGateway;
         this.paymentAuthorizationResultService = paymentAuthorizationResultService;
@@ -30,11 +36,19 @@ public class PaymentAuthorizationService {
     public PaymentAuthorizationPreparation prepareAuthorization(
             Order order) {
 
-        PaymentAuthorizationStart start = paymentService.startAuthorization(order);
+        PaymentAuthorizationStart start = startService.start(order.getId());
 
-        if (paymentService.findProviderPaymentId(start.paymentId()).isPresent()) {
-            throw new IllegalStateException(
-                    "決済プロバイダーIDが設定済みのため、新しい与信を開始できません。");
+        if (start.disposition() == PaymentStartDisposition.REUSED) {
+            String providerId = paymentService.findProviderPaymentId(start.paymentId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "決済開始結果が不明のため、カード与信の再送を停止しています。"));
+            AuthorizationRecovery recovery = paymentGateway.retrieveAuthorization(providerId);
+            paymentAuthorizationResultService.apply(order.getId(), start.paymentId(), recovery.result());
+            if (recovery.result().status() == AuthorizationResultStatus.AUTHORIZED
+                    || recovery.result().status() == AuthorizationResultStatus.FAILED) {
+                throw new IllegalStateException("カード与信は確定済みです。注文詳細を確認してください。");
+            }
+            return new PaymentAuthorizationPreparation(start.paymentId(), recovery.clientSecret());
         }
 
         AuthorizationPreparation preparation = paymentGateway.prepareAuthorization(

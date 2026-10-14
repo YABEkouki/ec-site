@@ -78,10 +78,10 @@ class PaymentServiceTest {
         when(order.getId()).thenReturn(100L);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of());
 
-        paymentService.startAuthorization(order);
+        PaymentAuthorizationStart result = paymentService.startAuthorization(order);
 
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
 
@@ -117,6 +117,7 @@ class PaymentServiceTest {
         assertEquals(
                 transaction.getIdempotencyKey().trim(),
                 transaction.getIdempotencyKey());
+        assertEquals(PaymentStartDisposition.NEW, result.disposition());
     }
 
     @Test
@@ -142,7 +143,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -175,6 +176,7 @@ class PaymentServiceTest {
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
+        assertEquals(PaymentStartDisposition.REUSED, result.disposition());
     }
 
     @Test
@@ -188,7 +190,7 @@ class PaymentServiceTest {
         Payment payment2 = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(
                         payment1,
                         payment2));
@@ -211,7 +213,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -729,7 +731,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(2026, 10, 1, 9, 20));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -793,6 +795,7 @@ class PaymentServiceTest {
         assertEquals(
                 transaction.getIdempotencyKey(),
                 result.idempotencyKey());
+        assertEquals(PaymentStartDisposition.NEW, result.disposition());
     }
 
     @Test
@@ -801,6 +804,7 @@ class PaymentServiceTest {
         Order order = mock(Order.class);
 
         when(order.getId()).thenReturn(100L);
+        when(order.getContentRevision()).thenReturn(2);
 
         Payment payment = createPayment(order);
 
@@ -821,7 +825,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -845,6 +849,7 @@ class PaymentServiceTest {
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
+        assertEquals(PaymentStartDisposition.REUSED, result.disposition());
     }
 
     @Test
@@ -857,7 +862,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         assertThrows(
@@ -993,7 +998,7 @@ class PaymentServiceTest {
                 3);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1071,6 +1076,7 @@ class PaymentServiceTest {
         assertEquals(
                 transaction.getIdempotencyKey(),
                 result.idempotencyKey());
+        assertEquals(PaymentStartDisposition.NEW, result.disposition());
     }
 
     @Test
@@ -1106,7 +1112,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1144,6 +1150,7 @@ class PaymentServiceTest {
 
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
+        assertEquals(PaymentStartDisposition.REUSED, result.disposition());
     }
 
     @Test
@@ -1179,7 +1186,7 @@ class PaymentServiceTest {
                         2026, 10, 1, 9, 30));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1216,7 +1223,7 @@ class PaymentServiceTest {
         Payment payment = createPayment(order);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         assertThrows(
@@ -1246,7 +1253,7 @@ class PaymentServiceTest {
                 LocalDateTime.of(2026, 10, 1, 9, 25));
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(
                         payment1,
                         payment2));
@@ -1844,7 +1851,7 @@ class PaymentServiceTest {
                 0);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1894,7 +1901,7 @@ class PaymentServiceTest {
                 0);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
@@ -1938,7 +1945,7 @@ class PaymentServiceTest {
                 0);
 
         when(paymentRepository
-                .findByOrderIdOrderByCreatedAtAscIdAsc(100L))
+                .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of(payment));
 
         when(paymentTransactionRepository
