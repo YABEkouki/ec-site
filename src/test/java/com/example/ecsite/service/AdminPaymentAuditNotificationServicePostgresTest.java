@@ -18,6 +18,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
@@ -40,6 +41,7 @@ import com.example.ecsite.support.*;
 @Import({AdminPaymentAuditNotificationService.class,AdminPaymentAuditNotificationServicePostgresTest.Config.class})
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AdminPaymentAuditNotificationServicePostgresTest {
     @TestConfiguration static class Config {
         @Bean LocalValidatorFactoryBean validator() { return new LocalValidatorFactoryBean(); }

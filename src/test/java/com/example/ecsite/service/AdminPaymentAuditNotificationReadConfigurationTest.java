@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.*;
@@ -18,6 +19,7 @@ import com.example.ecsite.support.PaymentAuditNotificationHistoryFixtures;
 @SpringBootTest(properties={"app.payment.discrepancy-audit.notification.enabled=false","app.payment.discrepancy-audit.enabled=false",
     "app.payment.reconciliation.enabled=false","spring.jpa.hibernate.ddl-auto=validate","spring.jpa.show-sql=false"})
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AdminPaymentAuditNotificationReadConfigurationTest {
     @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17");
     @DynamicPropertySource static void database(DynamicPropertyRegistry r) {

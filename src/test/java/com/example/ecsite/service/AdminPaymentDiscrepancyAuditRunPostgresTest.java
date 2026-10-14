@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.hamcrest.Matchers.containsString;
 import com.example.ecsite.controller.AdminPaymentDiscrepancyAuditRunController;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import org.thymeleaf.spring6.view.ThymeleafViewResolver;
@@ -36,6 +37,7 @@ import com.example.ecsite.service.payment.PaymentDiscrepancyAuditRunSummary;
 @AutoConfigureTestDatabase(replace=AutoConfigureTestDatabase.Replace.NONE)
 @Import({AdminPaymentDiscrepancyAuditRunService.class,AdminPaymentDiscrepancyAuditRunPostgresTest.Time.class})
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AdminPaymentDiscrepancyAuditRunPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
         .withDatabaseName("feature114_monitoring").withUsername("test").withPassword("test");
