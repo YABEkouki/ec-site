@@ -27,6 +27,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -65,6 +66,7 @@ import com.example.ecsite.service.payment.PaymentDiscrepancyConcurrencyPostgresT
         AdminPaymentDiscrepancyService.class, PaymentDiscrepancyConcurrencyPostgresTest.SynchronizationConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentDiscrepancyOptimisticLockPostgresTest {
     private static final LocalDateTime CREATED = LocalDateTime.of(2026, 10, 5, 10, 0);
     private static final LocalDateTime AUDITED = LocalDateTime.of(2026, 10, 6, 12, 0);

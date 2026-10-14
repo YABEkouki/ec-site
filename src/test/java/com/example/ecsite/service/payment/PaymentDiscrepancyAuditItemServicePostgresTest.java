@@ -34,6 +34,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -85,6 +86,7 @@ import jakarta.persistence.EntityManager;
         PaymentDiscrepancyAuditItemServicePostgresTest.ClockConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentDiscrepancyAuditItemServicePostgresTest {
 
     private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 10, 5, 10, 0);

@@ -18,6 +18,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.*;
@@ -37,6 +38,7 @@ import com.example.ecsite.repository.*;
     PaymentAuditNotificationDeliveryPostgresTest.Config.class})
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentAuditNotificationDeliveryPostgresTest {
     @TestConfiguration @EnableConfigurationProperties(PaymentDiscrepancyAuditNotificationProperties.class) static class Config {
         @Bean PaymentDiscrepancyAuditNotificationMailClient client() {return mock(PaymentDiscrepancyAuditNotificationMailClient.class);}

@@ -13,6 +13,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.*;
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.*;
 @Import({AdminPaymentAuditNotificationHandlingService.class,AdminPaymentAuditNotificationService.class,PaymentAuditNotificationHandlingPostgresTest.Config.class})
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentAuditNotificationHandlingPostgresTest {
  @Container static final PostgreSQLContainer DB=new PostgreSQLContainer("postgres:17").withDatabaseName("feature117_isolated");
  @DynamicPropertySource static void database(DynamicPropertyRegistry r) {

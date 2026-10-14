@@ -22,6 +22,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -46,6 +47,7 @@ import com.example.ecsite.service.AdminPaymentDiscrepancyAuditRunService;
     AdminPaymentDiscrepancyAuditRunService.class, PaymentAuditNotificationObservationPostgresTest.Config.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentAuditNotificationObservationPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
         .withCommand("postgres", "-c", "lock_timeout=10000", "-c", "statement_timeout=15000")

@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,6 +25,7 @@ import com.example.ecsite.service.payment.*;
     "app.payment.reconciliation.enabled=false","spring.jpa.hibernate.ddl-auto=validate","spring.jpa.show-sql=false"})
 @AutoConfigureMockMvc
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AdminPaymentAuditNotificationControllerPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17");
     @DynamicPropertySource static void database(DynamicPropertyRegistry r) {

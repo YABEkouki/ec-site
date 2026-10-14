@@ -47,6 +47,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -101,6 +102,7 @@ import jakarta.persistence.OptimisticLockException;
         AdminPaymentDiscrepancyService.class, PaymentDiscrepancyConcurrencyPostgresTest.SynchronizationConfiguration.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentDiscrepancyConcurrencyPostgresTest {
 
     private static final int TIMEOUT_SECONDS = 20;
