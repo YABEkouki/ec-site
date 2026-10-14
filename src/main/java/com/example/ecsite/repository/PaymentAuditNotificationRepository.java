@@ -45,10 +45,13 @@ public interface PaymentAuditNotificationRepository extends JpaRepository<Paymen
             function('cardinality', n.recipients) as recipientCount,
             h.handlingStatus as handlingStatus, h.updatedAt as handlingUpdatedAt,
             case when h.handlingStatus = com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.RESOLVED
-                and exists (select a.id from PaymentAuditNotificationAttempt a
+                and (exists (select a.id from PaymentAuditNotificationAttempt a
                     where a.notification.id = n.id and a.result = com.example.ecsite.entity.PaymentAuditNotificationAttemptResult.UNKNOWN
                     and not exists (select u.historyId from PaymentAuditNotificationHandlingHistoryUnknown u
-                        where u.historyId = h.lastResolvedHistoryId and u.notificationId = n.id and u.attemptNo = a.attemptNo)) then true else false end as requiresRecheck
+                        where u.historyId = h.lastResolvedHistoryId and u.notificationId = n.id and u.attemptNo = a.attemptNo)) or exists (select m.id from PaymentAuditNotificationManualResendAttempt m
+                    where m.notificationId = n.id and m.result = com.example.ecsite.entity.PaymentAuditNotificationAttemptResult.UNKNOWN
+                    and not exists (select v.historyId from PaymentAuditNotificationHandlingHistoryManualUnknown v
+                        where v.historyId = h.lastResolvedHistoryId and v.notificationId = n.id and v.manualAttemptId = m.id))) then true else false end as requiresRecheck
         from PaymentAuditNotification n left join PaymentAuditNotificationHandling h on h.notificationId = n.id
         where (:notificationId is null or n.id = :notificationId)
           and (:status is null or n.status = :status)
@@ -56,10 +59,13 @@ public interface PaymentAuditNotificationRepository extends JpaRepository<Paymen
           and (cast(:toExclusive as timestamp) is null or n.createdAt < :toExclusive)
           and (:handlingStatus is null or coalesce(h.handlingStatus, com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.UNREVIEWED) = :handlingStatus)
           and (:actionableOnly = false or n.status = com.example.ecsite.entity.PaymentAuditNotificationStatus.EXHAUSTED or n.deliveryUncertain = true)
-          and (:requiresRecheck = false or (h.handlingStatus = com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.RESOLVED and exists (select a.id from PaymentAuditNotificationAttempt a
+          and (:requiresRecheck = false or (h.handlingStatus = com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.RESOLVED and (exists (select a.id from PaymentAuditNotificationAttempt a
                     where a.notification.id = n.id and a.result = com.example.ecsite.entity.PaymentAuditNotificationAttemptResult.UNKNOWN
                     and not exists (select u.historyId from PaymentAuditNotificationHandlingHistoryUnknown u
-                        where u.historyId = h.lastResolvedHistoryId and u.notificationId = n.id and u.attemptNo = a.attemptNo))))
+                        where u.historyId = h.lastResolvedHistoryId and u.notificationId = n.id and u.attemptNo = a.attemptNo)) or exists (select m.id from PaymentAuditNotificationManualResendAttempt m
+                    where m.notificationId = n.id and m.result = com.example.ecsite.entity.PaymentAuditNotificationAttemptResult.UNKNOWN
+                    and not exists (select v.historyId from PaymentAuditNotificationHandlingHistoryManualUnknown v
+                        where v.historyId = h.lastResolvedHistoryId and v.notificationId = n.id and v.manualAttemptId = m.id)))))
           and (:warningType is null or exists (
               select i.id from PaymentAuditNotificationItem i
               where i.notification = n and i.state.warningType = :warningType))
@@ -72,10 +78,13 @@ public interface PaymentAuditNotificationRepository extends JpaRepository<Paymen
           and (cast(:toExclusive as timestamp) is null or n.createdAt < :toExclusive)
           and (:handlingStatus is null or coalesce(h.handlingStatus, com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.UNREVIEWED) = :handlingStatus)
           and (:actionableOnly = false or n.status = com.example.ecsite.entity.PaymentAuditNotificationStatus.EXHAUSTED or n.deliveryUncertain = true)
-          and (:requiresRecheck = false or (h.handlingStatus = com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.RESOLVED and exists (select a.id from PaymentAuditNotificationAttempt a
+          and (:requiresRecheck = false or (h.handlingStatus = com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.RESOLVED and (exists (select a.id from PaymentAuditNotificationAttempt a
                     where a.notification.id = n.id and a.result = com.example.ecsite.entity.PaymentAuditNotificationAttemptResult.UNKNOWN
                     and not exists (select u.historyId from PaymentAuditNotificationHandlingHistoryUnknown u
-                        where u.historyId = h.lastResolvedHistoryId and u.notificationId = n.id and u.attemptNo = a.attemptNo))))
+                        where u.historyId = h.lastResolvedHistoryId and u.notificationId = n.id and u.attemptNo = a.attemptNo)) or exists (select m.id from PaymentAuditNotificationManualResendAttempt m
+                    where m.notificationId = n.id and m.result = com.example.ecsite.entity.PaymentAuditNotificationAttemptResult.UNKNOWN
+                    and not exists (select v.historyId from PaymentAuditNotificationHandlingHistoryManualUnknown v
+                        where v.historyId = h.lastResolvedHistoryId and v.notificationId = n.id and v.manualAttemptId = m.id)))))
           and (:warningType is null or exists (
               select i.id from PaymentAuditNotificationItem i
               where i.notification = n and i.state.warningType = :warningType))

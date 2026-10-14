@@ -56,7 +56,7 @@ public final class IsolatedBrowserLauncher {
                 String base="http://127.0.0.1:"+port;
                 var jdbc=context.getBean(JdbcTemplate.class);
                 if(!jdbc.queryForObject("select current_database()",String.class).equals(db.getDatabaseName())) throw new IllegalStateException();
-                if(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)!=51) throw new IllegalStateException();
+                if(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)!=52) throw new IllegalStateException();
                 if(!context.getBeansOfType(com.example.ecsite.service.payment.PaymentAuditNotificationScheduler.class).isEmpty()
                     || !context.getBeansOfType(com.example.ecsite.service.payment.PaymentDiscrepancyAuditScheduler.class).isEmpty()
                     || !context.getBeansOfType(com.example.ecsite.service.payment.PaymentReconciliationScheduler.class).isEmpty()) throw new IllegalStateException();
@@ -75,7 +75,7 @@ public final class IsolatedBrowserLauncher {
                 Files.setPosixFilePermissions(access,PosixFilePermissions.fromString("rw-------"));
                 Path cleanupDir=privateDir;
                 Runtime.getRuntime().addShutdownHook(new Thread(()->removePrivateFiles(cleanupDir),"browser117-credentials-cleanup"));
-                System.out.println("Browser117 isolated environment ready: 24 notifications; schema V51 validated; schedulers OFF.");
+                System.out.println("Browser117 isolated environment ready: 24 notifications; schema V52 validated; schedulers OFF.");
                 if(check) System.out.println("Limited startup check complete; app and database will now be removed.");
                 else {
                     System.out.println("Login information is in a private file: "+access+" (not printed here). Stop with Ctrl-C.");

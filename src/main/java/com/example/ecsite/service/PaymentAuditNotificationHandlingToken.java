@@ -25,17 +25,30 @@ public class PaymentAuditNotificationHandlingToken {
         catch(IllegalArgumentException e) { throw new IllegalArgumentException("Invalid handling signing key configuration"); }
         if(key.length<32) throw new IllegalArgumentException("Handling signing key must contain at least 32 bytes");
     }
-    public record Snapshot(boolean handlingExists,long version,List<Integer> unknowns) {
-        public Snapshot { unknowns=List.copyOf(unknowns); }
+    public record Snapshot(boolean handlingExists,long version,List<Integer> unknowns,List<Long> manualUnknowns,
+        com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus handlingStatus) {
+        public Snapshot(boolean exists,long version,List<Integer> unknowns){this(exists,version,unknowns,List.of(),com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.UNREVIEWED);}
+        public Snapshot { unknowns=List.copyOf(unknowns); manualUnknowns=List.copyOf(manualUnknowns); }
     }
     public String issue(long notificationId,long administratorId,boolean exists,long version,Collection<Integer> unknowns) {
+        return issue(notificationId,administratorId,exists,version,unknowns,List.of());
+    }
+    public String issue(long notificationId,long administratorId,boolean exists,long version,Collection<Integer> unknowns,Collection<Long> manualUnknowns) {
+        return issue(notificationId,administratorId,exists,version,com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.UNREVIEWED,unknowns,manualUnknowns);
+    }
+    public String issue(long notificationId,long administratorId,boolean exists,long version,
+        com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus status,Collection<Integer> unknowns,Collection<Long> manualUnknowns) {
         requireKey();
+        if(status==null || !exists && status!=com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.UNREVIEWED) throw invalid();
         if(notificationId<=0 || administratorId<=0 || version<0 || !exists && version!=0) throw invalid();
         var sorted=new TreeSet<>(unknowns);
         if(sorted.stream().anyMatch(n->n<1 || n>10)) throw invalid();
+        var manualSorted=new TreeSet<>(manualUnknowns);
+        if(manualSorted.stream().anyMatch(n->n<1)) throw invalid();
         long issued=clock.instant().getEpochSecond();
         String numbers=String.join(",",sorted.stream().map(String::valueOf).toList());
-        String payload="1|"+notificationId+"|"+administratorId+"|"+exists+"|"+version+"|"+numbers+"|"+issued+"|"+(issued+900);
+        String manualNumbers=String.join(",",manualSorted.stream().map(String::valueOf).toList());
+        String payload="handling-v2|"+notificationId+"|"+administratorId+"|"+exists+"|"+version+"|"+status.name()+"|"+numbers+"|"+manualNumbers+"|"+issued+"|"+(issued+900);
         byte[] bytes=payload.getBytes(StandardCharsets.UTF_8);
         return encode(bytes)+"."+encode(sign(bytes));
     }
@@ -49,14 +62,18 @@ public class PaymentAuditNotificationHandlingToken {
             byte[] signature=Base64.getUrlDecoder().decode(parts[1]);
             if(!encode(payload).equals(parts[0]) || !encode(signature).equals(parts[1]) || !MessageDigest.isEqual(sign(payload),signature)) throw invalid();
             String[] f=new String(payload,StandardCharsets.UTF_8).split("\\|",-1);
-            if(f.length!=8 || !f[0].equals("1") || Long.parseLong(f[1])!=notificationId || Long.parseLong(f[2])!=administratorId
+            if(f.length!=10 || !f[0].equals("handling-v2") || Long.parseLong(f[1])!=notificationId || Long.parseLong(f[2])!=administratorId
                 || !Set.of("true","false").contains(f[3])) throw invalid();
             boolean exists=Boolean.parseBoolean(f[3]); long version=Long.parseLong(f[4]);
-            long issued=Long.parseLong(f[6]), expires=Long.parseLong(f[7]), now=clock.instant().getEpochSecond();
+            long issued=Long.parseLong(f[8]), expires=Long.parseLong(f[9]), now=clock.instant().getEpochSecond();
             if(version<0 || !exists && version!=0 || issued>now || expires-issued!=900 || now>=expires) throw invalid();
-            List<Integer> numbers=f[5].isEmpty()?List.of():Arrays.stream(f[5].split(",",-1)).map(Integer::valueOf).toList();
+            List<Integer> numbers=f[6].isEmpty()?List.of():Arrays.stream(f[6].split(",",-1)).map(Integer::valueOf).toList();
             if(numbers.stream().anyMatch(n->n<1 || n>10) || !numbers.equals(new ArrayList<>(new TreeSet<>(numbers)))) throw invalid();
-            return new Snapshot(exists,version,numbers);
+            var status=com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.valueOf(f[5]);
+            if(!exists && status!=com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.UNREVIEWED) throw invalid();
+            List<Long> manualNumbers=f[7].isEmpty()?List.of():Arrays.stream(f[7].split(",",-1)).map(Long::valueOf).toList();
+            if(manualNumbers.stream().anyMatch(n->n<1) || !manualNumbers.equals(new ArrayList<>(new TreeSet<>(manualNumbers)))) throw invalid();
+            return new Snapshot(exists,version,numbers,manualNumbers,status);
         } catch(RuntimeException e) { throw invalid(); }
     }
     public boolean isConfigured() { return key != null; }

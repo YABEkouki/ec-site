@@ -22,9 +22,11 @@ class AdminPaymentAuditNotificationHandlingReadTest {
     PaymentAuditNotificationHandlingRepository handlings=mock(PaymentAuditNotificationHandlingRepository.class);
     PaymentAuditNotificationHandlingHistoryRepository histories=mock(PaymentAuditNotificationHandlingHistoryRepository.class);
     PaymentAuditNotificationHandlingHistoryUnknownRepository unknowns=mock(PaymentAuditNotificationHandlingHistoryUnknownRepository.class);
+    PaymentAuditNotificationManualResendAttemptRepository manualAttempts=mock(PaymentAuditNotificationManualResendAttemptRepository.class);
+    PaymentAuditNotificationHandlingHistoryManualUnknownRepository manualUnknowns=mock(PaymentAuditNotificationHandlingHistoryManualUnknownRepository.class);
     Validator validator=mock(Validator.class);
     PaymentAuditNotificationHandlingToken tokens=new PaymentAuditNotificationHandlingToken("",Clock.systemUTC());
-    AdminPaymentAuditNotificationService service() {return new AdminPaymentAuditNotificationService(notifications,items,attempts,validator,handlings,histories,unknowns,tokens);}
+    AdminPaymentAuditNotificationService service() {return new AdminPaymentAuditNotificationService(notifications,items,attempts,validator,handlings,histories,unknowns,tokens,manualAttempts,manualUnknowns);}
     AdminPaymentAuditNotificationProjection detail(PaymentAuditNotificationStatus status,boolean uncertain) {
         var n=mock(AdminPaymentAuditNotificationProjection.class);
         when(n.getId()).thenReturn(1L);when(n.getStatus()).thenReturn(status);when(n.getDeliveryUncertain()).thenReturn(uncertain);
@@ -77,5 +79,17 @@ class AdminPaymentAuditNotificationHandlingReadTest {
         var result=service().search(form,-1,50);assertThat(result.getTotalElements()).isZero();assertThat(result.getSize()).isEqualTo(50);
         verify(notifications).searchForAdmin(eq(1L),eq(PaymentAuditNotificationStatus.SENT),eq(PaymentAuditNotificationWarningType.LATEST_FAILURE),eq(from),eq(to),eq(PaymentAuditNotificationHandlingStatus.RESOLVED),eq(true),eq(true),eq(PageRequest.of(0,50)));
         verifyNoInteractions(histories,handlings,unknowns,items);
+    }
+    @Test void manualOnlyRecheckAndTokenPreserveSeparateIds() {
+        detail(PaymentAuditNotificationStatus.EXHAUSTED,false);
+        var h=new PaymentAuditNotificationHandling();h.setHandlingStatus(PaymentAuditNotificationHandlingStatus.RESOLVED);h.setLastResolvedHistoryId(10L);
+        when(handlings.findById(1L)).thenReturn(Optional.of(h));
+        when(manualAttempts.findUnknownIdsByNotificationId(1L)).thenReturn(List.of(5L,1L,5L));
+        var member=new PaymentAuditNotificationHandlingHistoryManualUnknown();member.setManualAttemptId(5L);
+        when(manualUnknowns.findByHistoryIdOrderByManualAttemptIdAsc(10L)).thenReturn(List.of(member));
+        tokens=new PaymentAuditNotificationHandlingToken(Base64.getEncoder().encodeToString(new byte[32]),Clock.systemUTC());
+        var result=service().findById(1L,2L).handling();assertThat(result.currentUnknowns()).isEmpty();assertThat(result.currentManualUnknowns()).containsExactly(1L,5L);assertThat(result.confirmedManualUnknowns()).containsExactly(5L);assertThat(result.requiresRecheck()).isTrue();
+        assertThat(tokens.verify(result.snapshotToken(),1,2).manualUnknowns()).containsExactly(1L,5L);
+        when(manualAttempts.findUnknownIdsByNotificationId(1L)).thenReturn(List.of(5L));assertThat(service().findById(1L).handling().requiresRecheck()).isFalse();
     }
 }

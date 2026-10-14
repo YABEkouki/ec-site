@@ -32,6 +32,8 @@ public class AdminPaymentAuditNotificationService {
     private final PaymentAuditNotificationHandlingHistoryRepository handlingHistories;
     private final PaymentAuditNotificationHandlingHistoryUnknownRepository handlingUnknowns;
     private final PaymentAuditNotificationHandlingToken tokens;
+    private final PaymentAuditNotificationManualResendAttemptRepository manualAttempts;
+    private final PaymentAuditNotificationHandlingHistoryManualUnknownRepository manualUnknowns;
 
     public AdminPaymentAuditNotificationService(PaymentAuditNotificationRepository notifications,
             PaymentAuditNotificationItemRepository items, PaymentAuditNotificationAttemptRepository attempts,
@@ -39,13 +41,21 @@ public class AdminPaymentAuditNotificationService {
         this(notifications,items,attempts,validator,null,null,null,null);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public AdminPaymentAuditNotificationService(PaymentAuditNotificationRepository notifications,
         PaymentAuditNotificationItemRepository items, PaymentAuditNotificationAttemptRepository attempts, Validator validator,
         PaymentAuditNotificationHandlingRepository handlings, PaymentAuditNotificationHandlingHistoryRepository histories,
         PaymentAuditNotificationHandlingHistoryUnknownRepository unknowns, @org.springframework.lang.Nullable PaymentAuditNotificationHandlingToken tokens) {
+        this(notifications,items,attempts,validator,handlings,histories,unknowns,tokens,null,null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public AdminPaymentAuditNotificationService(PaymentAuditNotificationRepository notifications,
+        PaymentAuditNotificationItemRepository items,PaymentAuditNotificationAttemptRepository attempts,Validator validator,
+        PaymentAuditNotificationHandlingRepository handlings,PaymentAuditNotificationHandlingHistoryRepository histories,
+        PaymentAuditNotificationHandlingHistoryUnknownRepository unknowns,@org.springframework.lang.Nullable PaymentAuditNotificationHandlingToken tokens,
+        PaymentAuditNotificationManualResendAttemptRepository manualAttempts,PaymentAuditNotificationHandlingHistoryManualUnknownRepository manualUnknowns) {
         this.notifications=notifications; this.items=items; this.attempts=attempts; this.validator=validator;
         this.handlings=handlings; this.handlingHistories=histories; this.handlingUnknowns=unknowns; this.tokens=tokens;
+        this.manualAttempts=manualAttempts; this.manualUnknowns=manualUnknowns;
     }
 
     public Page<AdminPaymentAuditNotificationListItem> search(AdminPaymentAuditNotificationSearchForm form,
@@ -129,13 +139,16 @@ public class AdminPaymentAuditNotificationService {
         List<Integer> confirmed=resolvedId==null || handlingUnknowns==null ? List.of()
             : handlingUnknowns.findByHistoryIdOrderByAttemptNoAsc(resolvedId).stream()
                 .map(com.example.ecsite.entity.PaymentAuditNotificationHandlingHistoryUnknown::getAttemptNo).toList();
+        List<Long> currentManual=manualAttempts==null?List.of():manualAttempts.findUnknownIdsByNotificationId(id).stream().distinct().sorted().toList();
+        List<Long> confirmedManual=resolvedId==null || manualUnknowns==null?List.of():manualUnknowns.findByHistoryIdOrderByManualAttemptIdAsc(resolvedId).stream()
+            .map(com.example.ecsite.entity.PaymentAuditNotificationHandlingHistoryManualUnknown::getManualAttemptId).distinct().sorted().toList();
         boolean recheck=status==com.example.ecsite.entity.PaymentAuditNotificationHandlingStatus.RESOLVED
-            && current.stream().anyMatch(number->!confirmed.contains(number));
+            && (current.stream().anyMatch(number->!confirmed.contains(number)) || currentManual.stream().anyMatch(number->!confirmedManual.contains(number)));
         boolean available=actionable && administratorId!=null && tokens!=null && tokens.isConfigured();
-        String token=available?tokens.issue(id,administratorId,h.isPresent(),h.map(com.example.ecsite.entity.PaymentAuditNotificationHandling::getVersion).orElse(0L),current):null;
+        String token=available?tokens.issue(id,administratorId,h.isPresent(),h.map(com.example.ecsite.entity.PaymentAuditNotificationHandling::getVersion).orElse(0L),status,current,currentManual):null;
         return new AdminPaymentAuditNotificationHandlingDetail(actionable,status,recheck,
             h.map(x->tokyo(x.getUpdatedAt())).orElse(null),last==null?null:last.getActorUserId(),last==null?null:last.getActorUsername(),
-            rows,confirmed,current,token,available);
+            rows,confirmed,current,confirmedManual,currentManual,token,available);
     }
 
     private static LocalDateTime tokyo(Instant instant) {

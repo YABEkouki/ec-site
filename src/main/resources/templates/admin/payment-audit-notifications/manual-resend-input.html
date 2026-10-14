@@ -1,0 +1,7 @@
+<!DOCTYPE html><html lang="ja" xmlns:th="http://www.thymeleaf.org"><head><meta charset="UTF-8"><title>手動再送理由入力</title><link rel="stylesheet" th:href="@{/css/style.css}"></head><body><header th:replace="~{fragments/admin-header :: header}"></header><main>
+<h1>手動再送理由入力</h1><p th:if="${errorMessage}" th:text="${errorMessage}"></p><p th:text="${@manualResendDisplay.rejection(manualResend.eligibility.rejection)}"></p>
+<form th:action="@{/admin/payment-audit-notifications/{id}/manual-resend/confirm(id=${manualResend.notificationId})}" method="post" th:object="${resendForm}">
+<input type="hidden" name="returnUrl" th:value="${returnUrl}"><label for="reason">再送理由（必須・1,000 Unicodeコードポイント以内）</label><textarea id="reason" th:field="*{reason}" required rows="6"></textarea><p th:if="${#fields.hasErrors()}" th:errors="*{all}"></p><p>機密情報や個人情報を記載しないでください。</p>
+<div th:if="${manualResend.eligibility.riskAcknowledgementRequired}"><p>前回の送信は失敗として記録されていますが、受信側に届いている可能性があります。再送すると同じメールが重複して届く場合があります。</p><label><input type="checkbox" th:field="*{riskAcknowledged}">重複配信のリスクを確認しました</label></div>
+<button type="submit" th:disabled="${!manualResend.eligibility.eligible or !manualResend.eligibility.signingAvailable}">再送内容を確認</button></form>
+<a th:href="@{/admin/payment-audit-notifications/{id}(id=${manualResend.notificationId},returnUrl=${returnUrl})}">通知詳細に戻る</a></main></body></html>

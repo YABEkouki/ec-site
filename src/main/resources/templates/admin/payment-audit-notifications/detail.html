@@ -84,6 +84,8 @@
             <dt>最終対応者</dt><dd th:text="${handling.lastActorUsername == null ? '—' : handling.lastActorUsername}"></dd>
             <dt>現在のUNKNOWN試行番号</dt><dd th:text="${#lists.isEmpty(handling.currentUnknowns) ? '—' : #strings.listJoin(handling.currentUnknowns, ', ')}"></dd>
             <dt>最後のRESOLVED時に確認したUNKNOWN試行番号</dt><dd th:text="${#lists.isEmpty(handling.confirmedUnknowns) ? '—' : #strings.listJoin(handling.confirmedUnknowns, ', ')}"></dd>
+            <dt>現在の手動再送UNKNOWN試行ID</dt><dd th:text="${#lists.isEmpty(handling.currentManualUnknowns) ? '—' : #strings.listJoin(handling.currentManualUnknowns, ', ')}"></dd>
+            <dt>最後のRESOLVED時に確認した手動再送UNKNOWN試行ID</dt><dd th:text="${#lists.isEmpty(handling.confirmedManualUnknowns) ? '—' : #strings.listJoin(handling.confirmedManualUnknowns, ', ')}"></dd>
         </dl>
         <p th:if="${handling.requiresRecheck}" class="action-required-warning">再確認必要：新しい結果不明の試行があります。コメントを付けて再オープンし、確認後に再度「対応完了」へ変更してください。</p>
         <p th:if="${handling.actionable and !handling.handlingOperationAvailable}">現在は閲覧のみ可能です。署名鍵の設定を管理者に確認してください。</p>
@@ -101,6 +103,18 @@
     </section>
     <div class="actions"><a th:href="@{/admin/payment-discrepancy-audits}" class="button button-secondary">決済監査実行履歴を見る</a></div>
     <div class="actions"><a th:href="${returnUrl}" class="button button-secondary">通知履歴一覧に戻る</a></div>
+    <section th:if="${manualResend != null}" id="manual-resend-history">
+        <h2>手動再送</h2>
+        <p th:text="${@manualResendDisplay.rejection(manualResend.eligibility.rejection)}"></p>
+        <p th:if="${!manualResend.eligibility.signingAvailable}">署名鍵未設定のため閲覧のみ可能です。</p>
+        <a th:if="${manualResend.eligibility.eligible and manualResend.eligibility.signingAvailable}" th:href="@{/admin/payment-audit-notifications/{id}/manual-resend(id=${notification.id},returnUrl=${returnUrl})}">手動再送</a>
+        <h3>手動再送要求履歴</h3>
+        <p>元通知の自動配送試行履歴とは別の履歴です。終了日時は結果確定・回収日時の場合があります。</p>
+        <p th:if="${#lists.isEmpty(manualResend.histories)}">手動再送要求履歴はありません。</p>
+        <div class="notification-detail-scroll" th:unless="${#lists.isEmpty(manualResend.histories)}"><table><thead><tr><th>要求番号</th><th>要求日時（JST）</th><th>管理者</th><th>再送理由</th><th>要求状態</th><th>送信開始日時</th><th>終了日時</th><th>終了理由コード</th><th>SMTP試行状態</th></tr></thead><tbody>
+        <tr th:each="h : ${manualResend.histories}"><td th:text="${h.requestNo}"></td><td th:text="${#temporals.format(h.requestedAt,'yyyy-MM-dd HH:mm:ss')}"></td><td th:text="${h.actor}"></td><td style="white-space:pre-wrap" th:text="${h.reason}"></td><td><span th:text="${@manualResendDisplay.status(h.status)}"></span><p th:if="${h.status.name() == 'UNKNOWN'}">結果不明です。受信側に届いた可能性があるため、再送できません。</p></td><td th:text="${h.startedAt == null ? '—' : #temporals.format(h.startedAt,'yyyy-MM-dd HH:mm:ss')}"></td><td th:text="${h.finishedAt == null ? '—' : #temporals.format(h.finishedAt,'yyyy-MM-dd HH:mm:ss')}"></td><td th:text="${h.resultReason == null ? '—' : h.resultReason}"></td><td th:text="${@manualResendDisplay.attempt(h.attemptResult)}"></td></tr>
+        </tbody></table></div>
+    </section>
 </main>
 </body>
 </html>
