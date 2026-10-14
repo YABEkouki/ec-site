@@ -17,7 +17,7 @@ class PaymentReconciliationItemServiceTest {
     PaymentCaptureResultService capture=mock(PaymentCaptureResultService.class);
     PaymentCancellationResultService userCancel=mock(PaymentCancellationResultService.class);
     AdminPaymentCancellationResultService adminCancel=mock(AdminPaymentCancellationResultService.class);
-    PaymentReconciliationItemService service=new PaymentReconciliationItemService(snapshots,gateway,authorization,capture,userCancel,adminCancel);
+    PaymentReconciliationItemService service=new PaymentReconciliationItemService(snapshots,new PaymentOperationSyncService(gateway,authorization,capture,userCancel,adminCancel));
 
     @ParameterizedTest @EnumSource(value=PaymentTransactionType.class,names={"AUTHORIZE","CAPTURE","CANCEL"})
     void pendingOperationRefetchesAndPassesExactSnapshot(PaymentTransactionType type) {
@@ -71,11 +71,21 @@ class PaymentReconciliationItemServiceTest {
         skip(snapshot(PaymentTransactionType.REFUND,"pf",PaymentProvider.PAYJP,PaymentTransactionStatus.PENDING,null));
     }
     @ParameterizedTest @EnumSource(value=PaymentTransactionType.class,names={"CAPTURE","CANCEL"})
-    void nonTerminalFlowDoesNotApplyResult(PaymentTransactionType type) {
+    void nonTerminalFlowRevalidatesAndRemainsWaiting(PaymentTransactionType type) {
         var s=snapshot(type,"pf",PaymentProvider.PAYJP,PaymentTransactionStatus.PENDING,PaymentTransactionInitiatorType.ADMIN);
         when(snapshots.find(100L)).thenReturn(Optional.of(s));
         when(gateway.retrievePaymentFlow("pf")).thenReturn(new PaymentFlowState("pf",PaymentFlowStatus.REQUIRES_CAPTURE,null,null));
-        service.reconcile(100L);verifyNoInteractions(authorization,capture,userCancel,adminCancel);
+        if(type==PaymentTransactionType.CAPTURE) {
+            var result=new CaptureResult(CaptureResultStatus.PENDING,"pf",null,null);
+            when(capture.apply(s,result)).thenReturn(PaymentResultApplication.APPLIED);
+            assertThat(service.reconcile(100L)).isEqualTo(PaymentSynchronizationOutcome.WAITING);
+            verify(capture).apply(s,result);verifyNoInteractions(authorization,userCancel,adminCancel);
+        } else {
+            var result=new CancellationResult(CancellationResultStatus.PENDING,"pf");
+            when(adminCancel.apply(s,result)).thenReturn(PaymentResultApplication.APPLIED);
+            assertThat(service.reconcile(100L)).isEqualTo(PaymentSynchronizationOutcome.WAITING);
+            verify(adminCancel).apply(s,result);verifyNoInteractions(authorization,capture,userCancel);
+        }
     }
     @ParameterizedTest @EnumSource(value=PaymentResultApplication.class,names={"IGNORED_STALE","CONFLICT"})
     void staleResultIsNotReportedAsApplied(PaymentResultApplication outcome) {
@@ -84,7 +94,7 @@ class PaymentReconciliationItemServiceTest {
         when(snapshots.find(100L)).thenReturn(Optional.of(s));
         when(gateway.retrieveAuthorization("pf")).thenReturn(new AuthorizationRecovery(result,null));
         when(authorization.apply(s,result)).thenReturn(outcome);
-        assertThatThrownBy(()->service.reconcile(100L)).isInstanceOf(IllegalStateException.class);
+        assertThat(service.reconcile(100L)).isEqualTo(PaymentSynchronizationOutcome.from(outcome));
     }
     private void skip(PaymentOperationSnapshot s) {
         when(snapshots.find(100L)).thenReturn(Optional.of(s));service.reconcile(100L);verifyNoInteractions(gateway,authorization,capture,userCancel,adminCancel);

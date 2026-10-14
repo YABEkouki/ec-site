@@ -211,7 +211,7 @@ class PaymentResultApplicationPostgresTest {
         });
         Future<?> work=workers.submit(()->reconciliation.reconcile(start.transactionId()));await(entered);
         tx(()->{jdbc.update("update orders set content_revision=content_revision+1 where id=?",f.orderId);return null;});
-        var before=state(f);release.countDown();assertThatThrownBy(()->work.get(20,TimeUnit.SECONDS)).hasCauseInstanceOf(IllegalStateException.class);
+        var before=state(f);release.countDown();assertThat(work.get(20,TimeUnit.SECONDS)).isEqualTo(PaymentSynchronizationOutcome.CONFLICT);
         assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");
     }
     @Test void duplicateResultsOnIndependentConnectionsSerializeAtOrderLock() throws Exception {
@@ -258,7 +258,7 @@ class PaymentResultApplicationPostgresTest {
             });
             return new PaymentFlowState(f.providerId,PaymentFlowStatus.SUCCEEDED,null,null);
         });
-        assertThatThrownBy(()->reconciliation.reconcile(start.transactionId())).isInstanceOf(IllegalStateException.class);
+        assertThat(reconciliation.reconcile(start.transactionId())).isEqualTo(PaymentSynchronizationOutcome.CONFLICT);
         assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("ORDERED");
         assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");assertThat(number("order_status_histories",f)).isZero();
     }

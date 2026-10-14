@@ -138,4 +138,15 @@ class PaymentReconciliationServiceTest {
         verify(itemService).reconcile(102L);
         verify(itemService).reconcile(103L);
     }
+    @Test
+    void classifiedConflictsStaleAndDuplicatesDoNotStopRemainingCandidates() {
+        PaymentTransaction first=mock(PaymentTransaction.class), second=mock(PaymentTransaction.class), third=mock(PaymentTransaction.class);
+        when(first.getId()).thenReturn(101L);when(second.getId()).thenReturn(102L);when(third.getId()).thenReturn(103L);
+        when(paymentTransactionRepository.findByStatusAndCreatedAtBeforeOrderByCreatedAtAscIdAsc(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any())).thenReturn(List.of(first,second,third));
+        when(itemService.reconcile(101L)).thenReturn(PaymentSynchronizationOutcome.CONFLICT);
+        when(itemService.reconcile(102L)).thenReturn(PaymentSynchronizationOutcome.IGNORED_STALE);
+        when(itemService.reconcile(103L)).thenReturn(PaymentSynchronizationOutcome.ALREADY_APPLIED);
+        service.reconcilePendingTransactions();
+        var order=org.mockito.Mockito.inOrder(itemService);order.verify(itemService).reconcile(101L);order.verify(itemService).reconcile(102L);order.verify(itemService).reconcile(103L);
+    }
 }

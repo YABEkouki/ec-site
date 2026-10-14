@@ -441,6 +441,10 @@ class PaymentServiceTest {
                 payment.getUpdatedAt());
 
         assertNull(transaction.getCompletedAt());
+        assertEquals(PaymentResultApplication.ALREADY_APPLIED,
+                paymentService.applyAuthorizationResult(order,
+                        resultSnapshot(payment, PaymentTransactionType.AUTHORIZE),
+                        new AuthorizationResult(AuthorizationResultStatus.REQUIRES_ACTION, null, null, null)));
     }
 
     @Test

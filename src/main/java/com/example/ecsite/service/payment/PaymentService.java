@@ -289,7 +289,10 @@ public class PaymentService {
                 || competingPending(target)) return PaymentResultApplication.IGNORED_STALE;
         LocalDateTime now = LocalDateTime.now(clock);
         switch (result.status()) {
-            case REQUIRES_ACTION -> { if (payment.getStatus() == PaymentStatus.PENDING) payment.markRequiresAction(now); }
+            case REQUIRES_ACTION -> {
+                if (payment.getStatus() == PaymentStatus.REQUIRES_ACTION) return PaymentResultApplication.ALREADY_APPLIED;
+                payment.markRequiresAction(now);
+            }
             case AUTHORIZED -> { payment.markAuthorized(now); transaction.markSucceeded(result.providerTransactionId(), now); }
             case FAILED -> { payment.markFailed(now); transaction.markFailed(result.providerTransactionId(), result.failureCode(), result.failureMessage(), now); }
             case PENDING, REQUIRES_PAYMENT_METHOD, REQUIRES_CONFIRMATION -> { }

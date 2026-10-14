@@ -1,8 +1,11 @@
 package com.example.ecsite.service.payment;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Transactional(propagation = Propagation.NEVER)
 public class PayJpWebhookSyncService {
 
     private final PayJpWebhookAuthorizationSyncService authorizationSyncService;
