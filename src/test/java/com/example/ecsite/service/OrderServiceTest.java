@@ -143,7 +143,62 @@ class OrderServiceTest {
 
         orderDeadlineCalculator = new OrderDeadlineCalculator(LocalTime.of(14, 0));
 
+        org.mockito.Mockito.lenient().when(orderRepository.findCurrentTimeInTokyo())
+                .thenAnswer(invocation -> LocalDateTime.now(clock));
         orderService = createOrderService();
+    }
+
+    @Test
+    void unchangedAddressIsRejectedWhenDatabaseDeadlineHasClosed() {
+        Order order = createOrder(10L, 1000);
+        order.setShippingAddress("佐藤 花子", "150-0001", "東京都", "渋谷区", "神宮前1-2-3", "080-1234-5678");
+        when(orderRepository.findByIdAndUserIdForUpdate(1L, 10L)).thenReturn(Optional.of(order));
+        when(orderRepository.findCurrentTimeInTokyo()).thenReturn(order.getChangeDeadlineAt());
+
+        assertThrows(InvalidOrderStatusException.class, () -> orderService.changeShippingAddressForUser(
+                1L, 10L, "testuser", createOrderShippingAddressForm()));
+        verifyNoInteractions(orderShippingAddressHistoryService);
+    }
+
+    @Test
+    void unchangedItemsAreRejectedWhenDatabaseDeadlineHasClosed() {
+        Order order = createOrderForItemChange(1L, 10L);
+        when(orderRepository.findByIdAndUserIdForUpdate(1L, 10L)).thenReturn(Optional.of(order));
+        when(orderRepository.findCurrentTimeInTokyo()).thenReturn(order.getChangeDeadlineAt());
+
+        assertThrows(InvalidOrderStatusException.class, () -> orderService.changeItemsForUser(
+                1L, 10L, "testuser", createOrderItemChangeForm(0, 2, 1)));
+        org.mockito.InOrder locks = org.mockito.Mockito.inOrder(orderRepository, orderPaymentGuard);
+        locks.verify(orderRepository).findByIdAndUserIdForUpdate(1L, 10L);
+        locks.verify(orderPaymentGuard).validateItemChange(order);
+        locks.verify(orderRepository).findCurrentTimeInTokyo();
+        verifyNoInteractions(inventoryService, orderContentChangeHistoryRepository);
+    }
+
+    @Test
+    void localUserCancellationUsesDatabaseDeadlineAfterPaymentLock() {
+        Order order = createOrder(10L, 1000);
+        when(orderRepository.findByIdAndUserIdForUpdate(1L, 10L)).thenReturn(Optional.of(order));
+        when(orderRepository.findCurrentTimeInTokyo()).thenReturn(order.getChangeDeadlineAt());
+
+        assertThrows(InvalidOrderStatusException.class,
+                () -> orderService.cancelOrderForUser(1L, 10L, "testuser"));
+        org.mockito.InOrder locks = org.mockito.Mockito.inOrder(orderRepository, orderPaymentGuard);
+        locks.verify(orderRepository).findByIdAndUserIdForUpdate(1L, 10L);
+        locks.verify(orderPaymentGuard).validateLocalCancellation(order);
+        locks.verify(orderRepository).findCurrentTimeInTokyo();
+        verifyNoInteractions(inventoryService, orderStatusHistoryService);
+    }
+
+    @Test
+    void localAdminCancellationRejectsClosedDatabaseDeadline() {
+        Order order = createOrder(10L, 1000);
+        when(orderRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(order));
+        when(orderRepository.findCurrentTimeInTokyo()).thenReturn(order.getChangeDeadlineAt());
+
+        assertThrows(InvalidOrderStatusException.class,
+                () -> orderService.cancelOrder(1L, 2L, "admin", null));
+        verifyNoInteractions(inventoryService, orderStatusHistoryService);
     }
 
     @Test
@@ -429,6 +484,10 @@ class OrderServiceTest {
         String internalNote = "お客様から電話でキャンセル依頼";
 
         Order order = mock(Order.class);
+        when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
+        when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
+        when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
+        when(order.isWithinModificationPeriod(any(LocalDateTime.class))).thenReturn(true);
         OrderItem orderItem = mock(OrderItem.class);
 
         when(order.getId())
@@ -1038,6 +1097,9 @@ class OrderServiceTest {
         int quantity = 3;
 
         Order order = mock(Order.class);
+        when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
+        when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
+        when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
         OrderItem orderItem = mock(OrderItem.class);
 
         when(order.getId())
@@ -1103,6 +1165,9 @@ class OrderServiceTest {
         String username = "testuser";
 
         Order order = mock(Order.class);
+        when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
+        when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
+        when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
 
         when(orderRepository
                 .findByIdAndUserIdForUpdate(
@@ -3202,6 +3267,9 @@ class OrderServiceTest {
         String username = "testuser";
 
         Order order = mock(Order.class);
+        when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
+        when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
+        when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
 
         OrderItem firstItem = mock(OrderItem.class);
         OrderItem secondItem = mock(OrderItem.class);
@@ -4274,6 +4342,7 @@ class OrderServiceTest {
                 taxCategoryService,
                 orderAmountCalculator,
                 orderPaymentGuard,
+                new OrderModificationGuard(orderRepository, new OrderModificationPolicy()),
                 clock);
     }
 

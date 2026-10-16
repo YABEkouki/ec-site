@@ -47,10 +47,12 @@ class PaymentServiceTest {
     private PaymentRepository paymentRepository;
     private PaymentTransactionRepository paymentTransactionRepository;
     private PaymentService paymentService;
+    private com.example.ecsite.service.OrderModificationGuard orderModificationGuard;
 
     @BeforeEach
     void setUp() {
 
+        orderModificationGuard = mock(com.example.ecsite.service.OrderModificationGuard.class);
         paymentRepository = mock(PaymentRepository.class);
         paymentTransactionRepository = mock(PaymentTransactionRepository.class);
 
@@ -64,6 +66,7 @@ class PaymentServiceTest {
                 paymentRepository,
                 paymentTransactionRepository,
                 new PaymentConsistencyEvaluator(),
+                orderModificationGuard,
                 clock);
     }
 
@@ -703,6 +706,9 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.empty());
 
+        LocalDateTime databaseNow = LocalDateTime.of(2026, 10, 1, 10, 7);
+        when(orderModificationGuard.requireAllowed(order)).thenReturn(databaseNow);
+
         PaymentCancellationStart result = paymentService.startCancellation(
                 order,
                 TEST_INITIATOR);
@@ -714,6 +720,13 @@ class PaymentServiceTest {
                 .save(captor.capture());
 
         PaymentTransaction transaction = captor.getValue();
+        assertEquals(databaseNow, transaction.getCreatedAt());
+        var sequence = org.mockito.Mockito.inOrder(paymentRepository, paymentTransactionRepository, orderModificationGuard);
+        sequence.verify(paymentRepository).findByOrderIdForUpdate(100L);
+        sequence.verify(paymentTransactionRepository).findByPaymentIdAndTransactionTypeAndStatus(
+                payment.getId(), PaymentTransactionType.CANCEL, PaymentTransactionStatus.PENDING);
+        sequence.verify(orderModificationGuard).requireAllowed(order);
+        sequence.verify(paymentTransactionRepository).save(transaction);
 
         assertEquals(
                 PaymentTransactionType.CANCEL,
@@ -784,7 +797,8 @@ class PaymentServiceTest {
                 2,
                 "cancel-key-123",
                 LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
+                        2026, 10, 1, 9, 30),
+                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.USER, 99L, "original-user", "original-note"));
 
         when(paymentRepository
                 .findByOrderIdForUpdate(100L))
@@ -812,6 +826,27 @@ class PaymentServiceTest {
         verify(paymentTransactionRepository, never())
                 .save(any(PaymentTransaction.class));
         assertEquals(PaymentStartDisposition.REUSED, result.disposition());
+        assertEquals(PaymentOperationSnapshot.from(transaction), result.snapshot());
+        assertEquals(99L, result.snapshot().initiatorId());
+        assertEquals("original-user", result.snapshot().initiatorUsername());
+        assertEquals("original-note", result.snapshot().internalNote());
+        org.mockito.Mockito.verifyNoInteractions(orderModificationGuard);
+    }
+
+    @Test
+    void startCancellationRejectsClosedModificationWindowWithoutSavingTransaction() {
+        Order order = mock(Order.class);
+        when(order.getId()).thenReturn(100L);
+        Payment payment = createPayment(order);
+        payment.setProviderPaymentId("pf_test_123", LocalDateTime.of(2026, 10, 1, 9, 10));
+        payment.markAuthorized(LocalDateTime.of(2026, 10, 1, 9, 20));
+        when(paymentRepository.findByOrderIdForUpdate(100L)).thenReturn(List.of(payment));
+        var failure = new com.example.ecsite.exception.InvalidOrderStatusException("この注文の変更受付は終了しています。");
+        when(orderModificationGuard.requireAllowed(order)).thenThrow(failure);
+
+        org.junit.jupiter.api.Assertions.assertSame(failure, assertThrows(com.example.ecsite.exception.InvalidOrderStatusException.class,
+                () -> paymentService.startCancellation(order, TEST_INITIATOR)));
+        verify(paymentTransactionRepository, never()).save(any(PaymentTransaction.class));
     }
 
     @Test

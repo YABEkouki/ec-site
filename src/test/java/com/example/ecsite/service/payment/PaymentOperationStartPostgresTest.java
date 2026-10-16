@@ -34,7 +34,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @org.springframework.boot.context.properties.EnableConfigurationProperties(com.example.ecsite.config.PayJpSafetyProperties.class)
-@Import({PaymentPostGuardService.class, com.example.ecsite.config.TimeConfig.class,PaymentOperationSnapshotService.class, PaymentAuthorizationResultService.class,OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
+@Import({com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class, com.example.ecsite.config.TimeConfig.class,PaymentOperationSnapshotService.class, PaymentAuthorizationResultService.class,OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
         PaymentAuthorizationService.class, PaymentCaptureService.class, PaymentCaptureStartService.class,
         PaymentCancellationService.class, PaymentCancellationStartService.class,
         AdminPaymentCancellationService.class, AdminPaymentCancellationStartService.class})

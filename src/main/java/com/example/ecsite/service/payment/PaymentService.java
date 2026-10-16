@@ -28,6 +28,7 @@ import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.CaptureResult;
 import com.example.ecsite.payment.CaptureResultStatus;
+import com.example.ecsite.service.OrderModificationGuard;
 import com.example.ecsite.repository.PaymentRepository;
 import com.example.ecsite.repository.PaymentTransactionRepository;
 
@@ -38,17 +39,20 @@ public class PaymentService {
     private final PaymentTransactionRepository paymentTransactionRepository;
     private final PaymentConsistencyEvaluator paymentConsistencyEvaluator;
     private final Clock clock;
+    private final OrderModificationGuard orderModificationGuard;
 
     @Autowired
     public PaymentService(
             PaymentRepository paymentRepository,
             PaymentTransactionRepository paymentTransactionRepository,
-            PaymentConsistencyEvaluator paymentConsistencyEvaluator) {
+            PaymentConsistencyEvaluator paymentConsistencyEvaluator,
+            OrderModificationGuard orderModificationGuard) {
 
         this(
                 paymentRepository,
                 paymentTransactionRepository,
                 paymentConsistencyEvaluator,
+                orderModificationGuard,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -56,12 +60,14 @@ public class PaymentService {
             PaymentRepository paymentRepository,
             PaymentTransactionRepository paymentTransactionRepository,
             PaymentConsistencyEvaluator paymentConsistencyEvaluator,
+            OrderModificationGuard orderModificationGuard,
             Clock clock) {
 
         this.paymentRepository = paymentRepository;
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.paymentConsistencyEvaluator = paymentConsistencyEvaluator;
         this.clock = clock;
+        this.orderModificationGuard = orderModificationGuard;
     }
 
     @Transactional
@@ -499,7 +505,9 @@ public class PaymentService {
                     PaymentStartDisposition.REUSED, PaymentOperationSnapshot.from(transaction));
         }
 
-        LocalDateTime now = LocalDateTime.now(clock);
+        // Existing operations above keep their original actor, snapshot and key.
+        // Only a new cancellation is subject to the current modification window.
+        LocalDateTime now = orderModificationGuard.requireAllowed(order);
 
         PaymentTransaction transaction = new PaymentTransaction(
                 payment,
