@@ -227,6 +227,84 @@ public class Order {
         shippingPreparationStartedByUsername = username;
     }
 
+    /** Shared metadata predicate; does not decide status, payment eligibility or deadlines. */
+    public boolean hasCompleteShippingPreparation() {
+        return shippingPreparationStartedAt != null
+                && validShipmentActor(shippingPreparationStartedByAccountId, shippingPreparationStartedByUsername);
+    }
+
+    /**
+     * Records a paid manual shipment. Caller owns transaction/locks, payment checks
+     * and the single status-history entry. Existing paidAt is retained.
+     */
+    public void confirmManualShipment(LocalDateTime shippedAt, Long actorId, String username) {
+        requireNewShipment(OrderStatus.PAID, shippedAt, actorId, username);
+        recordShipment(shippedAt, actorId, username, null);
+    }
+
+    /**
+     * Records shipment before capture. The caller must verify the positive payment
+     * ID belongs to this order and fix it in the capture operation in the same TX.
+     * No payment success or paidAt is recorded here.
+     */
+    public void confirmCardShipment(LocalDateTime shippedAt, Long actorId, String username, Long capturePaymentId) {
+        if (capturePaymentId == null || capturePaymentId <= 0) {
+            throw new IllegalArgumentException("有効なCapture対象Payment IDが必要です。");
+        }
+        requireNewShipment(OrderStatus.ORDERED, shippedAt, actorId, username);
+        if (paidAt != null) throw new IllegalStateException("入金日時が設定済みの注文はカード発送できません。");
+        recordShipment(shippedAt, actorId, username, capturePaymentId);
+    }
+
+    /**
+     * Order's part of a successful capture only. Caller must apply verified Payment
+     * and transaction success atomically in the same TX. Does not create shipment
+     * history or modify shipment metadata; repeated success preserves first paidAt.
+     * capturedAt is the application's capture-success confirmation/recording time
+     * in Asia/Tokyo, supplied by the caller; LocalDateTime carries no time zone.
+     * This method reads no clock and applies no precision rounding or tolerance.
+     * It must be at or after shippedAt, including on repeated success calls.
+     * A failed or unresolved capture must not call this method.
+     */
+    public void recordShipmentCaptureSucceeded(Long capturePaymentId, LocalDateTime capturedAt) {
+        if (capturedAt == null || capturePaymentId == null || capturePaymentId <= 0) {
+            throw new IllegalArgumentException("有効なCapture対象Payment IDと入金日時が必要です。");
+        }
+        if (status != OrderStatus.SHIPPED || !hasCompleteShippingPreparation()
+                || shippedAt == null || !validShipmentActor(shippedByAccountId, shippedByUsername)
+                || !capturePaymentId.equals(shipmentCapturePaymentId)) {
+            throw new IllegalStateException("発送記録とCapture対象Paymentが一致しません。");
+        }
+        if (capturedAt.isBefore(shippedAt)) {
+            throw new IllegalArgumentException("Capture成功記録日時は発送日時以降である必要があります。");
+        }
+        if (paidAt == null) paidAt = capturedAt;
+    }
+
+    private void requireNewShipment(OrderStatus sourceStatus, LocalDateTime at, Long actorId, String username) {
+        if (at == null || !validShipmentActor(actorId, username)) {
+            throw new IllegalArgumentException("有効な発送日時と管理者情報が必要です。");
+        }
+        if (status != sourceStatus) throw new InvalidOrderStatusException("この注文状態では発送できません。");
+        if (!hasCompleteShippingPreparation()) throw new IllegalStateException("有効な発送準備情報が必要です。");
+        if (shippedAt != null || shippedByAccountId != null || shippedByUsername != null
+                || shipmentCapturePaymentId != null) {
+            throw new IllegalStateException("発送記録は上書きできません。");
+        }
+    }
+
+    private void recordShipment(LocalDateTime at, Long actorId, String username, Long capturePaymentId) {
+        status = OrderStatus.SHIPPED;
+        shippedAt = at;
+        shippedByAccountId = actorId;
+        shippedByUsername = username;
+        shipmentCapturePaymentId = capturePaymentId;
+    }
+
+    private static boolean validShipmentActor(Long actorId, String username) {
+        return actorId != null && actorId > 0 && username != null && !username.isBlank() && username.length() <= 100;
+    }
+
     public LocalDateTime getShippingPreparationStartedAt() {
         return shippingPreparationStartedAt;
     }
