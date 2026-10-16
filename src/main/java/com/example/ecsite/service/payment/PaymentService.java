@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.entity.OrderStatus;
@@ -68,6 +69,47 @@ public class PaymentService {
         this.paymentConsistencyEvaluator = paymentConsistencyEvaluator;
         this.clock = clock;
         this.orderModificationGuard = orderModificationGuard;
+    }
+
+    /**
+     * Validation only: the caller must already hold the Order write lock and call
+     * through the Spring proxy. Payment locks are acquired in ascending ID order
+     * and remain held by the caller's transaction. No payment operation is started.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void validateCardPaymentForShippingPreparation(Order order) {
+        if (order == null || order.getId() == null) {
+            throw new IllegalArgumentException("永続化された注文は必須です。");
+        }
+        if (order.getStatus() != OrderStatus.ORDERED) {
+            throw new IllegalStateException("注文受付中の注文だけをカード決済の発送準備対象にできます。");
+        }
+
+        List<Payment> payments = paymentRepository.findByOrderIdForUpdate(order.getId());
+        for (Payment payment : payments) {
+            if (payment.getOrder() == null
+                    || !Objects.equals(payment.getOrder().getId(), order.getId())) {
+                throw new IllegalStateException("決済情報と注文が一致しません。");
+            }
+            // Includes REFUND, and includes histories on FAILED/CANCELLED payments.
+            if (paymentTransactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(payment.getId())
+                    .stream().anyMatch(t -> t.getStatus() == PaymentTransactionStatus.PENDING)) {
+                throw new IllegalStateException("決済処理中のため、発送準備を開始できません。");
+            }
+        }
+
+        validateSingleActivePayment(payments);
+        Payment payment = payments.stream()
+                .filter(p -> p.getStatus() != PaymentStatus.FAILED && p.getStatus() != PaymentStatus.CANCELLED)
+                .findFirst().orElseThrow();
+        if (!isAuthorizedCardPayment(payment)) {
+            throw new IllegalStateException("発送準備可能なカード与信ではありません。");
+        }
+        if (payment.getProviderPaymentId() == null || payment.getProviderPaymentId().isBlank()) {
+            throw new IllegalStateException("決済プロバイダーIDが設定されていません。");
+        }
+        // Preserve the existing decreased-amount policy, including revision changes.
+        validateCaptureConsistency(order, payment);
     }
 
     @Transactional
