@@ -90,6 +90,24 @@ public class Order {
     @Column(name = "shipped_at")
     private LocalDateTime shippedAt;
 
+    @Column(name = "shipping_preparation_started_at")
+    private LocalDateTime shippingPreparationStartedAt;
+
+    @Column(name = "shipping_preparation_started_by_account_id")
+    private Long shippingPreparationStartedByAccountId;
+
+    @Column(name = "shipping_preparation_started_by_username", length = 100)
+    private String shippingPreparationStartedByUsername;
+
+    @Column(name = "shipped_by_account_id")
+    private Long shippedByAccountId;
+
+    @Column(name = "shipped_by_username", length = 100)
+    private String shippedByUsername;
+
+    @Column(name = "shipment_capture_payment_id")
+    private Long shipmentCapturePaymentId;
+
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
@@ -192,6 +210,30 @@ public class Order {
 
     public LocalDateTime getShippedAt() {
         return shippedAt;
+    }
+
+    public LocalDateTime getShippingPreparationStartedAt() {
+        return shippingPreparationStartedAt;
+    }
+
+    public Long getShippingPreparationStartedByAccountId() {
+        return shippingPreparationStartedByAccountId;
+    }
+
+    public String getShippingPreparationStartedByUsername() {
+        return shippingPreparationStartedByUsername;
+    }
+
+    public Long getShippedByAccountId() {
+        return shippedByAccountId;
+    }
+
+    public String getShippedByUsername() {
+        return shippedByUsername;
+    }
+
+    public Long getShipmentCapturePaymentId() {
+        return shipmentCapturePaymentId;
     }
 
     public LocalDateTime getCancelledAt() {

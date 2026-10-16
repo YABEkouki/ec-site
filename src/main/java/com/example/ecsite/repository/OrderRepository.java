@@ -495,4 +495,10 @@ public interface OrderRepository
     Optional<Order> findByIdWithCharges(
             @Param("id") Long id);
 
+    @Query(
+        value = "select clock_timestamp() AT TIME ZONE 'Asia/Tokyo'",
+        nativeQuery = true
+    )
+    LocalDateTime findCurrentTimeInTokyo();
+
 }
