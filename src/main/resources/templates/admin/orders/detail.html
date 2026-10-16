@@ -270,6 +270,25 @@
         担当管理者変更履歴はありません。
     </p>
 
+    <section id="shipping-preparation">
+        <h2>発送準備</h2>
+        <p th:text="${shippingPreparationView.message()}"
+            th:classappend="${shippingPreparationView.inconsistent()} ? 'message-error' : ''"></p>
+        <dl th:if="${shippingPreparationView.startedAt != null}">
+            <dt>発送準備開始日時</dt>
+            <dd th:text="${#temporals.format(shippingPreparationView.startedAt, 'yyyy/MM/dd HH:mm')}"></dd>
+            <dt>開始管理者username</dt>
+            <dd th:text="${shippingPreparationView.startedByUsername}"></dd>
+            <dt>開始管理者ID</dt>
+            <dd th:text="${shippingPreparationView.startedByAccountId}"></dd>
+        </dl>
+        <form th:if="${shippingPreparationView.canStart()}"
+            th:action="@{/admin/orders/{id}/start-shipping-preparation(id=${order.id})}" method="post">
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+            <button type="submit">発送準備を開始する</button>
+        </form>
+    </section>
+
     <h2>注文操作</h2>
 
     <div th:if="${order.canMarkAsPaid() or order.canCancel()}">

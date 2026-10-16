@@ -74,6 +74,8 @@ public class AdminOrderController {
     private final PaymentCaptureService paymentCaptureService;
     private final AdminPaymentCancellationService adminPaymentCancellationService;
 
+    private final OrderShippingPreparationViewFactory shippingPreparationViewFactory;
+
     public AdminOrderController(
             OrderService orderService,
             OrderCsvService orderCsvService,
@@ -86,8 +88,10 @@ public class AdminOrderController {
             AdminAccountService adminAccountService,
             PaymentService paymentService,
             PaymentCaptureService paymentCaptureService,
-            AdminPaymentCancellationService adminPaymentCancellationService) {
+            AdminPaymentCancellationService adminPaymentCancellationService,
+            OrderShippingPreparationViewFactory shippingPreparationViewFactory) {
 
+        this.shippingPreparationViewFactory = shippingPreparationViewFactory;
         this.orderService = orderService;
         this.orderCsvService = orderCsvService;
         this.orderStatusHistoryService = orderStatusHistoryService;
@@ -210,6 +214,7 @@ public class AdminOrderController {
         String safeReturnUrl = AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl);
 
         Order order = orderService.findOrderWithItems(id);
+        model.addAttribute("shippingPreparationView", shippingPreparationViewFactory.create(order));
 
         boolean canCaptureForShipment = order.getStatus() == OrderStatus.ORDERED
                 && paymentService.canCaptureForShipment(id);

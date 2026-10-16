@@ -128,7 +128,9 @@ class AdminOrderControllerTest {
                 adminAccountService,
                 paymentService,
                 paymentCaptureService,
-                adminPaymentCancellationService);
+                adminPaymentCancellationService,
+                new OrderShippingPreparationViewFactory(new com.example.ecsite.service.OrderModificationPolicy(),
+                        java.time.Clock.system(java.time.ZoneId.of("Asia/Tokyo"))));
     }
 
     @Test
