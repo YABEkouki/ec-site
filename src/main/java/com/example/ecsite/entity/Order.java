@@ -212,6 +212,21 @@ public class Order {
         return shippedAt;
     }
 
+    /** Records preparation metadata together; status and deadline checks belong to the service. */
+    public void beginShippingPreparation(LocalDateTime now, Long actorId, String username) {
+        if (now == null || actorId == null || actorId <= 0
+                || username == null || username.isBlank() || username.length() > 100) {
+            throw new IllegalArgumentException("有効な発送準備開始日時と管理者情報が必要です。");
+        }
+        if (shippingPreparationStartedAt != null || shippingPreparationStartedByAccountId != null
+                || shippingPreparationStartedByUsername != null) {
+            throw new IllegalStateException("発送準備開始情報は上書きできません。");
+        }
+        shippingPreparationStartedAt = now;
+        shippingPreparationStartedByAccountId = actorId;
+        shippingPreparationStartedByUsername = username;
+    }
+
     public LocalDateTime getShippingPreparationStartedAt() {
         return shippingPreparationStartedAt;
     }
