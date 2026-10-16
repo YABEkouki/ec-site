@@ -49,8 +49,8 @@ class OrderShippingPreparationServiceTest {
     private final PaymentRepository paymentRepository = mock(PaymentRepository.class);
     private final PaymentTransactionRepository transactionRepository = mock(PaymentTransactionRepository.class);
     private final OrderShippingPreparationService service = new OrderShippingPreparationService(
-            orders, payments, manual, new OrderModificationPolicy(), entityManager,
-            paymentRepository, transactionRepository);
+            orders, payments, manual, new OrderModificationPolicy(), new OrderWriteContext(entityManager,
+            paymentRepository, transactionRepository));
     private final Order order = new Order(1L, 1000, DEADLINE.minusHours(4), DEADLINE);
 
     @BeforeEach void authenticate() throws Exception {

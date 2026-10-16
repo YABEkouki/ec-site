@@ -90,6 +90,7 @@ public class OrderService {
     private final OrderPaymentGuard orderPaymentGuard;
     private final OrderModificationGuard orderModificationGuard;
     private final Clock clock;
+    private final ManualOrderShipmentService manualShipmentService;
 
     @Autowired
     public OrderService(
@@ -106,7 +107,8 @@ public class OrderService {
             TaxCategoryService taxCategoryService,
             OrderAmountCalculator orderAmountCalculator,
             OrderPaymentGuard orderPaymentGuard,
-            OrderModificationGuard orderModificationGuard) {
+            OrderModificationGuard orderModificationGuard,
+            ManualOrderShipmentService manualShipmentService) {
 
         this(
                 orderRepository,
@@ -123,6 +125,7 @@ public class OrderService {
                 orderAmountCalculator,
                 orderPaymentGuard,
                 orderModificationGuard,
+                manualShipmentService,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -141,6 +144,7 @@ public class OrderService {
             OrderAmountCalculator orderAmountCalculator,
             OrderPaymentGuard orderPaymentGuard,
             OrderModificationGuard orderModificationGuard,
+            ManualOrderShipmentService manualShipmentService,
             Clock clock) {
 
         this.orderRepository = orderRepository;
@@ -158,6 +162,7 @@ public class OrderService {
         this.orderPaymentGuard = orderPaymentGuard;
         this.orderModificationGuard = orderModificationGuard;
         this.clock = clock;
+        this.manualShipmentService = manualShipmentService;
     }
 
     @Transactional
@@ -456,21 +461,7 @@ public class OrderService {
             String username,
             String internalNote) {
 
-        Order order = findOrderForUpdate(id);
-        orderPaymentGuard.validateManualShipment(order);
-
-        OrderStatus fromStatus = order.getStatus();
-
-        order.markAsShipped();
-
-        orderStatusHistoryService.record(
-                order,
-                fromStatus,
-                order.getStatus(),
-                OrderStatusHistoryActorType.ADMIN,
-                accountId,
-                username,
-                internalNote);
+        manualShipmentService.ship(id, accountId, username, internalNote);
     }
 
     public void markAsShippedAfterPaymentCapture(

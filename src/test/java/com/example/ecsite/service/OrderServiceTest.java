@@ -1685,15 +1685,21 @@ class OrderServiceTest {
 
         Order order = createOrder(10L, 1000);
         order.markAsPaid();
+        order.beginShippingPreparation(LocalDateTime.of(2026,9,28,14,0),7L,"preparer");
+        var principal = new com.example.ecsite.security.AdminUserDetails(adminId, adminUsername, "password", true,
+                java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal, "password", principal.getAuthorities()));
+        when(orderRepository.findCurrentTimeInTokyo()).thenReturn(LocalDateTime.of(2026,9,28,15,0));
 
         when(orderRepository.findByIdForUpdate(orderId))
                 .thenReturn(Optional.of(order));
 
-        orderService.markAsShipped(
-                orderId,
-                adminId,
-                adminUsername,
-                internalNote);
+        try {
+            orderService.markAsShipped(orderId, adminId, adminUsername, internalNote);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
 
         assertEquals(
                 OrderStatus.SHIPPED,
@@ -4343,6 +4349,8 @@ class OrderServiceTest {
                 orderAmountCalculator,
                 orderPaymentGuard,
                 new OrderModificationGuard(orderRepository, new OrderModificationPolicy()),
+                new ManualOrderShipmentService(orderRepository, org.mockito.Mockito.mock(OrderWriteContext.class),
+                        new OrderShipmentGuard(), orderPaymentGuard, orderStatusHistoryService),
                 clock);
     }
 

@@ -72,6 +72,7 @@ class OrderPaymentGuardPostgresTest {
         workers = Executors.newFixedThreadPool(2); entered = new CountDownLatch(1); release = new CountDownLatch(1);
     }
     @AfterEach void cleanup() throws Exception {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
         release.countDown(); workers.shutdownNow(); assertThat(workers.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
     }
     @ParameterizedTest @EnumSource(value = PaymentTransactionType.class, names = {"AUTHORIZE", "CAPTURE", "CANCEL"})
@@ -90,8 +91,11 @@ class OrderPaymentGuardPostgresTest {
     void pendingOperationRejectsManualShipping(PaymentTransactionType type) {
         Fixture f = pending(type);
         tx(() -> { orders.findByIdForUpdate(f.orderId).orElseThrow().markAsPaid(); return null; });
+        prepareManualShipment(f);
+        authenticateShipmentAdmin();
         Map<String,Object> before = state(f);
-        assertThatThrownBy(() -> orderService.markAsShipped(f.orderId, 1L, "admin", null)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> orderService.markAsShipped(f.orderId, 1L, "admin", null))
+                .isInstanceOf(InvalidOrderStatusException.class).hasMessageContaining("決済処理中");
         assertThat(state(f)).isEqualTo(before);
     }
     @ParameterizedTest @EnumSource(value = PaymentTransactionType.class, names = {"AUTHORIZE", "CAPTURE", "CANCEL"})
@@ -202,6 +206,8 @@ class OrderPaymentGuardPostgresTest {
     @Test void normalManualPaymentAndShippingRemainAvailableWithoutExternalPayment() {
         Fixture f=fixture(false);
         orderService.markAsPaid(f.orderId,1L,"admin",null);
+        prepareManualShipment(f);
+        authenticateShipmentAdmin();
         orderService.markAsShipped(f.orderId,1L,"admin",null);
         assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("SHIPPED");
         assertThat(number("order_status_histories",f)).isEqualTo(2);assertThat(stock(f)).containsExactly(10,10);
@@ -259,6 +265,21 @@ class OrderPaymentGuardPostgresTest {
             new CountDownLatch(1).await(25,TimeUnit.MILLISECONDS);
         }
         fail("Expected independent DB connection waiting for Order lock");
+    }
+    private void authenticateShipmentAdmin() {
+        var actor=new com.example.ecsite.security.AdminUserDetails(1L,"admin","password",true,
+                List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"password",actor.getAuthorities()));
+    }
+    private void prepareManualShipment(Fixture f) {
+        tx(() -> {
+            Order order=orders.findByIdForUpdate(f.orderId).orElseThrow();
+            var now=LocalDateTime.now(); order.setOrderedAt(now.minusDays(2));
+            org.springframework.test.util.ReflectionTestUtils.setField(order,"changeDeadlineAt",now.minusDays(1));
+            order.beginShippingPreparation(now.minusHours(1),7L,"preparer");
+            return null;
+        });
     }
     private Fixture fixture(boolean authorized) {
         return tx(() -> {
