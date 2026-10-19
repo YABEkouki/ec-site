@@ -29,7 +29,7 @@ class PaymentShippingPreparationValidationTest {
     private final PaymentGateway gateway = mock(PaymentGateway.class);
     private final OrderModificationGuard modificationGuard = mock(OrderModificationGuard.class);
     private final PaymentService service = new PaymentService(payments, transactions,
-            new PaymentConsistencyEvaluator(), modificationGuard);
+            new PaymentConsistencyEvaluator(), modificationGuard, mock(CaptureShipmentOperations.class));
 
     private Order order(int amount, int revision) {
         Order order = new Order(1L, amount, NOW.minusHours(4), NOW);

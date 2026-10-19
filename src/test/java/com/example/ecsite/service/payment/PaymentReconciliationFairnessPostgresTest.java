@@ -37,6 +37,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Testcontainers
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentReconciliationFairnessPostgresTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean CaptureShipmentOperations captureOperations;
     @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17")
             .withDatabaseName("feature120_fairness").withUsername("feature120").withPassword("feature120-test")
             .withCommand("postgres","-c","lock_timeout=10000","-c","statement_timeout=15000");

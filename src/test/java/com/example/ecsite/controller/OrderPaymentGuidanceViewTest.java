@@ -44,7 +44,7 @@ class OrderPaymentGuidanceViewTest {
         when(repository.findByOrderIdOrderByCreatedAtAscIdAsc(42L)).thenReturn(List.of(payment));
         when(transactions.findByPaymentIdAndTransactionTypeAndStatus(52L,PaymentTransactionType.AUTHORIZE,PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,3000,0,"key",now)));
-        var service=new PaymentService(repository,transactions,mock(PaymentConsistencyEvaluator.class),mock(com.example.ecsite.service.OrderModificationGuard.class));
+        var service=new PaymentService(repository,transactions,mock(PaymentConsistencyEvaluator.class),mock(com.example.ecsite.service.OrderModificationGuard.class),mock(com.example.ecsite.service.payment.CaptureShipmentOperations.class));
         var resolver=new ClassLoaderTemplateResolver();resolver.setPrefix("templates/");resolver.setSuffix(".html");resolver.setTemplateMode("HTML");resolver.setCharacterEncoding("UTF-8");
         var engine=new SpringTemplateEngine();engine.setTemplateResolver(resolver);var views=new ThymeleafViewResolver();views.setTemplateEngine(engine);views.setCharacterEncoding("UTF-8");views.setContentType("text/html;charset=UTF-8");
         var mvc=MockMvcBuilders.standaloneSetup(new ViewController(order,service)).setViewResolvers(views).build();

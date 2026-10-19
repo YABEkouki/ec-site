@@ -113,7 +113,7 @@ class OrderPaymentGuardPostgresTest {
         assertThat(stock(f)).containsExactly(11,12);
         assertThat(number("order_content_change_histories", f)).isEqualTo(1);
         assertThat(number("stock_movements", f)).isEqualTo(2);
-        PaymentCaptureStart start = captureStart.start(f.orderId,1L,"admin",null);
+        PaymentCaptureStart start = preparedCapture(f);
         assertThat(start.amount()).isEqualTo(1000);
         assertThat(jdbc.queryForObject("select order_content_revision from payment_transactions where id=?", Integer.class,start.transactionId())).isEqualTo(1);
     }
@@ -157,7 +157,7 @@ class OrderPaymentGuardPostgresTest {
         Fixture f = fixture(true); CompletableFuture<Integer> blocker = new CompletableFuture<>();
         Future<?> first = workers.submit(() -> tx(() -> {
             orders.findByIdForUpdate(f.orderId).orElseThrow();
-            captureStart.start(f.orderId,1L,"admin",null);
+            pendingCaptureUnderOrderLock(f);
             blocker.complete(jdbc.queryForObject("select pg_backend_pid()",Integer.class));
             awaitUnchecked(release); return null;
         }));
@@ -168,14 +168,14 @@ class OrderPaymentGuardPostgresTest {
         assertThatThrownBy(() -> changing.get(20,TimeUnit.SECONDS)).hasCauseInstanceOf(InvalidOrderStatusException.class);
         assertThat(state(f)).isEqualTo(before); verifyNoInteractions(calculator,gateway);
     }
-    @Test void itemChangeCommitsBeforeCaptureAndCaptureUsesNewSnapshot() throws Exception {
+    @Test void itemChangeCommitsBeforePreparationAndCaptureUsesNewSnapshot() throws Exception {
         Fixture f = fixture(true); price(f,1000); CompletableFuture<Integer> blocker = new CompletableFuture<>();
         when(calculator.calculate(any(),any(ChargeTaxSnapshot.class))).thenAnswer(call -> {
             blocker.complete(jdbc.queryForObject("select pg_backend_pid()",Integer.class));
             entered.countDown(); await(release); return amount(f,1000);
         });
         Future<?> changing = workers.submit(() -> change(f)); await(entered);
-        Future<PaymentCaptureStart> starting = workers.submit(() -> captureStart.start(f.orderId,1L,"admin",null));
+        Future<PaymentCaptureStart> starting = workers.submit(() -> preparedCapture(f));
         assertWait(blocker.get(20,TimeUnit.SECONDS)); release.countDown(); changing.get(20,TimeUnit.SECONDS);
         PaymentCaptureStart result = starting.get(20,TimeUnit.SECONDS);
         assertThat(result.amount()).isEqualTo(1000);
@@ -224,11 +224,25 @@ class OrderPaymentGuardPostgresTest {
         Fixture f=fixture(type!=PaymentTransactionType.AUTHORIZE);
         switch(type) {
             case AUTHORIZE -> authorizationStart.start(f.orderId);
-            case CAPTURE -> captureStart.start(f.orderId,1L,"admin",null);
+            // Keep an ORDERED + PENDING legacy fixture: guards must still reject its mutations.
+            case CAPTURE -> tx(() -> { pendingCaptureUnderOrderLock(f); return null; });
             case CANCEL -> userCancelStart.start(f.orderId,f.userId,"user");
             default -> throw new AssertionError(type);
         }
         return f;
+    }
+    private PaymentCaptureStart preparedCapture(Fixture f) {
+        // Preparation follows any completed item change, then the capture service starts a clean TX.
+        prepareManualShipment(f);authenticateShipmentAdmin();
+        try{return captureStart.start(f.orderId,1L,"admin",null);}
+        finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+    }
+    private void pendingCaptureUnderOrderLock(Fixture f) {
+        orders.findByIdForUpdate(f.orderId).orElseThrow();
+        Payment payment=payments.findByOrderIdForUpdate(f.orderId).getFirst();
+        transactions.saveAndFlush(new PaymentTransaction(payment,PaymentTransactionType.CAPTURE,
+                payment.getAmount(),0,UUID.randomUUID().toString(),orders.findCurrentTimeInTokyo(),
+                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN,1L,"admin",null)));
     }
     private boolean change(Fixture f) { return orderService.changeItemsForUser(f.orderId,f.userId,"user",form(f)); }
     private OrderItemChangeForm form(Fixture f) {

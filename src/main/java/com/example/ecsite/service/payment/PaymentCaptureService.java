@@ -43,6 +43,9 @@ public class PaymentCaptureService {
                 username,
                 internalNote);
 
+        if (start.disposition() == PaymentStartDisposition.ALREADY_APPLIED) {
+            return new CaptureResult(CaptureResultStatus.CAPTURED, start.providerPaymentId(), null, null);
+        }
         CaptureResult result;
         if (start.disposition() == PaymentStartDisposition.NEW) {
             postGuard.beforeNewPost(start.snapshot());

@@ -47,11 +47,13 @@ class PaymentServiceTest {
     private PaymentRepository paymentRepository;
     private PaymentTransactionRepository paymentTransactionRepository;
     private PaymentService paymentService;
+    private CaptureShipmentOperations captureOperations;
     private com.example.ecsite.service.OrderModificationGuard orderModificationGuard;
 
     @BeforeEach
     void setUp() {
 
+        captureOperations = mock(CaptureShipmentOperations.class);
         orderModificationGuard = mock(com.example.ecsite.service.OrderModificationGuard.class);
         paymentRepository = mock(PaymentRepository.class);
         paymentTransactionRepository = mock(PaymentTransactionRepository.class);
@@ -67,6 +69,7 @@ class PaymentServiceTest {
                 paymentTransactionRepository,
                 new PaymentConsistencyEvaluator(),
                 orderModificationGuard,
+                captureOperations,
                 clock);
     }
 
@@ -967,470 +970,21 @@ class PaymentServiceTest {
                 transaction.getCompletedAt());
     }
 
-    @Test
-    void startCaptureCreatesPendingCaptureTransaction() {
 
-        Order order = mock(Order.class);
 
-        when(order.getId()).thenReturn(100L);
-        when(order.getTotalAmount()).thenReturn(12_345);
-        when(order.getContentRevision()).thenReturn(3);
 
-        Payment payment = createPayment(order);
 
-        payment.setProviderPaymentId(
-                "pf_test_123",
-                LocalDateTime.of(2026, 10, 1, 9, 10));
 
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
 
-        PaymentTransaction authorization = createSucceededAuthorization(
-                payment,
-                12_345,
-                3);
 
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(payment));
 
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.CANCEL,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.empty());
 
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.CAPTURE,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.empty());
 
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.AUTHORIZE,
-                        PaymentTransactionStatus.SUCCEEDED))
-                .thenReturn(Optional.of(authorization));
 
-        PaymentCaptureStart result = paymentService.startCapture(
-                order,
-                TEST_INITIATOR);
 
-        ArgumentCaptor<PaymentTransaction> captor = ArgumentCaptor.forClass(
-                PaymentTransaction.class);
 
-        verify(paymentTransactionRepository)
-                .save(captor.capture());
 
-        PaymentTransaction transaction = captor.getValue();
 
-        assertEquals(
-                PaymentTransactionType.CAPTURE,
-                transaction.getTransactionType());
-
-        assertEquals(
-                PaymentTransactionStatus.PENDING,
-                transaction.getStatus());
-
-        assertEquals(
-                12_345,
-                transaction.getAmount());
-
-        assertEquals(
-                3,
-                transaction.getOrderContentRevision());
-
-        assertNotNull(
-                transaction.getIdempotencyKey());
-
-        assertEquals(
-                PaymentTransactionInitiatorType.ADMIN,
-                transaction.getInitiatorType());
-
-        assertEquals(
-                1L,
-                transaction.getInitiatorId());
-
-        assertEquals(
-                "test-admin",
-                transaction.getInitiatorUsername());
-
-        assertEquals(
-                "test",
-                transaction.getInternalNote());
-
-        assertEquals(
-                "pf_test_123",
-                result.providerPaymentId());
-
-        assertEquals(
-                transaction.getIdempotencyKey(),
-                result.idempotencyKey());
-        assertEquals(PaymentStartDisposition.NEW, result.disposition());
-    }
-
-    @Test
-    void startCaptureReusesExistingPendingTransaction() {
-
-        Order order = mock(Order.class);
-
-        when(order.getId()).thenReturn(100L);
-        when(order.getTotalAmount()).thenReturn(12_345);
-        when(order.getContentRevision()).thenReturn(2);
-
-        Payment payment = createPayment(order);
-
-        PaymentTransaction authorization = createSucceededAuthorization(
-                payment,
-                12_345,
-                2);
-
-        payment.setProviderPaymentId(
-                "pf_test_123",
-                LocalDateTime.of(2026, 10, 1, 9, 10));
-
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction transaction = new PaymentTransaction(
-                payment,
-                PaymentTransactionType.CAPTURE,
-                12_345,
-                2,
-                "capture-key-123",
-                LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
-
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.CANCEL,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.empty());
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.CAPTURE,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.of(transaction));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.AUTHORIZE,
-                        PaymentTransactionStatus.SUCCEEDED))
-                .thenReturn(Optional.of(authorization));
-
-        PaymentCaptureStart result = paymentService.startCapture(
-                order,
-                TEST_INITIATOR);
-
-        assertEquals(
-                "pf_test_123",
-                result.providerPaymentId());
-
-        assertEquals(
-                "capture-key-123",
-                result.idempotencyKey());
-
-        verify(paymentTransactionRepository, never())
-                .save(any(PaymentTransaction.class));
-        assertEquals(PaymentStartDisposition.REUSED, result.disposition());
-    }
-
-    @Test
-    void startCaptureRejectsPendingCancellation() {
-
-        Order order = mock(Order.class);
-        when(order.getTotalAmount()).thenReturn(12_345);
-        when(order.getContentRevision()).thenReturn(2);
-
-        when(order.getId()).thenReturn(100L);
-
-        Payment payment = createPayment(order);
-
-        PaymentTransaction authorization = createSucceededAuthorization(
-                payment,
-                12_345,
-                2);
-
-        payment.setProviderPaymentId(
-                "pf_test_123",
-                LocalDateTime.of(2026, 10, 1, 9, 10));
-
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction cancellation = new PaymentTransaction(
-                payment,
-                PaymentTransactionType.CANCEL,
-                12_345,
-                2,
-                "cancel-key-123",
-                LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
-
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.CANCEL,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.of(cancellation));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.AUTHORIZE,
-                        PaymentTransactionStatus.SUCCEEDED))
-                .thenReturn(Optional.of(authorization));
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> paymentService.startCapture(
-                        order,
-                        TEST_INITIATOR));
-
-        verify(paymentTransactionRepository, never())
-                .save(any(PaymentTransaction.class));
-    }
-
-    @Test
-    void startCaptureRejectsOrderWithoutAuthorizedPayment() {
-
-        Order order = mock(Order.class);
-
-        when(order.getId()).thenReturn(100L);
-
-        Payment payment = createPayment(order);
-
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(payment));
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> paymentService.startCapture(
-                        order,
-                        TEST_INITIATOR));
-
-        verify(paymentTransactionRepository, never())
-                .save(any(PaymentTransaction.class));
-    }
-
-    @Test
-    void startCaptureRejectsMultipleAuthorizedPayments() {
-
-        Order order = mock(Order.class);
-
-        when(order.getId()).thenReturn(100L);
-
-        Payment payment1 = createPayment(order);
-        Payment payment2 = createPayment(order);
-
-        payment1.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        payment2.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 25));
-
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(
-                        payment1,
-                        payment2));
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> paymentService.startCapture(
-                        order,
-                        TEST_INITIATOR));
-
-        verify(paymentTransactionRepository, never())
-                .save(any(PaymentTransaction.class));
-    }
-
-    @Test
-    void capturedResultCapturesPaymentAndCompletesTransaction() {
-
-        Order order = mock(Order.class);
-
-        Payment payment = createPayment(order);
-
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction transaction = new PaymentTransaction(
-                payment,
-                PaymentTransactionType.CAPTURE,
-                12_345,
-                2,
-                "capture-key-123",
-                LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
-
-        when(paymentRepository.findByIdForUpdate(10L))
-                .thenReturn(Optional.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        10L,
-                        PaymentTransactionType.CAPTURE,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.of(transaction));
-
-        paymentService.applyCaptureResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CAPTURE), new CaptureResult(
-                        CaptureResultStatus.CAPTURED,
-                        "pf_test_123",
-                        null,
-                        null));
-
-        assertEquals(
-                PaymentStatus.CAPTURED,
-                payment.getStatus());
-
-        assertEquals(
-                PaymentTransactionStatus.SUCCEEDED,
-                transaction.getStatus());
-
-        assertEquals(
-                "pf_test_123",
-                transaction.getProviderTransactionId());
-
-        assertEquals(
-                LocalDateTime.of(2026, 10, 1, 10, 0),
-                payment.getUpdatedAt());
-
-        assertEquals(
-                LocalDateTime.of(2026, 10, 1, 10, 0),
-                transaction.getCompletedAt());
-    }
-
-    @Test
-    void pendingCaptureResultLeavesStatesUnchanged() {
-
-        Order order = mock(Order.class);
-
-        Payment payment = createPayment(order);
-
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction transaction = new PaymentTransaction(
-                payment,
-                PaymentTransactionType.CAPTURE,
-                12_345,
-                2,
-                "capture-key-123",
-                LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
-
-        when(paymentRepository.findByIdForUpdate(10L))
-                .thenReturn(Optional.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        10L,
-                        PaymentTransactionType.CAPTURE,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.of(transaction));
-
-        paymentService.applyCaptureResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CAPTURE), new CaptureResult(
-                        CaptureResultStatus.PENDING,
-                        "pf_test_123",
-                        null,
-                        null));
-
-        assertEquals(
-                PaymentStatus.AUTHORIZED,
-                payment.getStatus());
-
-        assertEquals(
-                PaymentTransactionStatus.PENDING,
-                transaction.getStatus());
-
-        assertEquals(
-                LocalDateTime.of(2026, 10, 1, 9, 20),
-                payment.getUpdatedAt());
-
-        assertNull(
-                transaction.getCompletedAt());
-    }
-
-    @Test
-    void failedCaptureResultFailsTransactionButKeepsPaymentAuthorized() {
-
-        Order order = mock(Order.class);
-
-        Payment payment = createPayment(order);
-
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction transaction = new PaymentTransaction(
-                payment,
-                PaymentTransactionType.CAPTURE,
-                12_345,
-                2,
-                "capture-key-123",
-                LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
-
-        when(paymentRepository.findByIdForUpdate(10L))
-                .thenReturn(Optional.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        10L,
-                        PaymentTransactionType.CAPTURE,
-                        PaymentTransactionStatus.PENDING))
-                .thenReturn(Optional.of(transaction));
-
-        paymentService.applyCaptureResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.CAPTURE), new CaptureResult(
-                        CaptureResultStatus.FAILED,
-                        "pf_test_123",
-                        "capture_failed",
-                        "Capture failed"));
-
-        assertEquals(
-                PaymentStatus.AUTHORIZED,
-                payment.getStatus());
-
-        assertEquals(
-                PaymentTransactionStatus.FAILED,
-                transaction.getStatus());
-
-        assertEquals(
-                "pf_test_123",
-                transaction.getProviderTransactionId());
-
-        assertEquals(
-                "capture_failed",
-                transaction.getFailureCode());
-
-        assertEquals(
-                "Capture failed",
-                transaction.getFailureMessage());
-
-        assertEquals(
-                LocalDateTime.of(2026, 10, 1, 9, 20),
-                payment.getUpdatedAt());
-
-        assertEquals(
-                LocalDateTime.of(2026, 10, 1, 10, 0),
-                transaction.getCompletedAt());
-    }
 
     @Test
     void requiresAuthorizationCancellationReturnsTrueForAuthorizedPayJpCardPayment() {
@@ -1815,143 +1369,11 @@ class PaymentServiceTest {
                 paymentService.canResumeAuthorization(order));
     }
 
-    @Test
-    void startCaptureUsesCurrentOrderAmountWhenOrderAmountDecreasedAfterAuthorization() {
 
-        Order order = mock(Order.class);
 
-        when(order.getId()).thenReturn(100L);
-        when(order.getTotalAmount()).thenReturn(10_000);
-        when(order.getContentRevision()).thenReturn(1);
 
-        Payment payment = createPayment(order);
 
-        payment.setProviderPaymentId(
-                "pf_test_123",
-                LocalDateTime.of(2026, 10, 1, 9, 10));
 
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction authorization = createSucceededAuthorization(
-                payment,
-                12_345,
-                0);
-
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.AUTHORIZE,
-                        PaymentTransactionStatus.SUCCEEDED))
-                .thenReturn(Optional.of(authorization));
-
-        PaymentCaptureStart result = paymentService.startCapture(
-                order,
-                TEST_INITIATOR);
-
-        ArgumentCaptor<PaymentTransaction> captor = ArgumentCaptor.forClass(PaymentTransaction.class);
-
-        verify(paymentTransactionRepository).save(captor.capture());
-
-        PaymentTransaction transaction = captor.getValue();
-
-        assertEquals(PaymentTransactionType.CAPTURE, transaction.getTransactionType());
-        assertEquals(10000, transaction.getAmount());
-        assertEquals(1, transaction.getOrderContentRevision());
-        assertEquals(10000, result.amount());
-    }
-
-    @Test
-    void startCaptureRejectsWhenOrderAmountIncreasedAfterAuthorization() {
-
-        Order order = mock(Order.class);
-
-        when(order.getId()).thenReturn(100L);
-        when(order.getTotalAmount()).thenReturn(15_000);
-        when(order.getContentRevision()).thenReturn(1);
-
-        Payment payment = createPayment(order);
-
-        payment.setProviderPaymentId(
-                "pf_test_123",
-                LocalDateTime.of(2026, 10, 1, 9, 10));
-
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction authorization = createSucceededAuthorization(
-                payment,
-                12_345,
-                0);
-
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.AUTHORIZE,
-                        PaymentTransactionStatus.SUCCEEDED))
-                .thenReturn(Optional.of(authorization));
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> paymentService.startCapture(
-                        order,
-                        TEST_INITIATOR));
-
-        verify(paymentTransactionRepository, never())
-                .save(any(PaymentTransaction.class));
-    }
-
-    @Test
-    void startCaptureRejectsWhenContentRevisionChangedAfterAuthorization() {
-
-        Order order = mock(Order.class);
-
-        when(order.getId()).thenReturn(100L);
-        when(order.getTotalAmount()).thenReturn(12_345);
-        when(order.getContentRevision()).thenReturn(1);
-
-        Payment payment = createPayment(order);
-
-        payment.setProviderPaymentId(
-                "pf_test_123",
-                LocalDateTime.of(2026, 10, 1, 9, 10));
-
-        payment.markAuthorized(
-                LocalDateTime.of(2026, 10, 1, 9, 20));
-
-        PaymentTransaction authorization = createSucceededAuthorization(
-                payment,
-                12_345,
-                0);
-
-        when(paymentRepository
-                .findByOrderIdForUpdate(100L))
-                .thenReturn(List.of(payment));
-
-        when(paymentTransactionRepository
-                .findByPaymentIdAndTransactionTypeAndStatus(
-                        payment.getId(),
-                        PaymentTransactionType.AUTHORIZE,
-                        PaymentTransactionStatus.SUCCEEDED))
-                .thenReturn(Optional.of(authorization));
-
-        assertThrows(
-                IllegalStateException.class,
-                () -> paymentService.startCapture(
-                        order,
-                        TEST_INITIATOR));
-
-        verify(paymentTransactionRepository, never())
-                .save(any(PaymentTransaction.class));
-    }
 
     @Test
     void hasAuthorizedCardPaymentReturnsTrueRegardlessOfOrderConsistency() {
@@ -2129,5 +1551,22 @@ class PaymentServiceTest {
         Payment payment=createPayment(order);payment.setProviderPaymentId("pf",LocalDateTime.of(2026,10,1,10,0));
         when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L)).thenReturn(List.of(payment));
         assertFalse(paymentService.requiresAuthorizationConfirmation(order));
+    }
+
+    @Test void captureStartDelegatesToProtectedShipmentOperation() {
+        Order order=mock(Order.class);when(order.getId()).thenReturn(100L);
+        paymentService.startCapture(order,TEST_INITIATOR);
+        verify(captureOperations).start(100L,TEST_INITIATOR.id(),TEST_INITIATOR.username(),TEST_INITIATOR.internalNote());
+        org.mockito.Mockito.verifyNoInteractions(paymentRepository,paymentTransactionRepository);
+    }
+    @Test void captureResultDelegatesOnlyForMatchingOrder() {
+        Order order=mock(Order.class);when(order.getId()).thenReturn(100L);
+        var snapshot=PaymentSnapshotFixtures.of(100L,20L,30L,PaymentTransactionType.CAPTURE,"key",200,0,"provider",PaymentTransactionInitiatorType.ADMIN,9L,"admin",null);
+        var result=new CaptureResult(CaptureResultStatus.CAPTURED,"provider",null,null);
+        when(captureOperations.apply(snapshot,result)).thenReturn(PaymentResultApplication.APPLIED);
+        assertEquals(PaymentResultApplication.APPLIED,paymentService.applyCaptureResult(order,snapshot,result));
+        when(order.getId()).thenReturn(999L);
+        assertEquals(PaymentResultApplication.CONFLICT,paymentService.applyCaptureResult(order,snapshot,result));
+        verify(captureOperations).apply(snapshot,result);
     }
 }

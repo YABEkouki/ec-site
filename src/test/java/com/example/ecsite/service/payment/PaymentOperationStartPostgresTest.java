@@ -34,7 +34,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @org.springframework.boot.context.properties.EnableConfigurationProperties(com.example.ecsite.config.PayJpSafetyProperties.class)
-@Import({com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class, com.example.ecsite.config.TimeConfig.class,PaymentOperationSnapshotService.class, PaymentAuthorizationResultService.class,OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
+@Import({CaptureShipmentOperations.class,CaptureShipmentPolicy.class,CaptureShipmentSnapshotMatcher.class,com.example.ecsite.service.OrderWriteContext.class,com.example.ecsite.service.OrderShipmentGuard.class,com.example.ecsite.service.OrderStatusHistoryService.class,com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class, com.example.ecsite.config.TimeConfig.class,PaymentOperationSnapshotService.class, PaymentAuthorizationResultService.class,OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
         PaymentAuthorizationService.class, PaymentCaptureService.class, PaymentCaptureStartService.class,
         PaymentCancellationService.class, PaymentCancellationStartService.class,
         AdminPaymentCancellationService.class, AdminPaymentCancellationStartService.class})
@@ -108,9 +108,9 @@ class PaymentOperationStartPostgresTest {
         when(gateway.retrievePaymentFlow(f.providerId)).thenAnswer(call -> {
             boundary(f, "CAPTURE"); return new PaymentFlowState(f.providerId, PaymentFlowStatus.REQUIRES_CAPTURE, null, null);
         });
-        Future<?> first = workers.submit(() -> capture.captureForShipment(f.order.getId(), 1L, "admin", null));
+        Future<?> first = workers.submit(() -> captureAsAdmin(f.order.getId(), 1L, "admin", null));
         await(entered);
-        assertThat(capture.captureForShipment(f.order.getId(), 2L, "other", null).status()).isEqualTo(CaptureResultStatus.PENDING);
+        assertThat(captureAsAdmin(f.order.getId(), 2L, "other", null).status()).isEqualTo(CaptureResultStatus.PENDING);
         assertRows(f, "CAPTURE", 1);
         release.countDown(); first.get(20, TimeUnit.SECONDS);
         verify(gateway, times(1)).capture(any()); verify(gateway).retrievePaymentFlow(f.providerId);
@@ -146,13 +146,13 @@ class PaymentOperationStartPostgresTest {
             Fixture f = fixture(true);
             entered = new CountDownLatch(1); release = new CountDownLatch(1);
             Future<?> first = workers.submit(() -> {
-                if (captureFirst) capture.captureForShipment(f.order.getId(), 1L, "admin", null);
+                if (captureFirst) captureAsAdmin(f.order.getId(), 1L, "admin", null);
                 else adminCancellation.cancel(f.order.getId(), 1L, "admin", null);
             });
             await(entered);
             assertThatThrownBy(() -> {
                 if (captureFirst) adminCancellation.cancel(f.order.getId(), 1L, "admin", null);
-                else capture.captureForShipment(f.order.getId(), 1L, "admin", null);
+                else captureAsAdmin(f.order.getId(), 1L, "admin", null);
             }).isInstanceOf(captureFirst ? com.example.ecsite.exception.InvalidOrderStatusException.class
                     : IllegalStateException.class);
             release.countDown(); first.get(20, TimeUnit.SECONDS);
@@ -181,7 +181,7 @@ class PaymentOperationStartPostgresTest {
     @Test void decreasedAmountCaptureKeepsCurrentRevisionAndAmount() {
         Fixture f = fixture(true);
         tx(() -> { Order o = orders.findByIdForUpdate(f.order.getId()).orElseThrow(); o.setTotalAmount(800); o.incrementContentRevision(); return null; });
-        captureStart.start(f.order.getId(), 1L, "admin", null);
+        startAsAdmin(f.order.getId(), 1L, "admin", null);
         assertThat(jdbc.queryForMap("select amount, order_content_revision from payment_transactions where payment_id = ? and transaction_type = 'CAPTURE'", f.paymentId))
                 .containsEntry("amount", 800).containsEntry("order_content_revision", 1);
     }
@@ -225,7 +225,7 @@ class PaymentOperationStartPostgresTest {
                     PaymentTransactionType.CAPTURE, 1000, 0, UUID.randomUUID().toString(), LocalDateTime.now()));
             return null;
         });
-        assertThatThrownBy(() -> captureStart.start(c.order.getId(), 1L, "admin", null)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> startAsAdmin(c.order.getId(), 1L, "admin", null)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test void existingNonPayjpPaymentAndMultipleActivePaymentsRejectAuthorization() {
@@ -262,6 +262,26 @@ class PaymentOperationStartPostgresTest {
         });
         assertThatThrownBy(() -> authorization.prepareAuthorization(f.order)).isInstanceOf(IllegalStateException.class);
         assertRows(f, "AUTHORIZE", 1); verifyNoInteractions(gateway);
+    }
+
+
+    private void prepareCapture(Long id,Long actorId,String name) {
+        tx(() -> {
+            Order order=orders.findByIdForUpdate(id).orElseThrow();
+            if(order.getStatus()==OrderStatus.ORDERED && order.getShippingPreparationStartedAt()==null)
+                order.beginShippingPreparation(orders.findCurrentTimeInTokyo(),7L,"preparer");
+            return null;
+        });
+        var actor=new com.example.ecsite.security.AdminUserDetails(actorId,name,"password",true,java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
+    }
+    private CaptureResult captureAsAdmin(Long id,Long actorId,String name,String note) {
+        prepareCapture(id,actorId,name);
+        try{return capture.captureForShipment(id,actorId,name,note);}finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+    }
+    private PaymentCaptureStart startAsAdmin(Long id,Long actorId,String name,String note) {
+        prepareCapture(id,actorId,name);
+        try{return captureStart.start(id,actorId,name,note);}finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
     }
 
     private void boundary(Fixture f, String type) {
