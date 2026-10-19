@@ -6,6 +6,8 @@ import org.hibernate.Session;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import com.example.ecsite.entity.Order;
+import com.example.ecsite.entity.Payment;
+import com.example.ecsite.entity.PaymentTransaction;
 import com.example.ecsite.repository.PaymentRepository;
 import com.example.ecsite.repository.PaymentTransactionRepository;
 
@@ -56,6 +58,24 @@ public class OrderWriteContext {
         if (entityManager.unwrap(Session.class).isReadOnly(order))
             throw new IllegalStateException("読取り専用の注文では操作できません。");
         entityManager.refresh(order);
+    }
+
+    /**
+     * Optional capture-result API, not used by existing flows. Caller must already
+     * hold Order -> Payment locks and run the entry dirty check before its queries.
+     * Check BOTH update targets before refreshing either; leave other entities alone.
+     */
+    public void refreshWritableCaptureTargets(Payment payment, PaymentTransaction transaction) {
+        requireCleanWritableReadCommitted();
+        if (payment == null || transaction == null || !entityManager.contains(payment) || !entityManager.contains(transaction)) {
+            throw new IllegalArgumentException("管理中のPaymentと取引が必要です。");
+        }
+        Session session = entityManager.unwrap(Session.class);
+        if (session.isReadOnly(payment) || session.isReadOnly(transaction)) {
+            throw new IllegalStateException("読取り専用のPaymentまたは取引は更新できません。");
+        }
+        entityManager.refresh(payment);
+        entityManager.refresh(transaction);
     }
 
     /** Caller holds Order. Lock all Payments in ID order before refreshing their histories. */
