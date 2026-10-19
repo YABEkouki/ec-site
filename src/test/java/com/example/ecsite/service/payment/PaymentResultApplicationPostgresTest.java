@@ -41,6 +41,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@com.example.ecsite.support.CaptureConnectionTest
 class PaymentResultApplicationPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
             .withDatabaseName("feature120_results").withUsername("feature120").withPassword("feature120-test")
@@ -84,7 +85,7 @@ class PaymentResultApplicationPostgresTest {
     @Autowired AdminPaymentCancellationResultService adminCancelResult;
     @Autowired PaymentOperationSnapshotService snapshots;
     @Test void reconciliationGetRunsWithoutTransactionAndCanAcquireOrderLock() {
-        Fixture f=fixture(true); PaymentCaptureStart start=captureStart.start(f.orderId,1L,"admin",null);
+        Fixture f=fixture(true); PaymentCaptureStart start=beginCapture(f.orderId,1L,"admin",null);
         when(gateway.retrievePaymentFlow(f.providerId)).thenAnswer(inv -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(TransactionSynchronizationManager.hasResource(dataSource)).isFalse();
@@ -94,18 +95,18 @@ class PaymentResultApplicationPostgresTest {
         reconciliation.reconcile(start.transactionId());
         assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("SHIPPED");
     }
-    @Test void captureRevisionMismatchDoesNotShipOrWriteHistory() {
-        Fixture f=fixture(true); PaymentCaptureStart start=captureStart.start(f.orderId,1L,"admin",null);
+    @Test void captureRevisionMismatchPreservesCommittedShipmentAndHistory() {
+        Fixture f=fixture(true); PaymentCaptureStart start=beginCapture(f.orderId,1L,"admin",null);
         jdbc.update("update orders set content_revision=content_revision+1 where id=?",f.orderId);
         captureResult.apply(start.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,f.providerId,null,null));
-        assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("ORDERED");
-        assertThat(number("order_status_histories",f)).isZero();
+        assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("SHIPPED");
+        assertThat(number("order_status_histories",f)).isEqualTo(1);
     }
     @ParameterizedTest @ValueSource(strings={"orderId","paymentId","transactionId","type","idempotencyKey","amount","orderContentRevision","providerPaymentId"})
     void captureRejectsMismatchedIdentityAndRequestValues(String field) {
         Fixture f=fixture(true), other=fixture(true);
-        PaymentCaptureStart start=captureStart.start(f.orderId,1L,"admin",null);
-        PaymentCaptureStart otherStart=captureStart.start(other.orderId,1L,"other",null);
+        PaymentCaptureStart start=beginCapture(f.orderId,1L,"admin",null);
+        PaymentCaptureStart otherStart=beginCapture(other.orderId,1L,"other",null);
         var original=start.snapshot();
         Object value=switch(field) {
             case "orderId" -> other.orderId;
@@ -122,12 +123,12 @@ class PaymentResultApplicationPostgresTest {
         assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");
     }
     @Test void missingTransactionIsRejectedWithoutSideEffects() {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);var before=state(f);
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);var before=state(f);
         assertThat(captureResult.apply(replace(start.snapshot(),"transactionId",Long.MAX_VALUE),captured(f))).isEqualTo(PaymentResultApplication.CONFLICT);
         assertThat(state(f)).isEqualTo(before);
     }
     @Test void sameCaptureResultShipsOnlyOnce() {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"saved-admin","memo");
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"saved-admin","memo");
         assertThat(captureResult.apply(start.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.APPLIED);
         var after=state(f);
         assertThat(captureResult.apply(start.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.ALREADY_APPLIED);
@@ -135,13 +136,13 @@ class PaymentResultApplicationPostgresTest {
         assertThat(number("stock_movements",f)).isZero();assertThat(stock(f)).containsExactly(10,10);
     }
     @Test void captureAmountMismatchDoesNotShip() {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);
         jdbc.update("update orders set total_amount=total_amount-1 where id=?",f.orderId);var before=state(f);
         assertThat(captureResult.apply(start.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.CONFLICT);
         assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");
     }
     @Test void decreasedCaptureUsesCaptureRevisionAndAmount() {
-        Fixture f=fixture(true); price(f,1000);change(f);var start=captureStart.start(f.orderId,1L,"admin",null);
+        Fixture f=fixture(true); price(f,1000);change(f);var start=beginCapture(f.orderId,1L,"admin",null);
         assertThat(start.snapshot().amount()).isEqualTo(1000);assertThat(start.snapshot().orderContentRevision()).isEqualTo(1);
         assertThat(captureResult.apply(start.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.APPLIED);
         assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("SHIPPED");
@@ -181,22 +182,22 @@ class PaymentResultApplicationPostgresTest {
         assertThat(jdbc.queryForObject("select provider_payment_id from payments where id=?",String.class,start.paymentId())).isEqualTo(f.providerId);
         assertThatThrownBy(()->authResult.setProviderPaymentId(start.snapshot()," ")).isInstanceOf(IllegalArgumentException.class);
     }
-    @Test void oldCaptureSuccessCannotUpdateNewPendingOperation() {
-        Fixture f=fixture(true);var old=captureStart.start(f.orderId,1L,"old",null);
-        assertThat(captureResult.apply(old.snapshot(),new CaptureResult(CaptureResultStatus.FAILED,f.providerId,"failed","failed")))
-                .isEqualTo(PaymentResultApplication.APPLIED);
-        var current=captureStart.start(f.orderId,2L,"new",null);var before=state(f);
-        assertThat(captureResult.apply(old.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.IGNORED_STALE);
-        assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(current.transactionId())).isEqualTo("PENDING");
+    @Test void failedCaptureCannotCreateNewPendingOperationOrAcceptLateSuccess() {
+        Fixture f=fixture(true);var old=beginCapture(f.orderId,1L,"old",null);
+        assertThat(captureResult.apply(old.snapshot(),new CaptureResult(CaptureResultStatus.FAILED,f.providerId,"failed","failed"))).isEqualTo(PaymentResultApplication.APPLIED);
+        var before=state(f);
+        assertThatThrownBy(() -> beginCapture(f.orderId,2L,"new",null)).isInstanceOf(IllegalStateException.class);
+        assertThat(captureResult.apply(old.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.CONFLICT);
+        assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(old.transactionId())).isEqualTo("FAILED");
     }
-    @Test void completedCaptureFailureWithNewPendingIsStale() {
-        Fixture f=fixture(true);var old=captureStart.start(f.orderId,1L,"old",null);
+    @Test void completedCaptureFailureRequiresRecoveryAndNeverCreatesAnotherOperation() {
+        Fixture f=fixture(true);var old=beginCapture(f.orderId,1L,"old",null);
         var failure=new CaptureResult(CaptureResultStatus.FAILED,f.providerId,"failed","failed");captureResult.apply(old.snapshot(),failure);
-        captureStart.start(f.orderId,2L,"new",null);
-        assertThat(captureResult.apply(old.snapshot(),failure)).isEqualTo(PaymentResultApplication.IGNORED_STALE);
+        var before=state(f);assertThatThrownBy(() -> beginCapture(f.orderId,2L,"new",null)).isInstanceOf(IllegalStateException.class);
+        assertThat(captureResult.apply(old.snapshot(),failure)).isEqualTo(PaymentResultApplication.CONFLICT);assertThat(state(f)).isEqualTo(before);
     }
     @Test void resultRollbackAndRetryAreAtomic() {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);var before=state(f);
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);var before=state(f);
         assertThatThrownBy(()->tx(()->{captureResult.apply(start.snapshot(),captured(f));throw new IllegalStateException("rollback");}))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");
@@ -204,7 +205,7 @@ class PaymentResultApplicationPostgresTest {
         assertThat(number("order_status_histories",f)).isEqualTo(1);
     }
     @Test void reconciliationWaitDoesNotApplyOldRevision() throws Exception {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);
         when(gateway.retrievePaymentFlow(f.providerId)).thenAnswer(inv->{
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();entered.countDown();await(release);
             return new PaymentFlowState(f.providerId,PaymentFlowStatus.SUCCEEDED,null,null);
@@ -215,7 +216,7 @@ class PaymentResultApplicationPostgresTest {
         assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");
     }
     @Test void duplicateResultsOnIndependentConnectionsSerializeAtOrderLock() throws Exception {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);
         Future<?> first=workers.submit(()->tx(()->{orders.findByIdForUpdate(f.orderId).orElseThrow();entered.countDown();awaitUnchecked(release);return captureResult.apply(start.snapshot(),captured(f));}));
         await(entered);
         Future<PaymentResultApplication> second=workers.submit(()->captureResult.apply(start.snapshot(),captured(f)));
@@ -233,7 +234,7 @@ class PaymentResultApplicationPostgresTest {
     void reconciliationNormalPathsCommitInFreshResultTransaction(PaymentTransactionType type) {
         Fixture f=fixture(type!=PaymentTransactionType.AUTHORIZE);Long id;
         if(type==PaymentTransactionType.AUTHORIZE){var start=authorizationStart.start(f.orderId);authResult.setProviderPaymentId(start.snapshot(),f.providerId);id=start.transactionId();}
-        else if(type==PaymentTransactionType.CAPTURE)id=captureStart.start(f.orderId,1L,"admin",null).transactionId();
+        else if(type==PaymentTransactionType.CAPTURE)id=beginCapture(f.orderId,1L,"admin",null).transactionId();
         else id=userCancelStart.start(f.orderId,f.userId,"user").transactionId();
         when(gateway.retrieveAuthorization(f.providerId)).thenAnswer(inv->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();return new AuthorizationRecovery(new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED,null,null,null),null);});
         when(gateway.retrievePaymentFlow(f.providerId)).thenAnswer(inv->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();return new PaymentFlowState(f.providerId,type==PaymentTransactionType.CAPTURE?PaymentFlowStatus.SUCCEEDED:PaymentFlowStatus.CANCELED,null,null);});
@@ -246,36 +247,31 @@ class PaymentResultApplicationPostgresTest {
         assertThat(authResult.setProviderPaymentId(start.snapshot(),f.providerId)).isEqualTo(PaymentResultApplication.IGNORED_STALE);
     }
     @ParameterizedTest @ValueSource(strings={"provider","key","amount"})
-    void reconciliationReloadsPaymentAndTransactionAfterGet(String changed) {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);
+    void immutableRequestRejectsIdentityChangesWhileReconciliationGets(String changed) {
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);
         when(gateway.retrievePaymentFlow(f.providerId)).thenAnswer(inv->{
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            tx(()->{
+            assertThatThrownBy(()->tx(()->{
                 if(changed.equals("provider"))jdbc.update("update payments set provider_payment_id=? where id=?","changed_"+f.providerId,start.paymentId());
                 else if(changed.equals("key"))jdbc.update("update payment_transactions set idempotency_key=? where id=?",UUID.randomUUID().toString(),start.transactionId());
                 else jdbc.update("update payment_transactions set amount=amount+1 where id=?",start.transactionId());
                 return null;
-            });
+            })).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
             return new PaymentFlowState(f.providerId,PaymentFlowStatus.SUCCEEDED,null,null);
         });
-        assertThat(reconciliation.reconcile(start.transactionId())).isEqualTo(PaymentSynchronizationOutcome.CONFLICT);
-        assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("ORDERED");
-        assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");assertThat(number("order_status_histories",f)).isZero();
+        assertThat(reconciliation.reconcile(start.transactionId())).isEqualTo(PaymentSynchronizationOutcome.APPLIED);
+        assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("SHIPPED");
+        assertThat(txnStatus(start.transactionId())).isEqualTo("SUCCEEDED");assertThat(number("order_status_histories",f)).isEqualTo(1);
     }
-    @Test void oldCaptureAndCurrentCancelResultsSerializeWithoutInvalidTransition() throws Exception {
-        Fixture f=fixture(true);var old=captureStart.start(f.orderId,1L,"admin",null);
-        captureResult.apply(old.snapshot(),new CaptureResult(CaptureResultStatus.FAILED,f.providerId,"failed","failed"));
-        var current=userCancelStart.start(f.orderId,f.userId,"user");
-        CountDownLatch ready=new CountDownLatch(2);
-        Future<PaymentResultApplication> stale=workers.submit(()->{ready.countDown();await(ready);return captureResult.apply(old.snapshot(),captured(f));});
-        Future<PaymentResultApplication> cancel=workers.submit(()->{ready.countDown();await(ready);return cancelResult.apply(current.snapshot(),new CancellationResult(CancellationResultStatus.CANCELLED,f.providerId));});
-        assertThat(stale.get(20,TimeUnit.SECONDS)).isEqualTo(PaymentResultApplication.IGNORED_STALE);
-        assertThat(cancel.get(20,TimeUnit.SECONDS)).isEqualTo(PaymentResultApplication.APPLIED);
-        assertThat(number("order_status_histories",f)).isEqualTo(1);assertThat(number("stock_movements",f)).isEqualTo(2);
-        assertThat(stock(f)).containsExactly(12,12);
+    @Test void failedShippedCaptureCannotBeCancelledOrHaveInventoryRestored() {
+        Fixture f=fixture(true);var old=beginCapture(f.orderId,1L,"admin",null);
+        captureResult.apply(old.snapshot(),new CaptureResult(CaptureResultStatus.FAILED,f.providerId,"failed","failed"));var before=state(f);
+        assertThatThrownBy(() -> userCancelStart.start(f.orderId,f.userId,"user")).isInstanceOf(com.example.ecsite.exception.InvalidOrderStatusException.class);
+        assertThat(captureResult.apply(old.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.CONFLICT);
+        assertThat(state(f)).isEqualTo(before);assertThat(number("stock_movements",f)).isZero();assertThat(stock(f)).containsExactly(10,10);
     }
     @Test void reconciliationRejectsOuterTransactionBeforeGet() {
-        Fixture f=fixture(true);var start=captureStart.start(f.orderId,1L,"admin",null);
+        Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);
         assertThatThrownBy(()->tx(()->{reconciliation.reconcile(start.transactionId());return null;}))
                 .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
         verifyNoInteractions(gateway);
@@ -300,12 +296,22 @@ class PaymentResultApplicationPostgresTest {
     @Test void oldCancelResultDoesNotOverwriteCurrentCapture() {
         Fixture f=fixture(true);var old=userCancelStart.start(f.orderId,f.userId,"old");
         tx(()->{transactions.findById(old.transactionId()).orElseThrow().markFailed(null,"failed","failed",LocalDateTime.now());return null;});
-        var current=captureStart.start(f.orderId,1L,"admin",null);
+        var current=beginCapture(f.orderId,1L,"admin",null);
         assertThat(cancelResult.apply(old.snapshot(),new CancellationResult(CancellationResultStatus.CANCELLED,f.providerId)))
                 .isEqualTo(PaymentResultApplication.IGNORED_STALE);
         assertThat(captureResult.apply(current.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.APPLIED);
         assertThat(number("order_status_histories",f)).isEqualTo(1);assertThat(number("stock_movements",f)).isZero();
     }
+
+    private PaymentCaptureStart beginCapture(Long id,Long actorId,String name,String note) {
+        tx(() -> {var order=orders.findByIdForUpdate(id).orElseThrow();
+            if(order.getStatus()==OrderStatus.ORDERED && order.getShippingPreparationStartedAt()==null)
+                order.beginShippingPreparation(orders.findCurrentTimeInTokyo(),7L,"preparer");return null;});
+        var actor=new com.example.ecsite.security.AdminUserDetails(actorId,name,"password",true,java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
+        try{return captureStart.start(id,actorId,name,note);}finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+    }
+
     private CaptureResult captured(Fixture f){return new CaptureResult(CaptureResultStatus.CAPTURED,f.providerId,null,null);}
     private String txnStatus(Long id){return jdbc.queryForObject("select status from payment_transactions where id=?",String.class,id);}
     private PaymentOperationSnapshot replace(PaymentOperationSnapshot original,String field,Object value) {
@@ -348,7 +354,7 @@ class PaymentResultApplicationPostgresTest {
             }
             o.addCharge(new OrderCharge(OrderChargeType.SHIPPING,"shipping",0,tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),1));
             o.applyAmount(amount(new Fixture(null,null,null,null,null,tax.getId()),3000));
-            orders.saveAndFlush(o);String provider="pf_"+unique;
+            orders.saveAndFlush(o);String provider="pfw_"+unique;
             if(authorized) createAuthorized(o,provider);
             return new Fixture(o.getId(),u.getId(),provider,productIds,o.getItems().stream().map(OrderItem::getId).toList(),tax.getId());
         });

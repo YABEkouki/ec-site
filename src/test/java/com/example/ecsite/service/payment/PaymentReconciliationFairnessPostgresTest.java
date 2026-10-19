@@ -31,12 +31,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @DataJpaTest(showSql=false,properties={"spring.jpa.show-sql=false","spring.sql.init.mode=never"})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace=AutoConfigureTestDatabase.Replace.NONE)
-@Import({PaymentPostGuardService.class,TimeConfig.class,PaymentService.class,PaymentConsistencyEvaluator.class})
+@Import({com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class,TimeConfig.class,PaymentService.class,PaymentConsistencyEvaluator.class})
 @EnableConfigurationProperties(PayJpSafetyProperties.class)
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 @Testcontainers
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentReconciliationFairnessPostgresTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean CaptureShipmentOperations captureOperations;
     @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17")
             .withDatabaseName("feature120_fairness").withUsername("feature120").withPassword("feature120-test")
             .withCommand("postgres","-c","lock_timeout=10000","-c","statement_timeout=15000");

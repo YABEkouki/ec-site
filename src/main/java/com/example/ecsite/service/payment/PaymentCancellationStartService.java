@@ -1,10 +1,6 @@
 package com.example.ecsite.service.payment;
 
-import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,27 +16,12 @@ public class PaymentCancellationStartService {
 
     private final OrderRepository orderRepository;
     private final PaymentService paymentService;
-    private final Clock clock;
 
-    @Autowired
     public PaymentCancellationStartService(
             OrderRepository orderRepository,
             PaymentService paymentService) {
-
-        this(
-                orderRepository,
-                paymentService,
-                Clock.system(ZoneId.of("Asia/Tokyo")));
-    }
-
-    PaymentCancellationStartService(
-            OrderRepository orderRepository,
-            PaymentService paymentService,
-            Clock clock) {
-
         this.orderRepository = orderRepository;
         this.paymentService = paymentService;
-        this.clock = clock;
     }
 
     @Transactional
@@ -55,18 +36,13 @@ public class PaymentCancellationStartService {
                         userId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
-        LocalDateTime now = LocalDateTime.now(clock);
-
         if (!order.canCancel()) {
             throw new InvalidOrderStatusException(
                     "注文受付中の注文だけをキャンセルできます。");
         }
 
-        if (!order.isWithinModificationPeriod(now)) {
-            throw new InvalidOrderStatusException(
-                    "この注文の変更受付は終了しています。");
-        }
-
+        // PaymentService checks the window after Payment locks, only for NEW
+        // cancellations. Accepted PENDING operations may continue after the deadline.
         return paymentService.startCancellation(
                 order,
                 new PaymentTransactionInitiator(

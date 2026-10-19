@@ -130,7 +130,21 @@ class PaymentDiscrepancyOptimisticLockPostgresTest {
         Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).target("47").load().migrate();
         tx(() -> {
             jdbc.update("insert into version_upgrade.users select * from public.users where id = ?", f.userId());
-            jdbc.update("insert into version_upgrade.orders select * from public.orders where id = ?", f.orderId());
+            // Copy the V47 columns only; public.orders also contains the V53 shipping metadata.
+            jdbc.update("""
+                    insert into version_upgrade.orders
+                    (id, user_id, total_amount, status, ordered_at,
+                     shipping_name, shipping_postal_code, shipping_prefecture, shipping_city,
+                     shipping_address_line, shipping_phone, paid_at, shipped_at, cancelled_at,
+                     handling_status, assigned_admin_account_id, change_deadline_at,
+                     item_subtotal, charge_total, tax_amount, content_revision)
+                    select id, user_id, total_amount, status, ordered_at,
+                           shipping_name, shipping_postal_code, shipping_prefecture, shipping_city,
+                           shipping_address_line, shipping_phone, paid_at, shipped_at, cancelled_at,
+                           handling_status, assigned_admin_account_id, change_deadline_at,
+                           item_subtotal, charge_total, tax_amount, content_revision
+                    from public.orders where id = ?
+                    """, f.orderId());
             jdbc.update("insert into version_upgrade.payments select * from public.payments where id = ?", f.paymentId());
             for (String status : List.of("OPEN", "RESOLVED")) {
                 jdbc.update("""

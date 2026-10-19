@@ -1,0 +1,55 @@
+-- MANUAL psql wrapper. No connection string or credentials are embedded here.
+\set ON_ERROR_STOP on
+\if :{?expected_database}
+\else
+  \echo 'expected_database is required'
+  \quit 3
+\endif
+\if :{?expected_user}
+\else
+  \echo 'expected_user is required'
+  \quit 3
+\endif
+\if :{?expected_server_addr}
+\else
+  \echo 'expected_server_addr is required (empty only for a verified Unix socket)'
+  \quit 3
+\endif
+\if :{?expected_server_port}
+\else
+  \echo 'expected_server_port is required (empty only for a verified Unix socket)'
+  \quit 3
+\endif
+\if :{?approval}
+\else
+  \echo 'approval is required'
+  \quit 3
+\endif
+\if :{?backup_reference}
+\else
+  \echo 'backup_reference is required'
+  \quit 3
+\endif
+\if :{?apply}
+\else
+  \set apply DRY_RUN
+\endif
+SELECT :'apply' = 'APPLY_ORDER_PAYMENT_RESET' AS reset_apply \gset
+BEGIN;
+CREATE TEMP TABLE order_payment_reset_gate (
+    expected_database text, expected_user text, expected_server_addr inet,
+    expected_server_port integer, approval text, backup_reference text
+) ON COMMIT DROP;
+INSERT INTO order_payment_reset_gate VALUES (
+    :'expected_database', :'expected_user', NULLIF(:'expected_server_addr','')::inet,
+    NULLIF(:'expected_server_port','')::integer, :'approval', :'backup_reference'
+);
+\ir reset-order-payment-data.sql
+SELECT 'pre-COMMIT validation passed' AS result;
+\if :reset_apply
+  COMMIT;
+  \echo 'Reset committed'
+\else
+  ROLLBACK;
+  \echo 'Dry run rolled back; no reset committed'
+\endif

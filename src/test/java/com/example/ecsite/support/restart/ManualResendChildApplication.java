@@ -25,7 +25,7 @@ public final class ManualResendChildApplication {
             String mode=required("RESTART_MODE");if(!Set.of("CLAIMED","SENDING","NORMAL").contains(mode))throw new IllegalArgumentException();
             Map<String,Object> settings=new HashMap<>();
             for(String[] entry:new String[][]{{"spring.datasource.url","EC_TEST_DB_URL"},{"spring.datasource.username","EC_TEST_DB_USER"},{"spring.datasource.password","EC_TEST_DB_PASSWORD"},{"spring.flyway.url","EC_TEST_DB_URL"},{"spring.flyway.user","EC_TEST_DB_USER"},{"spring.flyway.password","EC_TEST_DB_PASSWORD"}})settings.put(entry[0],required(entry[1]));
-            settings.put("spring.flyway.enabled","true");settings.put("spring.flyway.target","52");settings.put("spring.jpa.hibernate.ddl-auto","validate");settings.put("spring.jpa.show-sql","false");
+            settings.put("spring.flyway.enabled","true");settings.put("spring.flyway.target","54");settings.put("spring.jpa.hibernate.ddl-auto","validate");settings.put("spring.jpa.show-sql","false");
             settings.put("app.payment.discrepancy-audit.notification.enabled",on);settings.put("app.payment.discrepancy-audit.notification.recipients","hidden-first@example.com");
             settings.put("app.payment.discrepancy-audit.notification.fixed-delay","10s");
             settings.put("app.payment.discrepancy-audit.enabled","false");settings.put("app.payment.reconciliation.enabled","false");
@@ -52,7 +52,7 @@ public final class ManualResendChildApplication {
                 var context=lifetime.context();
                 stage.set(RestartProbe.Stage.CONTEXT_VERIFY);
                 var jdbc=context.getBean(JdbcTemplate.class);
-                if(!Integer.valueOf(52).equals(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success and version is not null",Integer.class)))throw new IllegalStateException("V52 required");
+                if(!Integer.valueOf(54).equals(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success and version is not null",Integer.class)))throw new IllegalStateException("V54 required");
                 if(!Mockito.mockingDetails(context.getBean(org.springframework.mail.javamail.JavaMailSender.class)).isMock() || !Mockito.mockingDetails(context.getBean(com.example.ecsite.payment.payjp.PayJpPaymentGateway.class)).isMock())throw new IllegalStateException("Outbound mocks required");
                 if(on && !Mockito.mockingDetails(context.getBean(PaymentDiscrepancyAuditNotificationMailClient.class)).isMock())throw new IllegalStateException("Fake mail required");
                 if(!on && !context.getBeansOfType(PaymentAuditNotificationSmtpExecutor.class).isEmpty())throw new IllegalStateException("OFF executor forbidden");

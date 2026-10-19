@@ -10,5 +10,5 @@ public interface PaymentGateway {
 
     CancellationResult cancelAuthorization(CancellationRequest request);
 
-    CaptureResult capture(CaptureRequest request);
+    CaptureResult capture(com.example.ecsite.payment.capture.CaptureHttpRequest request);
 }

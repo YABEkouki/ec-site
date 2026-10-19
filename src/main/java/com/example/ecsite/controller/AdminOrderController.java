@@ -74,6 +74,9 @@ public class AdminOrderController {
     private final PaymentCaptureService paymentCaptureService;
     private final AdminPaymentCancellationService adminPaymentCancellationService;
 
+    private final OrderShippingPreparationViewFactory shippingPreparationViewFactory;
+    private final OrderPaymentViewReadService paymentViewReader;
+
     public AdminOrderController(
             OrderService orderService,
             OrderCsvService orderCsvService,
@@ -86,8 +89,13 @@ public class AdminOrderController {
             AdminAccountService adminAccountService,
             PaymentService paymentService,
             PaymentCaptureService paymentCaptureService,
-            AdminPaymentCancellationService adminPaymentCancellationService) {
+            AdminPaymentCancellationService adminPaymentCancellationService,
+            OrderShippingPreparationViewFactory shippingPreparationViewFactory,
+            OrderPaymentViewReadService paymentViewReader) {
 
+        this.paymentViewReader = paymentViewReader;
+
+        this.shippingPreparationViewFactory = shippingPreparationViewFactory;
         this.orderService = orderService;
         this.orderCsvService = orderCsvService;
         this.orderStatusHistoryService = orderStatusHistoryService;
@@ -210,9 +218,11 @@ public class AdminOrderController {
         String safeReturnUrl = AdminReturnUrlHelper.resolveOrderListReturnUrl(returnUrl);
 
         Order order = orderService.findOrderWithItems(id);
+        model.addAttribute("shippingPreparationView", shippingPreparationViewFactory.create(order));
 
-        boolean canCaptureForShipment = order.getStatus() == OrderStatus.ORDERED
-                && paymentService.canCaptureForShipment(id);
+        var paymentView = paymentViewReader.read(order);
+        model.addAttribute("paymentView", paymentView);
+        boolean canCaptureForShipment = paymentView.canCapture();
 
         model.addAttribute(
                 "canCaptureForShipment",
@@ -336,7 +346,7 @@ public class AdminOrderController {
         try {
             if (paymentService.hasAuthorizedCardPayment(id)) {
                 throw new InvalidOrderStatusException(
-                        "カード与信済みの注文は、売上確定して発送してください。");
+                        "カード与信済みの注文は、発送準備後に発送・売上確定操作を実行してください。");
             }
 
             orderService.markAsPaid(
@@ -431,36 +441,30 @@ public class AdminOrderController {
 
                 redirectAttributes.addFlashAttribute(
                         "successMessage",
-                        "売上を確定し、注文を発送済みに変更しました。");
+                        "発送処理と売上確定が完了しました。");
 
             } else if (result.status() == CaptureResultStatus.FAILED) {
 
                 redirectAttributes.addFlashAttribute(
                         "errorMessage",
-                        "売上確定に失敗したため、注文は発送済みに変更していません。");
+                        "発送済みです。売上確定に失敗しました。決済状況を確認してください。");
 
             } else {
 
                 redirectAttributes.addFlashAttribute(
                         "errorMessage",
-                        "売上確定結果を確認中です。"
-                                + "注文はまだ発送済みに変更していません。");
+                        "発送済みです。売上確定結果を確認中です。");
             }
 
         } catch (PaymentSafetyStopException e) {
-            redirectAttributes.addFlashAttribute("errorMessage", PaymentSafetyMessages.administrator(id, e));
-        } catch (InvalidOrderStatusException
-                | IllegalStateException e) {
-
-            redirectAttributes.addFlashAttribute(
-                    "errorMessage",
-                    e.getMessage());
-
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "決済状態を安全に確認できないため、自動処理を停止しています。管理者による確認が必要です。");
+        } catch (InvalidOrderStatusException | IllegalStateException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "発送・売上確定を実行できません。発送準備・注文状態・決済状況をご確認ください。");
         } catch (PaymentGatewayException e) {
-
-            redirectAttributes.addFlashAttribute(
-                    "errorMessage",
-                    PaymentSafetyMessages.administrator(id, e));
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "決済結果を確認できませんでした。失敗確定ではありません。最新の発送・決済状態をご確認ください。");
         }
 
         return redirectToDetail(

@@ -109,6 +109,7 @@ class AdminOrderControllerTest {
     @Mock
     private AdminPaymentCancellationService adminPaymentCancellationService;
 
+    @Mock private OrderPaymentViewReadService paymentViewReader;
     private AdminOrderController adminOrderController;
 
     private static final Long ADMIN_ID = 20L;
@@ -116,6 +117,7 @@ class AdminOrderControllerTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(paymentViewReader.read(org.mockito.ArgumentMatchers.any())).thenReturn(OrderPaymentViewFactory.unavailable());
         adminOrderController = new AdminOrderController(
                 orderService,
                 orderCsvService,
@@ -128,7 +130,9 @@ class AdminOrderControllerTest {
                 adminAccountService,
                 paymentService,
                 paymentCaptureService,
-                adminPaymentCancellationService);
+                adminPaymentCancellationService,
+                new OrderShippingPreparationViewFactory(new com.example.ecsite.service.OrderModificationPolicy(),
+                        java.time.Clock.system(java.time.ZoneId.of("Asia/Tokyo"))), paymentViewReader);
     }
 
     @Test
@@ -700,7 +704,7 @@ class AdminOrderControllerTest {
         verify(redirectAttributes)
                 .addFlashAttribute(
                         "errorMessage",
-                        "カード与信済みの注文は、売上確定して発送してください。");
+                        "カード与信済みの注文は、発送準備後に発送・売上確定操作を実行してください。");
     }
 
     @Test
@@ -2025,7 +2029,7 @@ class AdminOrderControllerTest {
         when(paymentCaptureService.captureForShipment(1L,ADMIN_ID,ADMIN_USERNAME,null)).thenThrow(failure);
         adminOrderController.captureAndShip(1L,form,binding,null,loginUser,attributes);
         String message=(String)attributes.getFlashAttributes().get("errorMessage");
-        if(safetyStop) org.assertj.core.api.Assertions.assertThat(message).contains("注文番号「1」","管理者確認","決済不整合一覧");
-        else assertEquals("existing general validation",message);
+        if(safetyStop) assertEquals("決済状態を安全に確認できないため、自動処理を停止しています。管理者による確認が必要です。",message);
+        else assertEquals("発送・売上確定を実行できません。発送準備・注文状態・決済状況をご確認ください。",message);
     }
 }

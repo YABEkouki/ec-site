@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.example.ecsite.payment.CaptureRequest;
+import java.time.Clock;
 import com.example.ecsite.payment.CaptureResult;
 import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.payment.CaptureResultStatus;
@@ -17,15 +17,16 @@ public class PaymentCaptureService {
 
     private final PaymentCaptureStartService startService;
     private final PaymentGateway paymentGateway;
-    private final PaymentPostGuardService postGuard;
+    private final CaptureInitialPostPreparationService preparation;
+    private final Clock clock;
     private final PaymentCaptureResultService resultService;
 
     public PaymentCaptureService(
             PaymentCaptureStartService startService,
             PaymentGateway paymentGateway,
-            PaymentCaptureResultService resultService, PaymentPostGuardService postGuard) {
+            PaymentCaptureResultService resultService, CaptureInitialPostPreparationService preparation, Clock clock) {
 
-        this.postGuard = postGuard;
+        this.preparation = preparation; this.clock = clock;
         this.startService = startService;
         this.paymentGateway = paymentGateway;
         this.resultService = resultService;
@@ -43,11 +44,17 @@ public class PaymentCaptureService {
                 username,
                 internalNote);
 
+        if (start.disposition() == PaymentStartDisposition.ALREADY_APPLIED) {
+            return new CaptureResult(CaptureResultStatus.CAPTURED, start.providerPaymentId(), null, null);
+        }
         CaptureResult result;
         if (start.disposition() == PaymentStartDisposition.NEW) {
-            postGuard.beforeNewPost(start.snapshot());
-            result = paymentGateway.capture(new CaptureRequest(
-                    start.providerPaymentId(), start.amount(), start.idempotencyKey()));
+            var prepared = preparation.prepare(start.initialPost());
+            if (prepared instanceof CaptureInitialPostPreparationService.AlreadyApplied)
+                return new CaptureResult(CaptureResultStatus.CAPTURED, start.providerPaymentId(), null, null);
+            var ready = (CaptureInitialPostPreparationService.Ready) prepared;
+            ready.requireWithinWindow(clock.instant());
+            result = paymentGateway.capture(ready.request());
         } else {
             requireProviderId(start.providerPaymentId(), orderId);
             PaymentFlowState state = paymentGateway.retrievePaymentFlow(start.providerPaymentId());

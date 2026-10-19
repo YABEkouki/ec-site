@@ -51,6 +51,13 @@
                 </td>
             </tr>
 
+            <tr>
+                <th>決済状態</th>
+                <td th:classappend="${paymentView.requiresAttention()} ? 'message-error' : ''">
+                    <span th:text="${paymentView.message()}"></span>
+                    <small th:if="${paymentView.recordedPaymentStatus != null}">保存済み決済状態：<span th:text="${paymentView.recordedPaymentStatus}"></span></small>
+                </td>
+            </tr>
             <tr th:if="${order.paidAt != null}">
                 <th>支払日時</th>
                 <td th:text="${#temporals.format(
@@ -270,9 +277,29 @@
         担当管理者変更履歴はありません。
     </p>
 
-    <h2>注文操作</h2>
+    <section id="shipping-preparation">
+        <h2>発送準備</h2>
+        <p th:text="${shippingPreparationView.message()}"
+            th:classappend="${shippingPreparationView.inconsistent()} ? 'message-error' : ''"></p>
+        <dl th:if="${shippingPreparationView.startedAt != null}">
+            <dt>発送準備開始日時</dt>
+            <dd th:text="${#temporals.format(shippingPreparationView.startedAt, 'yyyy/MM/dd HH:mm')}"></dd>
+            <dt>開始管理者username</dt>
+            <dd th:text="${shippingPreparationView.startedByUsername}"></dd>
+            <dt>開始管理者ID</dt>
+            <dd th:text="${shippingPreparationView.startedByAccountId}"></dd>
+        </dl>
+        <form th:if="${shippingPreparationView.canStart()}"
+            th:action="@{/admin/orders/{id}/start-shipping-preparation(id=${order.id})}" method="post">
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+            <button type="submit">発送準備を開始する</button>
+        </form>
+    </section>
 
-    <div th:if="${order.canMarkAsPaid() or order.canCancel()}">
+    <h2>注文操作</h2>
+    <p>操作ボタンは表示時点の候補です。受付時に最新の注文・決済状態を再確認します。</p>
+
+    <div th:if="${paymentView.canMarkPaid() or paymentView.canCancel()}">
 
         <form th:action="@{/admin/orders/{id}/pay(id=${order.id})}" method="post">
 
@@ -286,12 +313,12 @@
                 <textarea id="internalNoteOrdered" name="internalNote" rows="3" maxlength="500"></textarea>
             </p>
 
-            <button th:if="${order.canMarkAsPaid() and !canCaptureForShipment}" type="submit" class="button-primary"
+            <button th:if="${paymentView.canMarkPaid()}" type="submit" class="button-primary"
                 th:formaction="@{/admin/orders/{id}/pay(id=${order.id})}" onclick="return confirm('この注文を支払済みにしますか？');">
                 支払済みにする
             </button>
 
-            <button th:if="${order.canCancel()}" type="submit" class="button-danger"
+            <button th:if="${paymentView.canCancel()}" type="submit" class="button-danger"
                 th:formaction="@{/admin/orders/{id}/cancel(id=${order.id})}"
                 onclick="return confirm('この注文をキャンセルしますか？');">
                 キャンセル
@@ -317,8 +344,8 @@
                 <textarea id="internalNoteCaptureAndShip" name="internalNote" rows="3" maxlength="500"></textarea>
             </p>
 
-            <button type="submit" class="button-primary" onclick="return confirm('カード決済の売上を確定し、この注文を発送済みにしますか？');">
-                売上確定して発送済みにする
+            <button type="submit" class="button-primary" onclick="return confirm('発送済みを先に確定してから売上確定を実行します。売上確定が失敗・確認中でも発送済みは取り消されません。実行しますか？');">
+                発送を確定して売上確定を実行する
             </button>
 
             <input type="hidden" name="returnUrl" th:value="${returnUrl}">
@@ -327,7 +354,14 @@
 
     </div>
 
-    <div th:if="${order.canMarkAsShipped()}">
+    <section id="capture-requery" th:if="${paymentView.canRequery()}">
+        <form th:action="@{/admin/orders/{id}/capture/requery(id=${order.id})}" method="post">
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+            <button type="submit">売上確定結果を再照会</button>
+        </form>
+    </section>
+
+    <div th:if="${paymentView.canManualShip()}">
 
         <form th:action="@{/admin/orders/{id}/ship(id=${order.id})}" method="post">
 

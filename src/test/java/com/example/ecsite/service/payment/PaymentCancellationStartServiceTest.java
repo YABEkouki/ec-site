@@ -7,9 +7,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -38,16 +35,7 @@ class PaymentCancellationStartServiceTest {
     @BeforeEach
     void setUp() {
 
-        Clock clock = Clock.fixed(
-                LocalDateTime.of(2026, 10, 1, 10, 0)
-                        .atZone(ZoneId.of("Asia/Tokyo"))
-                        .toInstant(),
-                ZoneId.of("Asia/Tokyo"));
-
-        service = new PaymentCancellationStartService(
-                orderRepository,
-                paymentService,
-                clock);
+        service = new PaymentCancellationStartService(orderRepository, paymentService);
     }
 
     @Test
@@ -67,10 +55,6 @@ class PaymentCancellationStartServiceTest {
                 .thenReturn(Optional.of(order));
 
         when(order.canCancel())
-                .thenReturn(true);
-
-        when(order.isWithinModificationPeriod(
-                LocalDateTime.of(2026, 10, 1, 10, 0)))
                 .thenReturn(true);
 
         when(paymentService.startCancellation(
@@ -126,36 +110,17 @@ class PaymentCancellationStartServiceTest {
     }
 
     @Test
-    void startRejectsOrderAfterModificationDeadline() {
-
-        Long orderId = 10L;
-        Long userId = 20L;
-
+    void startDelegatesAfterDeadlineSoPaymentServiceCanReuseAcceptedCancellation() {
         Order order = org.mockito.Mockito.mock(Order.class);
-
-        when(orderRepository.findByIdAndUserIdForUpdate(
-                orderId,
-                userId))
+        when(orderRepository.findByIdAndUserIdForUpdate(10L, 20L))
                 .thenReturn(Optional.of(order));
+        when(order.canCancel()).thenReturn(true);
 
-        when(order.canCancel())
-                .thenReturn(true);
+        service.start(10L, 20L, "testuser");
 
-        when(order.isWithinModificationPeriod(
-                LocalDateTime.of(2026, 10, 1, 10, 0)))
-                .thenReturn(false);
-
-        assertThrows(
-                InvalidOrderStatusException.class,
-                () -> service.start(
-                        orderId,
-                        userId,
-                        "testuser"));
-
-        verify(paymentService, never())
-                .startCancellation(
-                        org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any());
+        verify(paymentService).startCancellation(
+                org.mockito.ArgumentMatchers.eq(order), org.mockito.ArgumentMatchers.any());
+        verify(order, never()).isWithinModificationPeriod(org.mockito.ArgumentMatchers.any());
     }
 
     @Test

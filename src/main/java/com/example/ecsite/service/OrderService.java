@@ -88,7 +88,9 @@ public class OrderService {
     private final TaxCategoryService taxCategoryService;
     private final OrderAmountCalculator orderAmountCalculator;
     private final OrderPaymentGuard orderPaymentGuard;
+    private final OrderModificationGuard orderModificationGuard;
     private final Clock clock;
+    private final ManualOrderShipmentService manualShipmentService;
 
     @Autowired
     public OrderService(
@@ -104,7 +106,9 @@ public class OrderService {
             OrderDeadlineCalculator orderDeadlineCalculator,
             TaxCategoryService taxCategoryService,
             OrderAmountCalculator orderAmountCalculator,
-            OrderPaymentGuard orderPaymentGuard) {
+            OrderPaymentGuard orderPaymentGuard,
+            OrderModificationGuard orderModificationGuard,
+            ManualOrderShipmentService manualShipmentService) {
 
         this(
                 orderRepository,
@@ -120,6 +124,8 @@ public class OrderService {
                 taxCategoryService,
                 orderAmountCalculator,
                 orderPaymentGuard,
+                orderModificationGuard,
+                manualShipmentService,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -137,6 +143,8 @@ public class OrderService {
             TaxCategoryService taxCategoryService,
             OrderAmountCalculator orderAmountCalculator,
             OrderPaymentGuard orderPaymentGuard,
+            OrderModificationGuard orderModificationGuard,
+            ManualOrderShipmentService manualShipmentService,
             Clock clock) {
 
         this.orderRepository = orderRepository;
@@ -152,7 +160,9 @@ public class OrderService {
         this.taxCategoryService = taxCategoryService;
         this.orderAmountCalculator = orderAmountCalculator;
         this.orderPaymentGuard = orderPaymentGuard;
+        this.orderModificationGuard = orderModificationGuard;
         this.clock = clock;
+        this.manualShipmentService = manualShipmentService;
     }
 
     @Transactional
@@ -451,21 +461,7 @@ public class OrderService {
             String username,
             String internalNote) {
 
-        Order order = findOrderForUpdate(id);
-        orderPaymentGuard.validateManualShipment(order);
-
-        OrderStatus fromStatus = order.getStatus();
-
-        order.markAsShipped();
-
-        orderStatusHistoryService.record(
-                order,
-                fromStatus,
-                order.getStatus(),
-                OrderStatusHistoryActorType.ADMIN,
-                accountId,
-                username,
-                internalNote);
+        manualShipmentService.ship(id, accountId, username, internalNote);
     }
 
     public void markAsShippedAfterPaymentCapture(
@@ -514,6 +510,7 @@ public class OrderService {
 
         Order order = findOrderForUpdate(id);
         orderPaymentGuard.validateLocalCancellation(order);
+        LocalDateTime now = orderModificationGuard.requireAllowed(order);
 
         cancelAndRestoreStock(
                 order,
@@ -521,7 +518,7 @@ public class OrderService {
                 accountId,
                 username,
                 internalNote,
-                LocalDateTime.now(clock));
+                now);
     }
 
     @Transactional
@@ -1033,20 +1030,14 @@ public class OrderService {
                 .orElseThrow(() -> new OrderNotFoundException(
                         orderId));
 
-        LocalDateTime now = LocalDateTime.now(clock);
-
         if (!order.canCancel()) {
             throw new InvalidOrderStatusException(
                     "注文受付中の注文だけを"
                             + "キャンセルできます。");
         }
 
-        if (!order.isWithinModificationPeriod(now)) {
-            throw new InvalidOrderStatusException(
-                    "この注文の変更受付は終了しています。");
-        }
-
         orderPaymentGuard.validateLocalCancellation(order);
+        LocalDateTime now = orderModificationGuard.requireAllowed(order);
 
         cancelAndRestoreStock(
                 order,
@@ -1097,8 +1088,6 @@ public class OrderService {
                 .orElseThrow(() -> new OrderNotFoundException(
                         orderId));
 
-        LocalDateTime now = LocalDateTime.now(clock);
-
         if (order.getStatus() != OrderStatus.ORDERED
                 && order.getStatus() != OrderStatus.PAID) {
 
@@ -1106,11 +1095,7 @@ public class OrderService {
                     "現在の注文状態では配送先を変更できません。");
         }
 
-        if (!order.isWithinModificationPeriod(now)) {
-
-            throw new InvalidOrderStatusException(
-                    "この注文の変更受付は終了しています。");
-        }
+        orderModificationGuard.requireAllowed(order);
 
         String newShippingName = form.getShippingName().trim();
         String newShippingPostalCode = form.getShippingPostalCode().trim();
@@ -1197,12 +1182,11 @@ public class OrderService {
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
 
         orderPaymentGuard.validateItemChange(order);
+        LocalDateTime now = orderModificationGuard.requireAllowed(order);
 
         // items / charges をトランザクション内で読み込む
         order.getItems().size();
         order.getCharges().size();
-
-        LocalDateTime now = LocalDateTime.now(clock);
 
         validateItemChangeOrder(
                 order,

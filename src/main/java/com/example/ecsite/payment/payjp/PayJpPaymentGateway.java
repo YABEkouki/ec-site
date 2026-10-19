@@ -30,7 +30,10 @@ import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.CancellationRequest;
 import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
-import com.example.ecsite.payment.CaptureRequest;
+import com.example.ecsite.payment.capture.CaptureHttpRequest;
+import com.example.ecsite.config.CaptureConnectionProperties;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.http.MediaType;
 import com.example.ecsite.payment.CaptureResult;
 import com.example.ecsite.payment.CaptureResultStatus;
 import com.example.ecsite.payment.PaymentFlowState;
@@ -45,10 +48,13 @@ public class PayJpPaymentGateway implements PaymentGateway {
     private final PayJpAuthorizationMapper authorizationMapper;
 
     private CloseableHttpClient httpClient;
+    private PayJpProperties activeConnection;
+    private CaptureConnectionProperties captureConnection;
 
     @Autowired
     public PayJpPaymentGateway(PayJpProperties properties,
-            PayJpAuthorizationMapper authorizationMapper, PayJpSafetyProperties safety) {
+            PayJpAuthorizationMapper authorizationMapper, PayJpSafetyProperties safety, CaptureConnectionProperties captureConnection) {
+        this.activeConnection = properties; this.captureConnection = captureConnection;
         if (!safety.isValid()) throw new IllegalArgumentException("Invalid PAY.JP safety configuration");
         this.authorizationMapper = authorizationMapper;
         var connections = PoolingHttpClientConnectionManagerBuilder.create()
@@ -62,6 +68,10 @@ public class PayJpPaymentGateway implements PaymentGateway {
         restClient = RestClient.builder().baseUrl(properties.apiBaseUrl())
                 .requestFactory(new HttpComponentsClientHttpRequestFactory(httpClient))
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.secretKey()).build();
+    }
+
+    PayJpPaymentGateway(PayJpProperties properties, PayJpAuthorizationMapper mapper, PayJpSafetyProperties safety) {
+        this(properties, mapper, safety, new CaptureConnectionProperties(null, null, null, null));
     }
 
     // Package-private seam for deterministic response/identity tests.
@@ -222,25 +232,26 @@ public class PayJpPaymentGateway implements PaymentGateway {
 
     @Override
     public CaptureResult capture(
-            CaptureRequest request) {
-
-        Map<String, Object> body = Map.of(
-                "amount_to_capture", request.amount());
+            CaptureHttpRequest request) {
+        if (TransactionSynchronizationManager.isActualTransactionActive())
+            throw new IllegalStateException("Capture Gateway requires no database transaction");
+        if (request == null || captureConnection == null
+                || !request.connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Capture connection mismatch");
 
         try {
             PayJpPaymentFlowResponse response = restClient.post()
-                    .uri(
-                            "/v2/payment_flows/{paymentFlowId}/capture",
-                            request.providerPaymentId())
+                    .uri(request.path())
+                    .contentType(MediaType.APPLICATION_JSON)
                     .header(
                             "Idempotency-Key",
                             request.idempotencyKey())
-                    .body(body)
+                    .body(request.body())
                     .retrieve()
                     .body(PayJpPaymentFlowResponse.class);
 
             if (response == null || response.status() == null
-                    || !request.providerPaymentId().equals(response.id())) {
+                    || !request.flowId().equals(response.id())) {
                 throw new IllegalStateException(
                         "PAY.JP returned an invalid Payment Flow response");
             }
