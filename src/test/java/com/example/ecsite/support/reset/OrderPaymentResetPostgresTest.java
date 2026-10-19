@@ -36,7 +36,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.MountableFile;
 
 /** Destructive fixtures are restricted to this class-owned disposable PostgreSQL 17 container. */
-@SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
+// This manual reset contract is deliberately V53-only; V54 rejection is tested separately.
+@SpringBootTest(properties={"spring.flyway.target=53","logging.level.root=WARN","spring.jpa.show-sql=false"})
 @ActiveProfiles("test") @Testcontainers @DirtiesContext
 class OrderPaymentResetPostgresTest {
  @Container static final PostgreSQLContainer DB=new PostgreSQLContainer("postgres:17")
