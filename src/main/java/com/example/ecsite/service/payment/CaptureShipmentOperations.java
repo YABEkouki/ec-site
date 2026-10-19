@@ -1,6 +1,10 @@
 package com.example.ecsite.service.payment;
 
 import java.util.*;
+import java.time.*;
+import java.time.temporal.ChronoUnit;
+import com.example.ecsite.config.*;
+import com.example.ecsite.payment.capture.*;
 import jakarta.persistence.EntityManager;
 import com.example.ecsite.entity.*;
 import com.example.ecsite.exception.OrderNotFoundException;
@@ -27,11 +31,22 @@ public class CaptureShipmentOperations {
     private final CaptureShipmentPolicy policy;
     private final OrderStatusHistoryService histories;
 
+    private final CaptureRequestStore requests;
+    private final CaptureConnectionProperties connection;
+    private final PayJpProperties activeConnection;
+    private final PayJpSafetyProperties safety;
+    private final OrderStatusHistoryRepository shipmentHistory;
+    private static final ZoneId JST = ZoneId.of("Asia/Tokyo");
+
     public CaptureShipmentOperations(OrderRepository orders, PaymentRepository payments,
             PaymentTransactionRepository transactions, EntityManager em, OrderWriteContext context,
-            OrderShipmentGuard guard, CaptureShipmentPolicy policy, OrderStatusHistoryService histories) {
+            OrderShipmentGuard guard, CaptureShipmentPolicy policy, OrderStatusHistoryService histories,
+            CaptureRequestStore requests, CaptureConnectionProperties connection, PayJpProperties activeConnection,
+            PayJpSafetyProperties safety, OrderStatusHistoryRepository shipmentHistory) {
         this.orders = orders; this.payments = payments; this.transactions = transactions; this.em = em;
         this.context = context; this.guard = guard; this.policy = policy; this.histories = histories;
+        this.requests = requests; this.connection = connection; this.activeConnection = activeConnection;
+        this.safety = safety; this.shipmentHistory = shipmentHistory;
     }
 
     public PaymentCaptureStart start(Long orderId, Long accountId, String username, String internalNote) {
@@ -57,15 +72,75 @@ public class CaptureShipmentOperations {
                     ? PaymentStartDisposition.REUSED : PaymentStartDisposition.ALREADY_APPLIED);
         }
         Payment payment = data.payments().stream().filter(p -> p.getId().equals(decision.paymentId())).findFirst().orElseThrow();
+        var identity = connection.requireIdentity(activeConnection);
+        if (!safety.isValid()) throw recovery(orderId);
         var now = orders.findCurrentTimeInTokyo();
         var capture = new PaymentTransaction(payment, PaymentTransactionType.CAPTURE, order.getTotalAmount(),
                 order.getContentRevision(), UUID.randomUUID().toString(), now,
                 new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), internalNote));
-        transactions.save(capture);
+        transactions.saveAndFlush(capture);
+        var created = now.atZone(JST).toInstant();
+        var http = CaptureHttpRequest.create(identity, payment.getProviderPaymentId(), capture.getAmount(), capture.getIdempotencyKey());
+        var stored = requests.insert(payment, capture, http, created,
+                created.plus(safety.postMaxAge()).truncatedTo(ChronoUnit.MICROS));
         order.confirmCardShipment(now, actor.getId(), actor.getUsername(), payment.getId());
         histories.record(order, OrderStatus.ORDERED, OrderStatus.SHIPPED, OrderStatusHistoryActorType.ADMIN,
                 actor.getId(), actor.getUsername(), internalNote);
-        return startResult(PaymentOperationSnapshot.from(capture), PaymentStartDisposition.NEW);
+        var snapshot = PaymentOperationSnapshot.from(capture);
+        return new PaymentCaptureStart(snapshot.paymentId(), snapshot.transactionId(), snapshot.providerPaymentId(),
+                snapshot.amount(), snapshot.idempotencyKey(), PaymentStartDisposition.NEW, snapshot,
+                new InitialPost(stored.id(), snapshot));
+    }
+
+    /** In-memory capability issued only by the NEW branch; never reconstructed from persisted PENDING. */
+    public static final class InitialPost {
+        private final long requestId;
+        private final java.util.concurrent.atomic.AtomicBoolean claimed = new java.util.concurrent.atomic.AtomicBoolean();
+        private final PaymentOperationSnapshot snapshot;
+        private InitialPost(long requestId, PaymentOperationSnapshot snapshot) {
+            this.requestId = requestId; this.snapshot = snapshot;
+        }
+        public long requestId() { return requestId; }
+        public PaymentOperationSnapshot snapshot() { return snapshot; }
+    }
+
+    public CaptureInitialPostPreparationService.Prepared prepareInitialPost(InitialPost initial) {
+        if (initial == null) throw new IllegalArgumentException("Initial POST capability required");
+        if (!initial.claimed.compareAndSet(false, true)) throw new IllegalStateException("Initial POST capability was already consumed");
+        var snapshot = initial.snapshot();
+        context.requireCleanWritableReadCommitted();
+        Order order = orders.findByIdForUpdate(snapshot.orderId()).orElseThrow(() -> new OrderNotFoundException(snapshot.orderId()));
+        context.refreshWritableOrder(order);
+        guard.requirePrepared(order);
+        var data = load(order, snapshot);
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
+            return new CaptureInitialPostPreparationService.AlreadyApplied();
+        if (decision.disposition() != CaptureShipmentPolicy.Disposition.CONTINUE) throw recovery(order.getId());
+        var payment = data.payments().stream().filter(p -> p.getId().equals(snapshot.paymentId())).findFirst().orElseThrow();
+        var capture = data.history().stream().filter(t -> t.getId().equals(snapshot.transactionId())).findFirst().orElseThrow();
+        var identity = connection.requireIdentity(activeConnection);
+        var stored = requests.findByIdAndCaptureTransactionId(initial.requestId(), snapshot.transactionId()).orElseThrow(() -> recovery(order.getId()));
+        if (stored.id() != initial.requestId()) throw recovery(order.getId());
+        stored.validateAgainst(payment, capture, identity);
+        var shipments = shipmentHistory.findByOrderIdOrderByChangedAtAscIdAsc(order.getId()).stream()
+                .peek(em::refresh).filter(h -> h.getToStatus() == OrderStatus.SHIPPED).toList();
+        if (shipments.size() != 1) throw recovery(order.getId());
+        var history = shipments.getFirst();
+        if (history.getFromStatus() != OrderStatus.ORDERED || history.getChangedByType() != OrderStatusHistoryActorType.ADMIN
+                || !Objects.equals(history.getChangedByAccountId(), order.getShippedByAccountId())
+                || !Objects.equals(history.getChangedByUsername(), order.getShippedByUsername())
+                || !Objects.equals(history.getInternalNote(), snapshot.internalNote())) throw recovery(order.getId());
+        if (!safety.isValid()) throw recovery(order.getId());
+        var created = capture.getCreatedAt().atZone(JST).toInstant();
+        if (!created.equals(stored.createdAt())) throw recovery(order.getId());
+        var deadline = stored.replayNotAfter();
+        var currentLimit = created.plus(safety.postMaxAge());
+        if (currentLimit.isBefore(deadline)) deadline = currentLimit;
+        var now = orders.findCurrentTimeInTokyo().atZone(JST).toInstant();
+        var ready = new CaptureInitialPostPreparationService.Ready(stored.httpRequest(), created, deadline);
+        ready.requireWithinWindow(now);
+        return ready;
     }
 
     /** Requery never calls start(): ORDERED cannot create an operation through this entry. */

@@ -47,7 +47,12 @@ public final class CaptureHttpRequest {
                 || !MessageDigest.isEqual(request.fingerprint, storedFingerprint)) {
             throw new IllegalArgumentException("Stored Capture request integrity check failed");
         }
-        return request;
+        return new CaptureHttpRequest(request, storedBody, storedFingerprint);
+    }
+    private CaptureHttpRequest(CaptureHttpRequest validated, byte[] storedBody, byte[] storedFingerprint) {
+        this.connection = validated.connection; this.flowId = validated.flowId; this.amount = validated.amount;
+        this.idempotencyKey = validated.idempotencyKey;
+        this.body = storedBody.clone(); this.fingerprint = storedFingerprint.clone();
     }
     private byte[] calculateFingerprint() {
         try {

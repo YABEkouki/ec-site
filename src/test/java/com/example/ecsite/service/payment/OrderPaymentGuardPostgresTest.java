@@ -39,6 +39,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@com.example.ecsite.support.CaptureConnectionTest
 class OrderPaymentGuardPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
             .withDatabaseName("feature120_order_guard").withUsername("feature120").withPassword("feature120-test")
@@ -307,7 +308,7 @@ class OrderPaymentGuardPostgresTest {
             }
             o.addCharge(new OrderCharge(OrderChargeType.SHIPPING,"shipping",0,tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),1));
             o.applyAmount(amount(new Fixture(null,null,null,null,null,tax.getId()),3000));
-            orders.saveAndFlush(o);String provider="pf_"+unique;
+            orders.saveAndFlush(o);String provider="pfw_"+unique;
             if(authorized) createAuthorized(o,provider);
             return new Fixture(o.getId(),u.getId(),provider,productIds,o.getItems().stream().map(OrderItem::getId).toList(),tax.getId());
         });

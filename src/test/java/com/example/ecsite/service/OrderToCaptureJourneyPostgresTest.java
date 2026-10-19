@@ -46,6 +46,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Import(OrderToCaptureJourneyPostgresTest.TimeConfiguration.class)
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 @Testcontainers
+@com.example.ecsite.support.CaptureConnectionTest
 class OrderToCaptureJourneyPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17")
             .withDatabaseName("order_capture_journey").withUsername("journey_user").withPassword(UUID.randomUUID().toString());
@@ -103,7 +104,7 @@ class OrderToCaptureJourneyPostgresTest {
         assertThat(stock(seed)).isEqualTo(7);assertThat(quantity(id)).isEqualTo(3);
         assertThat(historyCount(id,"ORDERED")).isEqualTo(1);assertThat(historyCount(id,"SHIPPED")).isZero();
 
-        String provider="flow_journey_"+UUID.randomUUID();
+        String provider="pfw_flow_journey_"+UUID.randomUUID();
         when(gateway.prepareAuthorization(any())).thenReturn(new AuthorizationPreparation(provider,"test-secret"));
         // Match PayJpAuthorizationMapper: the verified response Flow ID is retained on success.
         when(gateway.retrieveAuthorization(provider)).thenReturn(new AuthorizationRecovery(
@@ -146,7 +147,7 @@ class OrderToCaptureJourneyPostgresTest {
         advance(deadline.plusNanos(1000));authenticate(seed.shipper());
         when(gateway.capture(any())).thenAnswer(call -> {
             assertOutsideTx();
-            CaptureRequest request=call.getArgument(0);
+            com.example.ecsite.payment.capture.CaptureHttpRequest request=call.getArgument(0);
             assertThat(request.amount()).isEqualTo(2550);
             // A separate transaction/connection can acquire the lock and see all start-TX writes.
             tx(() -> {

@@ -40,11 +40,23 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Full application security, MVC, real templates and service; DB is provided only by the isolated launcher. */
+/** Full security/MVC and real services; immutable Capture graphs live only in this disposable database. */
 @SpringBootTest
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
+@com.example.ecsite.support.CaptureConnectionTest
+@org.testcontainers.junit.jupiter.Testcontainers
+@org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class AdminOrderShippingPreparationSecurityPostgresTest {
+    @org.testcontainers.junit.jupiter.Container
+    static final org.testcontainers.postgresql.PostgreSQLContainer POSTGRES = new org.testcontainers.postgresql.PostgreSQLContainer("postgres:17")
+            .withDatabaseName("shipping_security").withUsername("shipping_security").withPassword(UUID.randomUUID().toString());
+    @org.springframework.test.context.DynamicPropertySource
+    static void database(org.springframework.test.context.DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", POSTGRES::getJdbcUrl); r.add("spring.datasource.username", POSTGRES::getUsername);
+        r.add("spring.datasource.password", POSTGRES::getPassword); r.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+        r.add("spring.flyway.user", POSTGRES::getUsername); r.add("spring.flyway.password", POSTGRES::getPassword);
+    }
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired OrderRepository orders;
@@ -85,13 +97,16 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         }
         finally {
             for (Long id : orderIds) {
+                // Never disable V54 triggers or delete immutable requests for cleanup.
+                // Retain their complete FK graph until this class's isolated container is destroyed.
+                if (jdbc.queryForObject("select count(*) from capture_requests r join payments p on p.id=r.payment_id where p.order_id=?",Integer.class,id)>0) continue;
                 jdbc.update("update orders set shipment_capture_payment_id=null where id=?", id);
                 jdbc.update("delete from payment_transactions where payment_id in (select id from payments where order_id=?)", id);
                 jdbc.update("delete from payments where order_id=?", id);
                 jdbc.update("delete from order_status_histories where order_id=?", id);
                 jdbc.update("delete from orders where id=?", id);
             }
-            for (Long id : userIds) jdbc.update("delete from users where id=?", id);
+            for (Long id : userIds) jdbc.update("delete from users where id=? and not exists(select 1 from orders where user_id=?)", id, id);
         }
     }
 
@@ -110,7 +125,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
             orders.saveAndFlush(order); orderIds.add(order.getId());
             if (kind.equals("card")) {
                 Payment payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 100, now);
-                payment.setProviderPaymentId("ui_" + UUID.randomUUID(), now); payment.markAuthorized(now);
+                payment.setProviderPaymentId("pfw_ui_" + UUID.randomUUID(), now); payment.markAuthorized(now);
                 payments.saveAndFlush(payment);
                 PaymentTransaction authorization = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE,
                         100, 0, UUID.randomUUID().toString(), now);

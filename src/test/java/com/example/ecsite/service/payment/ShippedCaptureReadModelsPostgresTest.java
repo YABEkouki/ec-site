@@ -42,6 +42,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @Testcontainers
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
+@com.example.ecsite.support.CaptureConnectionTest
 class ShippedCaptureReadModelsPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17")
             .withDatabaseName("shipped_capture_read_models").withUsername("read_model_user").withPassword(UUID.randomUUID().toString());
@@ -162,7 +163,7 @@ class ShippedCaptureReadModelsPostgresTest {
             order.addItem(new OrderItem(product.getId(),product.getName(),category.getId(),category.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));
             orders.saveAndFlush(order);
             Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);
-            String provider="read_flow_"+unique;payment.setProviderPaymentId(provider,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
+            String provider="pfw_read_"+unique;payment.setProviderPaymentId(provider,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
             var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,"read_auth_"+unique,now);
             auth.markSucceeded(provider,now);transactions.saveAndFlush(auth);
             return new Fixture(order.getId(),payment.getId(),product.getId(),admin.getId(),admin.getUsername(),provider,orderedAt);

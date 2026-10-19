@@ -39,6 +39,7 @@ import org.testcontainers.utility.MountableFile;
 // This manual reset contract is deliberately V53-only; V54 rejection is tested separately.
 @SpringBootTest(properties={"spring.flyway.target=53","logging.level.root=WARN","spring.jpa.show-sql=false"})
 @ActiveProfiles("test") @Testcontainers @DirtiesContext
+@com.example.ecsite.support.CaptureConnectionTest
 class OrderPaymentResetPostgresTest {
  @Container static final PostgreSQLContainer DB=new PostgreSQLContainer("postgres:17")
      .withDatabaseName("reset_validation_"+UUID.randomUUID().toString().replace("-",""));
@@ -53,6 +54,10 @@ class OrderPaymentResetPostgresTest {
  @Autowired OrderShippingPreparationService preparation; @Autowired PaymentCaptureStartService start;
  @Autowired PaymentCaptureResultService result; @Autowired PaymentCaptureService capture; @Autowired PayJpWebhookCaptureSyncService webhook;
  @MockitoBean PaymentGateway gateway;
+ // This suite intentionally remains at V53 to validate the approved historical reset SQL.
+ // V54 persistence/atomicity is covered by CaptureShipmentFlowPostgresTest and CaptureRequestStorePostgresTest.
+ @MockitoBean com.example.ecsite.payment.capture.CaptureRequestStore requestStore;
+ final java.util.Map<Long,com.example.ecsite.payment.capture.StoredCaptureRequest> requestBoundary=new java.util.HashMap<>();
  final Path sql=Path.of("scripts/manual/reset-order-payment-data.sql");
  long productId; List<Fixture> old;
  record Fixture(long order,long payment,long transaction,String provider) {}
@@ -64,7 +69,17 @@ class OrderPaymentResetPostgresTest {
   assertThat(jdbc.queryForObject("select current_database()",String.class)).isEqualTo(DB.getDatabaseName());
   assertThat(jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class)).isEqualTo("53");
   assertThat(env.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
-  authenticate();
+  authenticate();requestBoundary.clear();
+  tx(()->{
+  when(requestStore.insert(any(),any(),any(),any(),any())).thenAnswer(call->{
+   Payment payment=call.getArgument(0);PaymentTransaction operation=call.getArgument(1);
+   var saved=new com.example.ecsite.payment.capture.StoredCaptureRequest(operation.getId(),payment.getId(),operation.getId(),operation.getOrderContentRevision(),call.getArgument(2),call.getArgument(3),call.getArgument(4));
+   requestBoundary.put(operation.getId(),saved);return saved;
+  });
+  when(requestStore.findByIdAndCaptureTransactionId(anyLong(),anyLong())).thenAnswer(call->{
+   Long id=call.getArgument(0),transaction=call.getArgument(1);var saved=requestBoundary.get(transaction);
+   return saved!=null && saved.id()==id?java.util.Optional.of(saved):java.util.Optional.empty();
+  });return null;});
   productId=tx(() -> {
    var now=orders.findCurrentTimeInTokyo();var u=new User();u.setUsername("reset-"+UUID.randomUUID());u.setPassword("test");u.setEnabled(true);u.setCreatedAt(now);u.setUpdatedAt(now);users.saveAndFlush(u);
    jdbc.update("insert into admin_accounts(username,password,created_at,updated_at) values(?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)","reset-"+UUID.randomUUID(),"test");
@@ -86,7 +101,7 @@ class OrderPaymentResetPostgresTest {
   var now=orders.findCurrentTimeInTokyo();var time=now.minusDays(2).toLocalDate().atTime(10,0);var product=products.findById(productId).orElseThrow();var tax=product.getTaxCategory();var cat=product.getCategory();
   var o=new Order(users.findAll().getLast().getId(),200,time,time.withHour(14));if(prepared)o.beginShippingPreparation(time.withHour(14),7L,"preparer");
   o.addItem(new OrderItem(productId,product.getName(),cat.getId(),cat.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));orders.saveAndFlush(o);
-  var p=new Payment(o,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);p.setProviderPaymentId("reset_"+UUID.randomUUID(),now);p.markAuthorized(now);payments.saveAndFlush(p);
+  var p=new Payment(o,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);p.setProviderPaymentId("pfw_reset_"+UUID.randomUUID(),now);p.markAuthorized(now);payments.saveAndFlush(p);
   var a=new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,200,0,"auth-"+UUID.randomUUID(),now);a.markSucceeded(p.getProviderPaymentId(),now);transactions.saveAndFlush(a);return new Fixture(o.getId(),p.getId(),a.getId(),p.getProviderPaymentId());
  });}
  long count(String table){return jdbc.queryForObject("select count(*) from "+table,Long.class);}

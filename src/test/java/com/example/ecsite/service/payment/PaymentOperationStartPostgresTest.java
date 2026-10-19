@@ -33,14 +33,15 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @DataJpaTest(showSql = false, properties = {"spring.jpa.show-sql=false", "spring.sql.init.mode=never"})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@org.springframework.boot.context.properties.EnableConfigurationProperties(com.example.ecsite.config.PayJpSafetyProperties.class)
-@Import({CaptureShipmentOperations.class,CaptureShipmentPolicy.class,CaptureShipmentSnapshotMatcher.class,com.example.ecsite.service.OrderWriteContext.class,com.example.ecsite.service.OrderShipmentGuard.class,com.example.ecsite.service.OrderStatusHistoryService.class,com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class, com.example.ecsite.config.TimeConfig.class,PaymentOperationSnapshotService.class, PaymentAuthorizationResultService.class,OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
+@org.springframework.boot.context.properties.EnableConfigurationProperties({com.example.ecsite.config.PayJpSafetyProperties.class,com.example.ecsite.config.CaptureConnectionProperties.class,com.example.ecsite.config.PayJpProperties.class})
+@Import({com.example.ecsite.payment.capture.CaptureRequestStore.class,CaptureInitialPostPreparationService.class,CaptureShipmentOperations.class,CaptureShipmentPolicy.class,CaptureShipmentSnapshotMatcher.class,com.example.ecsite.service.OrderWriteContext.class,com.example.ecsite.service.OrderShipmentGuard.class,com.example.ecsite.service.OrderStatusHistoryService.class,com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class, com.example.ecsite.config.TimeConfig.class,PaymentOperationSnapshotService.class, PaymentAuthorizationResultService.class,OrderPaymentGuard.class, PaymentCancellationCompletionService.class, PaymentAuthorizationStartService.class, PaymentService.class, PaymentConsistencyEvaluator.class,
         PaymentAuthorizationService.class, PaymentCaptureService.class, PaymentCaptureStartService.class,
         PaymentCancellationService.class, PaymentCancellationStartService.class,
         AdminPaymentCancellationService.class, AdminPaymentCancellationStartService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@com.example.ecsite.support.CaptureConnectionTest
 class PaymentOperationStartPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
             .withDatabaseName("feature120_start").withUsername("feature120").withPassword("feature120-test")
@@ -90,7 +91,7 @@ class PaymentOperationStartPostgresTest {
         Fixture f = fixture(false);
         when(gateway.prepareAuthorization(any())).thenAnswer(call -> {
             boundary(f, "AUTHORIZE"); if (entered.getCount() == 1) { entered.countDown(); await(release); }
-            return new AuthorizationPreparation("pf_" + f.order.getId(), "secret");
+            return new AuthorizationPreparation("pfw_" + f.order.getId(), "secret");
         });
         Future<?> first = workers.submit(() -> authorization.prepareAuthorization(f.order));
         await(entered);
@@ -135,7 +136,7 @@ class PaymentOperationStartPostgresTest {
         when(gateway.capture(any())).thenAnswer(call -> {
             entered.countDown(); await(release);
             return new CaptureResult(CaptureResultStatus.PENDING,
-                    ((CaptureRequest) call.getArgument(0)).providerPaymentId(), null, null);
+                    ((com.example.ecsite.payment.capture.CaptureHttpRequest) call.getArgument(0)).flowId(), null, null);
         });
         when(gateway.cancelAuthorization(any())).thenAnswer(call -> {
             entered.countDown(); await(release);
@@ -196,7 +197,7 @@ class PaymentOperationStartPostgresTest {
         }));
         int blocker = blockerPid.get(20, TimeUnit.SECONDS);
         when(gateway.prepareAuthorization(any())).thenAnswer(call -> {
-            boundary(f, "AUTHORIZE"); return new AuthorizationPreparation("pf_locked", "secret");
+            boundary(f, "AUTHORIZE"); return new AuthorizationPreparation("pfw_locked", "secret");
         });
         Future<?> starting = workers.submit(() -> authorization.prepareAuthorization(f.order));
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
@@ -307,7 +308,7 @@ class PaymentOperationStartPostgresTest {
             Order o = orders.saveAndFlush(new Order(u.getId(), 1000, now, now.plusDays(1)));
             if (!authorized) return new Fixture(o, null, null);
             Payment p = new Payment(o, PaymentProvider.PAYJP, PaymentMethod.CARD, 1000, now);
-            String provider = "pf_" + id; p.setProviderPaymentId(provider, now); p.markAuthorized(now); payments.saveAndFlush(p);
+            String provider = "pfw_" + id; p.setProviderPaymentId(provider, now); p.markAuthorized(now); payments.saveAndFlush(p);
             PaymentTransaction t = new PaymentTransaction(p, PaymentTransactionType.AUTHORIZE, 1000, 0, id, now); t.markSucceeded(provider, now); transactions.saveAndFlush(t);
             return new Fixture(o, p.getId(), provider);
         });

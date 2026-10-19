@@ -46,6 +46,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@com.example.ecsite.support.CaptureConnectionTest
 class PaymentSynchronizationPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
             .withDatabaseName("feature120_sync").withUsername("feature120").withPassword("feature120-test")
@@ -193,17 +194,16 @@ class PaymentSynchronizationPostgresTest {
         } finally {release.countDown();}
     }
     @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"webhook","reconciliation"})
-    void providerChangeAfterGetIsConflictAndLeavesPending(String path) throws Exception {
+    void immutableProviderRejectsChangeWhileGetIsInFlight(String path) throws Exception {
         Fixture f=fixture(true,true);var snapshot=operation(f,PaymentTransactionType.CAPTURE);
         var shipment=shipment(f);
         stubTerminal(f,PaymentTransactionType.CAPTURE,()->{entered.countDown();awaitUnchecked(release);});
         Future<PaymentSynchronizationOutcome> delayed=workers.submit(()->synchronize(path,snapshot));
         try {
-            await(entered);tx(()->{payments.findByIdForUpdate(snapshot.paymentId()).orElseThrow().setProviderPaymentId("changed_"+f.providerId,LocalDateTime.now());return null;});
+            await(entered);assertThatThrownBy(()->tx(()->{payments.findByIdForUpdate(snapshot.paymentId()).orElseThrow().setProviderPaymentId("changed_"+f.providerId,LocalDateTime.now());return null;})).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
             release.countDown();
-            if(path.equals("webhook"))assertThatThrownBy(()->delayed.get(20,TimeUnit.SECONDS)).hasCauseInstanceOf(IllegalStateException.class);
-            else assertThat(delayed.get(20,TimeUnit.SECONDS)).isEqualTo(PaymentSynchronizationOutcome.CONFLICT);
-            assertThat(jdbc.queryForObject("select status from payment_transactions where id=?",String.class,snapshot.transactionId())).isEqualTo("PENDING");
+            assertThat(delayed.get(20,TimeUnit.SECONDS)).isEqualTo(PaymentSynchronizationOutcome.APPLIED);
+            assertTerminal(f,snapshot);
             assertThat(number("order_status_histories",f)).isEqualTo(1);
             assertThat(shipment(f)).isEqualTo(shipment);verifyNoPost();
         } finally {release.countDown();}
@@ -480,7 +480,7 @@ class PaymentSynchronizationPostgresTest {
             }
             o.addCharge(new OrderCharge(OrderChargeType.SHIPPING,"shipping",0,tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),1));
             o.applyAmount(amount(new Fixture(null,null,null,null,null,tax.getId()),3000));
-            orders.saveAndFlush(o);String provider="pf_"+unique;
+            orders.saveAndFlush(o);String provider="pfw_"+unique;
             if(authorized) createAuthorized(o,provider);
             return new Fixture(o.getId(),u.getId(),provider,productIds,o.getItems().stream().map(OrderItem::getId).toList(),tax.getId());
         });

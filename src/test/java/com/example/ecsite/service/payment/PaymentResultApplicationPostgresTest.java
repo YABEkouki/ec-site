@@ -41,6 +41,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@com.example.ecsite.support.CaptureConnectionTest
 class PaymentResultApplicationPostgresTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
             .withDatabaseName("feature120_results").withUsername("feature120").withPassword("feature120-test")
@@ -246,21 +247,21 @@ class PaymentResultApplicationPostgresTest {
         assertThat(authResult.setProviderPaymentId(start.snapshot(),f.providerId)).isEqualTo(PaymentResultApplication.IGNORED_STALE);
     }
     @ParameterizedTest @ValueSource(strings={"provider","key","amount"})
-    void reconciliationReloadsPaymentAndTransactionAfterGet(String changed) {
+    void immutableRequestRejectsIdentityChangesWhileReconciliationGets(String changed) {
         Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);
         when(gateway.retrievePaymentFlow(f.providerId)).thenAnswer(inv->{
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            tx(()->{
+            assertThatThrownBy(()->tx(()->{
                 if(changed.equals("provider"))jdbc.update("update payments set provider_payment_id=? where id=?","changed_"+f.providerId,start.paymentId());
                 else if(changed.equals("key"))jdbc.update("update payment_transactions set idempotency_key=? where id=?",UUID.randomUUID().toString(),start.transactionId());
                 else jdbc.update("update payment_transactions set amount=amount+1 where id=?",start.transactionId());
                 return null;
-            });
+            })).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
             return new PaymentFlowState(f.providerId,PaymentFlowStatus.SUCCEEDED,null,null);
         });
-        assertThat(reconciliation.reconcile(start.transactionId())).isEqualTo(PaymentSynchronizationOutcome.CONFLICT);
+        assertThat(reconciliation.reconcile(start.transactionId())).isEqualTo(PaymentSynchronizationOutcome.APPLIED);
         assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("SHIPPED");
-        assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");assertThat(number("order_status_histories",f)).isEqualTo(1);
+        assertThat(txnStatus(start.transactionId())).isEqualTo("SUCCEEDED");assertThat(number("order_status_histories",f)).isEqualTo(1);
     }
     @Test void failedShippedCaptureCannotBeCancelledOrHaveInventoryRestored() {
         Fixture f=fixture(true);var old=beginCapture(f.orderId,1L,"admin",null);
@@ -353,7 +354,7 @@ class PaymentResultApplicationPostgresTest {
             }
             o.addCharge(new OrderCharge(OrderChargeType.SHIPPING,"shipping",0,tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),1));
             o.applyAmount(amount(new Fixture(null,null,null,null,null,tax.getId()),3000));
-            orders.saveAndFlush(o);String provider="pf_"+unique;
+            orders.saveAndFlush(o);String provider="pfw_"+unique;
             if(authorized) createAuthorized(o,provider);
             return new Fixture(o.getId(),u.getId(),provider,productIds,o.getItems().stream().map(OrderItem::getId).toList(),tax.getId());
         });

@@ -33,6 +33,7 @@ import org.springframework.transaction.support.*;
 /** Real service proxies and PostgreSQL. The launcher provides the isolated database; no live Gateway. */
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
 @ActiveProfiles("test")
+@com.example.ecsite.support.CaptureConnectionTest
 class CaptureShipmentFlowPostgresTest {
     @Autowired PaymentCaptureService capture;
     @Autowired AdminCaptureRequeryService requery;
@@ -40,11 +41,15 @@ class CaptureShipmentFlowPostgresTest {
     @Autowired PaymentService paymentService;
     @Autowired PaymentCaptureStartService start;
     @Autowired PaymentCaptureResultService results;
+    @Autowired CaptureInitialPostPreparationService initialPreparation;
+    @MockitoSpyBean com.example.ecsite.payment.capture.CaptureRequestStore requestStore;
+    @MockitoSpyBean com.example.ecsite.config.CaptureConnectionProperties connection;
+    @MockitoSpyBean com.example.ecsite.config.PayJpSafetyProperties safety;
     @Autowired PaymentReconciliationItemService reconciliation;
     @Autowired PayJpWebhookCaptureSyncService webhook;
     @Autowired OrderRepository orders;
     @Autowired PaymentRepository payments;
-    @Autowired PaymentTransactionRepository transactions;
+    @MockitoSpyBean PaymentTransactionRepository transactions;
     @Autowired UserRepository users;
     @Autowired ProductRepository products;
     @Autowired CategoryRepository categories;
@@ -74,7 +79,7 @@ class CaptureShipmentFlowPostgresTest {
             var ordered=now.minusDays(1).toLocalDate().atTime(10,0);
             Order order=new Order(user.getId(),200,ordered,ordered.withHour(14));order.beginShippingPreparation(ordered.withHour(14),7L,"preparer");
             order.addItem(new OrderItem(product.getId(),product.getName(),cat.getId(),cat.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));orders.saveAndFlush(order);
-            Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);payment.setProviderPaymentId("flow_"+unique,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
+            Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);payment.setProviderPaymentId("pfw_flow_"+unique,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
             var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,unique,now);auth.markSucceeded(payment.getProviderPaymentId(),now);transactions.saveAndFlush(auth);
             return new Fixture(order.getId(),payment.getId(),product.getId(),payment.getProviderPaymentId());
         });
@@ -91,6 +96,7 @@ class CaptureShipmentFlowPostgresTest {
         // An independent connection can acquire the lock and see the committed shipment and operation.
         tx(() -> {jdbc.execute("set local lock_timeout='2s'");var order=orders.findByIdForUpdate(f.order()).orElseThrow();assertThat(order.getStatus()).isEqualTo(OrderStatus.SHIPPED);assertThat(order.getPaidAt()).isNull();assertThat(order.getShipmentCapturePaymentId()).isEqualTo(f.payment());payments.findByIdForUpdate(f.payment()).orElseThrow();return null;});
         assertThat(historyCount(f)).isEqualTo(1);assertThat(transactionRows(f)).hasSize(2);
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,f.payment())).isEqualTo(1);
     }
     @ParameterizedTest @ValueSource(strings={"CAPTURED","PENDING","FAILED","EXCEPTION"})
     void gatewayRunsAfterAtomicShipmentCommitAndNeverUndoesIt(String outcome) {
@@ -102,6 +108,13 @@ class CaptureShipmentFlowPostgresTest {
         assertThat(row(f).get("paid_at")!=null).isEqualTo(outcome.equals("CAPTURED"));
         assertThat(invariant(f)).isEqualTo(invariant);assertThat(historyCount(f)).isEqualTo(1);
         assertThat(transactionRows(f).getLast().get("status")).isEqualTo(outcome.equals("CAPTURED")?"SUCCEEDED":outcome.equals("FAILED")?"FAILED":"PENDING");
+    }
+    @Test void newStartAtomicallyPersistsTheExactCaptureRequest() {
+        Fixture f=fixture();var first=begin(f);
+        var saved=jdbc.queryForMap("select * from capture_requests where capture_transaction_id=?",first.transactionId());
+        assertThat(saved).containsEntry("payment_id",f.payment()).containsEntry("provider_flow_id",f.provider());
+        assertThat(saved.get("request_body")).isEqualTo("{\"amount_to_capture\":200}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(row(f)).containsEntry("status","SHIPPED");assertThat(historyCount(f)).isEqualTo(1);
     }
     @Test void decreasedAmountPostsCurrentAmountWithoutRequiringAuthorizationRevisionEquality() {
         Fixture f=fixture();tx(() -> {var order=orders.findByIdForUpdate(f.order()).orElseThrow();order.setTotalAmount(100);order.incrementContentRevision();return null;});
@@ -277,11 +290,11 @@ class CaptureShipmentFlowPostgresTest {
     @ParameterizedTest @ValueSource(strings={"ordered","failed","fixed","foreign-fixed","multiple","provider","legacy"})
     void manualRequeryRejectsUnsafeTargetsWithoutGateway(String mode) {
         Fixture f=fixture();var initial=mode.equals("ordered") || mode.equals("legacy")?null:begin(f);
+        if(mode.equals("provider")){assertThatThrownBy(()->jdbc.update("update payments set provider_payment_id=null where id=?",f.payment())).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);verifyNoInteractions(gateway);return;}
         tx(() -> {
             if(mode.equals("failed"))results.apply(initial.snapshot(),new CaptureResult(CaptureResultStatus.FAILED,f.provider(),"failed","reason"));
             if(mode.equals("foreign-fixed")){var other=fixture();jdbc.update("update orders set shipment_capture_payment_id=? where id=?",other.payment(),f.order());}
             if(mode.equals("fixed"))jdbc.update("update orders set shipment_capture_payment_id=null where id=?",f.order());
-            if(mode.equals("provider"))jdbc.update("update payments set provider_payment_id=null where id=?",f.payment());
             if(mode.equals("multiple") || mode.equals("legacy")){var t=new PaymentTransaction(payments.findById(f.payment()).orElseThrow(),PaymentTransactionType.CAPTURE,200,0,"extra-"+UUID.randomUUID(),now());transactions.saveAndFlush(t);}
             return null;
         });
@@ -336,7 +349,7 @@ class CaptureShipmentFlowPostgresTest {
                 switch(mismatch){case "key"->jdbc.update("update payment_transactions set idempotency_key=? where id=?","changed-"+UUID.randomUUID(),first.transactionId());case "amount"->jdbc.update("update payment_transactions set amount=300 where id=?",first.transactionId());case "revision"->jdbc.update("update payment_transactions set order_content_revision=1 where id=?",first.transactionId());case "provider"->jdbc.update("update payments set provider_payment_id=? where id=?","changed-"+UUID.randomUUID(),f.payment());}return null;});
             return new PaymentFlowState(f.provider(),PaymentFlowStatus.SUCCEEDED,null,null);
         });
-        assertThatThrownBy(()->requery.requery(f.order())).isInstanceOf(CaptureRequeryRejectedException.class);assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);assertThat(historyCount(f)).isEqualTo(1);assertThat(invariant(f)).isEqualTo(unchanged);verify(gateway,never()).capture(any());
+        assertThatThrownBy(()->requery.requery(f.order())).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);assertThat(historyCount(f)).isEqualTo(1);assertThat(invariant(f)).isEqualTo(unchanged);verify(gateway,never()).capture(any());
     }
     @Test void requeryWaitsOnActualOrderLockThenRejectsExpiredAuthorization() throws Exception {
         Fixture f=fixture();begin(f);var ready=new CompletableFuture<Integer>();
@@ -354,6 +367,117 @@ class CaptureShipmentFlowPostgresTest {
     }
     @Test void manualRequeryRejectsAnOuterTransactionBeforeGateway() {
         Fixture f=fixture();begin(f);tx(()->{assertThatThrownBy(()->requery.requery(f.order())).isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);return null;});verifyNoInteractions(gateway);
+    }
+    @ParameterizedTest @ValueSource(strings={"insert","flush","commit"})
+    void immutableRequestFailureRollsBackEveryStartWrite(String point) {
+        Fixture f=fixture();var before=row(f);var txBefore=transactionRows(f);
+        if(point.equals("insert"))tx(()->{doThrow(new IllegalStateException("insert failed")).when(requestStore).insert(any(),any(),any(),any(),any());return null;});
+        if(point.equals("flush"))doThrow(new IllegalStateException("flush failed")).when(transactions).saveAndFlush(argThat(t->t.getTransactionType()==PaymentTransactionType.CAPTURE));
+        assertThatThrownBy(()->tx(()->{var value=begin(f);if(point.equals("commit"))TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization(){@Override public void beforeCommit(boolean readOnly){throw new IllegalStateException("commit failed");}});return value;})).isInstanceOfAny(IllegalStateException.class,org.springframework.dao.InvalidDataAccessApiUsageException.class);
+        assertThat(row(f)).isEqualTo(before);assertThat(transactionRows(f)).isEqualTo(txBefore);assertThat(historyCount(f)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,f.payment())).isZero();verifyNoInteractions(gateway);
+    }
+    @Test void missingConnectionRejectsNewBeforeCreatingCaptureButDoesNotAffectExistingContinuation() {
+        Fixture fresh=fixture();Fixture pending=fixture();begin(pending);
+        doThrow(new IllegalStateException("not configured")).when(connection).requireIdentity(any());
+        assertThatThrownBy(()->begin(fresh)).isInstanceOf(IllegalStateException.class);
+        assertThat(row(fresh)).containsEntry("status","ORDERED");assertThat(transactionRows(fresh)).hasSize(1);
+        when(gateway.retrievePaymentFlow(pending.provider())).thenReturn(new PaymentFlowState(pending.provider(),PaymentFlowStatus.PROCESSING,null,null));
+        assertThat(capture.captureForShipment(pending.order(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.PENDING);
+        verify(gateway,never()).capture(any());
+    }
+    @ParameterizedTest @ValueSource(strings={"webhook","reconciliation"})
+    void committedSuccessBeforeInitialPreparationSuppressesPost(String source) {
+        Fixture f=fixture();var first=begin(f);
+        when(gateway.retrievePaymentFlow(f.provider())).thenReturn(new PaymentFlowState(f.provider(),PaymentFlowStatus.SUCCEEDED,null,null));
+        if(source.equals("webhook"))webhook.synchronize(f.provider());else reconciliation.reconcile(first.transactionId());
+        assertThat(initialPreparation.prepare(first.initialPost())).isInstanceOf(CaptureInitialPostPreparationService.AlreadyApplied.class);
+        verify(gateway,never()).capture(any());assertThat(historyCount(f)).isEqualTo(1);
+    }
+    @Test void initialCapabilityCannotBeConsumedTwiceOrRecreatedByRepost() {
+        Fixture f=fixture();var first=begin(f);
+        assertThat(initialPreparation.prepare(first.initialPost())).isInstanceOf(CaptureInitialPostPreparationService.Ready.class);
+        assertThatThrownBy(()->initialPreparation.prepare(first.initialPost())).isInstanceOf(IllegalStateException.class);
+        assertThat(begin(f).initialPost()).isNull();verifyNoInteractions(gateway);
+    }
+    @ParameterizedTest @ValueSource(strings={"missing","wrong-id","flow","amount","revision","key","connection","shortened"})
+    void initialPreparationRejectsMissingOrMismatchedStoredRequest(String field) {
+        Fixture f=fixture();var first=begin(f);
+        var stored=tx(()->requestStore.findByIdAndCaptureTransactionId(first.initialPost().requestId(),first.transactionId()).orElseThrow());
+        if(field.equals("missing"))tx(()->{doReturn(Optional.empty()).when(requestStore).findByIdAndCaptureTransactionId(anyLong(),anyLong());return null;});
+        else if(field.equals("shortened"))doReturn(java.time.Duration.ofNanos(1)).when(safety).postMaxAge();
+        else {
+            var http=stored.httpRequest();var identity=http.connection();
+            if(field.equals("connection"))identity=new com.example.ecsite.payment.capture.CaptureConnectionIdentity("other","test-account","TEST","https://api.pay.jp");
+            var other=com.example.ecsite.payment.capture.CaptureHttpRequest.create(identity,field.equals("flow")?"pfw_other":http.flowId(),field.equals("amount")?201:http.amount(),field.equals("key")?"other":http.idempotencyKey());
+            var changed=new com.example.ecsite.payment.capture.StoredCaptureRequest(field.equals("wrong-id")?stored.id()+1:stored.id(),stored.paymentId(),stored.captureTransactionId(),field.equals("revision")?1:stored.orderContentRevision(),other,stored.createdAt(),stored.replayNotAfter());
+            tx(()->{doReturn(Optional.of(changed)).when(requestStore).findByIdAndCaptureTransactionId(anyLong(),anyLong());return null;});
+        }
+        assertThatThrownBy(()->initialPreparation.prepare(first.initialPost())).isInstanceOfAny(IllegalStateException.class,IllegalArgumentException.class);
+        assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);assertThat(historyCount(f)).isEqualTo(1);verifyNoInteractions(gateway);
+    }
+    @Test void extendingCurrentConfigurationNeverExtendsTheStoredDeadline() {
+        doReturn(java.time.Duration.ofHours(1)).when(safety).postMaxAge();Fixture f=fixture();var first=begin(f);
+        doReturn(java.time.Duration.ofHours(23)).when(safety).postMaxAge();
+        var ready=(CaptureInitialPostPreparationService.Ready)initialPreparation.prepare(first.initialPost());
+        assertThat(java.time.Duration.between(ready.createdAt(),ready.notAfter())).isEqualTo(java.time.Duration.ofHours(1));
+        assertThatThrownBy(()->ready.requireWithinWindow(ready.notAfter())).isInstanceOf(IllegalStateException.class);
+        ready.requireWithinWindow(ready.notAfter().minusNanos(1));
+    }
+    @ParameterizedTest @ValueSource(strings={"dirty","order","payment","transaction","read-only","repeatable"})
+    void initialPreparationRetainsWriteContextSafety(String mode) {
+        Fixture f=fixture();var first=begin(f);var template=new TransactionTemplate(manager);
+        if(mode.equals("read-only"))template.setReadOnly(true);if(mode.equals("repeatable"))template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.executeWithoutResult(status->{
+            switch(mode){case "dirty"->em.find(Order.class,f.order()).setTotalAmount(999);case "order"->em.unwrap(Session.class).setReadOnly(em.find(Order.class,f.order()),true);case "payment"->em.unwrap(Session.class).setReadOnly(em.find(Payment.class,f.payment()),true);case "transaction"->em.unwrap(Session.class).setReadOnly(em.find(PaymentTransaction.class,first.transactionId()),true);}
+            assertThatThrownBy(()->initialPreparation.prepare(first.initialPost())).isInstanceOf(IllegalStateException.class);assertThat(status.isRollbackOnly()).isTrue();status.setRollbackOnly();
+        });verifyNoInteractions(gateway);assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);
+    }
+    @Test void shipmentRequestAndOperationAreInvisibleBeforeTheSameCommit() throws Exception {
+        Fixture f=fixture();var entered=new CountDownLatch(1);
+        var creating=workers.submit(()->asAdmin(()->tx(()->{var value=begin(f);entered.countDown();await(release);return value;})));
+        await(entered);
+        assertThat(row(f)).containsEntry("status","ORDERED");assertThat(historyCount(f)).isZero();assertThat(transactionRows(f)).hasSize(1);
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,f.payment())).isZero();
+        release.countDown();creating.get(20,TimeUnit.SECONDS);boundary(f);verifyNoInteractions(gateway);
+    }
+    @Test void initialPreparationRefreshesPreloadedEntitiesAfterAnotherResultCommits() throws Exception {
+        Fixture f=fixture();var first=begin(f);
+        tx(()->{var old=em.find(Order.class,f.order());var p=em.find(Payment.class,f.payment());var t=em.find(PaymentTransaction.class,first.transactionId());
+            try{assertThat(workers.submit(()->results.apply(first.snapshot(),captured(f))).get(20,TimeUnit.SECONDS)).isEqualTo(PaymentResultApplication.APPLIED);}catch(Exception e){throw new RuntimeException(e);}
+            assertThat(initialPreparation.prepare(first.initialPost())).isInstanceOf(CaptureInitialPostPreparationService.AlreadyApplied.class);
+            assertThat(em.find(Order.class,f.order())).isSameAs(old);assertThat(old.getPaidAt()).isNotNull();assertThat(p.getStatus()).isEqualTo(PaymentStatus.CAPTURED);assertThat(t.getStatus()).isEqualTo(PaymentTransactionStatus.SUCCEEDED);return null;
+        });verifyNoInteractions(gateway);assertThat(historyCount(f)).isEqualTo(1);
+    }
+    @ParameterizedTest @ValueSource(strings={"actor","note","duplicate"})
+    void initialPreparationRejectsInconsistentShipmentHistory(String field) {
+        Fixture f=fixture();var first=begin(f);
+        if(field.equals("duplicate"))tx(()->{histories.record(orders.findByIdForUpdate(f.order()).orElseThrow(),OrderStatus.ORDERED,OrderStatus.SHIPPED,OrderStatusHistoryActorType.ADMIN,9L,"shipper","memo");return null;});
+        else jdbc.update(field.equals("actor")?"update order_status_histories set changed_by_username='other' where order_id=?":"update order_status_histories set internal_note='other' where order_id=?",f.order());
+        assertThatThrownBy(()->initialPreparation.prepare(first.initialPost())).isInstanceOf(IllegalStateException.class);verifyNoInteractions(gateway);
+        assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);
+    }
+    @Test void shippedPendingWithoutStoredRequestOrNewSettingsRemainsGetOnly() {
+        Fixture f=fixture();tx(()->{var order=orders.findByIdForUpdate(f.order()).orElseThrow();var p=payments.findByOrderIdForUpdate(f.order()).getFirst();var now=now();
+            transactions.saveAndFlush(new PaymentTransaction(p,PaymentTransactionType.CAPTURE,200,0,UUID.randomUUID().toString(),now,new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN,9L,"shipper","memo")));
+            order.confirmCardShipment(now,9L,"shipper",p.getId());histories.record(order,OrderStatus.ORDERED,OrderStatus.SHIPPED,OrderStatusHistoryActorType.ADMIN,9L,"shipper","memo");return null;
+        });
+        doThrow(new IllegalStateException("new connection absent")).when(connection).requireIdentity(any());
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,f.payment())).isZero();
+        when(gateway.retrievePaymentFlow(f.provider())).thenReturn(new PaymentFlowState(f.provider(),PaymentFlowStatus.SUCCEEDED,null,null));
+        assertThat(capture.captureForShipment(f.order(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+        assertThat(row(f)).containsEntry("status","SHIPPED");assertThat(row(f).get("paid_at")).isNotNull();assertThat(historyCount(f)).isEqualTo(1);verify(gateway,never()).capture(any());
+    }
+    @Test void deferredDatabaseCommitFailureRollsBackAllStartRecords() {
+        Fixture f=fixture();var before=row(f);var txBefore=transactionRows(f);
+        String name="b2_commit_"+UUID.randomUUID().toString().replace("-","");
+        jdbc.execute("create function "+name+"() returns trigger language plpgsql as $$ begin if NEW.id="+f.order()+" and NEW.status='SHIPPED' then raise exception 'injected deferred commit failure' using errcode='23514'; end if; return NEW; end $$");
+        try {
+            jdbc.execute("create constraint trigger "+name+" after update on orders deferrable initially deferred for each row execute function "+name+"()");
+            assertThatThrownBy(()->begin(f)).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class).hasStackTraceContaining("injected deferred commit failure");
+            assertThat(row(f)).isEqualTo(before);assertThat(transactionRows(f)).isEqualTo(txBefore);assertThat(historyCount(f)).isZero();
+            assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,f.payment())).isZero();verifyNoInteractions(gateway);
+        } finally {jdbc.execute("drop trigger if exists "+name+" on orders");jdbc.execute("drop function "+name+"()");}
     }
     void await(CountDownLatch latch) {try{assertThat(latch.await(20,TimeUnit.SECONDS)).isTrue();}catch(InterruptedException e){Thread.currentThread().interrupt();throw new AssertionError(e);}}
     void blockedBy(int pid) throws Exception {long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);while(System.nanoTime()<until){if(jdbc.queryForObject("select count(*) from pg_stat_activity where datname=current_database() and ?=any(pg_blocking_pids(pid))",Integer.class,pid)>0)return;new CountDownLatch(1).await(20,TimeUnit.MILLISECONDS);}throw new AssertionError("No actual PostgreSQL lock wait");}

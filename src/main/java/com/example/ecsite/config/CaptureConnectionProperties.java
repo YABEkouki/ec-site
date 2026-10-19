@@ -3,7 +3,7 @@ package com.example.ecsite.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import com.example.ecsite.payment.capture.CaptureConnectionIdentity;
 
-/** Optional foundation only. Existing payment operations do not read these properties.
+/** Required for NEW Capture and its initial POST; GET-only continuations do not read these properties.
  * Operators must verify account/mode correspondence; this class cannot prove API-key ownership.
  */
 @ConfigurationProperties("payjp.capture-connection")

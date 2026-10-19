@@ -27,7 +27,11 @@ class CaptureShipmentOperationsTest {
     OrderWriteContext context=mock(OrderWriteContext.class);
     OrderStatusHistoryService histories=mock(OrderStatusHistoryService.class);
     CaptureShipmentPolicy policy=new CaptureShipmentPolicy(new PaymentConsistencyEvaluator(),new CaptureShipmentSnapshotMatcher());
-    CaptureShipmentOperations service=new CaptureShipmentOperations(orders,payments,transactions,em,context,new OrderShipmentGuard(),policy,histories);
+    com.example.ecsite.payment.capture.CaptureRequestStore requests=mock(com.example.ecsite.payment.capture.CaptureRequestStore.class);
+    com.example.ecsite.config.CaptureConnectionProperties connection=new com.example.ecsite.config.CaptureConnectionProperties("test", "account", "TEST", "https://api.pay.jp");
+    com.example.ecsite.config.PayJpProperties active=new com.example.ecsite.config.PayJpProperties("pk_test_dummy", "sk_test_dummy", "https://api.pay.jp", "dummy");
+    com.example.ecsite.config.PayJpSafetyProperties safety=new com.example.ecsite.config.PayJpSafetyProperties(java.time.Duration.ofSeconds(5),java.time.Duration.ofSeconds(15),java.time.Duration.ofHours(23));
+    CaptureShipmentOperations service=new CaptureShipmentOperations(orders,payments,transactions,em,context,new OrderShipmentGuard(),policy,histories,requests,connection,active,safety,mock(OrderStatusHistoryRepository.class));
     LocalDateTime now=LocalDateTime.of(2026,10,19,15,0);
     Order order=new Order(1L,200,now.minusDays(1),now.minusHours(1));
     Payment payment;
@@ -36,14 +40,15 @@ class CaptureShipmentOperationsTest {
         actor(9L,"shipper"); ReflectionTestUtils.setField(order,"id",42L);
         order.beginShippingPreparation(now.minusHours(1),7L,"preparer");
         payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);
-        ReflectionTestUtils.setField(payment,"id",52L); payment.setProviderPaymentId("provider",now); payment.markAuthorized(now);
+        ReflectionTestUtils.setField(payment,"id",52L); payment.setProviderPaymentId("pfw_provider",now); payment.markAuthorized(now);
         var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,"auth",now);
-        ReflectionTestUtils.setField(auth,"id",62L); auth.markSucceeded("provider",now); history.add(auth);
+        ReflectionTestUtils.setField(auth,"id",62L); auth.markSucceeded("pfw_provider",now); history.add(auth);
+        when(requests.insert(any(),any(),any(),any(),any())).thenAnswer(call -> new com.example.ecsite.payment.capture.StoredCaptureRequest(1,52,63,order.getContentRevision(),call.getArgument(2),call.getArgument(3),call.getArgument(4)));
         when(orders.findByIdForUpdate(42L)).thenReturn(Optional.of(order));
         when(orders.findCurrentTimeInTokyo()).thenReturn(now);
         when(payments.findByOrderIdForUpdate(42L)).thenReturn(List.of(payment));
         when(transactions.findByPaymentIdOrderByCreatedAtAscIdAsc(52L)).thenReturn(history);
-        when(transactions.save(any())).thenAnswer(call -> { PaymentTransaction t=call.getArgument(0);ReflectionTestUtils.setField(t,"id",63L);history.add(t);return t; });
+        when(transactions.saveAndFlush(any())).thenAnswer(call -> { PaymentTransaction t=call.getArgument(0);ReflectionTestUtils.setField(t,"id",63L);history.add(t);return t; });
     }
     @Test void requeryOnlyReadsExistingPendingOperationAndPreservesOriginalActor() {
         var first=start(); clearInvocations(transactions,histories,orders,context,em,payments); actor(10L,"second-admin");
@@ -53,14 +58,14 @@ class CaptureShipmentOperationsTest {
         var sequence=inOrder(context,orders,em);
         sequence.verify(context).requireCleanWritableReadCommitted(); sequence.verify(orders).findByIdForUpdate(42L);
         sequence.verify(context).refreshWritableOrder(order); sequence.verify(em).refresh(payment);
-        verify(transactions,never()).save(any()); verifyNoInteractions(histories); verify(orders,never()).findCurrentTimeInTokyo();
+        verify(transactions,never()).saveAndFlush(any()); verifyNoInteractions(histories); verify(orders,never()).findCurrentTimeInTokyo();
     }
     @ParameterizedTest @ValueSource(strings={"ordered","failed","fixed","multiple","provider","snapshot","amount","revision","partial","foreign"})
     void unsafeRequeryNeverStartsShipmentOrCreatesAnOperation(String mode) {
         var first=start();
         switch(mode){
             case "ordered" -> ReflectionTestUtils.setField(order,"status",OrderStatus.ORDERED);
-            case "failed" -> history.getLast().markFailed("provider","failed","private",now);
+            case "failed" -> history.getLast().markFailed("pfw_provider","failed","private",now);
             case "fixed" -> ReflectionTestUtils.setField(order,"shipmentCapturePaymentId",99L);
             case "multiple" -> {var extra=new PaymentTransaction(payment,PaymentTransactionType.CAPTURE,200,0,"other",now);ReflectionTestUtils.setField(extra,"id",70L);history.add(extra);}
             case "provider" -> ReflectionTestUtils.setField(payment,"providerPaymentId",null);
@@ -73,14 +78,14 @@ class CaptureShipmentOperationsTest {
         clearInvocations(transactions,histories);
         assertThatThrownBy(() -> { if (mode.equals("snapshot")) service.confirmRequery(first.snapshot()); else service.prepareRequery(42L); })
                 .isInstanceOfAny(CaptureRequeryRejectedException.class,com.example.ecsite.exception.InvalidOrderStatusException.class);
-        verify(transactions,never()).save(any());verifyNoInteractions(histories);
+        verify(transactions,never()).saveAndFlush(any());verifyNoInteractions(histories);
     }
     @Test void requeryRejectsAnExpectedSnapshotForAnotherTransaction() {
         var first=start();var old=first.snapshot();
         var different=new PaymentOperationSnapshot(old.orderId(),old.paymentId(),999L,old.type(),old.idempotencyKey(),old.amount(),old.orderContentRevision(),old.providerPaymentId(),old.provider(),old.status(),old.initiatorType(),old.initiatorId(),old.initiatorUsername(),old.internalNote());
         clearInvocations(transactions,histories);
         assertThatThrownBy(()->service.confirmRequery(different)).isInstanceOf(CaptureRequeryRejectedException.class);
-        verify(transactions,never()).save(any());verifyNoInteractions(histories);
+        verify(transactions,never()).saveAndFlush(any());verifyNoInteractions(histories);
     }
     @Test void requeryAuthenticationFailsBeforeAnyLock() {
         SecurityContextHolder.clearContext(); clearInvocations(orders,context,payments,transactions);
@@ -88,11 +93,11 @@ class CaptureShipmentOperationsTest {
         verifyNoInteractions(orders,context,payments,transactions);
     }
     @Test void requeryAlreadyAppliedHasNoAdditionalMutations() {
-        var first=start(); service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,"provider",null,null));
+        var first=start(); service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,"pfw_provider",null,null));
         var paidAt=order.getPaidAt(); clearInvocations(histories,transactions,orders);
         assertThat(service.prepareRequery(42L).disposition()).isEqualTo(PaymentStartDisposition.ALREADY_APPLIED);
         assertThat(service.confirmRequery(first.snapshot()).disposition()).isEqualTo(PaymentStartDisposition.ALREADY_APPLIED);
-        assertThat(order.getPaidAt()).isEqualTo(paidAt);verify(transactions,never()).save(any());verifyNoInteractions(histories);verify(orders,never()).findCurrentTimeInTokyo();
+        assertThat(order.getPaidAt()).isEqualTo(paidAt);verify(transactions,never()).saveAndFlush(any());verifyNoInteractions(histories);verify(orders,never()).findCurrentTimeInTokyo();
     }
     static void actor(Long id,String name) {
         var principal=new AdminUserDetails(id,name,"password",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
@@ -108,7 +113,7 @@ class CaptureShipmentOperationsTest {
         var sequence=inOrder(context,orders,em,transactions,histories);
         sequence.verify(context).requireCleanWritableReadCommitted();sequence.verify(orders).findByIdForUpdate(42L);
         sequence.verify(context).refreshWritableOrder(order);sequence.verify(em).refresh(payment);
-        sequence.verify(orders).findCurrentTimeInTokyo();sequence.verify(transactions).save(any());
+        sequence.verify(orders).findCurrentTimeInTokyo();sequence.verify(transactions).saveAndFlush(any());
         sequence.verify(histories).record(order,OrderStatus.ORDERED,OrderStatus.SHIPPED,OrderStatusHistoryActorType.ADMIN,9L,"shipper","memo");
     }
     @Test void decreasedAmountWithOldAuthorizationRevisionIsAllowed() {
@@ -128,27 +133,27 @@ class CaptureShipmentOperationsTest {
             case "cancelled" -> ReflectionTestUtils.setField(order,"status",OrderStatus.CANCELLED);
         }
         assertThatThrownBy(this::start).isInstanceOfAny(IllegalStateException.class,com.example.ecsite.exception.InvalidOrderStatusException.class);
-        verify(transactions,never()).save(any());verifyNoInteractions(histories);
+        verify(transactions,never()).saveAndFlush(any());verifyNoInteractions(histories);
     }
     @Test void continuationKeepsSavedActorAndDoesNotCreateNewTransaction() {
         var first=start(); actor(10L,"other");var next=service.start(42L,10L,"other","different");
         assertThat(next.disposition()).isEqualTo(PaymentStartDisposition.REUSED);
-        assertThat(next.snapshot()).isEqualTo(first.snapshot());verify(transactions,times(1)).save(any());
+        assertThat(next.snapshot()).isEqualTo(first.snapshot());verify(transactions,times(1)).saveAndFlush(any());
         verify(histories,times(1)).record(any(),any(),any(),any(),any(),any(),any());
     }
     @Test void successRecordsPaidAtOnlyOnceAndStalePendingDoesNotRevertIt() {
-        var first=start();var captured=new CaptureResult(CaptureResultStatus.CAPTURED,"provider",null,null);
+        var first=start();var captured=new CaptureResult(CaptureResultStatus.CAPTURED,"pfw_provider",null,null);
         assertThat(service.apply(first.snapshot(),captured)).isEqualTo(PaymentResultApplication.APPLIED);
         var paid=order.getPaidAt();when(orders.findCurrentTimeInTokyo()).thenReturn(now.plusSeconds(1));
         assertThat(service.apply(first.snapshot(),captured)).isEqualTo(PaymentResultApplication.ALREADY_APPLIED);
-        assertThat(service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.PENDING,"provider",null,null))).isEqualTo(PaymentResultApplication.IGNORED_STALE);
+        assertThat(service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.PENDING,"pfw_provider",null,null))).isEqualTo(PaymentResultApplication.IGNORED_STALE);
         assertThat(order.getPaidAt()).isEqualTo(paid);
         assertThat(start().disposition()).isEqualTo(PaymentStartDisposition.ALREADY_APPLIED);
         verify(histories,times(1)).record(any(),any(),any(),any(),any(),any(),any());
     }
     @ParameterizedTest @ValueSource(strings={"FAILED","PENDING"})
     void nonSuccessKeepsShipmentAndDoesNotPay(String status) {
-        var first=start();service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.valueOf(status),"provider","code","message"));
+        var first=start();service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.valueOf(status),"pfw_provider","code","message"));
         assertThat(order.getStatus()).isEqualTo(OrderStatus.SHIPPED);assertThat(order.getPaidAt()).isNull();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.AUTHORIZED);
         assertThat(history.getLast().getStatus()).isEqualTo(status.equals("FAILED")?PaymentTransactionStatus.FAILED:PaymentTransactionStatus.PENDING);
@@ -156,7 +161,7 @@ class CaptureShipmentOperationsTest {
     }
     @Test void readOnlyTargetFailurePrecedesRefreshAndResultMutation() {
         var first=start();doThrow(new IllegalStateException("read only")).when(context).refreshWritableCaptureTargets(payment,history.getLast());
-        clearInvocations(em);assertThatThrownBy(() -> service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,"provider",null,null))).isInstanceOf(IllegalStateException.class);
+        clearInvocations(em);assertThatThrownBy(() -> service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,"pfw_provider",null,null))).isInstanceOf(IllegalStateException.class);
         verify(em,never()).refresh(payment);assertThat(order.getPaidAt()).isNull();
     }
     @Test void authenticationIsCheckedBeforeFirstQuery() {

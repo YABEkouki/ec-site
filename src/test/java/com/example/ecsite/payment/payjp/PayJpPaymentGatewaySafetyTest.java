@@ -62,7 +62,7 @@ class PayJpPaymentGatewaySafetyTest {
     }
     @Test void unknown409NeverGuessesFromNestedOrHumanMessage() {
         respond(409, "{\"error\":{\"code\":\"idempotency_conflict\"},\"detail\":\"idempotency_timeout\"}");
-        var failure = catchThrowableOfType(() -> gateway.capture(new CaptureRequest("pf", 3000, "key")), PaymentGatewayException.class);
+        var failure = catchThrowableOfType(() -> gateway.prepareAuthorization(new AuthorizationRequest(3000, "key")), PaymentGatewayException.class);
         assertThat(failure.category()).isEqualTo(PaymentGatewayErrorCategory.OTHER_HTTP_ERROR);
         assertThat(failure.providerErrorCode()).isNull();
     }
@@ -121,6 +121,27 @@ class PayJpPaymentGatewaySafetyTest {
         org.apache.hc.client5.http.config.RequestConfig requestConfig = (org.apache.hc.client5.http.config.RequestConfig)
                 org.springframework.test.util.ReflectionTestUtils.getField(client, "defaultConfig");
         assertThat(requestConfig.getResponseTimeout().toMilliseconds()).isEqualTo(15000);
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"redirect","disconnect","timeout","server-error"})
+    void captureByteTransportStillNeverRetriesOrFollowsRedirects(String failure) {
+        // Keep the production Apache transport on loopback while supplying its validated logical identity.
+        var identity=new com.example.ecsite.payment.capture.CaptureConnectionIdentity("test","account","TEST","https://api.pay.jp");
+        org.springframework.test.util.ReflectionTestUtils.setField(gateway,"activeConnection",new PayJpProperties("pk_test_dummy","sk_test_dummy","https://api.pay.jp","test"));
+        org.springframework.test.util.ReflectionTestUtils.setField(gateway,"captureConnection",new CaptureConnectionProperties("test","account","TEST","https://api.pay.jp"));
+        var release=new CountDownLatch(1);
+        server.createContext("/v2/payment_flows",exchange->{
+            calls.incrementAndGet();exchange.getRequestBody().readAllBytes();
+            try{
+                if(failure.equals("redirect")){exchange.getResponseHeaders().set("Location",base()+"/redirected");exchange.sendResponseHeaders(307,-1);}
+                else if(failure.equals("timeout"))release.await(5,TimeUnit.SECONDS);
+                else if(failure.equals("server-error"))exchange.sendResponseHeaders(500,-1);
+            }catch(InterruptedException e){Thread.currentThread().interrupt();}finally{exchange.close();}
+        });
+        server.createContext("/redirected",exchange->{calls.incrementAndGet();exchange.close();});
+        try{
+            assertTimeoutPreemptively(Duration.ofSeconds(3),()->assertThatThrownBy(()->gateway.capture(com.example.ecsite.payment.capture.CaptureHttpRequest.create(identity,"pfw_capture",3000,"same-key"))).isInstanceOf(PaymentGatewayException.class));
+            assertThat(calls).hasValue(1);
+        }finally{release.countDown();}
     }
     private void assertTimeoutPreemptively(Duration limit, org.junit.jupiter.api.function.Executable task) {
         Assertions.assertTimeoutPreemptively(limit, task);
