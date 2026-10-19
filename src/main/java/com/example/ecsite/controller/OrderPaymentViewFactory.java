@@ -35,6 +35,7 @@ public class OrderPaymentViewFactory {
         public View(State state, boolean canCapture, boolean canManualShip, boolean canCancel, boolean canMarkPaid) {
             this(state, canCapture, canManualShip, canCancel, canMarkPaid, null);
         }
+        public boolean canRequery() { return state == State.CAPTURE_PENDING; }
         public String message() { return state.message; }
         public boolean requiresAttention() { return state == State.REVIEW || state == State.CAPTURE_FAILED || state == State.LEGACY_REVIEW; }
     }

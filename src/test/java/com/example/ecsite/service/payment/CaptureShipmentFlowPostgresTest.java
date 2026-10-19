@@ -35,6 +35,8 @@ import org.springframework.transaction.support.*;
 @ActiveProfiles("test")
 class CaptureShipmentFlowPostgresTest {
     @Autowired PaymentCaptureService capture;
+    @Autowired AdminCaptureRequeryService requery;
+    @Autowired AdminCaptureRequeryPreparationService requeryPreparation;
     @Autowired PaymentService paymentService;
     @Autowired PaymentCaptureStartService start;
     @Autowired PaymentCaptureResultService results;
@@ -255,6 +257,103 @@ class CaptureShipmentFlowPostgresTest {
             assertThatThrownBy(() -> begin(f)).isInstanceOf(IllegalStateException.class);assertThat(status.isRollbackOnly()).isTrue();status.setRollbackOnly();
         });
         assertThat(row(f)).isEqualTo(before);assertThat(transactionRows(f)).isEqualTo(txBefore);assertThat(historyCount(f)).isZero();verifyNoInteractions(gateway);
+    }
+    @ParameterizedTest @ValueSource(strings={"SUCCEEDED","PROCESSING","REQUIRES_CAPTURE","CANCELED","EXCEPTION","TIMEOUT"})
+    void manualRequeryIsGetOnlyOutsideTransactionsAndKeepsShipment(String outcome) {
+        Fixture f=fixture();begin(f);var before=row(f);var unchanged=invariant(f);var transactionsBefore=transactionRows(f);
+        when(gateway.retrievePaymentFlow(f.provider())).thenAnswer(call -> {
+            boundary(f);
+            if(outcome.equals("EXCEPTION") || outcome.equals("TIMEOUT"))throw new PaymentGatewayException("private",outcome.equals("TIMEOUT")?new java.net.SocketTimeoutException():new RuntimeException());
+            return new PaymentFlowState(f.provider(),PaymentFlowStatus.valueOf(outcome),null,null);
+        });
+        if(outcome.equals("EXCEPTION") || outcome.equals("TIMEOUT"))assertThatThrownBy(()->requery.requery(f.order())).isInstanceOf(PaymentGatewayException.class);
+        else assertThat(requery.requery(f.order())).isEqualTo(outcome.equals("SUCCEEDED")?AdminCaptureRequeryService.Result.CONFIRMED:AdminCaptureRequeryService.Result.WAITING);
+        assertThat(invariant(f)).isEqualTo(unchanged);assertThat(historyCount(f)).isEqualTo(1);
+        assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("shipped_at",before.get("shipped_at")).containsEntry("shipped_by_account_id",9L).containsEntry("shipment_capture_payment_id",f.payment());
+        if(!outcome.equals("SUCCEEDED")){assertThat(row(f)).isEqualTo(before);assertThat(transactionRows(f)).isEqualTo(transactionsBefore);}
+        else {var paid=row(f).get("paid_at");assertThat(paid).isNotNull();assertThat(requery.requery(f.order())).isEqualTo(AdminCaptureRequeryService.Result.CONFIRMED);assertThat(row(f).get("paid_at")).isEqualTo(paid);}
+        verify(gateway).retrievePaymentFlow(f.provider());verify(gateway,never()).capture(any());verifyNoMoreInteractions(gateway);
+    }
+    @ParameterizedTest @ValueSource(strings={"ordered","failed","fixed","foreign-fixed","multiple","provider","legacy"})
+    void manualRequeryRejectsUnsafeTargetsWithoutGateway(String mode) {
+        Fixture f=fixture();var initial=mode.equals("ordered") || mode.equals("legacy")?null:begin(f);
+        tx(() -> {
+            if(mode.equals("failed"))results.apply(initial.snapshot(),new CaptureResult(CaptureResultStatus.FAILED,f.provider(),"failed","reason"));
+            if(mode.equals("foreign-fixed")){var other=fixture();jdbc.update("update orders set shipment_capture_payment_id=? where id=?",other.payment(),f.order());}
+            if(mode.equals("fixed"))jdbc.update("update orders set shipment_capture_payment_id=null where id=?",f.order());
+            if(mode.equals("provider"))jdbc.update("update payments set provider_payment_id=null where id=?",f.payment());
+            if(mode.equals("multiple") || mode.equals("legacy")){var t=new PaymentTransaction(payments.findById(f.payment()).orElseThrow(),PaymentTransactionType.CAPTURE,200,0,"extra-"+UUID.randomUUID(),now());transactions.saveAndFlush(t);}
+            return null;
+        });
+        var before=row(f);var txBefore=transactionRows(f);var unchanged=invariant(f);
+        assertThatThrownBy(()->requery.requery(f.order())).isInstanceOf(CaptureRequeryRejectedException.class);
+        assertThat(row(f)).isEqualTo(before);assertThat(transactionRows(f)).isEqualTo(txBefore);assertThat(invariant(f)).isEqualTo(unchanged);verifyNoInteractions(gateway);
+    }
+    @ParameterizedTest @ValueSource(strings={"webhook","reconciliation","webhook-timeout"})
+    void manualRequeryPrefersConcurrentCommittedSuccessToOldGetResult(String source) {
+        Fixture f=fixture();var first=begin(f);var unchanged=invariant(f);var calls=new java.util.concurrent.atomic.AtomicInteger();
+        when(gateway.retrievePaymentFlow(f.provider())).thenAnswer(call -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            if(calls.incrementAndGet()==1){
+                if(source.equals("reconciliation"))assertThat(reconciliation.reconcile(first.transactionId())).isEqualTo(PaymentSynchronizationOutcome.APPLIED);
+                else assertThat(webhook.synchronize(f.provider())).isEqualTo(PaymentSynchronizationOutcome.APPLIED);
+                if(source.equals("webhook-timeout"))throw new PaymentGatewayException("timeout");
+                return new PaymentFlowState(f.provider(),PaymentFlowStatus.PROCESSING,null,null);
+            }
+            return new PaymentFlowState(f.provider(),PaymentFlowStatus.SUCCEEDED,null,null);
+        });
+        authenticate(10,"second-admin");assertThat(requery.requery(f.order())).isEqualTo(AdminCaptureRequeryService.Result.CONFIRMED);
+        var paid=row(f).get("paid_at");assertThat(paid).isNotNull();assertThat(requery.requery(f.order())).isEqualTo(AdminCaptureRequeryService.Result.CONFIRMED);
+        assertThat(row(f)).containsEntry("paid_at",paid).containsEntry("shipped_by_account_id",9L);
+        assertThat(transactionRows(f).getLast()).containsEntry("initiator_id",9L).containsEntry("internal_note","memo");
+        assertThat(invariant(f)).isEqualTo(unchanged);assertThat(historyCount(f)).isEqualTo(1);verify(gateway,times(2)).retrievePaymentFlow(f.provider());verify(gateway,never()).capture(any());
+    }
+    @Test void twoManualQueriesBothGetButOnlyOneResultAndPaidAtAreApplied() throws Exception {
+        Fixture f=fixture();begin(f);var both=new CountDownLatch(2);var unchanged=invariant(f);
+        when(gateway.retrievePaymentFlow(f.provider())).thenAnswer(call -> {assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();both.countDown();await(both);return new PaymentFlowState(f.provider(),PaymentFlowStatus.SUCCEEDED,null,null);});
+        var first=workers.submit(()->asAdmin(()->requery.requery(f.order())));var second=workers.submit(()->asAdmin(()->requery.requery(f.order())));
+        assertThat(first.get(20,TimeUnit.SECONDS)).isEqualTo(AdminCaptureRequeryService.Result.CONFIRMED);assertThat(second.get(20,TimeUnit.SECONDS)).isEqualTo(AdminCaptureRequeryService.Result.CONFIRMED);
+        var paid=row(f).get("paid_at");assertThat(paid).isNotNull();assertThat(requery.requery(f.order())).isEqualTo(AdminCaptureRequeryService.Result.CONFIRMED);assertThat(row(f).get("paid_at")).isEqualTo(paid);
+        assertThat(transactionRows(f)).hasSize(2);assertThat(historyCount(f)).isEqualTo(1);assertThat(invariant(f)).isEqualTo(unchanged);verify(gateway,times(2)).retrievePaymentFlow(f.provider());verify(gateway,never()).capture(any());
+    }
+    @ParameterizedTest @ValueSource(strings={"prepare","latest"})
+    void requeryRefreshesPreloadedOrderPaymentAndTransactionAfterOtherCommit(String phase) throws Exception {
+        Fixture f=fixture();var first=begin(f);
+        new TransactionTemplate(manager).executeWithoutResult(status -> {
+            var oldOrder=em.find(Order.class,f.order());var oldPayment=em.find(Payment.class,f.payment());var oldTransaction=em.find(PaymentTransaction.class,first.transactionId());
+            assertThat(oldOrder.getPaidAt()).isNull();assertThat(oldPayment.getStatus()).isEqualTo(PaymentStatus.AUTHORIZED);assertThat(oldTransaction.getStatus()).isEqualTo(PaymentTransactionStatus.PENDING);
+            try{assertThat(workers.submit(()->results.apply(first.snapshot(),captured(f))).get(20,TimeUnit.SECONDS)).isEqualTo(PaymentResultApplication.APPLIED);}catch(Exception e){throw new RuntimeException(e);}
+            var disposition=phase.equals("prepare")?requeryPreparation.prepare(f.order()).disposition():requeryPreparation.latest(first.snapshot());
+            assertThat(disposition).isEqualTo(PaymentStartDisposition.ALREADY_APPLIED);assertThat(em.find(Order.class,f.order())).isSameAs(oldOrder);assertThat(oldOrder.getPaidAt()).isNotNull();assertThat(oldPayment.getStatus()).isEqualTo(PaymentStatus.CAPTURED);assertThat(oldTransaction.getStatus()).isEqualTo(PaymentTransactionStatus.SUCCEEDED);
+        });
+        assertThat(historyCount(f)).isEqualTo(1);verifyNoInteractions(gateway);
+    }
+    @ParameterizedTest @ValueSource(strings={"key","amount","revision","provider"})
+    void originalSnapshotIdentityIsRecheckedAfterGateway(String mismatch) {
+        Fixture f=fixture();var first=begin(f);var unchanged=invariant(f);
+        when(gateway.retrievePaymentFlow(f.provider())).thenAnswer(call -> {
+            tx(()->{orders.findByIdForUpdate(f.order()).orElseThrow();payments.findByIdForUpdate(f.payment()).orElseThrow();
+                switch(mismatch){case "key"->jdbc.update("update payment_transactions set idempotency_key=? where id=?","changed-"+UUID.randomUUID(),first.transactionId());case "amount"->jdbc.update("update payment_transactions set amount=300 where id=?",first.transactionId());case "revision"->jdbc.update("update payment_transactions set order_content_revision=1 where id=?",first.transactionId());case "provider"->jdbc.update("update payments set provider_payment_id=? where id=?","changed-"+UUID.randomUUID(),f.payment());}return null;});
+            return new PaymentFlowState(f.provider(),PaymentFlowStatus.SUCCEEDED,null,null);
+        });
+        assertThatThrownBy(()->requery.requery(f.order())).isInstanceOf(CaptureRequeryRejectedException.class);assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);assertThat(historyCount(f)).isEqualTo(1);assertThat(invariant(f)).isEqualTo(unchanged);verify(gateway,never()).capture(any());
+    }
+    @Test void requeryWaitsOnActualOrderLockThenRejectsExpiredAuthorization() throws Exception {
+        Fixture f=fixture();begin(f);var ready=new CompletableFuture<Integer>();
+        var blocker=workers.submit(()->tx(()->{orders.findByIdForUpdate(f.order()).orElseThrow();payments.findByIdForUpdate(f.payment()).orElseThrow();jdbc.update("update payments set status='CANCELLED' where id=?",f.payment());ready.complete(jdbc.queryForObject("select pg_backend_pid()",Integer.class));await(release);return null;}));
+        int pid=ready.get(20,TimeUnit.SECONDS);var waiting=workers.submit(()->asAdmin(()->requery.requery(f.order())));blockedBy(pid);release.countDown();blocker.get(20,TimeUnit.SECONDS);
+        assertThatThrownBy(()->waiting.get(20,TimeUnit.SECONDS)).hasCauseInstanceOf(CaptureRequeryRejectedException.class);verifyNoInteractions(gateway);assertThat(historyCount(f)).isEqualTo(1);assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);
+    }
+    @ParameterizedTest @ValueSource(strings={"dirty","order-readonly","read-only","repeatable"})
+    void requeryPreparationPreservesExistingTransactionSafety(String mode) {
+        Fixture f=fixture();begin(f);var before=row(f);var template=new TransactionTemplate(manager);
+        if(mode.equals("read-only"))template.setReadOnly(true);if(mode.equals("repeatable"))template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.executeWithoutResult(status->{var entity=em.find(Order.class,f.order());if(mode.equals("dirty"))entity.setTotalAmount(300);if(mode.equals("order-readonly"))em.unwrap(Session.class).setReadOnly(entity,true);
+            assertThatThrownBy(()->requeryPreparation.prepare(f.order())).isInstanceOf(IllegalStateException.class);assertThat(status.isRollbackOnly()).isTrue();if(mode.equals("dirty"))assertThat(entity.getTotalAmount()).isEqualTo(300);status.setRollbackOnly();});
+        assertThat(row(f)).isEqualTo(before);verifyNoInteractions(gateway);
+    }
+    @Test void manualRequeryRejectsAnOuterTransactionBeforeGateway() {
+        Fixture f=fixture();begin(f);tx(()->{assertThatThrownBy(()->requery.requery(f.order())).isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);return null;});verifyNoInteractions(gateway);
     }
     void await(CountDownLatch latch) {try{assertThat(latch.await(20,TimeUnit.SECONDS)).isTrue();}catch(InterruptedException e){Thread.currentThread().interrupt();throw new AssertionError(e);}}
     void blockedBy(int pid) throws Exception {long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);while(System.nanoTime()<until){if(jdbc.queryForObject("select count(*) from pg_stat_activity where datname=current_database() and ?=any(pg_blocking_pids(pid))",Integer.class,pid)>0)return;new CountDownLatch(1).await(20,TimeUnit.MILLISECONDS);}throw new AssertionError("No actual PostgreSQL lock wait");}

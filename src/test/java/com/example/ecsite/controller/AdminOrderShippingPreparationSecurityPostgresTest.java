@@ -56,6 +56,10 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
     @MockitoSpyBean OrderShippingPreparationService preparation;
     @MockitoSpyBean OrderService orderService;
     @MockitoBean PaymentGateway gateway;
+    @MockitoSpyBean com.example.ecsite.service.payment.AdminCaptureRequeryService captureRequery;
+    @Autowired com.example.ecsite.service.payment.PaymentCaptureStartService captureStart;
+    private int expectedGatewayReads;
+
     private final List<Long> orderIds = new ArrayList<>();
     private final List<Long> userIds = new ArrayList<>();
     private static final String FAILURE = "発送準備を開始できません。変更期限・注文状態・決済状況をご確認ください。";
@@ -75,7 +79,10 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
 
     @AfterEach
     void cleanup() {
-        try { verifyNoInteractions(gateway); }
+        try {
+            if(expectedGatewayReads==0) verifyNoInteractions(gateway);
+            else { verify(gateway,times(expectedGatewayReads)).retrievePaymentFlow(anyString());verifyNoMoreInteractions(gateway); }
+        }
         finally {
             for (Long id : orderIds) {
                 jdbc.update("update orders set shipment_capture_payment_id=null where id=?", id);
@@ -298,7 +305,14 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         var transactionRows = jdbc.queryForList("select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? order by t.id", id);
         String html = mvc.perform(get("/admin/orders/" + id).with(admin())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(html).contains("決済状態", switch(kind) { case "prepared-card" -> "与信済み"; case "pending" -> "売上確定確認中"; case "captured" -> "売上確定済み"; case "failed" -> "決済要確認"; case "manual" -> "手動決済（支払済み）"; default -> "既存の決済情報要確認"; });
-        assertThat(html).doesNotContain("PRIVATE_PROVIDER_RESPONSE", "<preparer>", "capture/requery");
+        assertThat(html).doesNotContain("PRIVATE_PROVIDER_RESPONSE", "<preparer>");
+        if(kind.equals("pending")) {
+            String section=html.substring(html.indexOf("<section id=\"capture-requery\""),html.indexOf("</section>",html.indexOf("<section id=\"capture-requery\"")));
+            assertThat(section).contains("売上確定結果を再照会", "/admin/orders/"+id+"/capture/requery", "method=\"post\"", "name=\"_csrf\"", "name=\"returnUrl\"")
+                .doesNotContain("name=\"paymentId\"", "name=\"transactionId\"", "name=\"actorId\"", "</form><form");
+        } else assertThat(html).doesNotContain("capture/requery");
+        var formTags=Pattern.compile("</?form\\b[^>]*>").matcher(html);int formDepth=0;
+        while(formTags.find()){formDepth+=formTags.group().startsWith("</")?-1:1;assertThat(formDepth).isBetween(0,1);}assertThat(formDepth).isZero();
         if (!kind.equals("legacy")) assertThat(html).contains("&lt;preparer&gt;");
         if (kind.equals("prepared-card")) assertThat(html).contains("発送を確定して売上確定を実行する", "発送済みを先に確定", "/capture-and-ship");
         else assertThat(html).doesNotContain("/capture-and-ship");
@@ -309,6 +323,58 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         verifyNoInteractions(gateway, preparation);
     }
 
+    private long pendingCaptureFixture() {
+        long id=fixture("card");
+        new TransactionTemplate(manager).executeWithoutResult(tx->{Order order=orders.findById(id).orElseThrow();order.beginShippingPreparation(order.getChangeDeadlineAt(),7L,"preparer");});
+        var actor=new AdminUserDetails(7L,"original-shipper","password",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        try {
+            org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
+            captureStart.start(id,7L,"original-shipper","original memo");
+        } finally {org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+        return id;
+    }
+    @Test void requeryUnauthenticatedRedirectsWithoutService()throws Exception {
+        mvc.perform(post("/admin/orders/42/capture/requery").with(csrf())).andExpect(status().isFound()).andExpect(redirectedUrl("/admin/login"));verifyNoInteractions(captureRequery);
+    }
+    @Test void requeryUserIsForbiddenWithoutService()throws Exception {
+        mvc.perform(post("/admin/orders/42/capture/requery").with(user("customer").roles("USER")).with(csrf())).andExpect(status().isForbidden());verifyNoInteractions(captureRequery);
+    }
+    @Test void requeryAdminWithoutCsrfIsForbiddenWithoutService()throws Exception {
+        mvc.perform(post("/admin/orders/42/capture/requery").with(admin())).andExpect(status().isForbidden());verifyNoInteractions(captureRequery);
+    }
+    @Test void requeryGetCannotRunOperation()throws Exception {
+        mvc.perform(get("/admin/orders/42/capture/requery").with(admin()).with(csrf())).andExpect(status().isMethodNotAllowed());verifyNoInteractions(captureRequery);
+    }
+    @ParameterizedTest @ValueSource(strings={"SUCCEEDED","PROCESSING"})
+    void realRequeryPrgKeepsOriginalShipmentAndIgnoresBrowserTargets(String flowStatus)throws Exception {
+        long id=pendingCaptureFixture();String provider=jdbc.queryForObject("select provider_payment_id from payments where order_id=?",String.class,id);var before=row(id);
+        expectedGatewayReads=1;
+        when(gateway.retrievePaymentFlow(provider)).thenReturn(new com.example.ecsite.payment.PaymentFlowState(provider,com.example.ecsite.payment.PaymentFlowStatus.valueOf(flowStatus),null,null));
+        String returnUrl="/admin/orders?status=SHIPPED&page=2&size=20&sort=id,desc";
+        mvc.perform(post("/admin/orders/"+id+"/capture/requery").with(admin(9L,"new-admin")).with(csrf()).param("returnUrl",returnUrl).param("paymentId","999").param("transactionId","888").param("actorId","777"))
+            .andExpect(status().isFound()).andExpect(redirectedUrl(detail(id,returnUrl)))
+            .andExpect(flash().attribute(flowStatus.equals("SUCCEEDED")?"successMessage":"errorMessage",flowStatus.equals("SUCCEEDED")?"売上確定済みであることを確認しました。":"売上確定結果を引き続き確認中です。"));
+        assertThat(row(id)).containsEntry("status","SHIPPED").containsEntry("shipped_at",before.get("shipped_at")).containsEntry("shipped_by_account_id",7L).containsEntry("shipped_by_username","original-shipper");
+        assertThat(row(id).get("paid_at")!=null).isEqualTo(flowStatus.equals("SUCCEEDED"));
+        assertThat(jdbc.queryForObject("select count(*) from order_status_histories where order_id=? and to_status='SHIPPED'",Long.class,id)).isEqualTo(1);
+        assertThat(jdbc.queryForMap("select initiator_id,initiator_username,internal_note from payment_transactions where transaction_type='CAPTURE' and payment_id in(select id from payments where order_id=?)",id)).containsEntry("initiator_id",7L).containsEntry("initiator_username","original-shipper").containsEntry("internal_note","original memo");
+        String html=mvc.perform(get("/admin/orders/"+id).with(admin()).param("returnUrl",returnUrl)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("page=2&amp;size=20&amp;sort=id,desc");
+        if(flowStatus.equals("SUCCEEDED")){
+            assertThat(html).contains("売上確定済み").doesNotContain("capture/requery");var paid=row(id).get("paid_at");
+            mvc.perform(post("/admin/orders/"+id+"/capture/requery").with(admin()).with(csrf())).andExpect(status().isFound()).andExpect(flash().attribute("successMessage","売上確定済みであることを確認しました。"));assertThat(row(id).get("paid_at")).isEqualTo(paid);
+        } else assertThat(html).contains("売上確定確認中","capture/requery");
+        verify(captureRequery,flowStatus.equals("SUCCEEDED")?times(2):times(1)).requery(id);
+    }
+    @Test void requeryServiceDenialIs403NotBusinessFlash()throws Exception {
+        doThrow(new AccessDeniedException("private")).when(captureRequery).requery(42L);
+        mvc.perform(post("/admin/orders/42/capture/requery").with(admin()).with(csrf())).andExpect(status().isForbidden()).andExpect(flash().attributeCount(0));
+    }
+    @Test void requeryUnexpectedFailureUsesSafe500()throws Exception {
+        doThrow(new NullPointerException("PRIVATE_REQUERY_ERROR")).when(captureRequery).requery(42L);
+        String html=mvc.perform(post("/admin/orders/42/capture/requery").with(admin()).with(csrf())).andExpect(status().isInternalServerError()).andExpect(flash().attributeCount(0)).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).doesNotContain("PRIVATE_REQUERY_ERROR");
+    }
     @Test
     void partialMetadataWarningUsesMockedGetBecauseV53ForbidsPersistingPartialRow() throws Exception {
         long id = fixture("manual");

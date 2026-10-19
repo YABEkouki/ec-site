@@ -68,6 +68,41 @@ public class CaptureShipmentOperations {
         return startResult(PaymentOperationSnapshot.from(capture), PaymentStartDisposition.NEW);
     }
 
+    /** Requery never calls start(): ORDERED cannot create an operation through this entry. */
+    public PaymentCaptureStart prepareRequery(Long orderId) {
+        return resolveRequery(orderId, null);
+    }
+
+    /** Check the original immutable target against the latest state after GET. */
+    public PaymentCaptureStart confirmRequery(PaymentOperationSnapshot expected) {
+        if (expected == null || expected.type() != PaymentTransactionType.CAPTURE) throw new CaptureRequeryRejectedException();
+        return resolveRequery(expected.orderId(), expected);
+    }
+
+    private PaymentCaptureStart resolveRequery(Long orderId, PaymentOperationSnapshot expected) {
+        if (orderId == null || orderId <= 0) throw new IllegalArgumentException("正の注文IDが必要です。");
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof AdminUserDetails actor))
+            throw new AccessDeniedException("有効な管理者認証が必要です。");
+        requireActor(actor.getId(), actor.getUsername());
+        context.requireCleanWritableReadCommitted();
+        Order order = orders.findByIdForUpdate(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
+        context.refreshWritableOrder(order);
+        if (order.getStatus() != OrderStatus.SHIPPED || order.getShipmentCapturePaymentId() == null)
+            throw new CaptureRequeryRejectedException();
+        guard.requirePrepared(order);
+        LockedData data = load(order, expected);
+        var captures = data.history().stream().filter(t -> t.getTransactionType() == PaymentTransactionType.CAPTURE
+                && Objects.equals(t.getPayment().getId(), order.getShipmentCapturePaymentId())).toList();
+        if (captures.size() != 1) throw new CaptureRequeryRejectedException();
+        var snapshot = expected == null ? PaymentOperationSnapshot.from(captures.getFirst()) : expected;
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
+            return startResult(snapshot, PaymentStartDisposition.ALREADY_APPLIED);
+        if (decision.disposition() != CaptureShipmentPolicy.Disposition.CONTINUE) throw new CaptureRequeryRejectedException();
+        return startResult(snapshot, PaymentStartDisposition.REUSED);
+    }
+
     public PaymentResultApplication apply(PaymentOperationSnapshot snapshot, CaptureResult result) {
         if (snapshot == null || snapshot.orderId() == null || result == null || result.status() == null)
             return PaymentResultApplication.CONFLICT;

@@ -45,6 +45,55 @@ class CaptureShipmentOperationsTest {
         when(transactions.findByPaymentIdOrderByCreatedAtAscIdAsc(52L)).thenReturn(history);
         when(transactions.save(any())).thenAnswer(call -> { PaymentTransaction t=call.getArgument(0);ReflectionTestUtils.setField(t,"id",63L);history.add(t);return t; });
     }
+    @Test void requeryOnlyReadsExistingPendingOperationAndPreservesOriginalActor() {
+        var first=start(); clearInvocations(transactions,histories,orders,context,em,payments); actor(10L,"second-admin");
+        var target=service.prepareRequery(42L);
+        assertThat(target.disposition()).isEqualTo(PaymentStartDisposition.REUSED);
+        assertThat(target.snapshot()).isEqualTo(first.snapshot());
+        var sequence=inOrder(context,orders,em);
+        sequence.verify(context).requireCleanWritableReadCommitted(); sequence.verify(orders).findByIdForUpdate(42L);
+        sequence.verify(context).refreshWritableOrder(order); sequence.verify(em).refresh(payment);
+        verify(transactions,never()).save(any()); verifyNoInteractions(histories); verify(orders,never()).findCurrentTimeInTokyo();
+    }
+    @ParameterizedTest @ValueSource(strings={"ordered","failed","fixed","multiple","provider","snapshot","amount","revision","partial","foreign"})
+    void unsafeRequeryNeverStartsShipmentOrCreatesAnOperation(String mode) {
+        var first=start();
+        switch(mode){
+            case "ordered" -> ReflectionTestUtils.setField(order,"status",OrderStatus.ORDERED);
+            case "failed" -> history.getLast().markFailed("provider","failed","private",now);
+            case "fixed" -> ReflectionTestUtils.setField(order,"shipmentCapturePaymentId",99L);
+            case "multiple" -> {var extra=new PaymentTransaction(payment,PaymentTransactionType.CAPTURE,200,0,"other",now);ReflectionTestUtils.setField(extra,"id",70L);history.add(extra);}
+            case "provider" -> ReflectionTestUtils.setField(payment,"providerPaymentId",null);
+            case "snapshot" -> ReflectionTestUtils.setField(history.getLast(),"idempotencyKey","changed");
+            case "amount" -> ReflectionTestUtils.setField(history.getLast(),"amount",300);
+            case "revision" -> order.incrementContentRevision();
+            case "partial" -> ReflectionTestUtils.setField(order,"shippingPreparationStartedByUsername",null);
+            case "foreign" -> {var other=new Order(1L,200,now.minusDays(1),now);ReflectionTestUtils.setField(other,"id",88L);ReflectionTestUtils.setField(payment,"order",other);}
+        }
+        clearInvocations(transactions,histories);
+        assertThatThrownBy(() -> { if (mode.equals("snapshot")) service.confirmRequery(first.snapshot()); else service.prepareRequery(42L); })
+                .isInstanceOfAny(CaptureRequeryRejectedException.class,com.example.ecsite.exception.InvalidOrderStatusException.class);
+        verify(transactions,never()).save(any());verifyNoInteractions(histories);
+    }
+    @Test void requeryRejectsAnExpectedSnapshotForAnotherTransaction() {
+        var first=start();var old=first.snapshot();
+        var different=new PaymentOperationSnapshot(old.orderId(),old.paymentId(),999L,old.type(),old.idempotencyKey(),old.amount(),old.orderContentRevision(),old.providerPaymentId(),old.provider(),old.status(),old.initiatorType(),old.initiatorId(),old.initiatorUsername(),old.internalNote());
+        clearInvocations(transactions,histories);
+        assertThatThrownBy(()->service.confirmRequery(different)).isInstanceOf(CaptureRequeryRejectedException.class);
+        verify(transactions,never()).save(any());verifyNoInteractions(histories);
+    }
+    @Test void requeryAuthenticationFailsBeforeAnyLock() {
+        SecurityContextHolder.clearContext(); clearInvocations(orders,context,payments,transactions);
+        assertThatThrownBy(() -> service.prepareRequery(42L)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verifyNoInteractions(orders,context,payments,transactions);
+    }
+    @Test void requeryAlreadyAppliedHasNoAdditionalMutations() {
+        var first=start(); service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,"provider",null,null));
+        var paidAt=order.getPaidAt(); clearInvocations(histories,transactions,orders);
+        assertThat(service.prepareRequery(42L).disposition()).isEqualTo(PaymentStartDisposition.ALREADY_APPLIED);
+        assertThat(service.confirmRequery(first.snapshot()).disposition()).isEqualTo(PaymentStartDisposition.ALREADY_APPLIED);
+        assertThat(order.getPaidAt()).isEqualTo(paidAt);verify(transactions,never()).save(any());verifyNoInteractions(histories);verify(orders,never()).findCurrentTimeInTokyo();
+    }
     static void actor(Long id,String name) {
         var principal=new AdminUserDetails(id,name,"password",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal,"",principal.getAuthorities()));

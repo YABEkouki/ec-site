@@ -354,6 +354,13 @@
 
     </div>
 
+    <section id="capture-requery" th:if="${paymentView.canRequery()}">
+        <form th:action="@{/admin/orders/{id}/capture/requery(id=${order.id})}" method="post">
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+            <button type="submit">売上確定結果を再照会</button>
+        </form>
+    </section>
+
     <div th:if="${paymentView.canManualShip()}">
 
         <form th:action="@{/admin/orders/{id}/ship(id=${order.id})}" method="post">
