@@ -470,11 +470,9 @@ class PaymentServiceTest {
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.of(transaction));
 
-        paymentService.applyAuthorizationResult(order, resultSnapshot(payment, com.example.ecsite.entity.PaymentTransactionType.AUTHORIZE), new AuthorizationResult(
-                        AuthorizationResultStatus.AUTHORIZED,
-                        null,
-                        null,
-                        null));
+        var snapshot = resultSnapshot(payment, PaymentTransactionType.AUTHORIZE);
+        var result = new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED, snapshot.providerPaymentId(), null, null);
+        assertEquals(PaymentResultApplication.APPLIED, paymentService.applyAuthorizationResult(order, snapshot, result));
 
         assertEquals(
                 PaymentStatus.AUTHORIZED,
@@ -491,6 +489,18 @@ class PaymentServiceTest {
         assertEquals(
                 LocalDateTime.of(2026, 10, 1, 10, 0),
                 transaction.getCompletedAt());
+        assertEquals(snapshot.providerPaymentId(), transaction.getProviderTransactionId());
+        var completedAt = transaction.getCompletedAt();
+        var updatedAt = payment.getUpdatedAt();
+        assertEquals(PaymentResultApplication.ALREADY_APPLIED, paymentService.applyAuthorizationResult(order, snapshot, result));
+        assertEquals(PaymentResultApplication.IGNORED_STALE, paymentService.applyAuthorizationResult(order, snapshot,
+                new AuthorizationResult(AuthorizationResultStatus.PENDING, null, null, null)));
+        assertEquals(PaymentTransactionStatus.SUCCEEDED, transaction.getStatus());
+        assertEquals(completedAt, transaction.getCompletedAt());
+        assertEquals(updatedAt, payment.getUpdatedAt());
+        assertEquals(snapshot.providerPaymentId(), transaction.getProviderTransactionId());
+        assertEquals(1, paymentTransactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(payment.getId()).size());
+        verify(paymentTransactionRepository, never()).save(any());
     }
 
     @Test

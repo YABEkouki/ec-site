@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.example.ecsite.payment.AuthorizationResult;
 import com.example.ecsite.payment.AuthorizationResultStatus;
@@ -22,6 +25,15 @@ class PayJpAuthorizationMapperTest {
                 .isEqualTo(AuthorizationResultStatus.AUTHORIZED);
         assertThat(result.failureCode()).isNull();
         assertThat(result.failureMessage()).isNull();
+        assertThat(result.providerTransactionId()).isEqualTo("pf_test_123");
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings={" ", "\t\n"})
+    void authorizedResultRequiresNonblankFlowId(String id) {
+        assertThatThrownBy(()->mapper.map(new PayJpPaymentFlowResponse(id,null,"requires_capture",null)))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -30,6 +42,7 @@ class PayJpAuthorizationMapperTest {
 
         assertThat(result.status())
                 .isEqualTo(AuthorizationResultStatus.REQUIRES_ACTION);
+        assertThat(result.providerTransactionId()).isNull();
     }
 
     @Test
@@ -47,6 +60,7 @@ class PayJpAuthorizationMapperTest {
 
         assertNull(result.failureCode());
         assertNull(result.failureMessage());
+        assertNull(result.providerTransactionId());
     }
 
     @Test
@@ -55,6 +69,7 @@ class PayJpAuthorizationMapperTest {
 
         assertThat(result.status())
                 .isEqualTo(AuthorizationResultStatus.PENDING);
+        assertThat(result.providerTransactionId()).isNull();
     }
 
     @Test
@@ -81,6 +96,7 @@ class PayJpAuthorizationMapperTest {
         assertEquals(
                 "カードが拒否されました。",
                 result.failureMessage());
+        assertNull(result.providerTransactionId());
     }
 
     @Test
@@ -89,6 +105,7 @@ class PayJpAuthorizationMapperTest {
 
         assertThat(result.status())
                 .isEqualTo(AuthorizationResultStatus.FAILED);
+        assertThat(result.providerTransactionId()).isNull();
     }
 
     @Test
