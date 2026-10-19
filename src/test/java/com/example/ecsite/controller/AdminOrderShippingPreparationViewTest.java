@@ -26,6 +26,7 @@ class AdminOrderShippingPreparationViewTest {
     private static final LocalDateTime DEADLINE = LocalDateTime.of(2026, 10, 16, 14, 0);
     private final OrderService orders = mock(OrderService.class);
     private final PaymentService payments = mock(PaymentService.class);
+    private final OrderPaymentViewReadService paymentViewReader = mock(OrderPaymentViewReadService.class);
     private final PaymentCaptureService captures = mock(PaymentCaptureService.class);
     private final AdminPaymentCancellationService cancellations = mock(AdminPaymentCancellationService.class);
     private final Order order = new Order(1L, 100, DEADLINE.withHour(10), DEADLINE);
@@ -36,11 +37,12 @@ class AdminOrderShippingPreparationViewTest {
         when(orders.findOrderWithItems(42L)).thenReturn(order);
         var factory = new OrderShippingPreparationViewFactory(new OrderModificationPolicy(),
                 Clock.fixed(now.atZone(ZoneId.of("Asia/Tokyo")).toInstant(), ZoneId.of("Asia/Tokyo")));
+        when(paymentViewReader.read(order)).thenReturn(OrderPaymentViewFactory.unavailable());
         var controller = new AdminOrderController(orders, mock(OrderCsvService.class),
                 mock(OrderStatusHistoryService.class), mock(OrderNoteService.class),
                 mock(OrderHandlingStatusHistoryService.class), mock(OrderShippingAddressHistoryService.class),
                 mock(OrderAssigneeHistoryService.class), mock(OrderContentChangeHistoryService.class),
-                mock(AdminAccountService.class), payments, captures, cancellations, factory);
+                mock(AdminAccountService.class), payments, captures, cancellations, factory, paymentViewReader);
         var resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/"); resolver.setSuffix(".html");
         resolver.setTemplateMode("HTML"); resolver.setCharacterEncoding("UTF-8");
@@ -70,8 +72,8 @@ class AdminOrderShippingPreparationViewTest {
         verify(orders).findOrderWithItems(42L);
         verifyNoMoreInteractions(orders);
         verifyNoInteractions(captures, cancellations);
-        if (originalStatus == OrderStatus.ORDERED) verify(payments).canCaptureForShipment(42L);
-        verifyNoMoreInteractions(payments);
+        verify(paymentViewReader).read(order);
+        verifyNoInteractions(payments);
         assertThat(order.getStatus()).isEqualTo(originalStatus);
         assertThat(order.getShippingPreparationStartedAt()).isEqualTo(originalStartedAt);
         assertThat(order.getShippingPreparationStartedByAccountId()).isEqualTo(originalActor);

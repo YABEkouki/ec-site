@@ -78,6 +78,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         try { verifyNoInteractions(gateway); }
         finally {
             for (Long id : orderIds) {
+                jdbc.update("update orders set shipment_capture_payment_id=null where id=?", id);
                 jdbc.update("delete from payment_transactions where payment_id in (select id from payments where order_id=?)", id);
                 jdbc.update("delete from payments where order_id=?", id);
                 jdbc.update("delete from order_status_histories where order_id=?", id);
@@ -241,10 +242,10 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         String html = mvc.perform(get("/admin/orders/" + id).with(admin()).param("returnUrl", "/admin/orders?page=2"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(html).contains("history-admin", "発送準備を開始する", "name=\"returnUrl\"", "page=2");
-        if (kind.equals("manual")) assertThat(html).contains("/admin/orders/" + id + "/ship");
-        if (kind.equals("card")) assertThat(html).contains("/admin/orders/" + id + "/capture-and-ship");
+        if (kind.equals("manual")) assertThat(html).doesNotContain("/admin/orders/" + id + "/ship");
+        if (kind.equals("card")) assertThat(html).doesNotContain("/admin/orders/" + id + "/capture-and-ship");
         if (kind.equals("missing-card")) assertThat(html).contains("formaction=\"/admin/orders/" + id + "/pay\"");
-        if (!kind.equals("manual")) assertThat(html).contains("/admin/orders/" + id + "/cancel");
+        assertThat(html).doesNotContain("/admin/orders/" + id + "/cancel");
         var tags = Pattern.compile("</?form\\b[^>]*>").matcher(html);
         int depth = 0;
         while (tags.find()) {
@@ -262,6 +263,50 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         assertThat(count).isGreaterThanOrEqualTo(4);
         assertThat(row(id)).isEqualTo(before);
         verifyNoInteractions(preparation);
+    }
+
+    @Test
+    void salesDashboardExplainsOrderStateBasedTotals() throws Exception {
+        String html = mvc.perform(get("/admin/sales").with(admin())).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("id=\"sales-definition\"", "注文状態が支払済み・発送済み", "確認中・失敗の注文も含まれ得ます", "入金確定額の集計ではありません");
+        verifyNoInteractions(gateway, preparation);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"prepared-card", "pending", "captured", "failed", "legacy", "manual"})
+    void detailPaymentStateAndShipmentButtonsUseStoredFactsWithoutWrites(String kind) throws Exception {
+        long id = fixture(kind.equals("manual") ? "manual" : "card");
+        new TransactionTemplate(manager).executeWithoutResult(tx -> {
+            Order order = orders.findById(id).orElseThrow();
+            if (!kind.equals("legacy")) order.beginShippingPreparation(order.getChangeDeadlineAt(), 7L, "<preparer>");
+            if (kind.equals("pending") || kind.equals("captured") || kind.equals("failed")) {
+                Payment payment = payments.findByOrderIdOrderByCreatedAtAscIdAsc(id).getFirst();
+                var now = orders.findCurrentTimeInTokyo();
+                order.confirmCardShipment(now, 7L, "admin-first", payment.getId());
+                PaymentTransaction capture = new PaymentTransaction(payment, PaymentTransactionType.CAPTURE,
+                        order.getTotalAmount(), order.getContentRevision(), UUID.randomUUID().toString(), now,
+                        new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, 7L, "admin-first", "memo"));
+                if (kind.equals("captured")) { capture.markSucceeded(payment.getProviderPaymentId(), now); payment.markCaptured(now); order.recordShipmentCaptureSucceeded(payment.getId(), now); }
+                if (kind.equals("failed")) capture.markFailed(payment.getProviderPaymentId(), "failed", "PRIVATE_PROVIDER_RESPONSE", now);
+                transactions.save(capture);
+            }
+            if (kind.equals("legacy")) { ReflectionTestUtils.setField(order, "status", OrderStatus.SHIPPED); ReflectionTestUtils.setField(order, "shippedAt", orders.findCurrentTimeInTokyo()); }
+        });
+        var before = row(id);
+        var paymentRows = jdbc.queryForList("select * from payments where order_id=? order by id", id);
+        var transactionRows = jdbc.queryForList("select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? order by t.id", id);
+        String html = mvc.perform(get("/admin/orders/" + id).with(admin())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("決済状態", switch(kind) { case "prepared-card" -> "与信済み"; case "pending" -> "売上確定確認中"; case "captured" -> "売上確定済み"; case "failed" -> "決済要確認"; case "manual" -> "手動決済（支払済み）"; default -> "既存の決済情報要確認"; });
+        assertThat(html).doesNotContain("PRIVATE_PROVIDER_RESPONSE", "<preparer>", "capture/requery");
+        if (!kind.equals("legacy")) assertThat(html).contains("&lt;preparer&gt;");
+        if (kind.equals("prepared-card")) assertThat(html).contains("発送を確定して売上確定を実行する", "発送済みを先に確定", "/capture-and-ship");
+        else assertThat(html).doesNotContain("/capture-and-ship");
+        if (kind.equals("manual")) assertThat(html).contains("/admin/orders/" + id + "/ship");
+        assertThat(row(id)).isEqualTo(before);
+        assertThat(jdbc.queryForList("select * from payments where order_id=? order by id", id)).isEqualTo(paymentRows);
+        assertThat(jdbc.queryForList("select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? order by t.id", id)).isEqualTo(transactionRows);
+        verifyNoInteractions(gateway, preparation);
     }
 
     @Test
