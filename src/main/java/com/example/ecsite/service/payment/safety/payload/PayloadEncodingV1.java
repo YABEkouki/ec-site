@@ -24,7 +24,7 @@ final class PayloadEncodingV1 {
     static {
         var types=new HashSet<Class<?>>();
         for(var root:List.of(PaymentSafetyReadFacts.class,PaymentSafetyClassification.class,PaymentSafetySnapshot.class,
-                CaptureEvidenceValidation.class,CaptureEvidenceProfiles.class,AssessmentRecordDigestV1.class,AuditEventDigestV1.class)) {
+                CaptureEvidenceValidation.class,CaptureEvidenceProfiles.class,AssessmentRecordDigestV1.class,AuditEventDigestV1.class,ObservationRunRequest.class)) {
             if(root.isRecord())types.add(root);
             for(var nested:root.getDeclaredClasses())if(nested.isRecord())types.add(nested);
         }
