@@ -31,6 +31,20 @@ public final class PaymentSafetyInputFingerprint {
         } catch (IOException | NoSuchAlgorithmException e) { throw new IllegalStateException("Cannot fingerprint input",e); }
     }
 
+    /** Separate final-input domain. The raw v1 hash and V54 request hash remain unchanged.
+     * Full approved profile contents and verification findings participate, not just profile names.
+     */
+    public static String sha256Final(PaymentSafetyReadFacts facts,CaptureEvidenceValidation evidence) {
+        Objects.requireNonNull(facts);Objects.requireNonNull(evidence);
+        try {
+            var digest=MessageDigest.getInstance("SHA-256");
+            try(var out=new DataOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(),digest))) {
+                write(out,"ec-site/payment-safety/assembled-input");write(out,1);write(out,facts);write(out,evidence);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch(IOException | NoSuchAlgorithmException e) {throw new IllegalStateException("Cannot fingerprint final input",e);}
+    }
+
     static long encodedSize(Object value) {
         var counter=new OutputStream() {
             long count;
