@@ -87,7 +87,7 @@ class PaymentAuditNotificationManualResendPostgresTest {
     }
 
     @Test void migrationAndHibernateValidation() {
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success and version is not null", Integer.class)).isEqualTo(54);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success and version is not null", Integer.class)).isEqualTo(56);
         assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where not success", Integer.class)).isZero();
     }
     @ParameterizedTest @CsvSource({"PENDING,NONE","CLAIMED,NONE","CANCELLED,NONE","SENDING,IN_PROGRESS","SENT,SUCCESS","FAILED,FAILURE","UNKNOWN,UNKNOWN"})
