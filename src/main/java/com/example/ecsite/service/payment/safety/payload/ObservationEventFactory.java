@@ -70,6 +70,18 @@ public final class ObservationEventFactory {
         return event("FINISHED",ObservationEventIdsV1.runFinished(request.requestId()),epoch,actor,time,null,null,null,null,null,terminal);
     }
     public Event runFailed(long epoch,Actor actor,Instant time){return finished(TerminalStatus.FAILED,epoch,actor,time);}
+    /** Adds a closed typed command binding without changing the legacy V1 factory outputs/UUIDs. */
+    public Event withLifecycleContext(Event base,ObservationLifecycleContextV1 context) {
+        if(base==null || context==null || !base.record().runId().equals(request.requestId()))throw PayloadEncodingV1.invalid();
+        var r=base.record();context.validateFor(r.eventType(),r.leaseEpoch());
+        var engine=new PayloadEncodingV1(PaymentSafetyPayloadCodecV1.Limits.event());
+        var payload=engine.parse(r.payloadJson());
+        if(!payload.isObject() || payload.has("lifecycleContext"))throw PayloadEncodingV1.invalid();
+        ((tools.jackson.databind.node.ObjectNode)payload).set("lifecycleContext",engine.encode(context,ObservationLifecycleContextV1.class));
+        var record=new AuditEventDigestV1.Record(r.eventScope(),r.eventType(),r.runId(),r.caseId(),r.orderId(),r.targetOrderId(),r.attemptNo(),r.leaseEpoch(),r.assessmentId(),
+            r.caseVersionBefore(),r.caseVersionAfter(),r.fromStatus(),r.toStatus(),r.outcome(),r.actorType(),r.actorAccountId(),r.actorUsername(),r.occurredAt(),r.comment(),r.errorStage(),r.errorCode(),r.sqlState(),r.errorSummary(),r.payloadFormatVersion(),engine.json(payload));
+        return new Event(base.eventUuid(),record);
+    }
     private void target(long target,int attempt) {
         if(!targets.contains(target) || attempt<1 || attempt>request.manifest().policy().maxAttempts())throw PayloadEncodingV1.invalid();
     }

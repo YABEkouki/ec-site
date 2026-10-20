@@ -29,5 +29,16 @@ public final class AuditEventDigestV1 {
         // JSON object order and whitespace are not business content; array order and scalar types are.
         return engine.eventDigest(event);
     }
+    /** Compare business fields as well as the independently verified digest. JSONB key order and
+     * whitespace are presentation; array order, duplicates, scalar values and NULL remain content. */
+    public static boolean sameContent(Record left,Record right) {
+        Objects.requireNonNull(left);Objects.requireNonNull(right);
+        var engine=new PayloadEncodingV1(PaymentSafetyPayloadCodecV1.Limits.event());
+        var a=(tools.jackson.databind.node.ObjectNode)engine.encode(left,Record.class);
+        var b=(tools.jackson.databind.node.ObjectNode)engine.encode(right,Record.class);
+        a.set("payloadJson",engine.parse(left.payloadJson()));
+        b.set("payloadJson",engine.parse(right.payloadJson()));
+        return a.equals(b);
+    }
     public static void verify(Record event,String expected){PayloadEncodingV1.verifyDigest(sha256(event),expected);}
 }
