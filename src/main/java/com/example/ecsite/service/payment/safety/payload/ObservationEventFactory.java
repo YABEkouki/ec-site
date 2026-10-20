@@ -82,8 +82,33 @@ public final class ObservationEventFactory {
             r.caseVersionBefore(),r.caseVersionAfter(),r.fromStatus(),r.toStatus(),r.outcome(),r.actorType(),r.actorAccountId(),r.actorUsername(),r.occurredAt(),r.comment(),r.errorStage(),r.errorCode(),r.sqlState(),r.errorSummary(),r.payloadFormatVersion(),engine.json(payload));
         return new Event(base.eventUuid(),record);
     }
+    /** Package-only attachment: public ORDER envelopes are validated by ObservationOrderCommands. */
+    Event withOrderContext(Event base,ObservationOrderContextV1 context) {
+        if(base==null || context==null || !base.record().runId().equals(request.requestId())
+            || !context.manifestDigest().equals(manifestDigest)
+            || !context.contractVersion().equals(request.manifest().classificationContractVersion()))throw PayloadEncodingV1.invalid();
+        var r=base.record();
+        if(!Set.of("ORDER_STARTED","ORDER_FINISHED").contains(r.eventType()) || r.leaseEpoch()!=context.saveEpoch())throw PayloadEncodingV1.invalid();
+        boolean started=r.eventType().equals("ORDER_STARTED");
+        UUID expected=started?ObservationEventIdsV1.orderStarted(request.requestId(),r.targetOrderId(),r.attemptNo()):ObservationEventIdsV1.orderFinished(request.requestId(),r.targetOrderId(),r.attemptNo());
+        if(!base.eventUuid().equals(expected) || r.attemptNo()>3)throw PayloadEncodingV1.invalid();
+        if(started) {
+            if(context.startedUuid()!=null || context.startedDigest()!=null || context.startEpoch()!=context.saveEpoch()
+                || context.takeover()!=null || context.failure()!=null || context.assessmentDigest()!=null)throw PayloadEncodingV1.invalid();
+        }else if(context.startedDigest()==null || !ObservationEventIdsV1.orderStarted(request.requestId(),r.targetOrderId(),r.attemptNo()).equals(context.startedUuid()))throw PayloadEncodingV1.invalid();
+        var engine=new PayloadEncodingV1(PaymentSafetyPayloadCodecV1.Limits.event());
+        var payload=(tools.jackson.databind.node.ObjectNode)engine.parse(r.payloadJson());
+        if(payload.has("orderContext"))throw PayloadEncodingV1.invalid();
+        if(!started)context.validateFinished(request.requestId(),r.outcome(),payload.has("assessmentRecordDigest")?payload.get("assessmentRecordDigest").stringValue():null);
+        payload.set("orderContext",engine.encode(context,ObservationOrderContextV1.class));
+        var error=context.failure();
+        var record=new AuditEventDigestV1.Record(r.eventScope(),r.eventType(),r.runId(),r.caseId(),r.orderId(),r.targetOrderId(),r.attemptNo(),r.leaseEpoch(),r.assessmentId(),
+            r.caseVersionBefore(),r.caseVersionAfter(),r.fromStatus(),r.toStatus(),r.outcome(),r.actorType(),r.actorAccountId(),r.actorUsername(),r.occurredAt(),r.comment(),
+            error==null?null:error.stage().name(),error==null?null:error.code().name(),r.sqlState(),r.errorSummary(),r.payloadFormatVersion(),engine.json(payload));
+        return new Event(base.eventUuid(),record);
+    }
     private void target(long target,int attempt) {
-        if(!targets.contains(target) || attempt<1 || attempt>request.manifest().policy().maxAttempts())throw PayloadEncodingV1.invalid();
+        if(!targets.contains(target) || attempt<1 || attempt>3 || attempt>request.manifest().policy().maxAttempts())throw PayloadEncodingV1.invalid();
     }
     private Event event(String type,UUID uuid,long epoch,Actor actor,Instant time,Long target,Integer attempt,
             Outcome outcome,AssessmentRef assessment,UUID control,TerminalStatus terminal) {
