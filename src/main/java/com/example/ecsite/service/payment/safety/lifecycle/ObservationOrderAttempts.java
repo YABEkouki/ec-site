@@ -23,7 +23,12 @@ public final class ObservationOrderAttempts {
         private final ObservationOrderCommands.Command command,start;
         private final ObservationLifecycleCommands.Command takeover;
         private final long expectedVersion;
+        private final JdbcObservationAssessmentStore.Candidate assessment;
         private Prepared(ObservationRunRequest r,ObservationOrderCommands.Command command,ObservationOrderCommands.Command start,ObservationLifecycleCommands.Command takeover,long version) {
+            this(r,command,start,takeover,version,null);
+        }
+        private Prepared(ObservationRunRequest r,ObservationOrderCommands.Command command,ObservationOrderCommands.Command start,ObservationLifecycleCommands.Command takeover,long version,JdbcObservationAssessmentStore.Candidate assessment) {
+            this.assessment=assessment;
             if(version<0)throw new Rejected(VERSION_CONFLICT);
             request=r;this.command=command;this.start=start;this.takeover=takeover;expectedVersion=version;
         }
@@ -85,42 +90,82 @@ public final class ObservationOrderAttempts {
         }finally{rollback(c);}}catch(SQLException failure){throw new Rejected(UNKNOWN);}
         catch(JdbcObservationRunRepository.IntegrityFailure | IllegalArgumentException failure){throw new Rejected(INTEGRITY_ERROR);}
     }
+    /** Freezes replay identity. execute re-reads locked facts in the actual save transaction. */
+    public synchronized Prepared prepareObserved(Prepared started,UUID assessmentRequestId,long version,ObservationRunRequest.Actor actor) {
+        Objects.requireNonNull(started);gate(started.request.requestId());
+        if(!started.event().record().eventType().equals("ORDER_STARTED"))throw new Rejected(UNSUPPORTED_PHASE);
+        try(var c=connection(started.request)) {try {
+            var store=new JdbcObservationAssessmentStore();
+            var record=store.observe(c,started.request,started.event().record().targetOrderId(),started.event().record().attemptNo());
+            var state=repository.stateForWrite(c,started.request,started.owner(),started.epoch(),version,null);
+            repository.startedMatches(state,started.command);
+            var candidate=store.prepare(c,assessmentRequestId,record);
+            var ref=new ObservationEventFactory.AssessmentRef(record.runId(),record.orderId(),record.attemptNo(),candidate.id(),candidate.payloads().recordDigest());
+            var command=ObservationOrderCommands.finished(started.command,started.epoch(),started.owner(),actor,JdbcObservationRunRepository.now(c),ObservationEventFactory.Outcome.CLASSIFIED,ref,null,null);
+            c.rollback();return new Prepared(started.request,command,started.command,null,version,candidate);
+        }finally{rollback(c);}}catch(SQLException failure){throw new Rejected(UNKNOWN);}
+        catch(JdbcObservationRunRepository.IntegrityFailure | IllegalArgumentException failure){throw new Rejected(INTEGRITY_ERROR);}
+    }
+    private ObservationRunReceipt.Status replay(Connection c,Prepared command)throws SQLException {
+        var event=repository.replay(c,command.event());
+        if(command.assessment==null)return event;
+        var assessment=new JdbcObservationAssessmentStore().replay(c,command.request,command.assessment);
+        if(event==CONTENT_CONFLICT || assessment==CONTENT_CONFLICT)return CONTENT_CONFLICT;
+        if(event!=assessment)throw new JdbcObservationRunRepository.IntegrityFailure();
+        return event;
+    }
     public synchronized Result execute(Prepared command) {
         Objects.requireNonNull(command);
         var pending=unknown.get(command.request.requestId());if(pending!=null && !same(pending,command))return result(UNKNOWN,null,command,null,null);
-        Connection c=null;boolean commitSent=false;
+        if(command.assessment!=null){var prior=resolve(command);if(prior.status()!=NOT_APPLIED)return prior;}
+        Connection c=null;boolean commitSent=false,readingBusiness=false;
         try {
-            c=connection(command.request);var state=repository.stateForWrite(c,command.request,command.owner(),command.epoch(),command.expectedVersion,command.event());
-            var replay=repository.replay(c,command.event());
+            c=connection(command.request);
+            readingBusiness=command.assessment!=null;
+            var observed=command.assessment==null?null:new JdbcObservationAssessmentStore().observe(c,command.request,command.event().record().targetOrderId(),command.event().record().attemptNo());
+            readingBusiness=false;
+            var state=repository.stateForWrite(c,command.request,command.owner(),command.epoch(),command.expectedVersion,command.event());
+            var replay=replay(c,command);
             if(replay!=NOT_APPLIED){c.rollback();return settle(result(replay,state.row().view(),command,state.ledger(),null));}
             repository.fence(c,state,command.owner(),command.epoch(),command.expectedVersion);
             if(command.event().record().eventType().equals("ORDER_STARTED"))repository.next(state,command.event().record().targetOrderId(),command.event().record().attemptNo());
             else {repository.startedMatches(state,command.start);if(command.takeover!=null)repository.takeover(c,command.takeover);}
-            repository.insert(c,command.event());
+            if(command.assessment!=null){
+                if(!command.assessment.record().equals(observed))throw new Rejected(CONTENT_CONFLICT);
+                new JdbcObservationAssessmentStore().insert(c,command.assessment);
+                repository.insertClassified(c,command.event());
+            }else repository.insert(c,command.event());
             var rows=new ArrayList<>(state.events());rows.add(new ObservationLedgerSnapshot.LedgerEvent(command.event().eventUuid(),command.event().recordDigest(),command.event().record()));
-            var after=repository.reduce(command.request,rows,state.row().view().cursor());
+            var after=repository.reduce(command.request,rows,state.row().view().cursor(),command.assessment==null?state.assessments():new JdbcObservationAssessmentStore().references(c,command.request));
             var updated=repository.update(c,state,command,after);
             commitSent=true;c.commit();
             return settle(result(APPLIED,updated,command,after,null));
         }catch(Rejected rejection){
             if(!rollback(c)){close(c);c=null;return resolve(command);}
+            if(readingBusiness){close(c);c=null;return reconcileReadFailure(command,rejection.status(),null);}
             return settle(result(rejection.status(),null,command,null,null));
         }
         catch(JdbcObservationRunRepository.IntegrityFailure | IllegalArgumentException corrupt){
             if(!rollback(c)){close(c);c=null;return resolve(command);}
+            if(readingBusiness){close(c);c=null;return reconcileReadFailure(command,INTEGRITY_ERROR,null);}
             return settle(result(INTEGRITY_ERROR,null,command,null,null));
         }
         catch(SQLException failure) {
             boolean acknowledged=rollback(c);String state=safeState(failure);
+            if(readingBusiness && acknowledged){close(c);c=null;return reconcileReadFailure(command,STORAGE_FAILED,state);}
             if(!commitSent && acknowledged && state!=null && !state.startsWith("08") && !Set.of("55P03","57014","23505").contains(state))return settle(result(STORAGE_FAILED,null,command,null,state));
             close(c);c=null;return resolve(command);
         }finally{close(c);}
+    }
+    private Result reconcileReadFailure(Prepared command,ObservationRunReceipt.Status failure,String sqlState) {
+        var checked=resolve(command);
+        return checked.status()==NOT_APPLIED?settle(result(failure,checked.current(),command,checked.ledger(),sqlState)):checked;
     }
     public synchronized Result resolve(Prepared command) {
         Objects.requireNonNull(command);var pending=unknown.get(command.request.requestId());
         if(pending!=null && !same(pending,command))return result(UNKNOWN,null,command,null,null);
         try(var c=connection(command.request)) {try {
-            var state=repository.state(c,command.request);var status=repository.replay(c,command.event());c.rollback();
+            var state=repository.state(c,command.request);var status=replay(c,command);c.rollback();
             return settle(result(status,state.row().view(),command,state.ledger(),null));
         }finally{rollback(c);}}catch(Rejected failure){return settle(result(failure.status(),null,command,null,null));}
         catch(JdbcObservationRunRepository.IntegrityFailure | IllegalArgumentException corrupt){return settle(result(INTEGRITY_ERROR,null,command,null,null));}
@@ -133,7 +178,7 @@ public final class ObservationOrderAttempts {
         return result;
     }
     private void gate(UUID run){if(unknown.containsKey(run))throw new Rejected(UNKNOWN);}
-    private boolean same(Prepared a,Prepared b){return a.expectedVersion==b.expectedVersion && a.request.equals(b.request) && a.event().eventUuid().equals(b.event().eventUuid()) && a.event().recordDigest().equals(b.event().recordDigest()) && AuditEventDigestV1.sameContent(a.event().record(),b.event().record());}
+    private boolean same(Prepared a,Prepared b){return Objects.equals(a.assessment==null?null:a.assessment.requestId(),b.assessment==null?null:b.assessment.requestId()) && a.expectedVersion==b.expectedVersion && a.request.equals(b.request) && a.event().eventUuid().equals(b.event().eventUuid()) && a.event().recordDigest().equals(b.event().recordDigest()) && AuditEventDigestV1.sameContent(a.event().record(),b.event().record());}
     private Connection connection(ObservationRunRequest request)throws SQLException {
         var c=source.getConnection();try{ObservationRunLifecycle.configure(c,request.manifest().policy());return c;}catch(SQLException | RuntimeException failure){close(c);throw failure;}
     }

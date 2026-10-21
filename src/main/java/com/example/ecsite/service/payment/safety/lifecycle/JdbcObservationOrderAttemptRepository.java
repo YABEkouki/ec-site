@@ -13,15 +13,13 @@ final class JdbcObservationOrderAttemptRepository {
     private final JdbcObservationRunRepository runs=new JdbcObservationRunRepository();
     private final JdbcObservationLifecycleEventStore events=new JdbcObservationLifecycleEventStore();
     private final ObservationEventLedgerReducer reducer=new ObservationEventLedgerReducer();
-    record State(JdbcObservationRunRepository.Row row,ObservationEventLedgerReducer.Result ledger,List<LedgerEvent> events) {}
+    record State(JdbcObservationRunRepository.Row row,ObservationEventLedgerReducer.Result ledger,List<LedgerEvent> events,List<VerifiedAssessment> assessments) {}
     State state(Connection c,ObservationRunRequest request) throws SQLException {return stateForWrite(c,request,null,0,0,null);}
     State stateForWrite(Connection c,ObservationRunRequest request,UUID owner,long epoch,long version,ObservationEventFactory.Event replayExpected) throws SQLException {
         runs.requireTx(c);var row=runs.lock(c,request.requestId()).orElseThrow(()->reject(STATE_CONFLICT));
         if(!row.request().equals(request))throw reject(CONTENT_CONFLICT);
         if(owner!=null && (replayExpected==null || replay(c,replayExpected)==NOT_APPLIED))fence(c,row,owner,epoch,version);
-        try(var q=c.prepareStatement("select exists(select 1 from payment_safety_assessments where run_id=?)")) {
-            q.setObject(1,request.requestId());try(var r=q.executeQuery()){if(!r.next())throw new JdbcObservationRunRepository.IntegrityFailure();if(r.getBoolean(1))throw reject(UNSUPPORTED_PHASE);}
-        }
+        var assessments=new JdbcObservationAssessmentStore().references(c,request);
         var ledger=new ArrayList<LedgerEvent>();long bytes=0;
         try(var q=c.prepareStatement("select * from payment_safety_audit_events where run_id=? and event_scope='RUN' and event_type in ('ORDER_STARTED','ORDER_FINISHED') order by id limit 6001")) {
             q.setFetchSize(100);q.setObject(1,request.requestId());try(var r=q.executeQuery()) {while(r.next()) {
@@ -31,14 +29,17 @@ final class JdbcObservationOrderAttemptRepository {
                 ledger.add(new LedgerEvent(e.uuid(),e.digest(),e.record()));
             }}
         }
-        var result=reduce(request,ledger,row.view().cursor());
+        var result=reduce(request,ledger,row.view().cursor(),assessments);
         if(!counts(result.counters()).equals(row.counts()))throw new JdbcObservationRunRepository.IntegrityFailure();
         boolean initialEmpty=request.manifest().targetOrderIds().isEmpty() && row.view().cursor()==request.manifest().scope().lowerOrderIdExclusive();
         if(!initialEmpty && row.view().cursor()!=result.cursor())throw new JdbcObservationRunRepository.IntegrityFailure();
-        return new State(row,result,List.copyOf(ledger));
+        return new State(row,result,List.copyOf(ledger),assessments);
     }
     ObservationEventLedgerReducer.Result reduce(ObservationRunRequest request,List<LedgerEvent> rows,long cursor) {
-        return reducer.reduce(new ObservationLedgerSnapshot(request.requestId(),request.manifest(),ObservationRunDigestsV1.manifestDigest(request.manifest()),rows,List.of(),cursor,Limits.defaults()));
+        return reduce(request,rows,cursor,List.of());
+    }
+    ObservationEventLedgerReducer.Result reduce(ObservationRunRequest request,List<LedgerEvent> rows,long cursor,List<VerifiedAssessment> assessments) {
+        return reducer.reduce(new ObservationLedgerSnapshot(request.requestId(),request.manifest(),ObservationRunDigestsV1.manifestDigest(request.manifest()),rows,assessments,cursor,Limits.defaults()));
     }
     void fence(Connection c,State state,UUID owner,long epoch,long version) throws SQLException {
         fence(c,state.row(),owner,epoch,version);
@@ -70,12 +71,15 @@ final class JdbcObservationOrderAttemptRepository {
     ObservationRunReceipt.Status replay(Connection c,ObservationEventFactory.Event expected) throws SQLException {
         var found=events.find(c,expected.eventUuid());return found.isEmpty()?NOT_APPLIED:events.matches(found.get(),expected)?REPLAYED:CONTENT_CONFLICT;
     }
-    void insert(Connection c,ObservationEventFactory.Event event) throws SQLException {
+    void insert(Connection c,ObservationEventFactory.Event event) throws SQLException {insert(c,event,false);}
+    void insertClassified(Connection c,ObservationEventFactory.Event event)throws SQLException {insert(c,event,true);}
+    private void insert(Connection c,ObservationEventFactory.Event event,boolean classified)throws SQLException {
         var r=event.record();
-        if(!"RUN".equals(r.eventScope()) || !(r.eventType().equals("ORDER_STARTED") || (r.eventType().equals("ORDER_FINISHED") && Set.of("ACQUISITION_FAILED","ASSEMBLY_FAILED","PERSISTENCE_FAILED","INTERRUPTED").contains(r.outcome())))
-            || r.orderId()!=null || r.assessmentId()!=null || r.caseId()!=null)throw reject(UNSUPPORTED_PHASE);
-        try(var q=c.prepareStatement("insert into payment_safety_audit_events(event_uuid,record_digest,event_scope,event_type,run_id,target_order_id,attempt_no,lease_epoch,outcome,actor_type,actor_account_id,actor_username,occurred_at,error_stage,error_code,payload_format_version,payload) values (?,?,'RUN',?,?,?,?,?,?,?,?,?,?,?,?,1,?::jsonb)")) {
-            q.setObject(1,event.eventUuid());q.setString(2,event.recordDigest());q.setString(3,r.eventType());q.setObject(4,r.runId());q.setObject(5,r.targetOrderId());q.setObject(6,r.attemptNo());q.setObject(7,r.leaseEpoch());q.setString(8,r.outcome());q.setString(9,r.actorType());q.setObject(10,r.actorAccountId());q.setString(11,r.actorUsername());q.setObject(12,r.occurredAt().atOffset(ZoneOffset.UTC));q.setString(13,r.errorStage());q.setString(14,r.errorCode());q.setString(15,r.payloadJson());
+        if(classified && (!"RUN".equals(r.eventScope()) || !"ORDER_FINISHED".equals(r.eventType()) || !"CLASSIFIED".equals(r.outcome()) || r.orderId()==null || r.assessmentId()==null || r.caseId()!=null))throw reject(UNSUPPORTED_PHASE);
+        if(!classified && (!"RUN".equals(r.eventScope()) || !(r.eventType().equals("ORDER_STARTED") || (r.eventType().equals("ORDER_FINISHED") && Set.of("ACQUISITION_FAILED","ASSEMBLY_FAILED","PERSISTENCE_FAILED","INTERRUPTED").contains(r.outcome())))
+            || r.orderId()!=null || r.assessmentId()!=null || r.caseId()!=null))throw reject(UNSUPPORTED_PHASE);
+        try(var q=c.prepareStatement("insert into payment_safety_audit_events(event_uuid,record_digest,event_scope,event_type,run_id,target_order_id,attempt_no,lease_epoch,outcome,actor_type,actor_account_id,actor_username,occurred_at,error_stage,error_code,payload_format_version,payload,order_id,assessment_id) values (?,?,'RUN',?,?,?,?,?,?,?,?,?,?,?,?,1,?::jsonb,?,?)")) {
+            q.setObject(1,event.eventUuid());q.setString(2,event.recordDigest());q.setString(3,r.eventType());q.setObject(4,r.runId());q.setObject(5,r.targetOrderId());q.setObject(6,r.attemptNo());q.setObject(7,r.leaseEpoch());q.setString(8,r.outcome());q.setString(9,r.actorType());q.setObject(10,r.actorAccountId());q.setString(11,r.actorUsername());q.setObject(12,r.occurredAt().atOffset(ZoneOffset.UTC));q.setString(13,r.errorStage());q.setString(14,r.errorCode());q.setString(15,r.payloadJson());q.setObject(16,r.orderId());q.setObject(17,r.assessmentId());
             if(q.executeUpdate()!=1)throw new JdbcObservationRunRepository.IntegrityFailure();
         }
     }
