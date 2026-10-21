@@ -18,6 +18,27 @@ import jakarta.persistence.Table;
 @Table(name = "payment_transactions")
 public class PaymentTransaction {
 
+    @Column(name="order_change_operation_id",updatable=false)
+    private java.util.UUID orderChangeOperationId;
+
+    @Column(name="order_change_order_id",updatable=false)
+    private Long orderChangeOrderId;
+
+    /** Dedicated future result route. Ordinary constructors intentionally still reject these purposes. */
+    public static PaymentTransaction forOrderChange(Payment payment,PaymentTransactionType type,int amount,int revision,
+            String key,LocalDateTime createdAt,PaymentTransactionPurpose purpose,java.util.UUID operationId){
+        if(operationId==null||payment==null||payment.getOrder()==null||payment.getOrder().getId()==null
+            ||!isOrderChangePurpose(type,purpose))throw new IllegalArgumentException("Invalid order change transaction");
+        var transaction=new PaymentTransaction(payment,type,amount,revision,key,createdAt);
+        transaction.purpose=purpose;transaction.orderChangeOperationId=operationId;transaction.orderChangeOrderId=payment.getOrder().getId();
+        return transaction;
+    }
+    public static boolean isOrderChangePurpose(PaymentTransactionType type,PaymentTransactionPurpose purpose){
+        return (type==PaymentTransactionType.AUTHORIZE&&purpose==PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION)
+            ||(type==PaymentTransactionType.CANCEL&&(purpose==PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL||purpose==PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT));
+    }
+    public java.util.UUID getOrderChangeOperationId(){return orderChangeOperationId;}
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

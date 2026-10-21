@@ -8,6 +8,16 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PaymentPurposeResolverTest {
+    @Test void allOrderChangePurposesStayOutsideOrdinaryResultApplication() {
+        for(var purpose:List.of(PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION,
+                PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL,PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT)){
+            var p=payment();var type=purpose==PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION?PaymentTransactionType.AUTHORIZE:PaymentTransactionType.CANCEL;
+            var t=PaymentTransaction.forOrderChange(p,type,100,0,"change",now,purpose,java.util.UUID.randomUUID());
+            ReflectionTestUtils.setField(t,"id",30L);
+            assertFalse(resolver.matches(order,p,t,PaymentOperationSnapshot.from(t),List.of(p),List.of(t)));
+            assertNotNull(t.getOrderChangeOperationId());
+        }
+    }
     final PaymentPurposeResolver resolver = new PaymentPurposeResolver();
     final LocalDateTime now = LocalDateTime.of(2026,1,1,10,0);
     final Order order = new Order(1L, 100, now, now.withHour(14));

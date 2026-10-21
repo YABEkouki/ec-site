@@ -278,6 +278,49 @@ public class PayJpPaymentGateway implements PaymentGateway {
         }
     }
 
+    /** Observation only. Unknown status and absent optional fields are not normalized. */
+    public PayJpPaymentFlowObservation observeOrderChangeFlow(String flowId) {
+        if(flowId==null||!flowId.matches("pfw_[A-Za-z0-9_-]{1,251}"))throw new IllegalArgumentException("Invalid Flow identifier");
+        try {
+            var result=restClient.get().uri("/v2/payment_flows/{id}",flowId).retrieve().body(PayJpPaymentFlowObservation.class);
+            if(result==null||!flowId.equals(result.id())||result.status()==null)
+                throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+            return result;
+        } catch(RestClientException failure){throw classify(failure);}
+    }
+
+    /** Called only by the disconnected sender after loading a committed request.
+     * No automatic retries, reconfirm, failure application or order mutations. */
+    public PayJpPaymentFlowObservation sendOrderChangeRequest(
+            com.example.ecsite.payment.orderchange.OrderChangeRequestSender.Dispatch dispatch) {
+        var saved=dispatch==null?null:dispatch.request();
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Order change Gateway requires no database transaction");
+        if(saved==null||captureConnection==null||!saved.httpRequest().connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Order change connection mismatch");
+        var request=saved.httpRequest();
+        // Abort before successful authorization remains unconfirmed and is deliberately not dispatched in III-A.
+        if(!"CREATE".equals(request.kind())){
+            var observed=observeOrderChangeFlow(request.flowId());
+            if(!"requires_capture".equals(observed.status())||observed.amountReceived()==null||observed.amountReceived()!=0L
+                ||observed.amount()==null||observed.amount()!=request.amount()||!"jpy".equals(observed.currency())
+                ||!"manual".equals(observed.captureMethod())||observed.livemode()==null
+                ||observed.livemode()!=request.connection().mode().equals("LIVE"))
+                throw new IllegalStateException("Cancel status or financial evidence is unconfirmed");
+            // requires_capture is not evidence that a previous Cancel did not execute.
+            // The same stored key/body is used even after a timeout.
+        }
+        saved.requireReplayAt(java.time.Instant.now());
+        try {
+            var result=restClient.post().uri(request.path()).contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key",request.idempotencyKey()).body(request.body())
+                .retrieve().body(PayJpPaymentFlowObservation.class);
+            if(result==null||result.id()==null||!result.id().matches("pfw_[A-Za-z0-9_-]{1,251}")||result.status()==null
+                ||(request.flowId()!=null&&!request.flowId().equals(result.id())))
+                throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+            return result;
+        }catch(RestClientException failure){throw classify(failure);}
+    }
+
     private PaymentGatewayException classify(RestClientException failure) {
         if (failure instanceof RestClientResponseException response) {
             int status = response.getStatusCode().value();
