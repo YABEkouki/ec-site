@@ -17,7 +17,8 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)
             throws ServletException,IOException {
         String path=request.getRequestURI().substring(request.getContextPath().length());
-        if(!path.matches("/orders/[^/]+/increase/[^/]+/payment(?:/return|/continue)?")){
+        if(!path.matches("/orders/[^/]+/increase/[^/]+/payment(?:/return|/continue)?")
+                && !path.matches("/checkout/payment(?:/return|/continue)?")){
             chain.doFilter(request,response);return;
         }
         boolean returned=path.endsWith("/return");

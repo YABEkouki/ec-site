@@ -5,7 +5,8 @@ Never use a real client secret as a logging test value.
 
 ## Application boundary
 
-- Dedicated callback: `/orders/{orderId}/increase/{operationId}/payment/return`.
+- Dedicated callbacks: `/orders/{orderId}/increase/{operationId}/payment/return` and `/checkout/payment/return`.
+  Initial checkout continues via the clean CSRF-protected `/checkout/payment/continue` POST.
 - The early servlet filter removes its query, parameter map and Referer before Security/MVC.
   In particular, Security's saved login request contains only the clean path.
 - The callback has no external scripts, stylesheet, images or analytics. Its nonce script immediately
@@ -37,7 +38,7 @@ Nginx error messages can also include a raw request line. If field-level redacti
 is unavailable, an illustrative callback location is:
 
 ```nginx
-location ~ ^/orders/[0-9]+/increase/[0-9a-fA-F-]+/payment/return$ {
+location ~ ^/(orders/[0-9]+/increase/[0-9a-fA-F-]+/payment/return|checkout/payment/return)$ {
     access_log /var/log/nginx/payment-return.log payment_path_only;
     error_log /dev/null;
     proxy_set_header Host $host;
@@ -79,3 +80,27 @@ SDK flow; automatic `handleNextAction`, return-URL updates and reconfirm are not
 Expired, financially-unstarted RESERVED operations are swept in bounded batches by the existing
 payment reconciliation scheduler (when enabled). Every release rechecks state, decision and absence
 of Payment/financial request/transaction under locks. No started financial operation is expired by it.
+
+## Initial checkout recovery and maintenance mode
+
+Initial checkout stores only order/payment IDs in its session. Card display checks ownership and the
+exact existing Payment before GET; it never creates a Flow. Only `requires_payment_method` displays
+Widgets. Processing, interrupted action and confirmation states remain observation-only. The initial
+card screen uses Web Locks plus a non-secret localStorage attempt marker to prevent concurrent
+same-origin tabs from confirming again after an attempted confirmation, including ambiguous errors.
+If Web Locks/storage is unavailable, the screen fails closed and offers server observation. This is
+not cross-device confirmation fencing; no browser marker is authorization or evidence of success.
+
+Before starting the application for controlled TEST verification, disable all four background paths:
+
+```properties
+app.payment.reconciliation.enabled=false
+app.payment.discrepancy-audit.enabled=false
+app.payment.discrepancy-audit.notification.enabled=false
+app.payment.discrepancy-audit.notification.manual-resend-scheduler-enabled=false
+```
+
+The last flag defaults to true for compatibility and disables both private scheduler startup and its
+entire tick, including expired manual-resend recovery. Disabling only notification delivery does not
+stop that recovery. Reconciliation off also disables the automatic RESERVED-expiry sweep. These flags
+do not disable explicit customer/admin operations. Verify effective overrides before enabling TEST.

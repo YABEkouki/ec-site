@@ -262,8 +262,7 @@ public class OrderController {
                         setCheckoutSession(
                                 session,
                                 id,
-                                recovery.paymentId(),
-                                recovery.clientSecret());
+                                recovery.paymentId());
 
                         yield "redirect:/checkout/payment";
                     }
@@ -801,8 +800,7 @@ public class OrderController {
     private void setCheckoutSession(
             HttpSession session,
             Long orderId,
-            Long paymentId,
-            String clientSecret) {
+            Long paymentId) {
 
         session.setAttribute(
                 "checkoutOrderId",
@@ -812,8 +810,6 @@ public class OrderController {
                 "checkoutPaymentId",
                 paymentId);
 
-        session.setAttribute(
-                "checkoutPaymentClientSecret",
-                clientSecret);
+        session.removeAttribute("checkoutPaymentClientSecret");
     }
 }

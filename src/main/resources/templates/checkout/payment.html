@@ -1,123 +1,55 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-
-<head>
-    <meta charset="UTF-8">
-    <title>お支払い</title>
-    <link rel="stylesheet" th:href="@{/css/style.css}">
-</head>
-
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="referrer" content="no-referrer"><title>お支払い</title></head>
 <body>
-    <header th:replace="~{fragments/header :: header}">
-    </header>
-
-    <h1>お支払い</h1>
-
-    <section>
-        <p>
-            注文番号：
-            <strong th:text="${orderId}"></strong>
-        </p>
-
-        <p>
-            カード情報を入力してください。
-        </p>
-
-        <div id="payment-form"></div>
-
-        <p id="payment-error" class="message-error" style="display: none;">
-        </p>
-
-        <div class="actions">
-            <button type="button" id="payment-submit" class="button-primary">
-                カードで支払う
-            </button>
-        </div>
-    </section>
-
-    <script src="https://js.pay.jp/payments.js"></script>
-
-    <script th:inline="javascript">
-        const payjpPublicKey =
-            /*[[${payjpPublicKey}]]*/ '';
-
-        const clientSecret =
-            /*[[${clientSecret}]]*/ '';
-
-        const returnUrl =
-            /*[[@{/checkout/payment/return}]]*/ '';
-
-        const payments =
-            PayjpPayments(
-                payjpPublicKey,
-                { locale: 'ja' });
-
-        const widgets =
-            payments.widgets({
-                clientSecret: clientSecret
-            });
-
-        const paymentForm =
-            widgets.createForm(
-                'payment',
-                {
-                    paymentMethodOrder: ['card']
-                });
-
-        paymentForm.mount('#payment-form');
-
-        const submitButton =
-            document.getElementById(
-                'payment-submit');
-
-        const errorElement =
-            document.getElementById(
-                'payment-error');
-
-        submitButton.addEventListener(
-            'click',
-            async () => {
-
-                submitButton.disabled = true;
-                errorElement.style.display = 'none';
-                errorElement.textContent = '';
-
+<h1>お支払い</h1>
+<p>注文番号：<strong th:text="${orderId}"></strong></p>
+<section th:if="${card != null}">
+<p>カード情報を入力してください。</p>
+<div id="payment-form"></div>
+<p id="payment-error" role="alert"></p>
+<button type="button" id="payment-submit">カードで支払う</button>
+<script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
+<script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
+(() => {
+    const orderId = /*[[${orderId}]]*/ 0;
+    // Non-secret browser marker survives reloads/tabs. It never proves payment success.
+    const marker = 'checkout-confirm-attempted-' + orderId;
+    const button = document.getElementById('payment-submit');
+    const message = document.getElementById('payment-error');
+    const waiting = () => { button.disabled = true; message.textContent = '認証結果をサーバーで確認してください。通信断後の再認証や別タブからの重複送信は行わないでください。'; };
+    let attempted = false;
+    try { attempted = localStorage.getItem(marker) === '1'; } catch (_) { attempted = true; }
+    if (attempted || !navigator.locks) { waiting(); return; }
+    let widgets;
+    try {
+        const payments = PayjpPayments(/*[[${card.publicKey}]]*/ '', {locale: 'ja'});
+        widgets = payments.widgets({clientSecret: /*[[${card.clientSecret}]]*/ ''});
+        widgets.createForm('payment', {paymentMethodOrder: ['card']}).mount('#payment-form');
+    } catch (_) { waiting(); return; }
+    window.addEventListener('storage', e => { if(e.key === marker && e.newValue === '1') { attempted = true; waiting(); } });
+    button.addEventListener('click', async () => {
+        if(attempted) return;
+        attempted = true;
+        button.disabled = true;
+        // Web Locks serialize the check/set across same-origin tabs. Storage events alone are not atomic.
+        try {
+            await navigator.locks.request(marker, async () => {
                 try {
-                    const result =
-                        await widgets.confirmPayment({
-                            return_url:
-                                new URL(
-                                    returnUrl,
-                                    window.location.origin)
-                                    .toString()
-                        });
-
-                    if (result.error) {
-                        errorElement.textContent =
-                            result.error.message
-                            || 'カード決済を開始できませんでした。';
-
-                        errorElement.style.display =
-                            'block';
-
-                        submitButton.disabled = false;
-                    }
-
-                } catch (error) {
-                    console.error(error);
-
-                    errorElement.textContent =
-                        'カード決済を開始できませんでした。'
-                        + 'しばらくしてからもう一度お試しください。';
-
-                    errorElement.style.display =
-                        'block';
-
-                    submitButton.disabled = false;
-                }
+                    if(localStorage.getItem(marker) === '1') { waiting(); return; }
+                    localStorage.setItem(marker, '1');
+                } catch (_) { waiting(); return; }
+                try {
+                    await widgets.confirmPayment({return_url: new URL(/*[[@{/checkout/payment/return}]]*/ '', window.location.origin).toString()});
+                } catch (_) { /* Never expose SDK errors, URLs or credentials. */ }
             });
-    </script>
-
-</body>
-
-</html>
+        } catch (_) { /* Unsupported or unavailable locking must fail closed. */ }
+        waiting();
+    });
+})();
+</script>
+</section>
+<p th:if="${card == null}">カード決済の状態を確認中です。認証の中断・通信断後の再認証は自動実行しません。</p>
+<form th:action="@{/checkout/payment/continue}" method="post"><button type="submit">サーバーで結果を確認する</button></form>
+<p><a th:href="@{/orders/{id}(id=${orderId})}">注文詳細へ戻る</a></p>
+</body></html>

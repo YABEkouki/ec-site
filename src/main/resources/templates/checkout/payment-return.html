@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="referrer" content="no-referrer">
+<script th:attr="nonce=${paymentScriptNonce}">history.replaceState(null, '', window.location.pathname);</script>
+<title>カード認証後の確認</title></head>
+<body>
+<h1>カード認証後の確認</h1>
+<p>ブラウザの戻り先だけでは与信の成否は確定しません。サーバーで結果を確認してください。</p>
+<noscript><p>一時的な認証情報をURLから除去するためJavaScriptを有効にしてください。URLを共有しないでください。</p></noscript>
+<form th:action="@{/checkout/payment/continue}" method="post"><button type="submit">サーバーで結果を確認する</button></form>
+</body></html>

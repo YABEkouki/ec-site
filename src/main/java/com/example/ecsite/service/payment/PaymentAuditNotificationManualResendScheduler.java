@@ -18,16 +18,19 @@ public class PaymentAuditNotificationManualResendScheduler implements SmartLifec
     private final PaymentAuditNotificationManualResendDeliveryService delivery;
     private final PaymentDiscrepancyAuditNotificationProperties properties;
     private final ObjectProvider<ScheduledAnnotationBeanPostProcessor> scheduling;
+    @org.springframework.beans.factory.annotation.Value("${app.payment.discrepancy-audit.notification.manual-resend-scheduler-enabled:true}")
+    private boolean enabled = true;
     private ThreadPoolTaskScheduler scheduler;
     private ScheduledFuture<?> task;
     private volatile boolean running;
     public PaymentAuditNotificationManualResendScheduler(PaymentAuditNotificationManualResendDeliveryService delivery,PaymentDiscrepancyAuditNotificationProperties properties,ObjectProvider<ScheduledAnnotationBeanPostProcessor> scheduling){this.delivery=delivery;this.properties=properties;this.scheduling=scheduling;}
     public void tick(){
+        if(!enabled)return;
         try{delivery.recoverExpired();if(properties.enabled())delivery.deliverOne();}
         catch(RuntimeException failure){LOG.atError().addKeyValue("failureCode","MANUAL_RESEND_TICK_FAILED").log("Manual resend tick failed; recovery will run on a later tick");}
     }
     @Override public synchronized void start(){
-        if(running || scheduling.getIfAvailable()==null)return;
+        if(!enabled || running || scheduling.getIfAvailable()==null)return;
         scheduler=new ThreadPoolTaskScheduler();scheduler.setPoolSize(1);scheduler.setThreadNamePrefix("payment-audit-manual-resend-");scheduler.setAwaitTerminationSeconds(5);scheduler.initialize();
         task=scheduler.scheduleWithFixedDelay(this::tick,Instant.now().plus(properties.fixedDelay()),properties.fixedDelay());running=true;
     }

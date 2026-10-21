@@ -251,9 +251,7 @@ public class CheckoutController {
                         "checkoutPaymentId",
                         preparation.paymentId());
 
-                session.setAttribute(
-                        "checkoutPaymentClientSecret",
-                        preparation.clientSecret());
+                session.removeAttribute("checkoutPaymentClientSecret");
 
                 return "redirect:/checkout/payment";
 
@@ -275,48 +273,49 @@ public class CheckoutController {
         }
     }
 
+    /** GET observes the saved Flow only; it never prepares a new authorization. */
     @GetMapping("/payment")
     public String payment(
-            HttpSession session,
-            Model model) {
-
-        Object orderId = session.getAttribute("checkoutOrderId");
-
-        Object paymentId = session.getAttribute("checkoutPaymentId");
-
-        Object clientSecret = session.getAttribute("checkoutPaymentClientSecret");
-
-        if (!(orderId instanceof Long)
-                || !(paymentId instanceof Long)
-                || !(clientSecret instanceof String secret)
-                || secret.isBlank()) {
-
-            return "redirect:/";
+            @AuthenticationPrincipal CustomUserDetails loginUser,
+            HttpSession session, Model model) {
+        session.removeAttribute("checkoutPaymentClientSecret"); // Remove credentials from older sessions too.
+        Object orderValue=session.getAttribute("checkoutOrderId");
+        Object paymentValue=session.getAttribute("checkoutPaymentId");
+        if (!(orderValue instanceof Long orderId) || !(paymentValue instanceof Long paymentId)) return "redirect:/";
+        Order order=orderService.findOrderByIdAndUserId(orderId,loginUser.getId());
+        model.addAttribute("orderId",orderId);
+        try {
+            var recovery=paymentAuthorizationService.recoverAuthorization(order,paymentId);
+            // Interrupted confirm/action/processing is observation-only. Never infer reconfirm permission.
+            if(recovery.result().status()==AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD
+                    && recovery.clientSecret()!=null && !recovery.clientSecret().isBlank()) {
+                if(payJpProperties.publicKey()==null || payJpProperties.publicKey().isBlank())
+                    throw new IllegalStateException("PAY.JP公開鍵が設定されていません。");
+                model.addAttribute("card",new CheckoutCard(payJpProperties.publicKey(),recovery.clientSecret()));
+            }
+        } catch(PaymentGatewayException | IllegalStateException stopped) {
+            // Static pending display. Do not expose provider exceptions or credentials.
         }
-
-        model.addAttribute(
-                "orderId",
-                orderId);
-
-        model.addAttribute(
-                "clientSecret",
-                secret);
-
-        if (payJpProperties.publicKey() == null
-                || payJpProperties.publicKey().isBlank()) {
-            throw new IllegalStateException(
-                    "PAY.JP公開鍵が設定されていません。");
-        }
-
-        model.addAttribute(
-                "payjpPublicKey",
-                payJpProperties.publicKey());
-
         return "checkout/payment";
     }
 
+    public record CheckoutCard(String publicKey,String clientSecret) {
+        @Override public String toString(){return "CheckoutCard[redacted]";}
+    }
+
     @GetMapping("/payment/return")
-    public String paymentReturn(
+    public String paymentReturn(@AuthenticationPrincipal CustomUserDetails loginUser,HttpSession session) {
+        session.removeAttribute("checkoutPaymentClientSecret");
+        Object order=session.getAttribute("checkoutOrderId");
+        Object payment=session.getAttribute("checkoutPaymentId");
+        if(!(order instanceof Long orderId) || !(payment instanceof Long))return "redirect:/";
+        orderService.findOrderByIdAndUserId(orderId,loginUser.getId());
+        return "checkout/payment-return";
+    }
+
+    @PostMapping("/payment/continue")
+    public String paymentContinue(
+            @AuthenticationPrincipal CustomUserDetails loginUser,
             HttpSession session,
             SessionStatus sessionStatus,
             RedirectAttributes redirectAttributes) {
@@ -332,6 +331,9 @@ public class CheckoutController {
 
             return "redirect:/";
         }
+
+        session.removeAttribute("checkoutPaymentClientSecret");
+        orderService.findOrderByIdAndUserId(orderId,loginUser.getId());
 
         final AuthorizationResult result;
 
