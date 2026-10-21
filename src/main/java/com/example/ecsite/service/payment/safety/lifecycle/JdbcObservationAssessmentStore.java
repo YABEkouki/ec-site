@@ -7,9 +7,14 @@ import com.example.ecsite.service.payment.safety.*;
 import com.example.ecsite.service.payment.safety.payload.*;
 import com.example.ecsite.service.payment.safety.payload.ObservationLedgerSnapshot.*;
 import static com.example.ecsite.service.payment.safety.lifecycle.ObservationRunReceipt.Status.*;
+import com.example.ecsite.service.payment.safety.payload.ObservationOrderContextV1.*;
 
 /** Observer-only immutable storage. Never owns a connection or authorizes finance. */
 final class JdbcObservationAssessmentStore {
+    static final class Problem extends IllegalArgumentException {
+        final Failure failure;
+        Problem(Failure failure){super("Observation stage failed");this.failure=failure;}
+    }
     record Candidate(long id,UUID requestId,AssessmentRecordDigestV1.Record record,PaymentSafetyPayloadCodecV1.Payloads payloads) {
         @Override public String toString(){return "AssessmentCandidate[redacted]";}
     }
@@ -17,12 +22,21 @@ final class JdbcObservationAssessmentStore {
     AssessmentRecordDigestV1.Record observe(Connection c,ObservationRunRequest request,long order,int attempt)throws SQLException {
         var m=request.manifest();var d=PaymentSafetyReadContext.Limits.defaults();
         var limits=new PaymentSafetyReadContext.Limits(d.payments(),d.transactions(),d.statusHistory(),d.captureRequests(),d.inputBytes(),d.fetchSize(),m.policy().statementTimeoutSeconds(),m.policy().lockTimeoutMillis());
-        var facts=new JdbcPaymentSafetySnapshotReader().readLocked(c,order,new PaymentSafetyReadContext(limits,m.verificationProfiles(),m.timeOrigins())).orElseThrow(()->new ObservationOrderAttempts.Rejected(UNSUPPORTED_PHASE));
+        PaymentSafetyReadFacts facts;
+        try {facts=new JdbcPaymentSafetySnapshotReader().readLocked(c,order,new PaymentSafetyReadContext(limits,m.verificationProfiles(),m.timeOrigins())).orElse(null);}
+        catch(SQLException failure){throw new Problem(new Failure(Stage.ACQUISITION,Code.READ_FAILED));}
+        catch(RuntimeException failure){throw new Problem(new Failure(Stage.ACQUISITION,Code.MAPPING_FAILED));}
+        if(facts==null)throw new Problem(null);
         return classify(request,attempt,facts);
     }
     private AssessmentRecordDigestV1.Record classify(ObservationRunRequest request,int attempt,PaymentSafetyReadFacts facts) {
-        var m=request.manifest();var assembly=new PaymentSafetySnapshotAssembler().assemble(facts,m.captureProfiles());
-        var result=new PaymentSafetyClassifier().classify(assembly.snapshot());var evidence=assembly.evidence();
+        var m=request.manifest();PaymentSafetySnapshotAssembly assembly;
+        try{assembly=new PaymentSafetySnapshotAssembler().assemble(facts,m.captureProfiles());}
+        catch(RuntimeException failure){throw new Problem(new Failure(Stage.ASSEMBLY,Code.UNREPRESENTABLE_INPUT));}
+        PaymentSafetyClassification result;
+        try{result=new PaymentSafetyClassifier().classify(assembly.snapshot());}
+        catch(RuntimeException failure){throw new Problem(new Failure(Stage.CLASSIFICATION,Code.CLASSIFICATION_FAILED));}
+        var evidence=assembly.evidence();
         int captures=evidence.captures().size(),requests=facts.captureRequests().size();String summary="VERIFIED";
         if(captures==0 && requests==0)summary="NOT_APPLICABLE";
         else if(!evidence.globalFindings().isEmpty() || evidence.captures().stream().anyMatch(x->x.verification()==PaymentSafetySnapshot.CaptureVerification.MISMATCH))summary="MISMATCH";
@@ -34,7 +48,8 @@ final class JdbcObservationAssessmentStore {
     Candidate prepare(Connection c,UUID uuid,AssessmentRecordDigestV1.Record record)throws SQLException {
         Objects.requireNonNull(uuid);long id;
         try(var q=c.createStatement();var r=q.executeQuery("select nextval(pg_get_serial_sequence('payment_safety_assessments','id'))")){if(!r.next())throw corrupt();id=r.getLong(1);}
-        return new Candidate(id,uuid,record,codec.encodeAssessment(record));
+        try{return new Candidate(id,uuid,record,codec.encodeAssessment(record));}
+        catch(IllegalArgumentException failure){throw new Problem(new Failure(Stage.PERSISTENCE,Code.CODEC_FAILED));}
     }
     List<VerifiedAssessment> references(Connection c,ObservationRunRequest request)throws SQLException {
         var refs=new ArrayList<VerifiedAssessment>();long bytes=0;

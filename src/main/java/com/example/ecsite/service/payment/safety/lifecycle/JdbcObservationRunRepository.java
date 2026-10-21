@@ -51,11 +51,17 @@ final class JdbcObservationRunRepository {
             if(!row.zeroCounts() || v.cursor()!=row.request().manifest().scope().lowerOrderIdExclusive()
                 || (command.action()==Action.EMPTY_SUCCESS && !row.request().manifest().targetOrderIds().isEmpty()))return receipt(command,UNSUPPORTED_PHASE,row);
         }
+        if(command.action()==Action.OBSERVATION_SUCCESS || command.action()==Action.OBSERVATION_PARTIAL_FAILURE) {
+            var state=new JdbcObservationOrderAttemptRepository().state(c,command.request());
+            boolean ready=command.action()==Action.OBSERVATION_SUCCESS?state.ledger().readyForSuccess():state.ledger().readyForPartialFailure();
+            if(!ready)return receipt(command,UNSUPPORTED_PHASE,row);
+        }
         String changes=switch(command.action()) {
             case HEARTBEAT -> "heartbeat_at=clock_timestamp(),lease_until=greatest(lease_until,clock_timestamp()+make_interval(secs=>?)),version=version+1";
             case TAKEOVER,RESUME -> "lease_owner=?,lease_epoch=lease_epoch+1,heartbeat_at=clock_timestamp(),lease_until=clock_timestamp()+make_interval(secs=>?),status='RUNNING',version=version+1";
             case PAUSE -> "status='PAUSED',lease_owner=null,lease_until=null,version=version+1";
-            case EMPTY_SUCCESS -> "status='SUCCESS',cursor_order_id=upper_order_id_inclusive,lease_owner=null,lease_until=null,finished_at=clock_timestamp(),version=version+1";
+            case EMPTY_SUCCESS,OBSERVATION_SUCCESS -> "status='SUCCESS',cursor_order_id=upper_order_id_inclusive,lease_owner=null,lease_until=null,finished_at=clock_timestamp(),version=version+1";
+            case OBSERVATION_PARTIAL_FAILURE -> "status='PARTIAL_FAILURE',lease_owner=null,lease_until=null,finished_at=clock_timestamp(),version=version+1";
             case BEFORE_OBSERVATION_FAILED -> "status='FAILED',lease_owner=null,lease_until=null,finished_at=clock_timestamp(),version=version+1";
             default -> throw new IntegrityFailure();
         };

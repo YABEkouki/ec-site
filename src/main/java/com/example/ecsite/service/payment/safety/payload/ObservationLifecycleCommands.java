@@ -10,7 +10,7 @@ import com.example.ecsite.service.payment.safety.payload.ObservationRunRequest.A
  */
 public final class ObservationLifecycleCommands {
     private ObservationLifecycleCommands() {}
-    public enum Action { CREATE, HEARTBEAT, TAKEOVER, PAUSE, RESUME, EMPTY_SUCCESS, BEFORE_OBSERVATION_FAILED }
+    public enum Action { CREATE, HEARTBEAT, TAKEOVER, PAUSE, RESUME, EMPTY_SUCCESS, BEFORE_OBSERVATION_FAILED, OBSERVATION_SUCCESS, OBSERVATION_PARTIAL_FAILURE }
     public record Intent(UUID controlRequestId,ObservationRunRequest request,Action action,UUID ownerBefore,
             UUID ownerAfter,long epochBefore,long expectedVersion,Actor actor,Instant occurredAt) {}
     public static final class Command {
@@ -34,7 +34,7 @@ public final class ObservationLifecycleCommands {
                         case HEARTBEAT -> {if(i.ownerBefore()==null || !i.ownerBefore().equals(i.ownerAfter()))throw PayloadEncodingV1.invalid();}
                         case TAKEOVER -> {if(i.ownerBefore()==null || i.ownerAfter()==null)throw PayloadEncodingV1.invalid();}
                         case RESUME -> {if(i.ownerBefore()!=null || i.ownerAfter()==null)throw PayloadEncodingV1.invalid();}
-                        case PAUSE,EMPTY_SUCCESS,BEFORE_OBSERVATION_FAILED -> {if(i.ownerBefore()==null || i.ownerAfter()!=null)throw PayloadEncodingV1.invalid();}
+                        case PAUSE,EMPTY_SUCCESS,BEFORE_OBSERVATION_FAILED,OBSERVATION_SUCCESS,OBSERVATION_PARTIAL_FAILURE -> {if(i.ownerBefore()==null || i.ownerAfter()!=null)throw PayloadEncodingV1.invalid();}
                         default -> throw PayloadEncodingV1.invalid();
                     }
                 }
@@ -52,6 +52,8 @@ public final class ObservationLifecycleCommands {
                 case PAUSE -> factory.paused(i.controlRequestId(),nextEpoch,i.actor(),i.occurredAt());
                 case RESUME -> factory.resumed(i.controlRequestId(),nextEpoch,i.actor(),i.occurredAt());
                 case EMPTY_SUCCESS -> factory.finished(ObservationEventFactory.TerminalStatus.SUCCESS,nextEpoch,i.actor(),i.occurredAt());
+                case OBSERVATION_SUCCESS -> factory.finished(ObservationEventFactory.TerminalStatus.SUCCESS,nextEpoch,i.actor(),i.occurredAt());
+                case OBSERVATION_PARTIAL_FAILURE -> factory.finished(ObservationEventFactory.TerminalStatus.PARTIAL_FAILURE,nextEpoch,i.actor(),i.occurredAt());
                 case BEFORE_OBSERVATION_FAILED -> factory.runFailed(nextEpoch,i.actor(),i.occurredAt());
                 default -> throw PayloadEncodingV1.invalid();
             };

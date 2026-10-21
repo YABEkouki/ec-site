@@ -9,6 +9,15 @@ public record ObservationLifecycleContextV1(int lifecycleContextVersion,String c
         if(lifecycleContextVersion!=1 || commandDigest==null || !commandDigest.matches("[0-9a-f]{64}")
             || epochAfter<=0 || versionAfter<0 || (epochBefore!=null && epochBefore<=0) || (versionBefore!=null && versionBefore<0))throw PayloadEncodingV1.invalid();
     }
+    /** Decode only verified stored lifecycle rows; caller verifies the outer Event digest first. */
+    public static ObservationLifecycleContextV1 fromEvent(AuditEventDigestV1.Record event) {
+        var engine=new PayloadEncodingV1(PaymentSafetyPayloadCodecV1.Limits.event());
+        return engine.safe(()->{
+            var payload=engine.parse(event.payloadJson());
+            var context=(ObservationLifecycleContextV1)engine.decode(payload.get("lifecycleContext"),ObservationLifecycleContextV1.class);
+            context.validateFor(event.eventType(),event.leaseEpoch());return context;
+        });
+    }
     void validateFor(String type,long eventEpoch) {
         if(eventEpoch!=epochAfter)throw PayloadEncodingV1.invalid();
         if("STARTED".equals(type)) {

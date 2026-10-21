@@ -6,6 +6,7 @@ import java.util.*;
 import java.nio.charset.StandardCharsets;
 import com.example.ecsite.service.payment.safety.payload.*;
 import com.example.ecsite.service.payment.safety.payload.ObservationLedgerSnapshot.*;
+import com.example.ecsite.service.payment.safety.payload.ObservationOrderContextV1.TakeoverRef;
 import static com.example.ecsite.service.payment.safety.lifecycle.ObservationRunReceipt.Status.*;
 
 /** Run-only operations. Never acquires an Order/Payment/Case lock, commits or owns a connection. */
@@ -68,6 +69,18 @@ final class JdbcObservationOrderAttemptRepository {
         var expected=command.event().orElseThrow();var actual=events.find(c,expected.eventUuid()).orElseThrow(()->reject(UNSUPPORTED_PHASE));
         if(!events.matches(actual,expected))throw reject(CONTENT_CONFLICT);
     }
+    TakeoverRef takeoverReference(Connection c,ObservationRunRequest request,long epoch)throws SQLException {
+        var stored=events.find(c,ObservationEventIdsV1.leaseTaken(request.requestId(),epoch)).orElseThrow(JdbcObservationRunRepository.IntegrityFailure::new);
+        var r=stored.record();var context=ObservationLifecycleContextV1.fromEvent(r);
+        if(!"LEASE_TAKEN".equals(r.eventType()) || !request.requestId().equals(r.runId()))throw new JdbcObservationRunRepository.IntegrityFailure();
+        var actor=new ObservationRunRequest.Actor(ObservationRunRequest.ActorType.valueOf(r.actorType()),r.actorAccountId(),r.actorUsername());
+        var factory=new ObservationEventFactory(request);
+        if(!events.matches(stored,factory.withLifecycleContext(factory.leaseTaken(epoch,actor,r.occurredAt()),context)))throw new JdbcObservationRunRepository.IntegrityFailure();
+        return new TakeoverRef(r.runId(),stored.uuid(),stored.digest(),ObservationRunDigestsV1.manifestDigest(request.manifest()),context.epochBefore(),context.epochAfter(),context.ownerBefore(),context.ownerAfter());
+    }
+    void takeover(Connection c,ObservationRunRequest request,TakeoverRef expected)throws SQLException {
+        if(!expected.equals(takeoverReference(c,request,expected.epochAfter())))throw reject(CONTENT_CONFLICT);
+    }
     ObservationRunReceipt.Status replay(Connection c,ObservationEventFactory.Event expected) throws SQLException {
         var found=events.find(c,expected.eventUuid());return found.isEmpty()?NOT_APPLIED:events.matches(found.get(),expected)?REPLAYED:CONTENT_CONFLICT;
     }
@@ -76,7 +89,7 @@ final class JdbcObservationOrderAttemptRepository {
     private void insert(Connection c,ObservationEventFactory.Event event,boolean classified)throws SQLException {
         var r=event.record();
         if(classified && (!"RUN".equals(r.eventScope()) || !"ORDER_FINISHED".equals(r.eventType()) || !"CLASSIFIED".equals(r.outcome()) || r.orderId()==null || r.assessmentId()==null || r.caseId()!=null))throw reject(UNSUPPORTED_PHASE);
-        if(!classified && (!"RUN".equals(r.eventScope()) || !(r.eventType().equals("ORDER_STARTED") || (r.eventType().equals("ORDER_FINISHED") && Set.of("ACQUISITION_FAILED","ASSEMBLY_FAILED","PERSISTENCE_FAILED","INTERRUPTED").contains(r.outcome())))
+        if(!classified && (!"RUN".equals(r.eventScope()) || !(r.eventType().equals("ORDER_STARTED") || (r.eventType().equals("ORDER_FINISHED") && Set.of("ACQUISITION_FAILED","ASSEMBLY_FAILED","PERSISTENCE_FAILED","INTERRUPTED","NOT_FOUND").contains(r.outcome())))
             || r.orderId()!=null || r.assessmentId()!=null || r.caseId()!=null))throw reject(UNSUPPORTED_PHASE);
         try(var q=c.prepareStatement("insert into payment_safety_audit_events(event_uuid,record_digest,event_scope,event_type,run_id,target_order_id,attempt_no,lease_epoch,outcome,actor_type,actor_account_id,actor_username,occurred_at,error_stage,error_code,payload_format_version,payload,order_id,assessment_id) values (?,?,'RUN',?,?,?,?,?,?,?,?,?,?,?,?,1,?::jsonb,?,?)")) {
             q.setObject(1,event.eventUuid());q.setString(2,event.recordDigest());q.setString(3,r.eventType());q.setObject(4,r.runId());q.setObject(5,r.targetOrderId());q.setObject(6,r.attemptNo());q.setObject(7,r.leaseEpoch());q.setString(8,r.outcome());q.setString(9,r.actorType());q.setObject(10,r.actorAccountId());q.setString(11,r.actorUsername());q.setObject(12,r.occurredAt().atOffset(ZoneOffset.UTC));q.setString(13,r.errorStage());q.setString(14,r.errorCode());q.setString(15,r.payloadJson());q.setObject(16,r.orderId());q.setObject(17,r.assessmentId());
