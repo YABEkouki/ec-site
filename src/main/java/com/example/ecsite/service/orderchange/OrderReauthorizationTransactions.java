@@ -53,6 +53,22 @@ public class OrderReauthorizationTransactions {
         this.changes=changes;this.requests=requests;this.jdbc=jdbc;this.em=em;this.context=context;this.policy=policy;
         this.calculator=calculator;this.inventory=inventory;this.connection=connection;this.provider=provider;
     }
+    /** One durable first-confirm screen. Not a provider POST permit and never contains a secret. */
+    public boolean issueBrowserConfirmation(long orderId,UUID operationId,PayJpPaymentFlowObservation observed){
+        var data=lock(orderId,operationId);var op=data.operation();
+        if(!"AUTHORIZING".equals(op.get("state")) || op.get("switch_decided_at")!=null
+                || op.get("new_payment_id")==null || op.get("browser_confirmation_issued_at")!=null || expired(data))return false;
+        var next=payment(data,number(op,"new_payment_id"));
+        var auth=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION);
+        if(!matchesFlow(data,next,observed,true) || !"requires_payment_method".equals(observed.status())
+                || auth.getStatus()!=PaymentTransactionStatus.PENDING || !validAuthorization(data,auth,next))return false;
+        return jdbc.update("""
+            update order_change_operations set browser_confirmation_issued_at=?,version=version+1,updated_at=?
+            where id=? and version=? and browser_confirmation_issued_at is null
+              and state='AUTHORIZING' and switch_decided_at is null
+              and grace_until>timezone('Asia/Tokyo',clock_timestamp())
+            """,now(),now(),operationId,op.get("version"))==1;
+    }
     public View prepare(long orderId,UUID operationId){
         var data=lock(orderId,operationId);var op=data.operation();
         if(!"RESERVED".equals(op.get("state")))return view(data);

@@ -154,12 +154,15 @@ public class OrderIncreaseService {
         context.requireCleanWritableReadCommitted();var order=lockedOrder(orderId,customerId);
         release(order,store.operation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId)));
     }
-    /** Internal expiry hook: no scheduler and no automatic financial cleanup is introduced. */
+    @Transactional(readOnly=true)
+    public List<OrderChangeStore.ExpiringOperation> expiredReservedCandidates(int limit){return store.expiredReserved(limit);}
+    /** Local-only expiry under the same Order/operation locks as acceptance and withdrawal. */
     @Transactional
     public boolean expireReserved(long orderId,UUID operationId){
         context.requireCleanWritableReadCommitted();var order=orders.findByIdForUpdate(orderId).orElseThrow();context.refreshWritableOrder(order);
         var op=store.operation(orderId,operationId).orElseThrow();
         if(!op.state().equals("RESERVED") || !policy.canExpireChange(op.graceUntil(),op.switchDecidedAt(),orders.findCurrentTimeInTokyo()))return false;
+        if(store.financialStarted(operationId))return false;
         release(order,op);return true;
     }
     private Order lockedOrder(long id,long customer){
@@ -168,7 +171,7 @@ public class OrderIncreaseService {
     }
     private void release(Order order,OrderChangeStore.Operation op){
         if(op.state().equals("ABORTED"))return;
-        if(!op.state().equals("RESERVED") || op.switchDecidedAt()!=null)throw new IllegalStateException("Financial change cannot be aborted here");
+        if(!op.state().equals("RESERVED") || op.switchDecidedAt()!=null || store.financialStarted(op.id()))throw new IllegalStateException("Financial change cannot be aborted here");
         var reservations=store.reservations(op.id());
         if(reservations.isEmpty() || reservations.stream().anyMatch(r->!r.state().equals("HELD")))throw new IllegalStateException("Reservation state mismatch");
         // Flush/refresh before any release: a caller may have loaded stale Product entities.

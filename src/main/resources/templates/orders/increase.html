@@ -27,7 +27,7 @@
         <dt>内消費税</dt><dd th:text="${preview.amount.taxAmount + '円'}"></dd>
         <dt>変更後合計（税込）</dt><dd><strong th:text="${preview.amount.totalAmount + '円'}"></strong></dd></dl>
     <p>受付後に追加在庫を確保します。元の注文内容・金額は、注文変更が完了するまで変わりません。</p>
-    <p>現在、カード認証・3Dセキュアは未接続です。この操作では決済や注文変更は完了しません。</p>
+    <p>候補受付だけでは決済や注文変更は完了しません。受付後の画面からカード認証を開始できます。</p>
     <form th:action="@{/orders/{id}/increase(id=${orderId})}" method="post">
         <input type="hidden" name="confirmationToken" th:value="${confirmationToken}">
         <button type="submit" class="button-primary">この内容で変更候補を受け付ける</button>
@@ -37,10 +37,20 @@
     <h2>変更候補の状態</h2><p role="status" th:text="${statusMessage}"></p>
     <p>受付時の変更前合計：<span th:text="${operation.beforeAmount + '円'}"></span></p>
     <p>変更候補の合計：<span th:text="${operation.afterAmount + '円'}"></span></p>
-    <p th:if="${operation.state == 'RESERVED'}">決済機能は未接続です。候補を取り下げると、確保した追加在庫を解放します。</p>
+    <p th:if="${operation.state == 'RESERVED'}">カード認証はまだ開始していません。候補を取り下げると、確保した追加在庫を解放します。</p>
     <form th:if="${operation.state == 'RESERVED'}" th:action="@{/orders/{id}/increase/{op}/withdraw(id=${orderId},op=${operation.id})}" method="post">
         <button type="submit" class="button-secondary">変更候補を取り下げる</button>
     </form>
+    <form th:if="${operation.state == 'RESERVED' or operation.state == 'AUTHORIZING' or operation.state == 'AUTH_UNKNOWN'}"
+          th:action="@{/orders/{id}/increase/{op}/payment(id=${orderId},op=${operation.id})}" method="post">
+        <button type="submit">カード認証を開始・確認する</button>
+    </form>
+    <form th:if="${operation.state != 'RESERVED' and operation.state != 'COMPLETED' and operation.state != 'ABORTED' and operation.state != 'MANUAL_REVIEW'}"
+          th:action="@{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operation.id})}" method="post">
+        <button type="submit">サーバーで結果を確認して続行する</button>
+    </form>
+    <p th:if="${operation.state == 'REQUIRES_ACTION'}">追加認証待ちです。元の認証画面で続行してください。中断後の再confirmや、この画面からの自動認証再開は行いません。</p>
+    <p><a th:href="@{/orders/{id}/increase/{op}/payment(id=${orderId},op=${operation.id})}">同じ決済の状態を照会する</a>（新しい与信・取消は送信しません）</p>
     <p><a th:href="@{/orders/{id}/increase/{op}(id=${orderId},op=${operation.id})}">状態を再表示する</a>（決済は開始しません）</p>
 </section>
 <section th:if="${mode == 'UNAVAILABLE'}"><h2>現在、この変更を受け付けできません</h2>

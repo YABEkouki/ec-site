@@ -22,6 +22,23 @@ public class OrderChangeStore {
     public record Operation(UUID id,long orderId,long customerId,String requestDigest,String state,
             int beforeAmount,int afterAmount,LocalDateTime graceUntil,LocalDateTime switchDecidedAt,long version){}
     public record Reservation(long itemId,long productId,int quantity,String state){}
+    public record ExpiringOperation(long orderId,UUID operationId){}
+    public boolean financialStarted(UUID id){return Boolean.TRUE.equals(jdbc.queryForObject("""
+        select exists(select 1 from order_change_operations where id=? and new_payment_id is not null)
+          or exists(select 1 from order_change_financial_requests where operation_id=?)
+          or exists(select 1 from payment_transactions where order_change_operation_id=?)
+        """,Boolean.class,id,id,id));}
+    public List<ExpiringOperation> expiredReserved(int limit){
+        if(limit<1 || limit>1000)throw new IllegalArgumentException("Invalid expiry batch size");
+        return jdbc.query("""
+            select o.order_id,o.id from order_change_operations o
+            where o.state='RESERVED' and o.switch_decided_at is null and o.new_payment_id is null
+              and o.grace_until<=timezone('Asia/Tokyo',clock_timestamp())
+              and not exists(select 1 from order_change_financial_requests r where r.operation_id=o.id)
+              and not exists(select 1 from payment_transactions t where t.order_change_operation_id=o.id)
+            order by o.grace_until,o.order_id limit ?
+            """,(r,n)->new ExpiringOperation(r.getLong(1),r.getObject(2,UUID.class)),limit);
+    }
     public Optional<Operation> unresolvedOperation(long orderId){
         return find("order_id=? and state not in ('COMPLETED','ABORTED')",orderId);
     }
