@@ -9,7 +9,7 @@ import com.example.ecsite.payment.payjp.*;
  * Loading in a separate committed transaction prevents sending unsaved/rolled-back requests. */
 public class OrderChangeRequestSender {
     private final OrderChangeFinancialRequestStore store;
-    private final PayJpPaymentGateway gateway;
+    private final com.example.ecsite.payment.PaymentGateway gateway;
     private final TransactionTemplate read;
     /** Unforgeable by callers; produced only after the persistence-backed validation transaction commits. */
     public static final class Dispatch {
@@ -18,7 +18,7 @@ public class OrderChangeRequestSender {
         public StoredOrderChangeRequest request(){return request;}
         @Override public String toString(){return "OrderChangeDispatch[redacted]";}
     }
-    public OrderChangeRequestSender(OrderChangeFinancialRequestStore store,PayJpPaymentGateway gateway,PlatformTransactionManager manager){
+    public OrderChangeRequestSender(OrderChangeFinancialRequestStore store,com.example.ecsite.payment.PaymentGateway gateway,PlatformTransactionManager manager){
         this.store=store;this.gateway=gateway;read=new TransactionTemplate(manager);
         read.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }

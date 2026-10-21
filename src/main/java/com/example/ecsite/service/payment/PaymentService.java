@@ -519,7 +519,7 @@ public class PaymentService {
                 && !Objects.equals(payment.getProviderPaymentId(), snapshot.providerPaymentId())) return null;
         List<PaymentTransaction> history = lockedPayments.stream().flatMap(p -> paymentTransactionRepository
                 .findByPaymentIdOrderByCreatedAtAscIdAsc(p.getId()).stream()).toList();
-        if (!new PaymentPurposeResolver().matches(order, payment, transaction, snapshot, lockedPayments, history)) return null;
+        if (!new PaymentPurposeResolver().matches(order, payment, transaction, snapshot, lockedPayments, history, orderPaymentGuard.completedOrderChanges(order), orderPaymentGuard.abortedOrderChanges(order))) return null;
         return new ResultTarget(payment, transaction);
     }
 
@@ -680,7 +680,11 @@ public class PaymentService {
                         PaymentTransactionType.AUTHORIZE,
                         PaymentTransactionStatus.SUCCEEDED)
                 .filter(transaction -> transaction.getPurpose() == null
-                        || transaction.getPurpose() == PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION)
+                        || transaction.getPurpose() == PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION
+                        || (transaction.getPurpose() == PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION
+                            && Objects.equals(order.getActivePaymentId(), payment.getId())
+                            && transaction.getOrderChangeOperationId()!=null
+                            && orderPaymentGuard.completedOrderChanges(order).contains(transaction.getOrderChangeOperationId())))
                 .map(transaction -> paymentConsistencyEvaluator.evaluate(
                         order,
                         payment,

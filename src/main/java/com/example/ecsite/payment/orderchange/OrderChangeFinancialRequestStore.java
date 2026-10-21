@@ -36,7 +36,8 @@ public class OrderChangeFinancialRequestStore {
             ||!request.operationId().equals(target.get("order_change_operation_id"))
             ||!request.purpose().name().equals(target.get("purpose"))||!request.transactionType().equals(target.get("transaction_type"))
             ||request.amount()!=((Number)target.get("amount")).intValue()||request.amount()!=expectedAmount
-            ||((Number)target.get("order_content_revision")).intValue()!=((Number)operation.get("base_content_revision")).intValue()
+            ||((Number)target.get("order_content_revision")).intValue()!=Math.addExact(((Number)operation.get("base_content_revision")).intValue(),
+                request.kind().equals("CREATE")&&operation.get("base_order_fingerprint")!=null?1:0)
             ||!request.idempotencyKey().equals(target.get("idempotency_key"))
             ||!"PAYJP".equals(target.get("provider"))||!"CARD".equals(target.get("payment_method"))
             ||(request.flowId()!=null&&!request.flowId().equals(target.get("provider_payment_id"))))

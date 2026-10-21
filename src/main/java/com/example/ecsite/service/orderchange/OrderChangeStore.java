@@ -15,6 +15,10 @@ import com.example.ecsite.service.pricing.OrderAmount;
 public class OrderChangeStore {
     private final JdbcTemplate jdbc;
     public OrderChangeStore(JdbcTemplate jdbc){this.jdbc=jdbc;}
+    public Set<UUID> completedOperationIds(long orderId){return settledIds(orderId,"COMPLETED");}
+    public Set<UUID> abortedOperationIds(long orderId){return settledIds(orderId,"ABORTED");}
+    private Set<UUID> settledIds(long orderId,String state){return Set.copyOf(jdbc.queryForList(
+        "select id from order_change_operations where order_id=? and state=?",UUID.class,orderId,state));}
     public record Operation(UUID id,long orderId,long customerId,String requestDigest,String state,
             int beforeAmount,int afterAmount,LocalDateTime graceUntil,LocalDateTime switchDecidedAt,long version){}
     public record Reservation(long itemId,long productId,int quantity,String state){}

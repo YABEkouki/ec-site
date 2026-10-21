@@ -74,6 +74,14 @@ public class OrderPaymentGuard {
         return authorized != null;
     }
 
+    public java.util.Set<java.util.UUID> completedOrderChanges(Order order) {
+        return changes.completedOperationIds(order.getId());
+    }
+
+    public java.util.Set<java.util.UUID> abortedOrderChanges(Order order) {
+        return changes.abortedOperationIds(order.getId());
+    }
+
     public void requireNoOrderChange(Order order) {
         if (changes.unresolved(order.getId())) reject("未解決の注文変更があるため、この操作を開始できません。");
     }

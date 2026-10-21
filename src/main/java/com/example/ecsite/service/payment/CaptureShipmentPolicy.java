@@ -23,9 +23,16 @@ public class CaptureShipmentPolicy {
     public record Decision(Disposition disposition, Reason reason, Long paymentId, Long captureTransactionId) {}
 
     public Decision classify(Order order, List<Payment> payments, List<PaymentTransaction> history, PaymentOperationSnapshot expected) {
+        return classify(order,payments,history,expected,Set.of());
+    }
+    public Decision classify(Order order, List<Payment> payments, List<PaymentTransaction> history,
+            PaymentOperationSnapshot expected, Set<UUID> completedChanges) {
+        return classify(order,payments,history,expected,completedChanges,Set.of());
+    }
+    public Decision classify(Order order, List<Payment> payments, List<PaymentTransaction> history,
+            PaymentOperationSnapshot expected, Set<UUID> completedChanges, Set<UUID> abortedChanges) {
         if(!validInput(order,payments,history)) return recovery(Reason.INVALID_INPUT);
-        if(history.stream().anyMatch(t -> t.getPurpose()!=null && !new PaymentPurposePolicy()
-                .isUsableInStage1A(t.getTransactionType().name(),t.getPurpose()))) return recovery(Reason.INVALID_INPUT);
+        if(!PaymentPurposeResolver.usableHistory(order,payments,history,completedChanges,abortedChanges)) return recovery(Reason.INVALID_INPUT);
         if(!order.hasCompleteShippingPreparation()) return recovery(Reason.INVALID_PREPARATION);
         if(order.getStatus()!=OrderStatus.ORDERED && order.getStatus()!=OrderStatus.SHIPPED) return recovery(Reason.INVALID_SHIPMENT);
         var active=payments.stream().filter(p -> p.getStatus()!=PaymentStatus.FAILED && p.getStatus()!=PaymentStatus.CANCELLED).toList();
@@ -78,7 +85,7 @@ public class CaptureShipmentPolicy {
         return Objects.equals(authorization.getProviderTransactionId(),payment.getProviderPaymentId())
                 && evaluator.evaluate(order,payment,authorization).canCapture();
     }
-    private boolean validInput(Order order,List<Payment> payments,List<PaymentTransaction> history) {
+    static boolean validInput(Order order,List<Payment> payments,List<PaymentTransaction> history) {
         if(order==null || !positive(order.getId()) || order.getTotalAmount()<=0 || order.getContentRevision()<0 || payments==null || history==null) return false;
         Set<Long> paymentIds=new HashSet<>(),transactionIds=new HashSet<>(); Set<String> keys=new HashSet<>();
         for(Payment payment:payments) {
@@ -96,6 +103,6 @@ public class CaptureShipmentPolicy {
         }
         return true;
     }
-    private boolean positive(Long id) { return id!=null && id>0; }
+    private static boolean positive(Long id) { return id!=null && id>0; }
     private Decision recovery(Reason reason) { return new Decision(Disposition.RECOVERY_REQUIRED,reason,null,null); }
 }

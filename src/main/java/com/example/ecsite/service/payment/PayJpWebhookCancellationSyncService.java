@@ -21,6 +21,13 @@ public class PayJpWebhookCancellationSyncService {
 
     public PaymentSynchronizationOutcome synchronize(String providerPaymentId) {
         PaymentOperationSnapshot snapshot = snapshots.pendingForProvider(providerPaymentId, PaymentTransactionType.CANCEL).orElse(null);
+        // A new candidate Flow may be canceled before any Cancel transaction exists.
+        // Keep initial-order authorization semantics unchanged; only the dedicated result route may clean up a candidate.
+        if(snapshot==null){
+            var authorization=snapshots.pendingForProvider(providerPaymentId,PaymentTransactionType.AUTHORIZE).orElse(null);
+            if(authorization!=null&&authorization.purpose()==com.example.ecsite.entity.PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION)
+                snapshot=authorization;
+        }
         if (snapshot == null) {
             log.debug("Webhook synchronization skipped: operation=CANCEL, reason=NO_PENDING_OPERATION");
             return PaymentSynchronizationOutcome.SKIPPED;

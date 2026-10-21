@@ -68,7 +68,7 @@ public class CaptureShipmentOperations {
             if (candidates.size() != 1) throw recovery(orderId);
             saved = PaymentOperationSnapshot.from(candidates.getFirst());
         }
-        var decision = policy.classify(order, data.payments(), data.history(), saved);
+        var decision = policy.classify(order, data.payments(), data.history(), saved, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED) throw recovery(orderId);
         if (decision.disposition() != CaptureShipmentPolicy.Disposition.NEW) {
             return startResult(saved, decision.disposition() == CaptureShipmentPolicy.Disposition.CONTINUE
@@ -116,7 +116,7 @@ public class CaptureShipmentOperations {
         context.refreshWritableOrder(order);
         guard.requirePrepared(order);
         var data = load(order, snapshot);
-        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
             return new CaptureInitialPostPreparationService.AlreadyApplied();
         if (decision.disposition() != CaptureShipmentPolicy.Disposition.CONTINUE) throw recovery(order.getId());
@@ -174,7 +174,7 @@ public class CaptureShipmentOperations {
                 && Objects.equals(t.getPayment().getId(), order.getShipmentCapturePaymentId())).toList();
         if (captures.size() != 1) throw new CaptureRequeryRejectedException();
         var snapshot = expected == null ? PaymentOperationSnapshot.from(captures.getFirst()) : expected;
-        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
             return startResult(snapshot, PaymentStartDisposition.ALREADY_APPLIED);
         if (decision.disposition() != CaptureShipmentPolicy.Disposition.CONTINUE) throw new CaptureRequeryRejectedException();
@@ -192,9 +192,9 @@ public class CaptureShipmentOperations {
         LockedData data = load(order, snapshot);
         var target = data.history().stream().filter(t -> Objects.equals(t.getId(), snapshot.transactionId())).findFirst().orElse(null);
         var targetPayment = data.payments().stream().filter(p -> Objects.equals(p.getId(), snapshot.paymentId())).findFirst().orElse(null);
-        if (!new PaymentPurposeResolver().matches(order, targetPayment, target, snapshot, data.payments(), data.history()))
+        if (!new PaymentPurposeResolver().matches(order, targetPayment, target, snapshot, data.payments(), data.history(), paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order)))
             return PaymentResultApplication.CONFLICT;
-        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (!Objects.equals(snapshot.providerPaymentId(), result.providerTransactionId())) return PaymentResultApplication.CONFLICT;
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
             return result.status() == CaptureResultStatus.CAPTURED
