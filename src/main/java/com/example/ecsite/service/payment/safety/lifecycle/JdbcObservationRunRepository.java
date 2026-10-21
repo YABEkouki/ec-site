@@ -13,13 +13,13 @@ import static com.example.ecsite.service.payment.safety.lifecycle.ObservationRun
 final class JdbcObservationRunRepository {
     static final class IntegrityFailure extends RuntimeException { IntegrityFailure(){super("Observation audit integrity error");} }
     private static final String RUNS="payment_safety_classification_runs";
-    private static final List<String> COUNTS=List.of("processed_order_count","classified_order_count","review_order_count","acquisition_failure_attempt_count","assembly_failure_attempt_count","persistence_failure_attempt_count","interrupted_attempt_count","retry_attempt_count","unresolved_failure_order_count","not_found_order_count","skipped_order_count");
+    static final List<String> COUNTS=List.of("processed_order_count","classified_order_count","review_order_count","acquisition_failure_attempt_count","assembly_failure_attempt_count","persistence_failure_attempt_count","interrupted_attempt_count","retry_attempt_count","unresolved_failure_order_count","not_found_order_count","skipped_order_count");
     private final JdbcObservationLifecycleEventStore events=new JdbcObservationLifecycleEventStore();
-    private record Row(ObservationRunRequest request,ObservationRunReceipt.RunView view,boolean zeroCounts) {}
+    record Row(ObservationRunRequest request,ObservationRunReceipt.RunView view,boolean zeroCounts,List<Long> counts) {}
     static Instant now(Connection c) throws SQLException {
         try(var q=c.prepareStatement("select clock_timestamp()");var r=q.executeQuery()){if(!r.next())throw new SQLException("Database time unavailable","08000");return r.getObject(1,OffsetDateTime.class).toInstant();}
     }
-    private void requireTx(Connection c) throws SQLException {
+    void requireTx(Connection c) throws SQLException {
         if(c.getAutoCommit() || c.isReadOnly() || c.getTransactionIsolation()!=Connection.TRANSACTION_READ_COMMITTED)throw new SQLNonTransientException("Writable READ COMMITTED transaction required","25000");
         try(var q=c.prepareStatement("select current_setting('transaction_isolation'),current_setting('transaction_read_only')");var r=q.executeQuery()) {
             if(!r.next() || !"read committed".equals(r.getString(1)) || !"off".equals(r.getString(2)))throw new SQLNonTransientException("Actual writable READ COMMITTED transaction required","25000");
@@ -115,7 +115,7 @@ final class JdbcObservationRunRepository {
             q.setObject(1,id);q.setObject(2,id);try(var r=q.executeQuery()){if(!r.next())throw new IntegrityFailure();return r.getBoolean(1);}
         }
     }
-    private Optional<Row> lock(Connection c,UUID id) throws SQLException {
+    Optional<Row> lock(Connection c,UUID id) throws SQLException {
         try(var q=c.prepareStatement("select * from "+RUNS+" where id=? for no key update")) {
             q.setObject(1,id);try(var r=q.executeQuery()) {
                 if(!r.next())return Optional.empty();
@@ -129,10 +129,10 @@ final class JdbcObservationRunRepository {
                     if(!m.classificationContractVersion().equals(r.getString("classification_contract_version")) || !m.classifierImplVersion().equals(r.getString("classifier_impl_version")) || m.fingerprintFormatVersion()!=r.getShort("fingerprint_format_version")
                         || !s.kind().name().equals(r.getString("scope_kind")) || s.lowerOrderIdExclusive()!=r.getLong("lower_order_id_exclusive") || s.upperOrderIdInclusive()!=r.getLong("upper_order_id_inclusive")
                         || !Objects.equals(s.targetOrderId(),r.getObject("target_order_id",Long.class)) || r.getObject("resume_of_run_id")!=null)throw new IntegrityFailure();
-                    boolean zero=true;for(var count:COUNTS)if(r.getLong(count)!=0)zero=false;
+                    var counts=new ArrayList<Long>();boolean zero=true;for(var count:COUNTS){long value=r.getLong(count);counts.add(value);if(value!=0)zero=false;}
                     var lease=r.getObject("lease_until",OffsetDateTime.class);
                     var view=new ObservationRunReceipt.RunView(id,r.getString("status"),r.getObject("lease_owner",UUID.class),r.getLong("lease_epoch"),r.getLong("version"),lease==null?null:lease.toInstant(),r.getLong("cursor_order_id"),now(c));
-                    return Optional.of(new Row(request,view,zero));
+                    return Optional.of(new Row(request,view,zero,List.copyOf(counts)));
                 }catch(IllegalArgumentException | NullPointerException corrupt){throw new IntegrityFailure();}
             }
         }

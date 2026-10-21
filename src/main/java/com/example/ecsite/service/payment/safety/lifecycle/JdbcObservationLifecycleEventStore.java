@@ -12,6 +12,12 @@ final class JdbcObservationLifecycleEventStore {
         try(var q=c.prepareStatement("select * from payment_safety_audit_events where event_uuid=?")) {
             q.setObject(1,uuid);try(var r=q.executeQuery()) {
                 if(!r.next())return Optional.empty();
+                return Optional.of(read(r));
+            }
+        }
+    }
+    /** Maps and verifies one complete immutable row; used by the bounded ORDER ledger reader. */
+    Stored read(ResultSet r) throws SQLException {
                 var record=new AuditEventDigestV1.Record(r.getString("event_scope"),r.getString("event_type"),r.getObject("run_id",UUID.class),
                     r.getObject("case_id",Long.class),r.getObject("order_id",Long.class),r.getObject("target_order_id",Long.class),r.getObject("attempt_no",Integer.class),r.getObject("lease_epoch",Long.class),
                     r.getObject("assessment_id",Long.class),r.getObject("case_version_before",Long.class),r.getObject("case_version_after",Long.class),r.getString("from_status"),r.getString("to_status"),r.getString("outcome"),
@@ -19,9 +25,7 @@ final class JdbcObservationLifecycleEventStore {
                     r.getString("comment"),r.getString("error_stage"),r.getString("error_code"),r.getString("sql_state"),r.getString("error_summary"),r.getShort("payload_format_version"),r.getString("payload"));
                 String digest=r.getString("record_digest");
                 try{AuditEventDigestV1.verify(record,digest);}catch(IllegalArgumentException corrupt){throw new JdbcObservationRunRepository.IntegrityFailure();}
-                return Optional.of(new Stored(uuid,digest,record));
-            }
-        }
+                return new Stored(r.getObject("event_uuid",UUID.class),digest,record);
     }
     boolean matches(Stored stored,ObservationEventFactory.Event expected) {
         return stored.uuid().equals(expected.eventUuid()) && stored.digest().equals(expected.recordDigest())
