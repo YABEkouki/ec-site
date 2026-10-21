@@ -13,7 +13,7 @@ import java.io.*;
 import java.security.*;
 import java.util.*;
 
-/** Internal stage-II API. Accepts only increases; no customer endpoint or financial calls. */
+/** Accepts existing-item increases and local reservations only. Never calls a financial API. */
 @Service
 public class OrderIncreaseService {
     public record Request(long orderId,long customerId,UUID submissionKey,int baseRevision,Map<Long,Integer> quantities) {
@@ -51,7 +51,12 @@ public class OrderIncreaseService {
         this.calculator=calculator;this.deadline=deadline;this.policy=policy;this.inventory=inventory;this.em=em;
     }
     @Transactional
-    public OrderChangeStore.Operation accept(Request request){
+    public OrderChangeStore.Operation accept(Request request){return accept(request,null);}
+    @Transactional
+    public OrderChangeStore.Operation acceptConfirmed(Preview preview){
+        Objects.requireNonNull(preview);return accept(preview.request(),preview);
+    }
+    private OrderChangeStore.Operation accept(Request request,Preview confirmed){
         Objects.requireNonNull(request);
         context.requireCleanWritableReadCommitted();
         var order=lockedOrder(request.orderId(),request.customerId());
@@ -64,27 +69,13 @@ public class OrderIncreaseService {
         guard.requireNoOrderChange(order);
         if(order.getStatus()!=OrderStatus.ORDERED || order.getContentRevision()!=request.baseRevision())
             throw new IllegalStateException("Order state or revision changed");
-        var all=order.getItems();
-        if(all.isEmpty() || all.size()>1000)throw new IllegalStateException("Invalid order item set");
-        var byId=new HashMap<Long,OrderItem>();all.forEach(i->{if(byId.put(i.getId(),i)!=null)throw new IllegalStateException("Duplicate item");});
-        for(var e:request.quantities().entrySet()){
-            var item=byId.get(e.getKey());
-            if(item==null || e.getValue()<=item.getQuantity())throw new IllegalArgumentException("Only existing-item increases are accepted");
-        }
-        // This locks all Payments in ascending ID order and validates complete saved history.
+        var amount=candidateAmount(order,request);
+        if(confirmed!=null && (confirmed.beforeAmount()!=order.getTotalAmount() || !confirmed.amount().equals(amount)
+                || !confirmed.lines().equals(lines(order,request.quantities()))))
+            throw new IllegalStateException("Candidate pricing changed; confirmation is required again");
+        // Lock and validate saved financial history only when accepting, never while previewing.
         long payment=active.initializeForOrderChange(order.getId());
-        var pricing=new OrderPricingContext();long subtotal=0;
-        for(var item:all){
-            int quantity=request.quantities().getOrDefault(item.getId(),item.getQuantity());
-            subtotal=Math.addExact(subtotal,Math.multiplyExact((long)item.getPrice(),quantity));
-            if(item.getPrice()<0 || subtotal>Integer.MAX_VALUE)throw new IllegalArgumentException("Candidate amount exceeds supported range");
-            pricing.addItem(item.getPrice(),quantity,item.getTaxCategoryId(),item.getTaxCategoryCode(),item.getTaxCategoryName(),item.getTaxRate());
-        }
-        var shipping=order.getCharges().stream().filter(c->c.getChargeType()==OrderChargeType.SHIPPING).toList();
-        if(shipping.size()!=1 || order.getCharges().size()!=1)throw new IllegalStateException("Shipping snapshot is ambiguous");
-        var amount=calculator.calculate(pricing,ChargeTaxSnapshot.from(shipping.getFirst()));
-        if(amount.charges().size()!=1 || amount.totalAmount()<=0 || amount.taxAmount()<0
-                || (long)amount.itemSubtotal()+amount.chargeTotal()!=amount.totalAmount())throw new IllegalStateException("Unsupported candidate charges");
+        var byId=new HashMap<Long,OrderItem>();order.getItems().forEach(i->byId.put(i.getId(),i));
         var changed=request.quantities().keySet().stream().map(byId::get)
                 .sorted(Comparator.comparing(OrderItem::getProductId).thenComparing(OrderItem::getId)).toList();
         // Lock ALL Products before accepting the deadline or making the first reservation.
@@ -103,10 +94,65 @@ public class OrderIncreaseService {
         }
         return store.operation(order.getId(),id).orElseThrow();
     }
+    public record Line(long id,String name,int price,int beforeQuantity,int afterQuantity){}
+    public record Preview(Request request,int beforeAmount,OrderAmount amount,List<Line> lines){
+        public Preview{lines=List.copyOf(lines);}
+    }
+    public record Input(long orderId,int revision,int totalAmount,List<Line> lines,OrderChangeStore.Operation pending,boolean available){
+        public Input{lines=List.copyOf(lines);}
+    }
+    @Transactional
+    public Input input(long orderId,long customerId){
+        var order=lockedOrder(orderId,customerId);
+        var pending=store.unresolvedOperation(orderId).orElse(null);
+        return new Input(orderId,order.getContentRevision(),order.getTotalAmount(),lines(order,Map.of()),pending,
+            pending==null && order.getStatus()==OrderStatus.ORDERED && policy.allowsModification(order,orders.findCurrentTimeInTokyo()));
+    }
+    @Transactional
+    public Preview preview(Request request){
+        var order=lockedOrder(request.orderId(),request.customerId());
+        guard.requireNoOrderChange(order);
+        if(order.getStatus()!=OrderStatus.ORDERED || order.getContentRevision()!=request.baseRevision())
+            throw new IllegalStateException("Order state or revision changed");
+        deadline.requireAllowed(order);
+        return new Preview(request,order.getTotalAmount(),candidateAmount(order,request),lines(order,request.quantities()));
+    }
+    @Transactional
+    public OrderChangeStore.Operation status(long orderId,long customerId,UUID id){
+        lockedOrder(orderId,customerId);
+        return store.operation(orderId,id).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId));
+    }
+    private List<Line> lines(Order order,Map<Long,Integer> quantities){
+        if(order.getItems().isEmpty() || order.getItems().size()>1000)throw new IllegalStateException("Unsupported order size");
+        return order.getItems().stream().map(i->new Line(i.getId(),i.getProductName(),i.getPrice(),i.getQuantity(),
+            quantities.getOrDefault(i.getId(),i.getQuantity()))).toList();
+    }
+    private OrderAmount candidateAmount(Order order,Request request){
+        var all=order.getItems();
+        if(all.isEmpty() || all.size()>1000)throw new IllegalStateException("Invalid order item set");
+        var byId=new HashMap<Long,OrderItem>();all.forEach(i->{if(byId.put(i.getId(),i)!=null)throw new IllegalStateException("Duplicate item");});
+        for(var e:request.quantities().entrySet()){
+            var item=byId.get(e.getKey());
+            if(item==null || e.getValue()<=item.getQuantity())throw new IllegalArgumentException("Only existing-item increases are accepted");
+        }
+        var pricing=new OrderPricingContext();long subtotal=0;
+        for(var item:all){
+            int quantity=request.quantities().getOrDefault(item.getId(),item.getQuantity());
+            subtotal=Math.addExact(subtotal,Math.multiplyExact((long)item.getPrice(),quantity));
+            if(item.getPrice()<0 || subtotal>Integer.MAX_VALUE)throw new IllegalArgumentException("Candidate amount exceeds supported range");
+            pricing.addItem(item.getPrice(),quantity,item.getTaxCategoryId(),item.getTaxCategoryCode(),item.getTaxCategoryName(),item.getTaxRate());
+        }
+        var shipping=order.getCharges().stream().filter(c->c.getChargeType()==OrderChargeType.SHIPPING).toList();
+        if(shipping.size()!=1 || order.getCharges().size()!=1)throw new IllegalStateException("Shipping snapshot is ambiguous");
+        var amount=calculator.calculate(pricing,ChargeTaxSnapshot.from(shipping.getFirst()));
+        if(amount.charges().size()!=1 || amount.totalAmount()<=0 || amount.taxAmount()<0
+                || (long)amount.itemSubtotal()+amount.chargeTotal()!=amount.totalAmount())throw new IllegalStateException("Unsupported candidate charges");
+        return amount;
+    }
     @Transactional
     public void abort(long orderId,long customerId,UUID operationId){
         context.requireCleanWritableReadCommitted();var order=lockedOrder(orderId,customerId);
-        release(order,store.operation(orderId,operationId).orElseThrow());
+        release(order,store.operation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId)));
     }
     /** Internal expiry hook: no scheduler and no automatic financial cleanup is introduced. */
     @Transactional
@@ -117,7 +163,7 @@ public class OrderIncreaseService {
         release(order,op);return true;
     }
     private Order lockedOrder(long id,long customer){
-        var order=orders.findByIdAndUserIdForUpdate(id,customer).orElseThrow(()->new IllegalStateException("Order unavailable"));
+        var order=orders.findByIdAndUserIdForUpdate(id,customer).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(id));
         context.refreshWritableOrder(order);return order;
     }
     private void release(Order order,OrderChangeStore.Operation op){

@@ -22,6 +22,9 @@ public class OrderChangeStore {
     public record Operation(UUID id,long orderId,long customerId,String requestDigest,String state,
             int beforeAmount,int afterAmount,LocalDateTime graceUntil,LocalDateTime switchDecidedAt,long version){}
     public record Reservation(long itemId,long productId,int quantity,String state){}
+    public Optional<Operation> unresolvedOperation(long orderId){
+        return find("order_id=? and state not in ('COMPLETED','ABORTED')",orderId);
+    }
     public Optional<Operation> submission(long orderId,UUID key){return find("order_id=? and submission_key=?",orderId,key);}
     public Optional<Operation> operation(long orderId,UUID id){return find("order_id=? and id=?",orderId,id);}
     private Optional<Operation> find(String predicate,Object... args){
