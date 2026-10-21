@@ -73,9 +73,78 @@ public final class PaymentPurposeResolver {
                         || (operation.getInitiatorType()==PaymentTransactionInitiatorType.ADMIN
                             && operation.getInitiatorId()!=null && operation.getInitiatorId()>0));
         }
-        return order.getStatus()==OrderStatus.SHIPPED && own.size()==2
+        return order.getStatus()==OrderStatus.SHIPPED
+                && own.stream().filter(t->!failedOrdinaryCancellation(order,payment,t)).count()==2
                 && new CaptureShipmentSnapshotMatcher().matches(order,payment,operation,snapshot);
     }
+    private boolean failedOrdinaryCancellation(Order order, Payment payment, PaymentTransaction transaction) {
+        return transaction.getTransactionType()==PaymentTransactionType.CANCEL
+                && transaction.getStatus()==PaymentTransactionStatus.FAILED
+                && transaction.getOrderChangeOperationId()==null
+                && (transaction.getPurpose()==null || transaction.getPurpose()==PaymentTransactionPurpose.ORDER_CANCELLATION)
+                && transaction.getAmount()==payment.getAmount()
+                && transaction.getOrderContentRevision()<=order.getContentRevision()
+                && (transaction.getProviderTransactionId()==null
+                    || Objects.equals(transaction.getProviderTransactionId(),payment.getProviderPaymentId()))
+                && ((transaction.getInitiatorType()==PaymentTransactionInitiatorType.USER
+                        && Objects.equals(transaction.getInitiatorId(),order.getUserId()))
+                    || (transaction.getInitiatorType()==PaymentTransactionInitiatorType.ADMIN
+                        && transaction.getInitiatorId()!=null && transaction.getInitiatorId()>0));
+    }
+
+    /** Persisted purpose evidence only. Does not establish current eligibility or permit mutation.
+     * Caller first checks every immutable snapshot identity/request field under the existing locks. */
+    boolean matchesResultIdentity(Order order, Payment payment, PaymentTransaction operation,
+            PaymentOperationSnapshot snapshot, List<PaymentTransaction> history) {
+        if (operation.getPurpose()!=snapshot.purpose() || operation.getOrderChangeOperationId()!=null) return false;
+        var expected=switch(operation.getTransactionType()) {
+            case AUTHORIZE -> PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION;
+            case CANCEL -> PaymentTransactionPurpose.ORDER_CANCELLATION;
+            default -> null;
+        };
+        if (expected==null || (operation.getPurpose()!=null && operation.getPurpose()!=expected)) return false;
+        var own=history.stream().filter(t->Objects.equals(t.getPayment().getId(),payment.getId())).toList();
+        if (own.stream().anyMatch(t->t.getOrderChangeOperationId()!=null
+                || (t.getTransactionType()!=PaymentTransactionType.AUTHORIZE
+                    && t.getTransactionType()!=PaymentTransactionType.CAPTURE
+                    && t.getTransactionType()!=PaymentTransactionType.CANCEL)
+                || (t.getPurpose()!=null && !new PaymentPurposePolicy().isUsableInStage1A(
+                        t.getTransactionType().name(),t.getPurpose())))) return false;
+        if (own.stream().filter(t->t.getTransactionType()==PaymentTransactionType.CAPTURE).count()>1
+                || own.stream().filter(t->t.getStatus()==PaymentTransactionStatus.PENDING).count()>1
+                || (own.stream().anyMatch(t->t.getTransactionType()==PaymentTransactionType.CANCEL
+                            && t.getStatus()==PaymentTransactionStatus.SUCCEEDED)
+                    && own.stream().anyMatch(t->t.getTransactionType()==PaymentTransactionType.CAPTURE))) return false;
+        var auth=own.stream().filter(t->t.getTransactionType()==PaymentTransactionType.AUTHORIZE).toList();
+        if (auth.size()!=1 || auth.getFirst().getAmount()!=payment.getAmount()
+                || operation.getAmount()!=payment.getAmount()) return false;
+        if (own.stream().anyMatch(t->t.getAmount()<=0 || t.getOrderContentRevision()<auth.getFirst().getOrderContentRevision()
+                || t.getOrderContentRevision()>order.getContentRevision()
+                || (t.getProviderTransactionId()!=null
+                    && !Objects.equals(t.getProviderTransactionId(),payment.getProviderPaymentId()))
+                || (t.getTransactionType()==PaymentTransactionType.CANCEL && t.getAmount()!=payment.getAmount())
+                || (t.getTransactionType()==PaymentTransactionType.CAPTURE && t.getAmount()>payment.getAmount()))) return false;
+        if (operation.getProviderTransactionId()!=null
+                && !Objects.equals(operation.getProviderTransactionId(),payment.getProviderPaymentId())) return false;
+        if (auth.getFirst().getStatus()==PaymentTransactionStatus.SUCCEEDED
+                && !Objects.equals(auth.getFirst().getProviderTransactionId(),payment.getProviderPaymentId())) return false;
+        if (expected==PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION)
+            return Objects.equals(auth.getFirst().getId(),operation.getId());
+        var authorization=auth.getFirst();
+        boolean initial=authorization.getOrderChangeOperationId()==null
+                && (authorization.getPurpose()==null
+                    || authorization.getPurpose()==PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);
+        // A changed-generation cancellation still needs the full completed-operation proof in matches().
+        if (!initial) return false;
+        return authorization.getStatus()==PaymentTransactionStatus.SUCCEEDED
+                && Objects.equals(authorization.getProviderTransactionId(),payment.getProviderPaymentId())
+                && operation.getOrderContentRevision()>=authorization.getOrderContentRevision()
+                && ((operation.getInitiatorType()==PaymentTransactionInitiatorType.USER
+                        && Objects.equals(operation.getInitiatorId(),order.getUserId()))
+                    || (operation.getInitiatorType()==PaymentTransactionInitiatorType.ADMIN
+                        && operation.getInitiatorId()!=null && operation.getInitiatorId()>0));
+    }
+
     /** Completed changes grant supporting evidence only; ordinary entrypoints still enforce their own purpose. */
     static boolean usableHistory(Order order, List<Payment> payments, List<PaymentTransaction> history,
             Set<UUID> completedChanges) {

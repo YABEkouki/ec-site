@@ -101,6 +101,23 @@ class PaymentPurposeResolverTest {
         ReflectionTestUtils.setField(order,"status",OrderStatus.ORDERED);
         assertFalse(resolver.matches(order,p,cancel,snapshot,List.of(p),List.of(auth,cancel),java.util.Set.of(change)));
     }
+    @Test void staleCancellationIdentityRejectsContradictorySupportingCapture() {
+        var p=payment();p.setProviderPaymentId("flow",now);p.markAuthorized(now);
+        var auth=new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,100,0,"auth",now);
+        ReflectionTestUtils.setField(auth,"id",30L);auth.markSucceeded("flow",now);
+        var cancel=new PaymentTransaction(p,PaymentTransactionType.CANCEL,100,0,"cancel",now,
+                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN,1L,"admin",null));
+        ReflectionTestUtils.setField(cancel,"id",31L);cancel.markFailed(null,"failed","failed",now);
+        var capture=new PaymentTransaction(p,PaymentTransactionType.CAPTURE,60,0,"capture",now);
+        ReflectionTestUtils.setField(capture,"id",32L);
+        var snapshot=PaymentOperationSnapshot.from(cancel);var history=List.of(auth,cancel,capture);
+        assertTrue(resolver.matchesResultIdentity(order,p,cancel,snapshot,history));
+        ReflectionTestUtils.setField(capture,"amount",101);
+        assertFalse(resolver.matchesResultIdentity(order,p,cancel,snapshot,history));
+        ReflectionTestUtils.setField(capture,"amount",60);
+        ReflectionTestUtils.setField(capture,"providerTransactionId","other-flow");
+        assertFalse(resolver.matchesResultIdentity(order,p,cancel,snapshot,history));
+    }
     @Test void endedPaymentWithPendingOperationIsNotIgnored() {
         var p=payment();var auth=new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,100,0,"auth",now);
         ReflectionTestUtils.setField(auth,"id",30L);

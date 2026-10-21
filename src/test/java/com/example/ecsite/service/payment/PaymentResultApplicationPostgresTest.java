@@ -293,6 +293,57 @@ class PaymentResultApplicationPostgresTest {
         assertThat(number("stock_movements",f)).isEqualTo(2);assertThat(stock(f)).containsExactly(12,12);
         verify(gateway,times(2)).retrievePaymentFlow(f.providerId);verify(gateway,never()).cancelAuthorization(any());
     }
+    @ParameterizedTest @ValueSource(strings={"paymentId","transactionId","idempotencyKey","amount","purpose"})
+    void obsoleteAuthorizationStillRejectsInvalidIdentity(String field) {
+        Fixture f=fixture(false);var start=authorizationStart.start(f.orderId);
+        authResult.setProviderPaymentId(start.snapshot(),f.providerId);
+        jdbc.update("update orders set content_revision=content_revision+1 where id=?",f.orderId);
+        Object value=switch(field) {
+            case "paymentId", "transactionId" -> Long.MAX_VALUE;
+            case "amount" -> start.snapshot().amount()+1;
+            case "purpose" -> PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION;
+            default -> "wrong-key";
+        };
+        var before=state(f);
+        assertThat(authResult.setProviderPaymentId(replace(start.snapshot(),field,value),f.providerId))
+                .isEqualTo(PaymentResultApplication.CONFLICT);
+        assertThat(state(f)).isEqualTo(before);
+    }
+    @ParameterizedTest @ValueSource(strings={"purpose","providerPaymentId","amount","orderContentRevision"})
+    void terminalCancellationStillRejectsInvalidIdentity(String field) {
+        Fixture f=fixture(true);var start=userCancelStart.start(f.orderId,f.userId,"user");
+        tx(()->{transactions.findById(start.transactionId()).orElseThrow().markFailed(null,"failed","failed",LocalDateTime.now());return null;});
+        Object value=switch(field) {
+            case "purpose" -> PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL;
+            case "amount" -> start.snapshot().amount()+1;
+            case "orderContentRevision" -> start.snapshot().orderContentRevision()+1;
+            default -> "wrong-flow";
+        };
+        var before=state(f);
+        assertThat(cancelResult.apply(replace(start.snapshot(),field,value),new CancellationResult(CancellationResultStatus.CANCELLED,f.providerId)))
+                .isEqualTo(PaymentResultApplication.CONFLICT);
+        assertThat(state(f)).isEqualTo(before);
+    }
+    @Test void terminalAuthorizationRejectsDifferentResultFlow() {
+        Fixture f=fixture(false);var start=authorizationStart.start(f.orderId);
+        authResult.setProviderPaymentId(start.snapshot(),f.providerId);
+        var snapshot=snapshots.find(start.transactionId()).orElseThrow();
+        assertThat(authResult.apply(snapshot,new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED,f.providerId,null,null)))
+                .isEqualTo(PaymentResultApplication.APPLIED);
+        var before=state(f);
+        assertThat(authResult.apply(snapshot,new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED,"different-flow",null,null)))
+                .isEqualTo(PaymentResultApplication.CONFLICT);
+        assertThat(state(f)).isEqualTo(before);
+    }
+    @Test void oldCancellationWithContradictoryAuthorizationRemainsConflict() {
+        Fixture f=fixture(true);var start=userCancelStart.start(f.orderId,f.userId,"user");
+        tx(()->{transactions.findById(start.transactionId()).orElseThrow().markFailed(null,"failed","failed",LocalDateTime.now());return null;});
+        jdbc.update("update payment_transactions set provider_transaction_id='wrong-flow' where payment_id=? and transaction_type='AUTHORIZE'",start.paymentId());
+        var before=state(f);
+        assertThat(cancelResult.apply(start.snapshot(),new CancellationResult(CancellationResultStatus.CANCELLED,f.providerId)))
+                .isEqualTo(PaymentResultApplication.CONFLICT);
+        assertThat(state(f)).isEqualTo(before);
+    }
     @Test void oldCancelResultDoesNotOverwriteCurrentCapture() {
         Fixture f=fixture(true);var old=userCancelStart.start(f.orderId,f.userId,"old");
         tx(()->{transactions.findById(old.transactionId()).orElseThrow().markFailed(null,"failed","failed",LocalDateTime.now());return null;});
