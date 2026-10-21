@@ -70,6 +70,7 @@ class PaymentServiceTest {
                 new PaymentConsistencyEvaluator(),
                 orderModificationGuard,
                 captureOperations,
+                mock(OrderPaymentGuard.class),
                 clock);
     }
 

@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(propagation = Propagation.MANDATORY)
 public class CaptureShipmentOperations {
+    private final OrderPaymentGuard paymentGuard;
     private final OrderRepository orders;
     private final PaymentRepository payments;
     private final PaymentTransactionRepository transactions;
@@ -42,7 +43,8 @@ public class CaptureShipmentOperations {
             PaymentTransactionRepository transactions, EntityManager em, OrderWriteContext context,
             OrderShipmentGuard guard, CaptureShipmentPolicy policy, OrderStatusHistoryService histories,
             CaptureRequestStore requests, CaptureConnectionProperties connection, PayJpProperties activeConnection,
-            PayJpSafetyProperties safety, OrderStatusHistoryRepository shipmentHistory) {
+            PayJpSafetyProperties safety, OrderStatusHistoryRepository shipmentHistory, OrderPaymentGuard paymentGuard) {
+        this.paymentGuard=paymentGuard;
         this.orders = orders; this.payments = payments; this.transactions = transactions; this.em = em;
         this.context = context; this.guard = guard; this.policy = policy; this.histories = histories;
         this.requests = requests; this.connection = connection; this.activeConnection = activeConnection;
@@ -56,6 +58,7 @@ public class CaptureShipmentOperations {
         Order order = orders.findByIdForUpdate(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
         context.refreshWritableOrder(order);
         if (order.getStatus() != OrderStatus.ORDERED && order.getStatus() != OrderStatus.SHIPPED) throw recovery(orderId);
+        if (order.getStatus()==OrderStatus.ORDERED) paymentGuard.requireNoOrderChange(order);
         guard.requirePrepared(order);
         LockedData data = load(order, null);
         PaymentOperationSnapshot saved = null;

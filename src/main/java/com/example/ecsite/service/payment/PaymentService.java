@@ -42,6 +42,7 @@ public class PaymentService {
     private final Clock clock;
     private final CaptureShipmentOperations captureOperations;
     private final OrderModificationGuard orderModificationGuard;
+    private final OrderPaymentGuard orderPaymentGuard;
 
     @Autowired
     public PaymentService(
@@ -49,7 +50,7 @@ public class PaymentService {
             PaymentTransactionRepository paymentTransactionRepository,
             PaymentConsistencyEvaluator paymentConsistencyEvaluator,
             OrderModificationGuard orderModificationGuard,
-            CaptureShipmentOperations captureOperations) {
+            CaptureShipmentOperations captureOperations, OrderPaymentGuard orderPaymentGuard) {
 
         this(
                 paymentRepository,
@@ -57,6 +58,7 @@ public class PaymentService {
                 paymentConsistencyEvaluator,
                 orderModificationGuard,
                 captureOperations,
+                orderPaymentGuard,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -66,6 +68,7 @@ public class PaymentService {
             PaymentConsistencyEvaluator paymentConsistencyEvaluator,
             OrderModificationGuard orderModificationGuard,
             CaptureShipmentOperations captureOperations,
+            OrderPaymentGuard orderPaymentGuard,
             Clock clock) {
 
         this.paymentRepository = paymentRepository;
@@ -74,6 +77,7 @@ public class PaymentService {
         this.clock = clock;
         this.captureOperations = captureOperations;
         this.orderModificationGuard = orderModificationGuard;
+        this.orderPaymentGuard = orderPaymentGuard;
     }
 
     /**
@@ -119,6 +123,7 @@ public class PaymentService {
 
     @Transactional
     public PaymentAuthorizationStart startAuthorization(Order order) {
+        orderPaymentGuard.requireNoOrderChange(order);
 
         List<Payment> payments = paymentRepository
                 .findByOrderIdForUpdate(
@@ -382,6 +387,7 @@ public class PaymentService {
             Order order,
             PaymentTransactionInitiator initiator) {
 
+        orderPaymentGuard.requireNoOrderChange(order);
         List<Payment> payments = paymentRepository.findByOrderIdForUpdate(
                 order.getId());
         validateInactivePayments(payments);

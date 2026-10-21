@@ -31,7 +31,7 @@ class CaptureShipmentOperationsTest {
     com.example.ecsite.config.CaptureConnectionProperties connection=new com.example.ecsite.config.CaptureConnectionProperties("test", "account", "TEST", "https://api.pay.jp");
     com.example.ecsite.config.PayJpProperties active=new com.example.ecsite.config.PayJpProperties("pk_test_dummy", "sk_test_dummy", "https://api.pay.jp", "dummy");
     com.example.ecsite.config.PayJpSafetyProperties safety=new com.example.ecsite.config.PayJpSafetyProperties(java.time.Duration.ofSeconds(5),java.time.Duration.ofSeconds(15),java.time.Duration.ofHours(23));
-    CaptureShipmentOperations service=new CaptureShipmentOperations(orders,payments,transactions,em,context,new OrderShipmentGuard(),policy,histories,requests,connection,active,safety,mock(OrderStatusHistoryRepository.class));
+    CaptureShipmentOperations service=new CaptureShipmentOperations(orders,payments,transactions,em,context,new OrderShipmentGuard(),policy,histories,requests,connection,active,safety,mock(OrderStatusHistoryRepository.class),mock(OrderPaymentGuard.class));
     LocalDateTime now=LocalDateTime.of(2026,10,19,15,0);
     Order order=new Order(1L,200,now.minusDays(1),now.minusHours(1));
     Payment payment;

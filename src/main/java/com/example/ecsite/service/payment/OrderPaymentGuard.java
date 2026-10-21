@@ -13,10 +13,13 @@ import com.example.ecsite.repository.PaymentTransactionRepository;
 @Service
 @Transactional(propagation = Propagation.MANDATORY)
 public class OrderPaymentGuard {
+    private final com.example.ecsite.service.orderchange.OrderChangeStore changes;
     private final PaymentRepository payments;
     private final PaymentTransactionRepository transactions;
 
-    public OrderPaymentGuard(PaymentRepository payments, PaymentTransactionRepository transactions) {
+    public OrderPaymentGuard(PaymentRepository payments, PaymentTransactionRepository transactions,
+            com.example.ecsite.service.orderchange.OrderChangeStore changes) {
+        this.changes = changes;
         this.payments = payments;
         this.transactions = transactions;
     }
@@ -71,7 +74,12 @@ public class OrderPaymentGuard {
         return authorized != null;
     }
 
+    public void requireNoOrderChange(Order order) {
+        if (changes.unresolved(order.getId())) reject("未解決の注文変更があるため、この操作を開始できません。");
+    }
+
     private List<Payment> lockedPayments(Order order) {
+        requireNoOrderChange(order);
         return payments.findByOrderIdForUpdate(order.getId());
     }
 
