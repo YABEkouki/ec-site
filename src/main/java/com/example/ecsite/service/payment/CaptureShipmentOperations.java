@@ -77,7 +77,7 @@ public class CaptureShipmentOperations {
         var now = orders.findCurrentTimeInTokyo();
         var capture = new PaymentTransaction(payment, PaymentTransactionType.CAPTURE, order.getTotalAmount(),
                 order.getContentRevision(), UUID.randomUUID().toString(), now,
-                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), internalNote));
+                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), internalNote), PaymentTransactionPurpose.SHIPMENT_CAPTURE);
         transactions.saveAndFlush(capture);
         var created = now.atZone(JST).toInstant();
         var http = CaptureHttpRequest.create(identity, payment.getProviderPaymentId(), capture.getAmount(), capture.getIdempotencyKey());
@@ -187,6 +187,10 @@ public class CaptureShipmentOperations {
         if (order.getStatus() != OrderStatus.SHIPPED || !order.hasCompleteShippingPreparation()
                 || !Objects.equals(order.getShipmentCapturePaymentId(), snapshot.paymentId())) return PaymentResultApplication.CONFLICT;
         LockedData data = load(order, snapshot);
+        var target = data.history().stream().filter(t -> Objects.equals(t.getId(), snapshot.transactionId())).findFirst().orElse(null);
+        var targetPayment = data.payments().stream().filter(p -> Objects.equals(p.getId(), snapshot.paymentId())).findFirst().orElse(null);
+        if (!new PaymentPurposeResolver().matches(order, targetPayment, target, snapshot, data.payments(), data.history()))
+            return PaymentResultApplication.CONFLICT;
         var decision = policy.classify(order, data.payments(), data.history(), snapshot);
         if (!Objects.equals(snapshot.providerPaymentId(), result.providerTransactionId())) return PaymentResultApplication.CONFLICT;
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)

@@ -31,6 +31,10 @@ public class PaymentTransaction {
     private PaymentTransactionType transactionType;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", length = 40, updatable = false)
+    private PaymentTransactionPurpose purpose;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private PaymentTransactionStatus status;
 
@@ -139,6 +143,32 @@ public class PaymentTransaction {
         this.idempotencyKey = idempotencyKey;
         this.createdAt = createdAt;
     }
+
+    public PaymentTransaction(Payment payment, PaymentTransactionType type, int amount, int revision,
+            String key, LocalDateTime createdAt, PaymentTransactionPurpose purpose) {
+        this(payment, type, amount, revision, key, createdAt);
+        requirePurpose(type, purpose);
+        this.purpose = purpose;
+    }
+
+    public PaymentTransaction(Payment payment, PaymentTransactionType type, int amount, int revision,
+            String key, LocalDateTime createdAt, PaymentTransactionInitiator initiator, PaymentTransactionPurpose purpose) {
+        this(payment, type, amount, revision, key, createdAt, initiator);
+        requirePurpose(type, purpose);
+        this.purpose = purpose;
+    }
+
+    private static void requirePurpose(PaymentTransactionType type, PaymentTransactionPurpose purpose) {
+        boolean valid = purpose != null && switch (purpose) {
+            case INITIAL_ORDER_AUTHORIZATION -> type == PaymentTransactionType.AUTHORIZE;
+            case ORDER_CANCELLATION -> type == PaymentTransactionType.CANCEL;
+            case SHIPMENT_CAPTURE -> type == PaymentTransactionType.CAPTURE;
+            default -> false;
+        };
+        if (!valid) throw new IllegalArgumentException("Unsupported payment purpose/type");
+    }
+
+    public PaymentTransactionPurpose getPurpose() { return purpose; }
 
     public Long getId() {
         return id;

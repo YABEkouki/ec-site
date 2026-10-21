@@ -606,4 +606,9 @@ class CaptureShipmentFlowPostgresTest {
     void await(CountDownLatch latch) {try{assertThat(latch.await(20,TimeUnit.SECONDS)).isTrue();}catch(InterruptedException e){Thread.currentThread().interrupt();throw new AssertionError(e);}}
     void blockedBy(int pid) throws Exception {long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);while(System.nanoTime()<until){if(jdbc.queryForObject("select count(*) from pg_stat_activity where datname=current_database() and ?=any(pg_blocking_pids(pid))",Integer.class,pid)>0)return;new CountDownLatch(1).await(20,TimeUnit.MILLISECONDS);}throw new AssertionError("No actual PostgreSQL lock wait");}
     record Fixture(Long order,Long payment,Long product,String provider) {}
+    @Test void captureWriterPersistsShipmentPurpose() {
+        Fixture f=fixture();var operation=begin(f);
+        assertThat(operation.snapshot().purpose()).isEqualTo(PaymentTransactionPurpose.SHIPMENT_CAPTURE);
+        assertThat(jdbc.queryForObject("select purpose from payment_transactions where id=?",String.class,operation.transactionId())).isEqualTo("SHIPMENT_CAPTURE");
+    }
 }

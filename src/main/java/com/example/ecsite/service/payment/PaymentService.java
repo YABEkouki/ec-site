@@ -20,6 +20,7 @@ import com.example.ecsite.entity.PaymentMethod;
 import com.example.ecsite.entity.PaymentProvider;
 import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.entity.PaymentTransaction;
+import com.example.ecsite.entity.PaymentTransactionPurpose;
 import com.example.ecsite.entity.PaymentTransactionInitiator;
 import com.example.ecsite.entity.PaymentTransactionStatus;
 import com.example.ecsite.entity.PaymentTransactionType;
@@ -172,6 +173,7 @@ public class PaymentService {
                 now);
 
         paymentRepository.save(payment);
+        order.bindActivePayment(payment);
 
         PaymentTransaction transaction = new PaymentTransaction(
                 payment,
@@ -179,7 +181,7 @@ public class PaymentService {
                 payment.getAmount(),
                 order.getContentRevision(),
                 UUID.randomUUID().toString(),
-                now);
+                now, PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);
 
         paymentTransactionRepository.save(transaction);
 
@@ -321,7 +323,7 @@ public class PaymentService {
                 payment.markRequiresAction(now);
             }
             case AUTHORIZED -> { payment.markAuthorized(now); transaction.markSucceeded(result.providerTransactionId(), now); }
-            case FAILED -> { payment.markFailed(now); transaction.markFailed(result.providerTransactionId(), result.failureCode(), result.failureMessage(), now); }
+            case FAILED -> { order.clearActivePaymentAfterTermination(payment.getId()); payment.markFailed(now); transaction.markFailed(result.providerTransactionId(), result.failureCode(), result.failureMessage(), now); }
             case PENDING, REQUIRES_PAYMENT_METHOD, REQUIRES_CONFIRMATION -> { }
         }
         return PaymentResultApplication.APPLIED;
@@ -446,7 +448,7 @@ public class PaymentService {
                 order.getContentRevision(),
                 UUID.randomUUID().toString(),
                 now,
-                initiator);
+                initiator, PaymentTransactionPurpose.ORDER_CANCELLATION);
 
         paymentTransactionRepository.save(transaction);
 
@@ -477,6 +479,7 @@ public class PaymentService {
                 || competingPending(target)) return PaymentResultApplication.IGNORED_STALE;
         if (result.status() == CancellationResultStatus.CANCELLED) {
             LocalDateTime now = LocalDateTime.now(clock);
+            order.clearActivePaymentAfterTermination(payment.getId());
             payment.markCancelled(now); transaction.markSucceeded(result.providerTransactionId(), now);
         }
         return PaymentResultApplication.APPLIED;
@@ -488,7 +491,8 @@ public class PaymentService {
         if (snapshot == null || snapshot.transactionId() == null || snapshot.paymentId() == null
                 || !Objects.equals(order.getId(), snapshot.orderId()) || snapshot.type() != type
                 || snapshot.idempotencyKey() == null || snapshot.idempotencyKey().isBlank()) return null;
-        Payment payment = paymentRepository.findByIdForUpdate(snapshot.paymentId()).orElse(null);
+        List<Payment> lockedPayments = paymentRepository.findByOrderIdForUpdate(order.getId());
+        Payment payment = lockedPayments.stream().filter(p -> Objects.equals(p.getId(), snapshot.paymentId())).findFirst().orElse(null);
         PaymentTransaction transaction = paymentTransactionRepository.findById(snapshot.transactionId()).orElse(null);
         if (payment == null || transaction == null
                 || !Objects.equals(payment.getOrder().getId(), order.getId())
@@ -507,6 +511,9 @@ public class PaymentService {
                 || !Objects.equals(payment.getProviderPaymentId(), snapshot.providerPaymentId()))) return null;
         if (assigningProviderId && snapshot.providerPaymentId() != null
                 && !Objects.equals(payment.getProviderPaymentId(), snapshot.providerPaymentId())) return null;
+        List<PaymentTransaction> history = lockedPayments.stream().flatMap(p -> paymentTransactionRepository
+                .findByPaymentIdOrderByCreatedAtAscIdAsc(p.getId()).stream()).toList();
+        if (!new PaymentPurposeResolver().matches(order, payment, transaction, snapshot, lockedPayments, history)) return null;
         return new ResultTarget(payment, transaction);
     }
 
@@ -597,7 +604,10 @@ public class PaymentService {
         long active = payments.stream()
                 .filter(p -> p.getStatus() != PaymentStatus.FAILED && p.getStatus() != PaymentStatus.CANCELLED)
                 .count();
-        if (active != 1) {
+        boolean referenceMismatch = payments.stream().anyMatch(p -> p.getStatus() != PaymentStatus.FAILED
+                && p.getStatus() != PaymentStatus.CANCELLED && p.getOrder().getActivePaymentId() != null
+                && !Objects.equals(p.getOrder().getActivePaymentId(), p.getId()));
+        if (active != 1 || referenceMismatch) {
             throw new IllegalStateException("有効な決済が一意でないため、決済操作を開始できません。");
         }
     }
@@ -614,6 +624,9 @@ public class PaymentService {
     private void validatePendingSnapshot(Order order, Payment payment,
             PaymentTransaction transaction, boolean matchOrderAmount) {
         int expectedAmount = matchOrderAmount ? order.getTotalAmount() : payment.getAmount();
+        if (transaction.getPurpose() != null && !new PaymentPurposePolicy().isUsableInStage1A(
+                transaction.getTransactionType().name(), transaction.getPurpose()))
+            throw new IllegalStateException("Unsupported pending payment purpose");
         if (transaction.getAmount() != expectedAmount
                 || transaction.getOrderContentRevision() != order.getContentRevision()
                 || (transaction.getTransactionType() == PaymentTransactionType.AUTHORIZE
@@ -660,6 +673,8 @@ public class PaymentService {
                         payment.getId(),
                         PaymentTransactionType.AUTHORIZE,
                         PaymentTransactionStatus.SUCCEEDED)
+                .filter(transaction -> transaction.getPurpose() == null
+                        || transaction.getPurpose() == PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION)
                 .map(transaction -> paymentConsistencyEvaluator.evaluate(
                         order,
                         payment,

@@ -8,7 +8,14 @@ public record PaymentOperationSnapshot(
         String idempotencyKey, int amount, int orderContentRevision, String providerPaymentId,
         PaymentProvider provider, PaymentTransactionStatus status,
         PaymentTransactionInitiatorType initiatorType, Long initiatorId,
-        String initiatorUsername, String internalNote) {
+        String initiatorUsername, String internalNote, PaymentTransactionPurpose purpose) {
+
+    public PaymentOperationSnapshot(Long orderId, Long paymentId, Long transactionId, PaymentTransactionType type,
+            String key, int amount, int revision, String providerId, PaymentProvider provider, PaymentTransactionStatus status,
+            PaymentTransactionInitiatorType initiatorType, Long initiatorId, String username, String note) {
+        this(orderId, paymentId, transactionId, type, key, amount, revision, providerId, provider, status,
+                initiatorType, initiatorId, username, note, null);
+    }
 
     static PaymentOperationSnapshot from(PaymentTransaction transaction) {
         return from(transaction.getPayment(), transaction);
@@ -19,6 +26,6 @@ public record PaymentOperationSnapshot(
                 transaction.getTransactionType(), transaction.getIdempotencyKey(), transaction.getAmount(),
                 transaction.getOrderContentRevision(), payment.getProviderPaymentId(), payment.getProvider(),
                 transaction.getStatus(), transaction.getInitiatorType(), transaction.getInitiatorId(),
-                transaction.getInitiatorUsername(), transaction.getInternalNote());
+                transaction.getInitiatorUsername(), transaction.getInternalNote(), transaction.getPurpose());
     }
 }

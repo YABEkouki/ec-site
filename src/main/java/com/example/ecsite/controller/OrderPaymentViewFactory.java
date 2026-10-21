@@ -113,7 +113,7 @@ public class OrderPaymentViewFactory {
         Payment p = t.getPayment();
         return new PaymentOperationSnapshot(p.getOrder().getId(), p.getId(), t.getId(), t.getTransactionType(),
                 t.getIdempotencyKey(), t.getAmount(), t.getOrderContentRevision(), p.getProviderPaymentId(),
-                p.getProvider(), t.getStatus(), t.getInitiatorType(), t.getInitiatorId(), t.getInitiatorUsername(), t.getInternalNote());
+                p.getProvider(), t.getStatus(), t.getInitiatorType(), t.getInitiatorId(), t.getInitiatorUsername(), t.getInternalNote(), t.getPurpose());
     }
 
     private boolean validData(Order order, List<Payment> payments, List<PaymentTransaction> history) {

@@ -325,6 +325,28 @@ public class Order {
         return shippedByUsername;
     }
 
+    @Column(name = "active_payment_id")
+    private Long activePaymentId;
+
+    public Long getActivePaymentId() { return activePaymentId; }
+
+    /** Reference assignment only; caller must hold the Order lock and validate eligibility. */
+    public void bindActivePayment(Payment payment) {
+        if (payment == null || payment.getId() == null || payment.getOrder() == null
+                || !java.util.Objects.equals(id, payment.getOrder().getId()))
+            throw new IllegalStateException("Payment does not belong to this order");
+        if (status != OrderStatus.ORDERED || shipmentCapturePaymentId != null
+                || (activePaymentId != null && !activePaymentId.equals(payment.getId())))
+            throw new IllegalStateException("Active payment cannot be replaced");
+        activePaymentId = payment.getId();
+    }
+
+    public void clearActivePaymentAfterTermination(Long paymentId) {
+        if (paymentId == null || (activePaymentId != null && !activePaymentId.equals(paymentId)))
+            throw new IllegalStateException("Active payment mismatch");
+        activePaymentId = null;
+    }
+
     public Long getShipmentCapturePaymentId() {
         return shipmentCapturePaymentId;
     }

@@ -24,11 +24,15 @@ public class CaptureShipmentPolicy {
 
     public Decision classify(Order order, List<Payment> payments, List<PaymentTransaction> history, PaymentOperationSnapshot expected) {
         if(!validInput(order,payments,history)) return recovery(Reason.INVALID_INPUT);
+        if(history.stream().anyMatch(t -> t.getPurpose()!=null && !new PaymentPurposePolicy()
+                .isUsableInStage1A(t.getTransactionType().name(),t.getPurpose()))) return recovery(Reason.INVALID_INPUT);
         if(!order.hasCompleteShippingPreparation()) return recovery(Reason.INVALID_PREPARATION);
         if(order.getStatus()!=OrderStatus.ORDERED && order.getStatus()!=OrderStatus.SHIPPED) return recovery(Reason.INVALID_SHIPMENT);
         var active=payments.stream().filter(p -> p.getStatus()!=PaymentStatus.FAILED && p.getStatus()!=PaymentStatus.CANCELLED).toList();
         if(active.size()!=1) return recovery(Reason.AMBIGUOUS_PAYMENT);
         Payment payment=active.getFirst();
+        if(order.getActivePaymentId()!=null && !Objects.equals(order.getActivePaymentId(),payment.getId()))
+            return recovery(Reason.INVALID_PAYMENT);
         if(payment.getProvider()!=PaymentProvider.PAYJP || payment.getPaymentMethod()!=PaymentMethod.CARD
                 || payment.getProviderPaymentId()==null || payment.getProviderPaymentId().isBlank()) return recovery(Reason.INVALID_PAYMENT);
         if(order.getStatus()==OrderStatus.ORDERED) {
