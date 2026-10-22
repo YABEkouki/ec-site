@@ -313,7 +313,11 @@ public class OrderReauthorizationTransactions {
         return payment.getProvider()==PaymentProvider.PAYJP&&payment.getPaymentMethod()==PaymentMethod.CARD
             &&value!=null&&Objects.equals(payment.getProviderPaymentId(),value.id())&&value.status()!=null&&value.amount()!=null&&value.amount()==payment.getAmount()
             &&"jpy".equals(value.currency())&&"manual".equals(value.captureMethod())&&value.livemode()!=null&&value.livemode()==identity.mode().equals("LIVE")
-            &&value.amountReceived()!=null&&value.amountReceived()==0L
+            // Unconfirmed new Flows may report JSON null or omit the field; both remain waiting evidence.
+            // Never treat either as established authorization,
+            // and keep old-Flow/canceled/authorized evidence strict.
+            &&(value.amountReceived()!=null ? value.amountReceived()==0L
+                : requireMetadata&&List.of("requires_payment_method","requires_confirmation","requires_action","processing").contains(value.status()))
             &&(!"canceled".equals(value.status())||(value.amountCapturable()!=null&&value.amountCapturable()==0L))
             &&(!requireMetadata||(value.metadata()!=null&&Long.toString(data.order().getId()).equals(value.metadata().get("order_id"))
                 &&data.operation().get("id").toString().equals(value.metadata().get("order_change_operation_id"))));

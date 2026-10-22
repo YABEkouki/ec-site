@@ -111,4 +111,31 @@ class PayJpOrderChangeRequestTest {
         assertThat(result.expiredAt()).isEqualTo(OffsetDateTime.parse("2026-10-28T00:00:00Z"));
         assertThat(result.metadata()).containsEntry("order_id","10");
     }
+    @Test void unconfirmedGetKeepsNullAmountsAndMetadataTypes(){
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_new")).andRespond(withSuccess("""
+            {"id":"pfw_new","status":"requires_payment_method","amount":910,"currency":"jpy",
+             "amount_received":null,"amount_capturable":null,"capture_method":"manual","livemode":false,
+             "metadata":{"order_id":"1039","order_change_operation_id":"operation"}}
+            """,MediaType.APPLICATION_JSON));
+        var result=gateway.observeOrderChangeFlow("pfw_new");
+        assertThat(result.amountReceived()).isNull();assertThat(result.amountCapturable()).isNull();
+        assertThat(result.metadata().get("order_id")).isInstanceOf(String.class).isEqualTo("1039");
+    }
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"MISSING","0"})
+    void missingAndZeroReceivedKeepTheirNullableMapping(String received){
+        String field=received.equals("MISSING")?"":",\"amount_received\":0";
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_new")).andRespond(withSuccess(
+            "{\"id\":\"pfw_new\",\"status\":\"requires_payment_method\""+field+"}",MediaType.APPLICATION_JSON));
+        var result=gateway.observeOrderChangeFlow("pfw_new");
+        if(received.equals("MISSING"))assertThat(result.amountReceived()).isNull();
+        else assertThat(result.amountReceived()).isEqualTo(0L);
+    }
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"\"0\"","0.5","false","{}","[]","9223372036854775808"})
+    void receivedAmountRejectsNonIntegerJsonTypes(String received){
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_new")).andRespond(withSuccess(
+            "{\"id\":\"pfw_new\",\"status\":\"requires_payment_method\",\"amount_received\":"+received+"}",MediaType.APPLICATION_JSON));
+        assertThatThrownBy(()->gateway.observeOrderChangeFlow("pfw_new")).isInstanceOf(PaymentGatewayException.class);
+    }
 }

@@ -85,6 +85,97 @@ class OrderReauthorizationPostgresTest {
         });
     }
     String state(UUID op){return jdbc.queryForObject("select state from order_change_operations where id=?",String.class,op);}
+    PayJpPaymentFlowObservation jsonObservation(String flow,String status,int amount,Map<String,Object> metadata,String received){
+        var fields=new LinkedHashMap<String,Object>();
+        fields.put("id",flow);fields.put("status",status);fields.put("amount",amount);fields.put("currency","jpy");
+        fields.put("capture_method","manual");fields.put("livemode",false);fields.put("metadata",metadata);
+        fields.put("amount_capturable",status.equals("requires_capture")?Long.valueOf(amount):status.equals("canceled")?Long.valueOf(0):null);
+        if(!received.equals("MISSING"))fields.put("amount_received",received.equals("NULL")?null:Long.valueOf(received));
+        var mapper=tools.jackson.databind.json.JsonMapper.builder().build();
+        return mapper.readValue(mapper.writeValueAsString(fields),PayJpPaymentFlowObservation.class);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "requires_payment_method,NULL", "requires_payment_method,0", "requires_payment_method,MISSING",
+        "requires_confirmation,NULL", "requires_confirmation,0", "requires_confirmation,MISSING",
+        "requires_action,NULL", "requires_action,0", "requires_action,MISSING",
+        "processing,NULL", "processing,0", "processing,MISSING"})
+    void preAuthorizationNullableReceivedWaitsWithoutCancel(String status,String received){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        var observed=jsonObservation(newFlow,status,op.afterAmount(),
+            Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString()),received);
+        doReturn(observed).when(gateway).observeOrderChangeFlow(newFlow);
+        assertThat(service.advance(f.order(),op.id()).state())
+            .isEqualTo(status.equals("requires_action")?"REQUIRES_ACTION":"AUTHORIZING");
+        assertThat(oldCancelled).isFalse();verify(gateway,times(1)).sendOrderChangeRequest(any());
+        assertThat(jdbc.queryForObject("select count(*) from order_change_financial_requests where operation_id=? and request_kind<>'CREATE'",Integer.class,op.id())).isZero();
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.oldPayment())).isEqualTo("AUTHORIZED");
+        assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order())).isEqualTo(f.oldPayment());
+        assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op.id())).isEqualTo("HELD");
+        if(status.equals("requires_payment_method"))assertThat(resultTransactions.issueBrowserConfirmation(f.order(),op.id(),observed)).isTrue();
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"unknown_state,NULL,NEW_FLOW_EVIDENCE_MISMATCH",
+        "unknown_state,0,UNCONFIRMED_AUTH_STATE", "'',NULL,NEW_FLOW_EVIDENCE_MISMATCH", "'',0,UNCONFIRMED_AUTH_STATE"})
+    void unknownAndEmptyStatusNeverAuthorizeOrCancel(String status,String received,String reason){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        doReturn(jsonObservation(newFlow,status,op.afterAmount(),
+            Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString()),received))
+            .when(gateway).observeOrderChangeFlow(newFlow);
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(jdbc.queryForObject("select financial_review_reason from order_change_operations where id=?",String.class,op.id())).isEqualTo(reason);
+        assertThat(oldCancelled).isFalse();verify(gateway,times(1)).sendOrderChangeRequest(any());
+        assertThat(jdbc.queryForObject("select status from payments where id=(select new_payment_id from order_change_operations where id=?)",String.class,op.id())).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("select switch_decided_at from order_change_operations where id=?",java.time.LocalDateTime.class,op.id())).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from order_change_financial_requests where operation_id=? and request_kind<>'CREATE'",Integer.class,op.id())).isZero();
+        assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order())).isEqualTo(f.oldPayment());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"NEW_AUTHORIZATION,NEW_FLOW_EVIDENCE_MISMATCH",
+        "OLD_AUTHORIZATION,OLD_AUTH_NOT_READY", "COMMIT,COMMIT_AUTHORIZATION_UNAVAILABLE"})
+    void missingReceivedNeverProvesAuthorizationCancelEligibilityOrSwitch(String stage,String reason){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        var metadata=Map.<String,Object>of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString());
+        var missing=jsonObservation(newFlow,"requires_capture",op.afterAmount(),metadata,"MISSING");
+        if(stage.equals("OLD_AUTHORIZATION"))doReturn(jsonObservation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of(),"MISSING"))
+            .when(gateway).observeOrderChangeFlow(f.oldFlow());
+        else if(stage.equals("COMMIT"))doReturn(observation(newFlow,"requires_capture",op.afterAmount(),metadata),missing)
+            .when(gateway).observeOrderChangeFlow(newFlow);
+        else doReturn(missing).when(gateway).observeOrderChangeFlow(newFlow);
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(jdbc.queryForObject("select financial_review_reason from order_change_operations where id=?",String.class,op.id())).isEqualTo(reason);
+        assertThat(oldCancelled.get()).isEqualTo(stage.equals("COMMIT"));
+        verify(gateway,times(stage.equals("COMMIT")?2:1)).sendOrderChangeRequest(any());
+        assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+        assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order())).isEqualTo(f.oldPayment());
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op.id())).isEqualTo("HELD");
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,f.order())).isZero();
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"flow","amount","currency","mode","capture",
+        "metadata_missing","metadata_order_type","metadata_operation_type","received_positive","received_negative",
+        "confirmation_nonzero","action_nonzero","processing_nonzero","authorized_null","canceled_null","canceled_capturable_null"})
+    void invalidNewFlowEvidenceStillStopsBeforeOldCancel(String invalid){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        String status=switch(invalid){case "authorized_null"->"requires_capture";case "canceled_null","canceled_capturable_null"->"canceled";
+            case "confirmation_nonzero"->"requires_confirmation";case "action_nonzero"->"requires_action";case "processing_nonzero"->"processing";default->"requires_payment_method";};
+        Long received=switch(invalid){case "received_positive","confirmation_nonzero","action_nonzero","processing_nonzero"->1L;case "received_negative"->-1L;case "canceled_capturable_null"->0L;default->null;};
+        Map<String,Object> metadata=new HashMap<>(Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString()));
+        if(invalid.equals("metadata_missing"))metadata=null;
+        if(invalid.equals("metadata_order_type"))metadata.put("order_id",f.order());
+        if(invalid.equals("metadata_operation_type"))metadata.put("order_change_operation_id",123);
+        var observed=new PayJpPaymentFlowObservation(invalid.equals("flow")?"pfw_other":newFlow,status,
+            invalid.equals("amount")?(long)op.afterAmount()+1:(long)op.afterAmount(),invalid.equals("currency")?"JPY":"jpy",
+            received,null,invalid.equals("capture")?"automatic":"manual",invalid.equals("mode"),null,null,metadata);
+        doReturn(observed).when(gateway).observeOrderChangeFlow(newFlow);
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(jdbc.queryForObject("select financial_review_reason from order_change_operations where id=?",String.class,op.id())).isEqualTo("NEW_FLOW_EVIDENCE_MISMATCH");
+        assertThat(oldCancelled).isFalse();
+        assertThat(jdbc.queryForObject("select switch_decided_at from order_change_operations where id=?",java.time.LocalDateTime.class,op.id())).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from order_change_financial_requests where operation_id=? and request_kind<>'CREATE'",Integer.class,op.id())).isZero();
+        service.advance(f.order(),op.id());verify(gateway,times(1)).sendOrderChangeRequest(any());
+    }
     @Test void switchesOnceWithoutSecondStockDecrementAndCanAcceptSecondIncrease(){
         var f=fixture();var op=accept(f,5);mockFlow(f,op);
         assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("COMPLETED");
