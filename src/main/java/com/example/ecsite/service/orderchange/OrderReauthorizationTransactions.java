@@ -313,16 +313,16 @@ public class OrderReauthorizationTransactions {
         return payment.getProvider()==PaymentProvider.PAYJP&&payment.getPaymentMethod()==PaymentMethod.CARD
             &&value!=null&&Objects.equals(payment.getProviderPaymentId(),value.id())&&value.status()!=null&&value.amount()!=null&&value.amount()==payment.getAmount()
             &&"jpy".equals(value.currency())&&"manual".equals(value.captureMethod())&&value.livemode()!=null&&value.livemode()==identity.mode().equals("LIVE")
-            // Unconfirmed new Flows may report JSON null or omit the field; both remain waiting evidence.
-            // Never treat either as established authorization,
-            // and keep old-Flow/canceled/authorized evidence strict.
-            &&(value.amountReceived()!=null ? value.amountReceived()==0L
-                : requireMetadata&&List.of("requires_payment_method","requires_confirmation","requires_action","processing").contains(value.status()))
+            // Established authorization requires full capturable evidence and a present null/zero received field.
+            // Only unconfirmed new Flows may omit received; canceled evidence remains unchanged.
+            &&("requires_capture".equals(value.status()) ? value.hasUncapturedAuthorization(payment.getAmount())
+                : value.amountReceived()!=null ? value.amountReceived()==0L
+                    : requireMetadata&&List.of("requires_payment_method","requires_confirmation","requires_action","processing").contains(value.status()))
             &&(!"canceled".equals(value.status())||(value.amountCapturable()!=null&&value.amountCapturable()==0L))
             &&(!requireMetadata||(value.metadata()!=null&&Long.toString(data.order().getId()).equals(value.metadata().get("order_id"))
                 &&data.operation().get("id").toString().equals(value.metadata().get("order_change_operation_id"))));
     }
-    private boolean authorized(PayJpPaymentFlowObservation value,int amount){return value!=null&&"requires_capture".equals(value.status())&&value.amountCapturable()!=null&&value.amountCapturable()==amount;}
+    private boolean authorized(PayJpPaymentFlowObservation value,int amount){return value!=null&&value.hasUncapturedAuthorization(amount);}
     private void requireNoPending(Locked data,Long except){if(data.transactions().stream().anyMatch(t->t.getStatus()==PaymentTransactionStatus.PENDING&&!Objects.equals(t.getId(),except)))throw new IllegalStateException("Competing financial operation");}
     private Payment payment(Locked data,long id){return data.payments().stream().filter(p->p.getId()==id).findFirst().orElseThrow();}
     private PaymentTransaction transaction(Locked data,PaymentTransactionPurpose purpose){var matches=data.transactions().stream().filter(t->t.getPurpose()==purpose&&Objects.equals(t.getOrderChangeOperationId(),data.operation().get("id"))).toList();if(matches.size()!=1)throw new IllegalStateException("Ambiguous change transaction");return matches.getFirst();}

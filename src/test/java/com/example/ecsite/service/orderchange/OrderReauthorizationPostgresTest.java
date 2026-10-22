@@ -86,10 +86,14 @@ class OrderReauthorizationPostgresTest {
     }
     String state(UUID op){return jdbc.queryForObject("select state from order_change_operations where id=?",String.class,op);}
     PayJpPaymentFlowObservation jsonObservation(String flow,String status,int amount,Map<String,Object> metadata,String received){
+        String capturable=status.equals("requires_capture")?Integer.toString(amount):status.equals("canceled")?"0":"NULL";
+        return jsonObservation(flow,status,amount,metadata,received,capturable);
+    }
+    PayJpPaymentFlowObservation jsonObservation(String flow,String status,int amount,Map<String,Object> metadata,String received,String capturable){
         var fields=new LinkedHashMap<String,Object>();
         fields.put("id",flow);fields.put("status",status);fields.put("amount",amount);fields.put("currency","jpy");
         fields.put("capture_method","manual");fields.put("livemode",false);fields.put("metadata",metadata);
-        fields.put("amount_capturable",status.equals("requires_capture")?Long.valueOf(amount):status.equals("canceled")?Long.valueOf(0):null);
+        if(!capturable.equals("MISSING"))fields.put("amount_capturable",capturable.equals("NULL")?null:Long.valueOf(capturable));
         if(!received.equals("MISSING"))fields.put("amount_received",received.equals("NULL")?null:Long.valueOf(received));
         var mapper=tools.jackson.databind.json.JsonMapper.builder().build();
         return mapper.readValue(mapper.writeValueAsString(fields),PayJpPaymentFlowObservation.class);
@@ -132,13 +136,15 @@ class OrderReauthorizationPostgresTest {
         assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order())).isEqualTo(f.oldPayment());
     }
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.CsvSource({"NEW_AUTHORIZATION,NEW_FLOW_EVIDENCE_MISMATCH",
-        "OLD_AUTHORIZATION,OLD_AUTH_NOT_READY", "COMMIT,COMMIT_AUTHORIZATION_UNAVAILABLE"})
-    void missingReceivedNeverProvesAuthorizationCancelEligibilityOrSwitch(String stage,String reason){
+    @org.junit.jupiter.params.provider.CsvSource({"NEW_AUTHORIZATION,MISSING,NEW_FLOW_EVIDENCE_MISMATCH",
+        "OLD_AUTHORIZATION,MISSING,OLD_AUTH_NOT_READY", "COMMIT,MISSING,COMMIT_AUTHORIZATION_UNAVAILABLE",
+        "OLD_AUTHORIZATION,1,OLD_AUTH_NOT_READY", "OLD_AUTHORIZATION,-1,OLD_AUTH_NOT_READY",
+        "COMMIT,1,COMMIT_AUTHORIZATION_UNAVAILABLE", "COMMIT,-1,COMMIT_AUTHORIZATION_UNAVAILABLE"})
+    void missingOrNonzeroReceivedNeverProvesAuthorizationCancelEligibilityOrSwitch(String stage,String received,String reason){
         var f=fixture();var op=accept(f,3);mockFlow(f,op);
         var metadata=Map.<String,Object>of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString());
-        var missing=jsonObservation(newFlow,"requires_capture",op.afterAmount(),metadata,"MISSING");
-        if(stage.equals("OLD_AUTHORIZATION"))doReturn(jsonObservation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of(),"MISSING"))
+        var missing=jsonObservation(newFlow,"requires_capture",op.afterAmount(),metadata,received);
+        if(stage.equals("OLD_AUTHORIZATION"))doReturn(jsonObservation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of(),received))
             .when(gateway).observeOrderChangeFlow(f.oldFlow());
         else if(stage.equals("COMMIT"))doReturn(observation(newFlow,"requires_capture",op.afterAmount(),metadata),missing)
             .when(gateway).observeOrderChangeFlow(newFlow);
@@ -175,6 +181,71 @@ class OrderReauthorizationPostgresTest {
         assertThat(jdbc.queryForObject("select switch_decided_at from order_change_operations where id=?",java.time.LocalDateTime.class,op.id())).isNull();
         assertThat(jdbc.queryForObject("select count(*) from order_change_financial_requests where operation_id=? and request_kind<>'CREATE'",Integer.class,op.id())).isZero();
         service.advance(f.order(),op.id());verify(gateway,times(1)).sendOrderChangeRequest(any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"NEW,NULL","OLD,NULL","BOTH,NULL","BOTH,0"})
+    void fullUncapturedAuthorizationWithExplicitReceivedEvidenceSwitchesOnce(String role,String received){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        var metadata=Map.<String,Object>of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString());
+        if(!role.equals("OLD"))doReturn(jsonObservation(newFlow,"requires_capture",op.afterAmount(),metadata,received))
+            .when(gateway).observeOrderChangeFlow(newFlow);
+        if(!role.equals("NEW"))doAnswer(call->jsonObservation(f.oldFlow(),oldCancelled.get()?"canceled":"requires_capture",op.beforeAmount(),Map.of(),oldCancelled.get()?"0":received))
+            .when(gateway).observeOrderChangeFlow(f.oldFlow());
+        int reservedStock=jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product());
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("select total_amount from orders where id=?",Integer.class,f.order())).isEqualTo(op.afterAmount());
+        assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order())).isEqualTo(jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,op.id()));
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op.id())).isEqualTo("CONSUMED");
+        assertThat(service.reconcile(f.order(),op.id()).state()).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product())).isEqualTo(reservedStock);
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,f.order())).isEqualTo(1);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"NEW,NULL","NEW,MISSING","NEW,849","NEW,851","OLD,NULL","OLD,MISSING","OLD,749","OLD,751","COMMIT,NULL","COMMIT,MISSING","COMMIT,849","COMMIT,851"})
+    void incompleteCapturableEvidenceNeverPermitsDecisionOrSwitch(String stage,String capturable){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        var metadata=Map.<String,Object>of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString());
+        var invalid=jsonObservation(stage.equals("OLD")?f.oldFlow():newFlow,"requires_capture",stage.equals("OLD")?op.beforeAmount():op.afterAmount(),stage.equals("OLD")?Map.of():metadata,"0",capturable);
+        if(stage.equals("OLD"))doReturn(invalid).when(gateway).observeOrderChangeFlow(f.oldFlow());
+        else if(stage.equals("COMMIT"))doReturn(observation(newFlow,"requires_capture",op.afterAmount(),metadata),invalid).when(gateway).observeOrderChangeFlow(newFlow);
+        else doReturn(invalid).when(gateway).observeOrderChangeFlow(newFlow);
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(oldCancelled.get()).isEqualTo(stage.equals("COMMIT"));
+        assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+        assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order())).isEqualTo(f.oldPayment());
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op.id())).isEqualTo("HELD");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"NEW","OLD"})
+    void swappedOldAndNewFlowIdentityNeverPermitsCancel(String role){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        var metadata=Map.<String,Object>of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString());
+        if(role.equals("NEW"))doReturn(observation(f.oldFlow(),"requires_capture",op.afterAmount(),metadata)).when(gateway).observeOrderChangeFlow(newFlow);
+        else doReturn(observation(newFlow,"requires_capture",op.beforeAmount(),Map.of())).when(gateway).observeOrderChangeFlow(f.oldFlow());
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(oldCancelled).isFalse();verify(gateway,times(1)).sendOrderChangeRequest(any());
+        assertThat(jdbc.queryForObject("select switch_decided_at from order_change_operations where id=?",java.time.LocalDateTime.class,op.id())).isNull();
+    }
+    @Test void canceledNullAfterUnknownCancelNeverSwitchesOrAutomaticallyReposts(){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);var cancelPosts=new AtomicInteger();
+        doAnswer(call->{var saved=((OrderChangeRequestSender.Dispatch)call.getArgument(0)).request();
+            if(saved.httpRequest().kind().equals("OLD_CANCEL")){cancelPosts.incrementAndGet();oldCancelled.set(true);throw new PaymentGatewayException(PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN,null,null,true);}
+            return transport.answer(call);
+        }).when(gateway).sendOrderChangeRequest(any());
+        doAnswer(call->oldCancelled.get()?jsonObservation(f.oldFlow(),"canceled",op.beforeAmount(),Map.of(),"NULL"):observation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of()))
+            .when(gateway).observeOrderChangeFlow(f.oldFlow());
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(cancelPosts).hasValue(1);
+        assertThat(jdbc.queryForObject("select switch_decided_at from order_change_operations where id=?",java.time.LocalDateTime.class,op.id())).isNotNull();
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.oldPayment())).isEqualTo("AUTHORIZED");
+        assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op.id())).isEqualTo("HELD");
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(cancelPosts).hasValue(1);
+        verify(gateway,times(2)).sendOrderChangeRequest(any()); // CREATE + one Cancel, no automatic or stopped-state retry.
     }
     @Test void switchesOnceWithoutSecondStockDecrementAndCanAcceptSecondIncrease(){
         var f=fixture();var op=accept(f,5);mockFlow(f,op);
@@ -236,6 +307,8 @@ class OrderReauthorizationPostgresTest {
         var f=fixture();var op=accept(f,3);mockFlow(f,op);newState.set("requires_action");
         assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("REQUIRES_ACTION");
         newState.set("requires_capture");
+        doReturn(jsonObservation(newFlow,"requires_capture",op.afterAmount(),Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString()),"NULL"))
+            .when(gateway).observeOrderChangeFlow(newFlow);
         reconciliation.reconcile(jdbc.queryForObject("select id from payment_transactions where order_change_operation_id=? and purpose='ORDER_CHANGE_AUTHORIZATION'",Long.class,op.id()));
         webhook.synchronize("payment_flow.requires_action",newFlow);assertThat(state(op.id())).isEqualTo("AUTHORIZED");
         assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("COMPLETED");
@@ -244,6 +317,8 @@ class OrderReauthorizationPostgresTest {
     }
     @Test void switchRollbackRemainsCommitPendingAndStaleCancelCannotRewindIt(){
         var f=fixture();var op=accept(f,3);mockFlow(f,op);String name="fail_switch_"+f.order();
+        doReturn(jsonObservation(newFlow,"requires_capture",op.afterAmount(),Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",op.id().toString()),"NULL"))
+            .when(gateway).observeOrderChangeFlow(newFlow);
         jdbc.execute("create function "+name+"() returns trigger language plpgsql as $$begin if NEW.order_id="+f.order()+" then raise exception 'injected switch failure'; end if; return NEW; end;$$");
         jdbc.execute("create trigger "+name+" before update on order_items for each row execute function "+name+"()");
         try{

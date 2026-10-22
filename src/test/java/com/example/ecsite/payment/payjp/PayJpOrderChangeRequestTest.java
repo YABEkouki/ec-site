@@ -72,11 +72,11 @@ class PayJpOrderChangeRequestTest {
     @Test void cancelRequiresKnownAuthorizedObservationAndUsesSavedKey(){
         var request=OrderChangeHttpRequest.cancel(identity,UUID.randomUUID(),10,5500,"fixed-cancel","pfw_old",false);
         server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(
-            "{\"id\":\"pfw_old\",\"status\":\"requires_capture\",\"amount\":5500,\"currency\":\"jpy\",\"amount_received\":0,\"capture_method\":\"manual\",\"livemode\":false}",MediaType.APPLICATION_JSON));
+            "{\"id\":\"pfw_old\",\"status\":\"requires_capture\",\"amount\":5500,\"currency\":\"jpy\",\"amount_received\":0,\"amount_capturable\":5500,\"capture_method\":\"manual\",\"livemode\":false}",MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://api.pay.jp"+request.path())).andExpect(header("Idempotency-Key",request.idempotencyKey()))
             .andExpect(content().bytes(request.body())).andRespond(withException(new java.net.SocketTimeoutException("test timeout")));
         server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(
-            "{\"id\":\"pfw_old\",\"status\":\"requires_capture\",\"amount\":5500,\"currency\":\"jpy\",\"amount_received\":0,\"capture_method\":\"manual\",\"livemode\":false}",MediaType.APPLICATION_JSON));
+            "{\"id\":\"pfw_old\",\"status\":\"requires_capture\",\"amount\":5500,\"currency\":\"jpy\",\"amount_received\":0,\"amount_capturable\":5500,\"capture_method\":\"manual\",\"livemode\":false}",MediaType.APPLICATION_JSON));
         post(request,200,"{\"id\":\"pfw_old\",\"status\":\"canceled\"}");
         var saved=saved(request);
         assertThatThrownBy(()->send(saved)).isInstanceOfSatisfying(PaymentGatewayException.class,error->assertThat(error.resultUnknown()).isTrue());
@@ -138,4 +138,61 @@ class PayJpOrderChangeRequestTest {
             "{\"id\":\"pfw_new\",\"status\":\"requires_payment_method\",\"amount_received\":"+received+"}",MediaType.APPLICATION_JSON));
         assertThatThrownBy(()->gateway.observeOrderChangeFlow("pfw_new")).isInstanceOf(PaymentGatewayException.class);
     }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"null","0"})
+    void uncapturedAuthorizationPermitsCancelWithFullCapturableAmount(String received){
+        var request=OrderChangeHttpRequest.cancel(identity,UUID.randomUUID(),10,5500,"fixed-cancel","pfw_old",false);
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(
+            cancelEvidence(received,"5500"),MediaType.APPLICATION_JSON));
+        post(request,200,"{\"id\":\"pfw_old\",\"status\":\"canceled\"}");
+        assertThat(send(saved(request)).status()).isEqualTo("canceled");
+    }
+    String cancelEvidence(String received,String capturable){
+        return "{\"id\":\"pfw_old\",\"status\":\"requires_capture\",\"amount\":5500,\"currency\":\"jpy\","
+            +(received.equals("MISSING")?"":"\"amount_received\":"+received+",")
+            +(capturable.equals("MISSING")?"":"\"amount_capturable\":"+capturable+",")
+            +"\"capture_method\":\"manual\",\"livemode\":false}";
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"MISSING","null","5499","5501","0","-1"})
+    void cancelRequiresExactFullCapturableAmountAndNeverPostsOtherwise(String capturable){
+        var request=OrderChangeHttpRequest.cancel(identity,UUID.randomUUID(),10,5500,"fixed-cancel","pfw_old",false);
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(
+            cancelEvidence("0",capturable),MediaType.APPLICATION_JSON));
+        // No POST expectation: even one unexpected HTTP request fails this test.
+        assertThatThrownBy(()->send(saved(request))).isInstanceOf(IllegalStateException.class);
+    }
+    @Test void explicitReceivedNullAndMissingFieldAreDifferentObservations(){
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(cancelEvidence("null","5500"),MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(cancelEvidence("MISSING","5500"),MediaType.APPLICATION_JSON));
+        var explicit=gateway.observeOrderChangeFlow("pfw_old");var absent=gateway.observeOrderChangeFlow("pfw_old");
+        assertThat(explicit.amountReceived()).isNull();assertThat(absent.amountReceived()).isNull();
+        assertThat(explicit).isNotEqualTo(absent);
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"\"5500\"","5500.0","false","[]","{}","9223372036854775808"})
+    void capturableRejectsNonIntegerJsonTypes(String value){
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(cancelEvidence("0",value),MediaType.APPLICATION_JSON));
+        assertThatThrownBy(()->gateway.observeOrderChangeFlow("pfw_old")).isInstanceOf(PaymentGatewayException.class);
+    }
+
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"MISSING","1","-1"})
+    void cancelRejectsMissingOrNonzeroReceivedWithoutPosting(String received){
+        var request=OrderChangeHttpRequest.cancel(identity,UUID.randomUUID(),10,5500,"fixed-cancel","pfw_old",false);
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(cancelEvidence(received,"5500"),MediaType.APPLICATION_JSON));
+        assertThatThrownBy(()->send(saved(request))).isInstanceOf(IllegalStateException.class);
+    }
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"flow","amount","currency","mode","capture","succeeded","processing"})
+    void cancelRejectsIdentityMismatchAndCapturedOrPendingFlowsWithoutPosting(String invalid){
+        var request=OrderChangeHttpRequest.cancel(identity,UUID.randomUUID(),10,5500,"fixed-cancel","pfw_old",false);
+        String body=cancelEvidence("0","5500");
+        body=switch(invalid){
+            case "flow"->body.replace("pfw_old","pfw_new");
+            case "amount"->body.replace("\"amount\":5500","\"amount\":5501");
+            case "currency"->body.replace("jpy","JPY");
+            case "mode"->body.replace("false","true");
+            case "capture"->body.replace("manual","automatic");
+            default->body.replace("requires_capture",invalid);
+        };
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(body,MediaType.APPLICATION_JSON));
+        assertThatThrownBy(()->send(saved(request))).isInstanceOf(invalid.equals("flow")?PaymentGatewayException.class:IllegalStateException.class);
+    }
+
 }

@@ -301,8 +301,7 @@ public class PayJpPaymentGateway implements PaymentGateway {
         // Abort before successful authorization remains unconfirmed and is deliberately not dispatched in III-A.
         if(!"CREATE".equals(request.kind())){
             var observed=observeOrderChangeFlow(request.flowId());
-            if(!"requires_capture".equals(observed.status())||observed.amountReceived()==null||observed.amountReceived()!=0L
-                ||observed.amount()==null||observed.amount()!=request.amount()||!"jpy".equals(observed.currency())
+            if(!observed.hasUncapturedAuthorization(request.amount())||!"jpy".equals(observed.currency())
                 ||!"manual".equals(observed.captureMethod())||observed.livemode()==null
                 ||observed.livemode()!=request.connection().mode().equals("LIVE"))
                 throw new IllegalStateException("Cancel status or financial evidence is unconfirmed");
