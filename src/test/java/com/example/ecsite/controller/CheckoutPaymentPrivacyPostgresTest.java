@@ -28,7 +28,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "app.payment.discrepancy-audit.notification.manual-resend-scheduler-enabled=false"})
 @AutoConfigureMockMvc
 @com.example.ecsite.support.CaptureConnectionTest
+@org.testcontainers.junit.jupiter.Testcontainers
+@org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class CheckoutPaymentPrivacyPostgresTest {
+    // These fixtures commit across controller/service transaction boundaries. Keep them
+    // out of the shared launcher database used by transactional repository tests.
+    @org.testcontainers.junit.jupiter.Container
+    static final org.testcontainers.postgresql.PostgreSQLContainer POSTGRES = new org.testcontainers.postgresql.PostgreSQLContainer("postgres:17")
+            .withDatabaseName("checkout_privacy").withUsername("checkout_privacy").withPassword(UUID.randomUUID().toString());
+    @org.springframework.test.context.DynamicPropertySource
+    static void database(org.springframework.test.context.DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", POSTGRES::getJdbcUrl); r.add("spring.datasource.username", POSTGRES::getUsername);
+        r.add("spring.datasource.password", POSTGRES::getPassword); r.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+        r.add("spring.flyway.user", POSTGRES::getUsername); r.add("spring.flyway.password", POSTGRES::getPassword);
+    }
     @Autowired MockMvc mvc;
     @Autowired OrderRepository orders;
     @Autowired UserRepository users;

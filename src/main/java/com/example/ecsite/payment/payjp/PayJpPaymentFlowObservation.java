@@ -15,6 +15,27 @@ public record PayJpPaymentFlowObservation(String id,String status,Long amount,St
     @JsonProperty("expired_at") OffsetDateTime expiredAt,
     @JsonProperty("canceled_at") OffsetDateTime canceledAt,Map<String,Object> metadata,
     @JsonIgnore boolean amountReceivedPresent){
+    /** Pure raw-tree contract shared with the internal NEW_ABORT preparation validator.
+     * This validates values only; it does not establish transport provenance or mint a permit. */
+    public static void requireRequestedAbortAuthorization(
+            com.example.ecsite.payment.orderchange.NewFlowTerminationEvidence.Expected expected,JsonNode body){
+            if(expected==null||body==null||!body.isObject())throw new IllegalArgumentException("Invalid abort authorization evidence");
+            for(String key:java.util.List.of("id","status","currency","capture_method"))
+                if(body.get(key)==null||!body.get(key).isString())throw new IllegalArgumentException("Invalid abort authorization evidence");
+            var value=body.get("amount");var mode=body.get("livemode");var metadata=body.get("metadata");
+            if(value==null||!value.isIntegralNumber()||!value.canConvertToLong()||value.longValue()!=expected.amount()
+                ||mode==null||!mode.isBoolean()||mode.booleanValue()!=expected.connection().mode().equals("LIVE")
+                ||metadata==null||!metadata.isObject())throw new IllegalArgumentException("Invalid abort authorization evidence");
+            var orderValue=metadata.get("order_id");var operationValue=metadata.get("order_change_operation_id");
+            if(orderValue==null||!orderValue.isString()||!Long.toString(expected.orderId()).equals(orderValue.stringValue())
+                ||operationValue==null||!operationValue.isString()||!expected.operationId().toString().equals(operationValue.stringValue())
+                ||!expected.newFlowId().equals(body.get("id").stringValue())||!"requires_capture".equals(body.get("status").stringValue())
+                ||!"jpy".equals(body.get("currency").stringValue())||!"manual".equals(body.get("capture_method").stringValue()))
+                throw new IllegalArgumentException("Invalid abort authorization evidence");
+            var observed=PayJpPaymentFlowObservation.fromJson(expected.newFlowId(),"requires_capture",(long)expected.amount(),"jpy",
+                body.get("amount_received"),body.get("amount_capturable"),"manual",mode.booleanValue(),null,null,Map.of());
+            if(!observed.hasUncapturedAuthorization(expected.amount()))throw new IllegalArgumentException("Invalid abort authorization evidence");
+    }
     public PayJpPaymentFlowObservation{
         if(metadata!=null)metadata=java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(metadata));
     }

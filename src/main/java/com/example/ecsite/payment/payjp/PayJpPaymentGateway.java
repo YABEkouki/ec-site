@@ -80,6 +80,91 @@ public class PayJpPaymentGateway implements PaymentGateway {
         authorizationMapper = mapper;
     }
 
+    private java.time.Clock abortObservationClock=java.time.Clock.systemUTC();
+    private java.util.function.LongSupplier abortObservationTicker=System::nanoTime;
+    // Mock HTTP and deterministic clocks only; normal transport still disables redirects/retries.
+    PayJpPaymentGateway(RestClient client,PayJpAuthorizationMapper mapper,PayJpProperties active,
+            CaptureConnectionProperties connection,java.time.Clock clock,java.util.function.LongSupplier ticker){
+        this(client,mapper);activeConnection=active;captureConnection=connection;
+        abortObservationClock=java.util.Objects.requireNonNull(clock);abortObservationTicker=java.util.Objects.requireNonNull(ticker);
+    }
+    @Override
+    public void sendRequestedAbort(com.example.ecsite.service.orderchange.RequestedAbortDispatchControl.Dispatch dispatch){
+        if(dispatch==null)throw new IllegalArgumentException("Dedicated abort dispatch required");
+        // This consumes the token even if subsequent connection validation or HTTP fails.
+        var saved=dispatch.consumeForGateway();var request=saved.httpRequest();
+        if(captureConnection==null||!request.connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Abort POST connection mismatch");
+        try{
+            var response=restClient.post().uri(request.path()).contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key",request.idempotencyKey()).body(request.body()).retrieve().toBodilessEntity();
+            if(response.getStatusCode().value()!=200)throw new PaymentGatewayException(PaymentGatewayErrorCategory.OTHER_HTTP_ERROR,
+                response.getStatusCode().value(),null,true);
+            // Ignore the response body: HTTP 200 is not validated terminal GET evidence.
+        }catch(RestClientException failure){throw classify(failure);}
+    }
+
+    @Override
+    public OldAuthorizationObservation observeOldAuthorization(OldAuthorizationObservation.Expected expected){
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Old authorization GET requires no database transaction");
+        if(expected==null||captureConnection==null||!expected.connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Old authorization observation connection mismatch");
+        try{return OldAuthorizationObservation.retrieve(expected,restClient,abortObservationClock,abortObservationTicker);}
+        catch(RestClientException failure){throw classify(failure);}
+        catch(IllegalArgumentException|IllegalStateException failure){
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+        }
+    }
+
+    @Override
+    public RequestedAbortObservation observeRequestedAbort(RequestedAbortObservation.Expected expected){
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Abort GET requires no database transaction");
+        if(expected==null||captureConnection==null||!expected.flow().connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Abort observation connection mismatch");
+        try{return RequestedAbortObservation.retrieve(expected,restClient,abortObservationClock,abortObservationTicker);}
+        catch(RestClientException failure){throw classify(failure);}
+        catch(IllegalArgumentException|IllegalStateException failure){
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+        }
+    }
+
+    @Override
+    public AbortPreparationObservation observeAbortPreparation(com.example.ecsite.service.orderchange.NewFlowClosureControl.Expected expected){
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Abort preparation GET requires no database transaction");
+        if(expected==null||captureConnection==null||!expected.flow().connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Abort preparation observation connection mismatch");
+        try{return AbortPreparationObservation.retrieve(expected,restClient,abortObservationClock,abortObservationTicker);}
+        catch(RestClientException failure){throw classify(failure);}
+        catch(IllegalArgumentException|IllegalStateException failure){
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+        }
+    }
+
+    @Override
+    public NewFlowClosureObservation observeNewFlowClosure(com.example.ecsite.service.orderchange.NewFlowClosureControl.Expected expected){
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Closure GET requires no database transaction");
+        if(expected==null||captureConnection==null||!expected.flow().connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Closure observation connection mismatch");
+        try{return NewFlowClosureObservation.retrieve(expected,restClient,abortObservationClock,abortObservationTicker);}
+        catch(RestClientException failure){throw classify(failure);}
+        catch(IllegalArgumentException|IllegalStateException failure){
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+        }
+    }
+
+    @Override
+    public NewFlowClosureObservation.Assessment assessNewFlowClosure(com.example.ecsite.service.orderchange.NewFlowClosureControl.Expected expected){
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Closure GET requires no database transaction");
+        if(expected==null||captureConnection==null||!expected.flow().connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Closure observation connection mismatch");
+        try{return NewFlowClosureObservation.assess(expected,restClient,abortObservationClock,abortObservationTicker);}
+        catch(NewFlowClosureObservation.Expired failure){throw failure;}
+        catch(RestClientException failure){throw classify(failure);}
+        catch(IllegalArgumentException|IllegalStateException failure){
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+        }
+    }
+
     @PreDestroy
     public void close() throws java.io.IOException {
         if (httpClient != null) httpClient.close();

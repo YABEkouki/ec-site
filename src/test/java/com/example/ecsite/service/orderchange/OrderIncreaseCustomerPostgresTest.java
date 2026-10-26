@@ -126,8 +126,14 @@ class OrderIncreaseCustomerPostgresTest {
  @Test void statusAndWithdrawalAreLocalOnly() throws Exception {
   var f=fixture();var session=new MockHttpSession();var token=quote(f,session);
   var url=mvc.perform(post(root(f)).with(customer(f.user())).with(csrf()).session(session).param("confirmationToken",token)).andReturn().getResponse().getRedirectedUrl();
-  mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf())).andExpect(status().isFound());
-  mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf())).andExpect(status().isFound());
+  var confirmation=mvc.perform(get(url+"/withdraw").with(customer(f.user())).session(session))
+   .andExpect(status().isOk()).andExpect(view().name("orders/increase")).andReturn();
+  var command=(com.example.ecsite.controller.OrderIncreaseController.WithdrawalCommand)confirmation.getModelAndView().getModel().get("withdrawalCommand");
+  var repeated=mvc.perform(get(url+"/withdraw").with(customer(f.user())).session(session)).andExpect(status().isOk()).andReturn();
+  assertThat(repeated.getModelAndView().getModel().get("withdrawalCommand")).isEqualTo(command);
+  assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product())).isEqualTo(7);
+  for(int attempt=0;attempt<2;attempt++)mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf()).session(session)
+   .param("requestId",command.requestId().toString()).param("expectedVersion",Long.toString(command.expectedVersion()))).andExpect(status().isFound());
   mvc.perform(get(url).with(customer(f.user()))).andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("変更候補は取り下げ済み")));
   assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product())).isEqualTo(10);
   verifyNoInteractions(gateway);
@@ -141,14 +147,38 @@ class OrderIncreaseCustomerPostgresTest {
   mvc.perform(get(url).with(customer(f.user()))).andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("注文変更が完了しました")));
   verifyNoInteractions(gateway);
  }
- @Test void withdrawalRequiresOwnerCsrfAndReservedState() throws Exception {
+ @Test void withdrawalRequiresOwnerCsrfAndSessionConfirmation() throws Exception {
   var f=fixture();var session=new MockHttpSession();var token=quote(f,session);
   var url=mvc.perform(post(root(f)).with(customer(f.user())).with(csrf()).session(session).param("confirmationToken",token)).andReturn().getResponse().getRedirectedUrl();
   mvc.perform(post(url+"/withdraw").with(customer(f.user()))).andExpect(status().isForbidden());
+  mvc.perform(get(url+"/withdraw").with(customer(f.user()+1000))).andExpect(status().isNotFound());
   mvc.perform(post(url+"/withdraw").with(customer(f.user()+1000)).with(csrf())).andExpect(status().isNotFound());
+  var confirmation=mvc.perform(get(url+"/withdraw").with(customer(f.user())).session(session)).andExpect(status().isOk()).andReturn();
+  var command=(com.example.ecsite.controller.OrderIncreaseController.WithdrawalCommand)confirmation.getModelAndView().getModel().get("withdrawalCommand");
+  mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf()).session(session)
+   .param("requestId",UUID.randomUUID().toString()).param("expectedVersion",Long.toString(command.expectedVersion()))).andExpect(status().isConflict());
+  mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf()).session(new MockHttpSession())
+   .param("requestId",command.requestId().toString()).param("expectedVersion",Long.toString(command.expectedVersion()))).andExpect(status().isConflict());
   jdbc.update("update order_change_operations set state='AUTHORIZING' where order_id=?",f.order());
   mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf())).andExpect(status().isConflict());
   assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=(select id from order_change_operations where order_id=?)",String.class,f.order())).isEqualTo("HELD");
+  verifyNoInteractions(gateway);
+ }
+ @Test void staleUnsubmittedWithdrawalConfirmationCanBeRefreshed() throws Exception {
+  var f=fixture();var session=new MockHttpSession();var token=quote(f,session);
+  var url=mvc.perform(post(root(f)).with(customer(f.user())).with(csrf()).session(session).param("confirmationToken",token)).andReturn().getResponse().getRedirectedUrl();
+  var first=mvc.perform(get(url+"/withdraw").with(customer(f.user())).session(session)).andExpect(status().isOk()).andReturn();
+  var original=(com.example.ecsite.controller.OrderIncreaseController.WithdrawalCommand)first.getModelAndView().getModel().get("withdrawalCommand");
+  jdbc.update("update order_change_operations set version=version+1 where order_id=?",f.order());
+  var refreshed=mvc.perform(get(url+"/withdraw").with(customer(f.user())).session(session)).andExpect(status().isOk()).andReturn();
+  var current=(com.example.ecsite.controller.OrderIncreaseController.WithdrawalCommand)refreshed.getModelAndView().getModel().get("withdrawalCommand");
+  assertThat(current.requestId()).isNotEqualTo(original.requestId());
+  assertThat(current.expectedVersion()).isEqualTo(original.expectedVersion()+1);
+  mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf()).session(session)
+   .param("requestId",original.requestId().toString()).param("expectedVersion",Long.toString(original.expectedVersion()))).andExpect(status().isConflict());
+  mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf()).session(session)
+   .param("requestId",current.requestId().toString()).param("expectedVersion",Long.toString(current.expectedVersion()))).andExpect(status().isFound());
+  assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product())).isEqualTo(10);
   verifyNoInteractions(gateway);
  }
  @Test void sparseFormIndexIsRejectedWithoutReservation() throws Exception {

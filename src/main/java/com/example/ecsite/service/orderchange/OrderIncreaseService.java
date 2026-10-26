@@ -154,6 +154,14 @@ public class OrderIncreaseService {
         context.requireCleanWritableReadCommitted();var order=lockedOrder(orderId,customerId);
         release(order,store.operation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId)));
     }
+    /** Customer confirmation CAS; release() rechecks that no financial work exists under these locks. */
+    @Transactional
+    public void withdrawReserved(long orderId,long customerId,UUID operationId,long expectedVersion){
+        context.requireCleanWritableReadCommitted();var order=lockedOrder(orderId,customerId);
+        var operation=store.operation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId));
+        if(!"ABORTED".equals(operation.state())&&operation.version()!=expectedVersion)throw new IllegalStateException("Withdrawal version changed");
+        release(order,operation);
+    }
     @Transactional(readOnly=true)
     public List<OrderChangeStore.ExpiringOperation> expiredReservedCandidates(int limit){return store.expiredReserved(limit);}
     /** Local-only expiry under the same Order/operation locks as acceptance and withdrawal. */
@@ -162,7 +170,7 @@ public class OrderIncreaseService {
         context.requireCleanWritableReadCommitted();var order=orders.findByIdForUpdate(orderId).orElseThrow();context.refreshWritableOrder(order);
         var op=store.operation(orderId,operationId).orElseThrow();
         if(!op.state().equals("RESERVED") || !policy.canExpireChange(op.graceUntil(),op.switchDecidedAt(),orders.findCurrentTimeInTokyo()))return false;
-        if(store.financialStarted(operationId))return false;
+        if(store.abortRequested(operationId)||store.financialStarted(operationId))return false;
         release(order,op);return true;
     }
     private Order lockedOrder(long id,long customer){
@@ -171,7 +179,7 @@ public class OrderIncreaseService {
     }
     private void release(Order order,OrderChangeStore.Operation op){
         if(op.state().equals("ABORTED"))return;
-        if(!op.state().equals("RESERVED") || op.switchDecidedAt()!=null || store.financialStarted(op.id()))throw new IllegalStateException("Financial change cannot be aborted here");
+        if(!op.state().equals("RESERVED") || op.switchDecidedAt()!=null || store.abortRequested(op.id()) || store.financialStarted(op.id()))throw new IllegalStateException("Financial change cannot be aborted here");
         var reservations=store.reservations(op.id());
         if(reservations.isEmpty() || reservations.stream().anyMatch(r->!r.state().equals("HELD")))throw new IllegalStateException("Reservation state mismatch");
         // Flush/refresh before any release: a caller may have loaded stale Product entities.

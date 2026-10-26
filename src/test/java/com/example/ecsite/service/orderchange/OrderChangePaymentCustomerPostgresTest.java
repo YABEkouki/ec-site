@@ -193,7 +193,10 @@ class OrderChangePaymentCustomerPostgresTest {
   assertThat(replay.get("id")).isEqualTo(request.get("id"));assertThat(replay.get("idempotency_key")).isEqualTo(request.get("idempotency_key"));
   assertThat((byte[])replay.get("request_body")).isEqualTo((byte[])request.get("request_body"));
   assertThat(jdbc.queryForObject("select count(*) from payments where order_id=?",Integer.class,f.order())).isEqualTo(2);
-  verify(gateway,times(category==com.example.ecsite.payment.PaymentGatewayErrorCategory.SERVER_RESULT_UNKNOWN?1:2)).sendOrderChangeRequest(any());
+  verify(gateway,times(1)).sendOrderChangeRequest(any());
+  assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op)).isEqualTo("HELD");
+  assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+  assertThat(oldCancelled.get()).isFalse();
  }
 
  @Test void manualWithdrawalAndExpiryRaceReleaseExactlyOnce() throws Exception {
@@ -232,4 +235,25 @@ class OrderChangePaymentCustomerPostgresTest {
   assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product())).isEqualTo(10);
   verifyNoInteractions(gateway);
  }
+ @Test void withdrawalConfirmationForStartedFinancialWorkRecordsPendingIntentWithoutReleasingStock() throws Exception {
+  var f=fixture();var op=accept(f);financialTransactions.prepare(f.order(),op);
+  var session=new MockHttpSession();String url=root(f)+"/"+op;
+  var confirmation=mvc.perform(get(url+"/withdraw").with(customer(f.user())).session(session))
+   .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("元の注文はキャンセルされません"))).andReturn();
+  var command=(com.example.ecsite.controller.OrderIncreaseController.WithdrawalCommand)confirmation.getModelAndView().getModel().get("withdrawalCommand");
+  assertThat(jdbc.queryForObject("select abort_request_id is null from order_change_operations where id=?",Boolean.class,op)).isTrue();
+  verifyNoInteractions(gateway);
+  mvc.perform(post(url+"/withdraw").with(customer(f.user())).with(csrf()).session(session)
+   .param("requestId",command.requestId().toString()).param("expectedVersion",Long.toString(command.expectedVersion())))
+   .andExpect(status().isFound()).andExpect(redirectedUrl(url));
+  assertThat(jdbc.queryForObject("select abort_request_id from order_change_operations where id=?",UUID.class,op)).isEqualTo(command.requestId());
+  assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op)).isEqualTo("HELD");
+  assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+  assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product())).isEqualTo(7);
+  mvc.perform(get(url).with(customer(f.user()))).andExpect(status().isOk())
+   .andExpect(content().string(org.hamcrest.Matchers.containsString("取り下げ依頼を受付済み")))
+   .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("カード認証を開始・確認する"))))
+   .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("サーバーで結果を確認して続行する"))));
+ }
+
 }

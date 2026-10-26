@@ -17,6 +17,15 @@ public class OrderChangeFinancialRequestStore {
     private final JdbcTemplate jdbc;
     public OrderChangeFinancialRequestStore(JdbcTemplate jdbc){this.jdbc=jdbc;}
     public StoredOrderChangeRequest save(long paymentId,long transactionId,OrderChangeHttpRequest request){
+        return save(paymentId,transactionId,request,false);
+    }
+    /** Only a permit minted by the internal, validated preparation transaction may cross this boundary. */
+    public StoredOrderChangeRequest savePreparedAbort(com.example.ecsite.service.orderchange.OrderReauthorizationTransactions.PreparedAbortRequest permit){
+        Objects.requireNonNull(permit);
+        if(!"NEW_ABORT".equals(permit.request().kind()))throw new IllegalArgumentException("Expected prepared new abort");
+        return save(permit.paymentId(),permit.transactionId(),permit.request(),true);
+    }
+    private StoredOrderChangeRequest save(long paymentId,long transactionId,OrderChangeHttpRequest request,boolean requestedAbort){
         requireTransaction();
         if(TransactionSynchronizationManager.isCurrentTransactionReadOnly())throw new IllegalStateException("Writable transaction required");
         // Order -> operation -> Payment ascending -> Transaction, including calls outside Spring proxies.
@@ -51,6 +60,9 @@ public class OrderChangeFinancialRequestStore {
                 throw new IllegalArgumentException("Order change request content conflict");
             return saved;
         }
+        if(operation.get("abort_request_id")!=null&&(!requestedAbort||!"NEW_ABORT".equals(request.kind())
+                ||!"ABORTING".equals(operation.get("state"))||operation.get("abort_flow_closed_at")!=null))
+            throw new IllegalStateException("Abort intent forbids unprepared financial requests");
         if(!"PENDING".equals(target.get("status")))throw new IllegalStateException("New request requires pending transaction");
         if(request.kind().equals("CREATE")&&(!"RESERVED".equals(operation.get("state"))||operation.get("switch_decided_at")!=null
                 ||target.get("provider_payment_id")!=null||request.amount()!=((Number)target.get("payment_amount")).intValue()
@@ -75,13 +87,27 @@ public class OrderChangeFinancialRequestStore {
         requireTransaction();
         return jdbc.queryForObject("select * from order_change_financial_requests where id=?",(rs,n)->map(rs),id);
     }
-    /** Re-check durable role/state immediately before minting a transport token. No POST in this transaction. */
+    /** Eligibility has already been consumed, or predates dispatch tracking. Observation only. */
+    public static final class DispatchUnavailable extends RuntimeException {
+        public DispatchUnavailable(){super("Request is legacy or dispatch has already started; observation only");}
+    }
+    /** Called only after validated provider GET evidence, in the result-application transaction. */
+    public void observed(UUID operationId,String kind){
+        requireTransaction();
+        jdbc.update("""
+            update order_change_request_dispatches d set state='OBSERVED',observed_at=clock_timestamp()
+            from order_change_financial_requests r
+            where r.id=d.request_id and r.operation_id=? and r.request_kind=? and d.state='STARTED'
+            """,operationId,kind);
+    }
+    /** Atomically consume eligibility before minting a token. Caller must commit before POST. */
     public StoredOrderChangeRequest findForDispatch(long id){
         requireTransaction();
         var saved=find(id);var request=saved.httpRequest();
         jdbc.queryForObject("select id from orders where id=? for update",Long.class,request.orderId());
         var op=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=? for update",request.operationId(),request.orderId());
         jdbc.queryForList("select id from payments where order_id=? order by id for update",request.orderId());
+        if(op.get("abort_request_id")!=null)throw new DispatchUnavailable();
         // Reuse all ownership, revision, amount, key and exact-request checks.
         save(saved.paymentId(),saved.transactionId(),request);
         if(!"PENDING".equals(jdbc.queryForObject("select status from payment_transactions where id=?",String.class,saved.transactionId())))
@@ -94,6 +120,10 @@ public class OrderChangeFinancialRequestStore {
         };
         if(!eligible)throw new IllegalStateException("Order change is not eligible for request dispatch");
         saved.requireReplayAt(jdbc.queryForObject("select clock_timestamp()",OffsetDateTime.class).toInstant());
+        if(jdbc.update("""
+            update order_change_request_dispatches set state='STARTED',started_at=clock_timestamp()
+            where request_id=? and state='READY'
+            """,id)!=1)throw new DispatchUnavailable();
         return saved;
     }
     private static void requireTransaction(){

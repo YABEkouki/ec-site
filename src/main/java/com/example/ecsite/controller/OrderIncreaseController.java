@@ -4,6 +4,7 @@ import java.util.*;
 import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.orderchange.OrderIncreaseService;
+import com.example.ecsite.service.orderchange.OrderChangeWithdrawalService;
 import com.example.ecsite.exception.*;
 import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,13 +15,16 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.*;
 
-/** Local candidate screens only. No Gateway, client secret, or financial orchestration dependency. */
+/** Customer candidate screens. Financial work is submitted only by an explicit confirmed POST. */
 @Controller
 @RequestMapping("/orders/{id}/increase")
 public class OrderIncreaseController {
     private static final String QUOTES=OrderIncreaseController.class.getName()+".quotes";
+    private static final String WITHDRAWALS=OrderIncreaseController.class.getName()+".withdrawals";
+    public record WithdrawalCommand(long orderId,long customerId,UUID operationId,UUID requestId,long expectedVersion){}
     private final OrderIncreaseService increases;
-    public OrderIncreaseController(OrderIncreaseService increases){this.increases=increases;}
+    private final OrderChangeWithdrawalService withdrawals;
+    public OrderIncreaseController(OrderIncreaseService increases,OrderChangeWithdrawalService withdrawals){this.increases=increases;this.withdrawals=withdrawals;}
     @InitBinder("increaseForm")
     void binder(WebDataBinder binder){
         binder.setAllowedFields("contentRevision","items[*].orderItemId","items[*].quantity");
@@ -80,6 +84,8 @@ public class OrderIncreaseController {
     public String status(@PathVariable long id,@PathVariable UUID operationId,
             @AuthenticationPrincipal CustomUserDetails user,Model model){
         var operation=increases.status(id,user.getId(),operationId);
+        var withdrawal=withdrawals.status(id,user.getId(),operationId);
+        model.addAttribute("withdrawalStatus",withdrawal);
         model.addAttribute("orderId",id);model.addAttribute("operation",operation);model.addAttribute("mode","STATUS");
         model.addAttribute("statusMessage",switch(operation.state()){
             case "RESERVED" -> "数量増加候補を受け付けました。決済はまだ開始していません。";
@@ -90,9 +96,44 @@ public class OrderIncreaseController {
         });
         return "orders/increase";
     }
+    @GetMapping("/{operationId}/withdraw")
+    public String confirmWithdrawal(@PathVariable long id,@PathVariable UUID operationId,
+            @AuthenticationPrincipal CustomUserDetails user,HttpSession session,Model model){
+        var operation=increases.status(id,user.getId(),operationId);
+        var withdrawal=withdrawals.status(id,user.getId(),operationId);
+        if(!withdrawal.canRequest())return operationUrl(id,operationId);
+        final WithdrawalCommand command;
+        synchronized(session){
+            var commands=withdrawalCommands(session);
+            var existing=commands.get(operationId);
+            if(existing!=null && (existing.orderId()!=id || existing.customerId()!=user.getId()))throw new OrderNotFoundException(id);
+            command=existing!=null && existing.expectedVersion()==operation.version()?existing:
+                    new WithdrawalCommand(id,user.getId(),operationId,UUID.randomUUID(),operation.version());
+            commands.put(operationId,command);
+        }
+        model.addAttribute("orderId",id);model.addAttribute("operation",operation);
+        model.addAttribute("withdrawalCommand",command);model.addAttribute("mode","WITHDRAW_CONFIRM");
+        return "orders/increase";
+    }
     @PostMapping("/{operationId}/withdraw")
-    public String withdraw(@PathVariable long id,@PathVariable UUID operationId,@AuthenticationPrincipal CustomUserDetails user){
-        increases.abort(id,user.getId(),operationId);return operationUrl(id,operationId);
+    public String withdraw(@PathVariable long id,@PathVariable UUID operationId,@AuthenticationPrincipal CustomUserDetails user,
+            @RequestParam(required=false) UUID requestId,@RequestParam(required=false) Long expectedVersion,HttpSession session){
+        // Check ownership even when the browser has no valid confirmation command.
+        withdrawals.status(id,user.getId(),operationId);
+        final WithdrawalCommand command;
+        synchronized(session){command=withdrawalCommands(session).get(operationId);}
+        if(command==null)throw new IllegalStateException("Withdrawal confirmation expired");
+        if(command.orderId()!=id || command.customerId()!=user.getId() || !command.operationId().equals(operationId))throw new OrderNotFoundException(id);
+        if(!command.requestId().equals(requestId) || expectedVersion==null || command.expectedVersion()!=expectedVersion)
+            throw new IllegalStateException("Withdrawal confirmation changed");
+        withdrawals.withdraw(id,user.getId(),operationId,command.requestId(),command.expectedVersion());
+        return operationUrl(id,operationId);
+    }
+    @SuppressWarnings("unchecked")
+    private Map<UUID,WithdrawalCommand> withdrawalCommands(HttpSession session){
+        var value=session.getAttribute(WITHDRAWALS);
+        if(value==null){value=new LinkedHashMap<UUID,WithdrawalCommand>();session.setAttribute(WITHDRAWALS,value);}
+        return (Map<UUID,WithdrawalCommand>)value;
     }
     @ExceptionHandler({IllegalArgumentException.class,IllegalStateException.class,InvalidOrderStatusException.class,org.springframework.beans.InvalidPropertyException.class})
     @ResponseStatus(org.springframework.http.HttpStatus.CONFLICT)

@@ -35,7 +35,7 @@ public class OrderChangeBrowserService {
         increases.status(order,customer,operation);
         increases.expireReserved(order,operation);
         var view=financial.advance(order,operation);
-        if(!"AUTHORIZING".equals(view.state()) || view.newFlow()==null)return Optional.empty();
+        if(view.abortRequested() || !"AUTHORIZING".equals(view.state()) || view.newFlow()==null)return Optional.empty();
         var observed=gateway.observeOrderChangeFlow(view.newFlow());
         view=results.authorization(order,operation,observed);
         if(!"AUTHORIZING".equals(view.state()) || !"requires_payment_method".equals(observed.status()))return Optional.empty();

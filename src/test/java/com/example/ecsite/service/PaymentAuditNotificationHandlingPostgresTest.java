@@ -59,7 +59,7 @@ class PaymentAuditNotificationHandlingPostgresTest {
  void change(long id,PaymentAuditNotificationHandlingStatus s,String comment){service.changeStatus(id,7,"admin",token(id),s,comment);}
  long notification(){return f.notification("EXHAUSTED",PaymentAuditNotificationHistoryFixtures.NOW);}
  long count(String table){return jdbc.queryForObject("select count(*) from "+table,Long.class);}
- @Test void migrationAndHibernateValidation(){assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)).isEqualTo(57);}
+ @Test void migrationAndHibernateValidation(){assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)).isEqualTo(67);}
  @ParameterizedTest @CsvSource({"UNREVIEWED,IN_PROGRESS","UNREVIEWED,RESOLVED","IN_PROGRESS,UNREVIEWED","IN_PROGRESS,RESOLVED","RESOLVED,IN_PROGRESS","RESOLVED,UNREVIEWED"})
  void transitionsAndVersion(PaymentAuditNotificationHandlingStatus from,PaymentAuditNotificationHandlingStatus to){
   long id=notification();if(from!=PaymentAuditNotificationHandlingStatus.UNREVIEWED) change(id,from,"準備");
