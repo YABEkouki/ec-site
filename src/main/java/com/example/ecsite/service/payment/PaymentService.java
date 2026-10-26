@@ -20,6 +20,7 @@ import com.example.ecsite.entity.PaymentMethod;
 import com.example.ecsite.entity.PaymentProvider;
 import com.example.ecsite.entity.PaymentStatus;
 import com.example.ecsite.entity.PaymentTransaction;
+import com.example.ecsite.entity.PaymentTransactionPurpose;
 import com.example.ecsite.entity.PaymentTransactionInitiator;
 import com.example.ecsite.entity.PaymentTransactionStatus;
 import com.example.ecsite.entity.PaymentTransactionType;
@@ -41,6 +42,7 @@ public class PaymentService {
     private final Clock clock;
     private final CaptureShipmentOperations captureOperations;
     private final OrderModificationGuard orderModificationGuard;
+    private final OrderPaymentGuard orderPaymentGuard;
 
     @Autowired
     public PaymentService(
@@ -48,7 +50,7 @@ public class PaymentService {
             PaymentTransactionRepository paymentTransactionRepository,
             PaymentConsistencyEvaluator paymentConsistencyEvaluator,
             OrderModificationGuard orderModificationGuard,
-            CaptureShipmentOperations captureOperations) {
+            CaptureShipmentOperations captureOperations, OrderPaymentGuard orderPaymentGuard) {
 
         this(
                 paymentRepository,
@@ -56,6 +58,7 @@ public class PaymentService {
                 paymentConsistencyEvaluator,
                 orderModificationGuard,
                 captureOperations,
+                orderPaymentGuard,
                 Clock.system(ZoneId.of("Asia/Tokyo")));
     }
 
@@ -65,6 +68,7 @@ public class PaymentService {
             PaymentConsistencyEvaluator paymentConsistencyEvaluator,
             OrderModificationGuard orderModificationGuard,
             CaptureShipmentOperations captureOperations,
+            OrderPaymentGuard orderPaymentGuard,
             Clock clock) {
 
         this.paymentRepository = paymentRepository;
@@ -73,6 +77,7 @@ public class PaymentService {
         this.clock = clock;
         this.captureOperations = captureOperations;
         this.orderModificationGuard = orderModificationGuard;
+        this.orderPaymentGuard = orderPaymentGuard;
     }
 
     /**
@@ -118,6 +123,7 @@ public class PaymentService {
 
     @Transactional
     public PaymentAuthorizationStart startAuthorization(Order order) {
+        orderPaymentGuard.requireNoOrderChange(order);
 
         List<Payment> payments = paymentRepository
                 .findByOrderIdForUpdate(
@@ -172,6 +178,7 @@ public class PaymentService {
                 now);
 
         paymentRepository.save(payment);
+        order.bindActivePayment(payment);
 
         PaymentTransaction transaction = new PaymentTransaction(
                 payment,
@@ -179,7 +186,7 @@ public class PaymentService {
                 payment.getAmount(),
                 order.getContentRevision(),
                 UUID.randomUUID().toString(),
-                now);
+                now, PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);
 
         paymentTransactionRepository.save(transaction);
 
@@ -288,6 +295,7 @@ public class PaymentService {
                 || !matchesOrder(order, snapshot) || order.getStatus() != OrderStatus.ORDERED
                 || payment.getAmount() != snapshot.amount() || competingPending(target))
             return PaymentResultApplication.IGNORED_STALE;
+        if (!target.currentPurposeMatches()) return PaymentResultApplication.CONFLICT;
         if (Objects.equals(payment.getProviderPaymentId(), providerPaymentId))
             return PaymentResultApplication.ALREADY_APPLIED;
         payment.setProviderPaymentId(providerPaymentId, LocalDateTime.now(clock));
@@ -298,7 +306,9 @@ public class PaymentService {
     public PaymentResultApplication applyAuthorizationResult(Order order, PaymentOperationSnapshot snapshot,
             AuthorizationResult result) {
         var target = target(order, snapshot, PaymentTransactionType.AUTHORIZE, false);
-        if (target == null) return PaymentResultApplication.CONFLICT;
+        if (target == null || (result.providerTransactionId()!=null
+                && !Objects.equals(snapshot.providerPaymentId(),result.providerTransactionId())))
+            return PaymentResultApplication.CONFLICT;
         Payment payment = target.payment(); PaymentTransaction transaction = target.transaction();
         if (transaction.getStatus() != PaymentTransactionStatus.PENDING) {
             boolean same = (transaction.getStatus() == PaymentTransactionStatus.SUCCEEDED
@@ -307,8 +317,9 @@ public class PaymentService {
                     || (transaction.getStatus() == PaymentTransactionStatus.FAILED
                     && result.status() == AuthorizationResultStatus.FAILED && payment.getStatus() == PaymentStatus.FAILED
                     && order.getStatus() == OrderStatus.CANCELLED);
-            return same && !competingPending(target) ? PaymentResultApplication.ALREADY_APPLIED : PaymentResultApplication.IGNORED_STALE;
+            return same && target.currentPurposeMatches() && !competingPending(target) ? PaymentResultApplication.ALREADY_APPLIED : PaymentResultApplication.IGNORED_STALE;
         }
+        if (!target.currentPurposeMatches()) return PaymentResultApplication.CONFLICT;
         if (!matchesOrder(order, snapshot) || payment.getAmount() != snapshot.amount())
             return PaymentResultApplication.CONFLICT;
         if (order.getStatus() != OrderStatus.ORDERED
@@ -321,7 +332,7 @@ public class PaymentService {
                 payment.markRequiresAction(now);
             }
             case AUTHORIZED -> { payment.markAuthorized(now); transaction.markSucceeded(result.providerTransactionId(), now); }
-            case FAILED -> { payment.markFailed(now); transaction.markFailed(result.providerTransactionId(), result.failureCode(), result.failureMessage(), now); }
+            case FAILED -> { order.clearActivePaymentAfterTermination(payment.getId()); payment.markFailed(now); transaction.markFailed(result.providerTransactionId(), result.failureCode(), result.failureMessage(), now); }
             case PENDING, REQUIRES_PAYMENT_METHOD, REQUIRES_CONFIRMATION -> { }
         }
         return PaymentResultApplication.APPLIED;
@@ -380,6 +391,7 @@ public class PaymentService {
             Order order,
             PaymentTransactionInitiator initiator) {
 
+        orderPaymentGuard.requireNoOrderChange(order);
         List<Payment> payments = paymentRepository.findByOrderIdForUpdate(
                 order.getId());
         validateInactivePayments(payments);
@@ -446,7 +458,7 @@ public class PaymentService {
                 order.getContentRevision(),
                 UUID.randomUUID().toString(),
                 now,
-                initiator);
+                initiator, PaymentTransactionPurpose.ORDER_CANCELLATION);
 
         paymentTransactionRepository.save(transaction);
 
@@ -469,14 +481,16 @@ public class PaymentService {
             boolean same = transaction.getStatus() == PaymentTransactionStatus.SUCCEEDED
                     && result.status() == CancellationResultStatus.CANCELLED && payment.getStatus() == PaymentStatus.CANCELLED
                     && order.getStatus() == OrderStatus.CANCELLED;
-            return same && !competingPending(target) ? PaymentResultApplication.ALREADY_APPLIED : PaymentResultApplication.IGNORED_STALE;
+            return same && target.currentPurposeMatches() && !competingPending(target) ? PaymentResultApplication.ALREADY_APPLIED : PaymentResultApplication.IGNORED_STALE;
         }
+        if (!target.currentPurposeMatches()) return PaymentResultApplication.CONFLICT;
         if (transaction.getOrderContentRevision() != order.getContentRevision()
                 || snapshot.amount() != payment.getAmount()) return PaymentResultApplication.CONFLICT;
         if (payment.getStatus() != PaymentStatus.AUTHORIZED || order.getStatus() != OrderStatus.ORDERED
                 || competingPending(target)) return PaymentResultApplication.IGNORED_STALE;
         if (result.status() == CancellationResultStatus.CANCELLED) {
             LocalDateTime now = LocalDateTime.now(clock);
+            order.clearActivePaymentAfterTermination(payment.getId());
             payment.markCancelled(now); transaction.markSucceeded(result.providerTransactionId(), now);
         }
         return PaymentResultApplication.APPLIED;
@@ -488,12 +502,15 @@ public class PaymentService {
         if (snapshot == null || snapshot.transactionId() == null || snapshot.paymentId() == null
                 || !Objects.equals(order.getId(), snapshot.orderId()) || snapshot.type() != type
                 || snapshot.idempotencyKey() == null || snapshot.idempotencyKey().isBlank()) return null;
-        Payment payment = paymentRepository.findByIdForUpdate(snapshot.paymentId()).orElse(null);
+        List<Payment> lockedPayments = paymentRepository.findByOrderIdForUpdate(order.getId());
+        Payment payment = lockedPayments.stream().filter(p -> Objects.equals(p.getId(), snapshot.paymentId())).findFirst().orElse(null);
         PaymentTransaction transaction = paymentTransactionRepository.findById(snapshot.transactionId()).orElse(null);
         if (payment == null || transaction == null
                 || !Objects.equals(payment.getOrder().getId(), order.getId())
                 || !Objects.equals(transaction.getPayment().getId(), payment.getId())
                 || transaction.getTransactionType() != type
+                || transaction.getPurpose() != snapshot.purpose()
+                || transaction.getOrderChangeOperationId() != null
                 || !Objects.equals(transaction.getIdempotencyKey(), snapshot.idempotencyKey())
                 || transaction.getAmount() != snapshot.amount()
                 || transaction.getOrderContentRevision() != snapshot.orderContentRevision()
@@ -507,7 +524,15 @@ public class PaymentService {
                 || !Objects.equals(payment.getProviderPaymentId(), snapshot.providerPaymentId()))) return null;
         if (assigningProviderId && snapshot.providerPaymentId() != null
                 && !Objects.equals(payment.getProviderPaymentId(), snapshot.providerPaymentId())) return null;
-        return new ResultTarget(payment, transaction);
+        List<PaymentTransaction> history = lockedPayments.stream().flatMap(p -> paymentTransactionRepository
+                .findByPaymentIdOrderByCreatedAtAscIdAsc(p.getId()).stream()).toList();
+        // Historical identity may justify ignoring a stale response, never applying it.
+        // Current-state eligibility is retained separately and required before every mutation.
+        var resolver = new PaymentPurposeResolver();
+        boolean currentPurposeMatches = resolver.matches(order, payment, transaction, snapshot, lockedPayments, history,
+                orderPaymentGuard.completedOrderChanges(order), orderPaymentGuard.abortedOrderChanges(order));
+        if (!currentPurposeMatches && !resolver.matchesResultIdentity(order, payment, transaction, snapshot, history)) return null;
+        return new ResultTarget(payment, transaction, currentPurposeMatches);
     }
 
     private boolean competingPending(ResultTarget target) {
@@ -523,7 +548,7 @@ public class PaymentService {
         return order.getTotalAmount() == snapshot.amount() && order.getContentRevision() == snapshot.orderContentRevision();
     }
 
-    private record ResultTarget(Payment payment, PaymentTransaction transaction) { }
+    private record ResultTarget(Payment payment, PaymentTransaction transaction, boolean currentPurposeMatches) { }
 
     @Transactional(readOnly = true)
     public PaymentTransactionInitiator getCancellationInitiator(Long transactionId, Long paymentId) {
@@ -597,7 +622,10 @@ public class PaymentService {
         long active = payments.stream()
                 .filter(p -> p.getStatus() != PaymentStatus.FAILED && p.getStatus() != PaymentStatus.CANCELLED)
                 .count();
-        if (active != 1) {
+        boolean referenceMismatch = payments.stream().anyMatch(p -> p.getStatus() != PaymentStatus.FAILED
+                && p.getStatus() != PaymentStatus.CANCELLED && p.getOrder().getActivePaymentId() != null
+                && !Objects.equals(p.getOrder().getActivePaymentId(), p.getId()));
+        if (active != 1 || referenceMismatch) {
             throw new IllegalStateException("有効な決済が一意でないため、決済操作を開始できません。");
         }
     }
@@ -614,6 +642,9 @@ public class PaymentService {
     private void validatePendingSnapshot(Order order, Payment payment,
             PaymentTransaction transaction, boolean matchOrderAmount) {
         int expectedAmount = matchOrderAmount ? order.getTotalAmount() : payment.getAmount();
+        if (transaction.getPurpose() != null && !new PaymentPurposePolicy().isUsableInStage1A(
+                transaction.getTransactionType().name(), transaction.getPurpose()))
+            throw new IllegalStateException("Unsupported pending payment purpose");
         if (transaction.getAmount() != expectedAmount
                 || transaction.getOrderContentRevision() != order.getContentRevision()
                 || (transaction.getTransactionType() == PaymentTransactionType.AUTHORIZE
@@ -660,6 +691,12 @@ public class PaymentService {
                         payment.getId(),
                         PaymentTransactionType.AUTHORIZE,
                         PaymentTransactionStatus.SUCCEEDED)
+                .filter(transaction -> transaction.getPurpose() == null
+                        || transaction.getPurpose() == PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION
+                        || (transaction.getPurpose() == PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION
+                            && Objects.equals(order.getActivePaymentId(), payment.getId())
+                            && transaction.getOrderChangeOperationId()!=null
+                            && orderPaymentGuard.completedOrderChanges(order).contains(transaction.getOrderChangeOperationId())))
                 .map(transaction -> paymentConsistencyEvaluator.evaluate(
                         order,
                         payment,

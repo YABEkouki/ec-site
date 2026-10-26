@@ -70,6 +70,7 @@ class PaymentServiceTest {
                 new PaymentConsistencyEvaluator(),
                 orderModificationGuard,
                 captureOperations,
+                mock(OrderPaymentGuard.class),
                 clock);
     }
 
@@ -77,6 +78,7 @@ class PaymentServiceTest {
     void startAuthorizationCreatesPendingPaymentAndTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getTotalAmount()).thenReturn(12_345);
         when(order.getContentRevision()).thenReturn(2);
@@ -87,6 +89,11 @@ class PaymentServiceTest {
                 .findByOrderIdForUpdate(100L))
                 .thenReturn(List.of());
 
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
+            Payment saved = invocation.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(saved,"id",10L);
+            return saved;
+        });
         PaymentAuthorizationStart result = paymentService.startAuthorization(order);
 
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
@@ -130,6 +137,7 @@ class PaymentServiceTest {
     void startAuthorizationReusesExistingPendingPaymentAndTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
 
@@ -146,7 +154,7 @@ class PaymentServiceTest {
                 2,
                 "authorization-key-123",
                 LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
+                        2026, 10, 1, 9, 30), TEST_INITIATOR);
 
         when(paymentRepository
                 .findByOrderIdForUpdate(100L))
@@ -189,6 +197,7 @@ class PaymentServiceTest {
     void startAuthorizationRejectsMultiplePendingPayments() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
 
@@ -213,6 +222,7 @@ class PaymentServiceTest {
     void startAuthorizationRejectsPendingPaymentWithoutPendingAuthorizationTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
 
@@ -244,6 +254,7 @@ class PaymentServiceTest {
     void findProviderPaymentIdReturnsStoredId() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
 
         payment.setProviderPaymentId(
@@ -262,6 +273,7 @@ class PaymentServiceTest {
     void findProviderPaymentIdReturnsEmptyWhenNotSet() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
 
         when(paymentRepository.findById(10L))
@@ -276,6 +288,7 @@ class PaymentServiceTest {
     void setProviderPaymentIdUpdatesPayment() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         Payment payment = new Payment(
                 order,
@@ -304,6 +317,7 @@ class PaymentServiceTest {
     void pendingAuthorizationResultDoesNotChangePaymentOrTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
@@ -339,6 +353,7 @@ class PaymentServiceTest {
     void requiresPaymentMethodDoesNotFailPaymentOrTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
@@ -377,6 +392,7 @@ class PaymentServiceTest {
     void requiresConfirmationDoesNotChangePaymentOrTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
@@ -415,6 +431,7 @@ class PaymentServiceTest {
     void requiresActionUpdatesPaymentButLeavesTransactionPending() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
@@ -457,6 +474,7 @@ class PaymentServiceTest {
     void authorizedResultCompletesPaymentAndTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
@@ -507,6 +525,7 @@ class PaymentServiceTest {
     void failedResultFailsPaymentAndTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
         PaymentTransaction transaction = createAuthorizationTransaction(payment);
 
@@ -553,6 +572,7 @@ class PaymentServiceTest {
     void getProviderPaymentIdReturnsStoredId() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
 
         payment.setProviderPaymentId(
@@ -571,6 +591,7 @@ class PaymentServiceTest {
     void repeatedAuthorizedResultDoesNothing() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
 
         payment.markAuthorized(
@@ -606,6 +627,7 @@ class PaymentServiceTest {
     void repeatedFailedResultDoesNothing() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         Payment payment = createPayment(order);
 
         payment.markFailed(
@@ -641,6 +663,7 @@ class PaymentServiceTest {
     void validatePaymentBelongsToOrderAcceptsMatchingOrder() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId())
                 .thenReturn(100L);
@@ -662,6 +685,7 @@ class PaymentServiceTest {
     void validatePaymentBelongsToOrderRejectsDifferentOrder() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId())
                 .thenReturn(100L);
@@ -695,6 +719,7 @@ class PaymentServiceTest {
     void startCancellationCreatesPendingCancelTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
         when(order.getContentRevision()).thenReturn(3);
@@ -790,6 +815,7 @@ class PaymentServiceTest {
     void startCancellationReusesExistingPendingTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
         when(order.getContentRevision()).thenReturn(2);
@@ -849,6 +875,7 @@ class PaymentServiceTest {
     @Test
     void startCancellationRejectsClosedModificationWindowWithoutSavingTransaction() {
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         Payment payment = createPayment(order);
         payment.setProviderPaymentId("pf_test_123", LocalDateTime.of(2026, 10, 1, 9, 10));
@@ -866,6 +893,7 @@ class PaymentServiceTest {
     void startCancellationRejectsOrderWithoutAuthorizedPayment() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
 
@@ -889,6 +917,7 @@ class PaymentServiceTest {
     void cancellationResultCancelsPaymentAndCompletesTransaction() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         Payment payment = createPayment(order);
 
@@ -902,7 +931,7 @@ class PaymentServiceTest {
                 2,
                 "cancel-key-123",
                 LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
+                        2026, 10, 1, 9, 30), TEST_INITIATOR);
 
         when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
@@ -939,6 +968,7 @@ class PaymentServiceTest {
     void pendingCancellationResultLeavesStatesUnchanged() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         Payment payment = createPayment(order);
 
@@ -952,7 +982,7 @@ class PaymentServiceTest {
                 2,
                 "cancel-key-123",
                 LocalDateTime.of(
-                        2026, 10, 1, 9, 30));
+                        2026, 10, 1, 9, 30), TEST_INITIATOR);
 
         when(paymentRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(payment));
@@ -1058,6 +1088,7 @@ class PaymentServiceTest {
     void canResumeAuthorizationReturnsFalseForProviderlessPendingPayJpCardAuthorization() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
 
@@ -1083,6 +1114,7 @@ class PaymentServiceTest {
     void canResumeAuthorizationReturnsFalseWhenPendingPaymentDoesNotExist() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
 
         when(paymentRepository.findByOrderIdOrderByCreatedAtAscIdAsc(100L))
@@ -1102,6 +1134,7 @@ class PaymentServiceTest {
     void canResumeAuthorizationReturnsFalseWhenPendingAuthorizationTransactionDoesNotExist() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         Payment payment = createPayment(order);
 
@@ -1123,6 +1156,7 @@ class PaymentServiceTest {
     void canResumeAuthorizationReturnsTrueWhenProviderPaymentIdExists() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
 
@@ -1152,6 +1186,7 @@ class PaymentServiceTest {
     void canRecoverAuthorizationReturnsTrueWhenProviderPaymentIdExists() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
 
@@ -1181,6 +1216,7 @@ class PaymentServiceTest {
     void getRecoverableAuthorizationPaymentIdReturnsExistingPaymentId() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
 
@@ -1211,6 +1247,7 @@ class PaymentServiceTest {
     void canRecoverAuthorizationReturnsFalseWhenPaymentAmountDoesNotMatchOrder() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(5000);
 
@@ -1237,6 +1274,7 @@ class PaymentServiceTest {
     void canRecoverAuthorizationReturnsFalseWhenContentRevisionDoesNotMatch() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
         when(order.getContentRevision()).thenReturn(3);
@@ -1270,6 +1308,7 @@ class PaymentServiceTest {
     void canRecoverAuthorizationReturnsTrueForRequiresActionPayment() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
 
@@ -1302,6 +1341,7 @@ class PaymentServiceTest {
     void canRecoverAuthorizationReturnsFalseForRequiresActionWithoutProviderPaymentId() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
 
@@ -1327,6 +1367,7 @@ class PaymentServiceTest {
     void canResumeAuthorizationReturnsFalseWhenPaymentAmountDoesNotMatchOrder() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(5000);
@@ -1353,6 +1394,7 @@ class PaymentServiceTest {
     void canResumeAuthorizationReturnsFalseWhenContentRevisionDoesNotMatch() {
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getId()).thenReturn(100L);
         when(order.getTotalAmount()).thenReturn(12_345);
@@ -1413,6 +1455,7 @@ class PaymentServiceTest {
         Long orderId = 100L;
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getTotalAmount()).thenReturn(12_345);
         when(order.getContentRevision()).thenReturn(2);
@@ -1448,6 +1491,7 @@ class PaymentServiceTest {
         Long orderId = 100L;
 
         Order order = mock(Order.class);
+        when(order.getActivePaymentId()).thenReturn(null);
 
         when(order.getTotalAmount()).thenReturn(10_000);
         when(order.getContentRevision()).thenReturn(1);
@@ -1530,8 +1574,11 @@ class PaymentServiceTest {
         org.springframework.test.util.ReflectionTestUtils.setField(payment,"id",10L);
         when(order.getId()).thenReturn(1L);
         PaymentTransaction transaction = paymentTransactionRepository.findByPaymentIdAndTransactionTypeAndStatus(
-                10L,type,PaymentTransactionStatus.PENDING).orElseGet(() -> new PaymentTransaction(payment,type,12345,2,"fixture-key",LocalDateTime.of(2026,10,1,9,0)));
+                10L,type,PaymentTransactionStatus.PENDING).orElseGet(() -> type==PaymentTransactionType.CANCEL
+                    ? new PaymentTransaction(payment,type,12345,2,"fixture-key",LocalDateTime.of(2026,10,1,9,0),TEST_INITIATOR)
+                    : new PaymentTransaction(payment,type,12345,2,"fixture-key",LocalDateTime.of(2026,10,1,9,0)));
         org.springframework.test.util.ReflectionTestUtils.setField(transaction,"id",100L);
+        when(paymentRepository.findByOrderIdForUpdate(1L)).thenReturn(List.of(payment));
         when(paymentTransactionRepository.findById(100L)).thenReturn(Optional.of(transaction));
         when(paymentTransactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(10L)).thenReturn(java.util.List.of(transaction));
         when(order.getTotalAmount()).thenReturn(transaction.getAmount());
@@ -1542,6 +1589,13 @@ class PaymentServiceTest {
         if(payment.getStatus()==PaymentStatus.FAILED) {
             transaction.markFailed(null,"card_declined","Card was declined",payment.getUpdatedAt());
             when(order.getStatus()).thenReturn(com.example.ecsite.entity.OrderStatus.CANCELLED);
+        }
+        if(type==PaymentTransactionType.CANCEL) {
+            var authorization=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,payment.getAmount(),
+                    transaction.getOrderContentRevision(),"successful-authorization",transaction.getCreatedAt());
+            org.springframework.test.util.ReflectionTestUtils.setField(authorization,"id",99L);
+            authorization.markSucceeded(payment.getProviderPaymentId(),transaction.getCreatedAt());
+            when(paymentTransactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(10L)).thenReturn(List.of(authorization,transaction));
         }
         org.mockito.Mockito.clearInvocations(paymentTransactionRepository);
         return PaymentOperationSnapshot.from(transaction);
@@ -1578,5 +1632,31 @@ class PaymentServiceTest {
         when(order.getId()).thenReturn(999L);
         assertEquals(PaymentResultApplication.CONFLICT,paymentService.applyCaptureResult(order,snapshot,result));
         verify(captureOperations).apply(snapshot,result);
+    }
+    @Test void futureAuthorizationFailureCannotMutateOriginalPayment() {
+        Order order=mock(Order.class);when(order.getActivePaymentId()).thenReturn(null);
+        Payment payment=createPayment(order);var snapshot=resultSnapshot(payment,PaymentTransactionType.AUTHORIZE);
+        var operation=paymentTransactionRepository.findById(snapshot.transactionId()).orElseThrow();
+        org.springframework.test.util.ReflectionTestUtils.setField(operation,"purpose",com.example.ecsite.entity.PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION);
+        var future=PaymentOperationSnapshot.from(operation);
+        assertEquals(PaymentResultApplication.CONFLICT,paymentService.applyAuthorizationResult(order,future,
+                new AuthorizationResult(AuthorizationResultStatus.FAILED,future.providerPaymentId(),null,null)));
+        assertEquals(PaymentStatus.PENDING,payment.getStatus());
+        assertEquals(PaymentTransactionStatus.PENDING,operation.getStatus());
+        verify(order,never()).clearActivePaymentAfterTermination(anyLong());
+    }
+    @Test void futureOldAuthorizationCancellationCannotMutateOriginalPayment() {
+        Order order=mock(Order.class);when(order.getActivePaymentId()).thenReturn(null);
+        Payment payment=createPayment(order);payment.markAuthorized(LocalDateTime.of(2026,10,1,9,1));
+        var snapshot=resultSnapshot(payment,PaymentTransactionType.CANCEL);
+        var operation=paymentTransactionRepository.findById(snapshot.transactionId()).orElseThrow();
+        assertEquals(PaymentResultApplication.APPLIED,paymentService.applyCancellationResult(order,snapshot,
+                new CancellationResult(CancellationResultStatus.PENDING,snapshot.providerPaymentId())));
+        org.springframework.test.util.ReflectionTestUtils.setField(operation,"purpose",com.example.ecsite.entity.PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL);
+        assertEquals(PaymentResultApplication.CONFLICT,paymentService.applyCancellationResult(order,PaymentOperationSnapshot.from(operation),
+                new CancellationResult(CancellationResultStatus.CANCELLED,snapshot.providerPaymentId())));
+        assertEquals(PaymentStatus.AUTHORIZED,payment.getStatus());
+        assertEquals(PaymentTransactionStatus.PENDING,operation.getStatus());
+        verify(order,never()).clearActivePaymentAfterTermination(anyLong());
     }
 }

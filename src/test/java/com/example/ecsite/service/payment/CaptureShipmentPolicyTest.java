@@ -41,6 +41,48 @@ class CaptureShipmentPolicyTest {
     }
     private CaptureShipmentPolicy.Decision classify() { return policy.classify(order,payments,transactions,expected); }
     private void recovery() { assertThat(classify().disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED); }
+    @Test void completedChangedAuthorizationAndClosedOldGenerationCanShip() {
+        setupNew();
+        var change=UUID.randomUUID();
+        var old=payment;
+        old.markCancelled(NOW);
+        var cancel=PaymentTransaction.forOrderChange(old,PaymentTransactionType.CANCEL,200,0,"old-cancel",NOW,
+                PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL,change);
+        ReflectionTestUtils.setField(cancel,"id",63L);cancel.markSucceeded("provider-id",NOW);transactions.add(cancel);
+        payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,NOW);
+        ReflectionTestUtils.setField(payment,"id",53L);payment.setProviderPaymentId("new-provider",NOW);payment.markAuthorized(NOW);payments.add(payment);
+        order.bindActivePayment(payment);
+        var auth=PaymentTransaction.forOrderChange(payment,PaymentTransactionType.AUTHORIZE,200,0,"changed-auth",NOW,
+                PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION,change);
+        ReflectionTestUtils.setField(auth,"id",64L);auth.markSucceeded("new-provider",NOW);transactions.add(auth);
+        assertThat(classify().disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED);
+        assertThat(policy.classify(order,payments,transactions,null,Set.of(change)).disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.NEW);
+        ReflectionTestUtils.setField(cancel,"orderChangeOperationId",UUID.randomUUID());
+        assertThat(policy.classify(order,payments,transactions,null,Set.of(change)).disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED);
+    }
+    @ParameterizedTest @ValueSource(booleans={false,true})
+    void settledAbortedGenerationDoesNotPreventCapture(boolean authorizationSucceeded) {
+        setupNew();order.bindActivePayment(payment);
+        var aborted=UUID.randomUUID();
+        var closed=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,NOW);
+        ReflectionTestUtils.setField(closed,"id",53L);closed.setProviderPaymentId("aborted-provider",NOW);payments.add(closed);
+        var auth=PaymentTransaction.forOrderChange(closed,PaymentTransactionType.AUTHORIZE,200,0,"aborted-auth",NOW,
+                PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION,aborted);
+        ReflectionTestUtils.setField(auth,"id",64L);transactions.add(auth);
+        if(authorizationSucceeded) {
+            closed.markAuthorized(NOW);closed.markCancelled(NOW);
+            auth.markSucceeded("aborted-provider",NOW);
+            var cancel=PaymentTransaction.forOrderChange(closed,PaymentTransactionType.CANCEL,200,0,"aborted-cancel",NOW,
+                    PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT,aborted);
+            ReflectionTestUtils.setField(cancel,"id",65L);cancel.markSucceeded("aborted-provider",NOW);transactions.add(cancel);
+        } else {
+            closed.markFailed(NOW);auth.markFailed("aborted-provider","canceled","canceled",NOW);
+        }
+        assertThat(policy.classify(order,payments,transactions,null,Set.of(),Set.of(aborted)).disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.NEW);
+        assertThat(policy.classify(order,payments,transactions,null,Set.of(aborted),Set.of()).disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED);
+        ReflectionTestUtils.setField(auth,"status",PaymentTransactionStatus.PENDING);
+        assertThat(policy.classify(order,payments,transactions,null,Set.of(),Set.of(aborted)).disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED);
+    }
     @Test void newAuthorizationIsEligibleAndReturnsPersistedPaymentId() {
         setupNew(); var result=classify(); assertThat(result.disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.NEW);
         assertThat(result.paymentId()).isEqualTo(52L); assertThat(result.captureTransactionId()).isNull();

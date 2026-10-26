@@ -87,6 +87,8 @@
                     注文キャンセル
                 </option>
 
+                <option value="ORDER_CHANGE_RESERVATION" th:selected="${movementType != null and movementType.name() == 'ORDER_CHANGE_RESERVATION'}">注文変更・追加在庫予約</option>
+                <option value="ORDER_CHANGE_RELEASE" th:selected="${movementType != null and movementType.name() == 'ORDER_CHANGE_RELEASE'}">注文変更・予約解放</option>
                 <option value="ORDER_ITEM_CHANGE" th:selected="${movementType != null
                     && movementType.name() == 'ORDER_ITEM_CHANGE'}">
                     注文内容変更
@@ -157,6 +159,8 @@
                             注文キャンセル
                         </span>
 
+                        <span th:case="'ORDER_CHANGE_RESERVATION'">注文変更・追加在庫予約</span>
+                        <span th:case="'ORDER_CHANGE_RELEASE'">注文変更・予約解放</span>
                         <span th:case="'ORDER_ITEM_CHANGE'">
                             注文内容変更
                         </span>

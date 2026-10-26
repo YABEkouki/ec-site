@@ -36,4 +36,15 @@ class PaymentAuditNotificationManualResendSchedulingTest {
         scheduler.stop();assertThat(scheduler.isRunning()).isFalse();scheduler.start();assertThat(scheduler.isRunning()).isTrue();
     });}
     @Test void noSchedulingInfrastructureDoesNotStartThread(){new ApplicationContextRunner().withUserConfiguration(Beans.class,PaymentAuditNotificationManualResendScheduler.class).run(c->{assertThat(c).hasNotFailed();assertThat(c.getBean(PaymentAuditNotificationManualResendScheduler.class).isRunning()).isFalse();});}
+    @Test void explicitStopPreventsStartupAndRecoveryEvenWhenTickIsCalled(){
+        runner.withPropertyValues("app.payment.discrepancy-audit.notification.manual-resend-scheduler-enabled=false")
+            .run(c->{
+                var scheduler=c.getBean(PaymentAuditNotificationManualResendScheduler.class);
+                assertThat(scheduler.isRunning()).isFalse();
+                scheduler.start(); scheduler.tick();
+                assertThat(scheduler.isRunning()).isFalse();
+                assertThat(org.springframework.test.util.ReflectionTestUtils.getField(scheduler,"scheduler")).isNull();
+                verifyNoInteractions(c.getBean(PaymentAuditNotificationManualResendDeliveryService.class));
+            });
+    }
 }

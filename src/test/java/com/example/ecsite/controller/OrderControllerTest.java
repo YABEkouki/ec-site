@@ -1771,10 +1771,10 @@ class OrderControllerTest {
                         "checkoutPaymentId",
                         paymentId);
 
-        verify(session)
+        verify(session, never())
                 .setAttribute(
-                        "checkoutPaymentClientSecret",
-                        "client-secret-123");
+                        org.mockito.ArgumentMatchers.eq("checkoutPaymentClientSecret"),
+                        org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -1968,10 +1968,10 @@ class OrderControllerTest {
                         "checkoutPaymentId",
                         paymentId);
 
-        verify(session)
+        verify(session, never())
                 .setAttribute(
-                        "checkoutPaymentClientSecret",
-                        "client-secret-123");
+                        org.mockito.ArgumentMatchers.eq("checkoutPaymentClientSecret"),
+                        org.mockito.ArgumentMatchers.any());
     }
 
     @Test

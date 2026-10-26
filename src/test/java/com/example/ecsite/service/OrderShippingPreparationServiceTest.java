@@ -104,6 +104,7 @@ class OrderShippingPreparationServiceTest {
         assertThat(order.getShipmentCapturePaymentId()).isNull();
         var sequence = inOrder(orders, payments, manual);
         sequence.verify(orders).findByIdForUpdate(1L);
+        sequence.verify(manual).requireNoOrderChange(order);
         if (status == OrderStatus.ORDERED) sequence.verify(payments).validateCardPaymentForShippingPreparation(order);
         else sequence.verify(manual).validateManualShipment(order);
         sequence.verify(orders).findCurrentTimeInTokyo();

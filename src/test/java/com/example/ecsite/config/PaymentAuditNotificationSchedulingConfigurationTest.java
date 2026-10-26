@@ -25,6 +25,7 @@ class PaymentAuditNotificationSchedulingConfigurationTest {
     static class Config {
         @Bean PaymentDiscrepancyAuditService audit() {return mock(PaymentDiscrepancyAuditService.class);}
         @Bean PaymentReconciliationService reconciliation() {return mock(PaymentReconciliationService.class);}
+        @Bean com.example.ecsite.service.orderchange.OrderIncreaseService increases() {return mock(com.example.ecsite.service.orderchange.OrderIncreaseService.class);}
     }
     final ApplicationContextRunner runner=new ApplicationContextRunner()
         .withConfiguration(AutoConfigurations.of(TaskSchedulingAutoConfiguration.class,MailSenderAutoConfiguration.class))

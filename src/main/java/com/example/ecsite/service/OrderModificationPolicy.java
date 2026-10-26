@@ -31,6 +31,15 @@ public class OrderModificationPolicy {
                 && !order.isWithinModificationPeriod(now);
     }
 
+    public LocalDateTime changeGraceDeadline(Order order) {
+        return order.getChangeDeadlineAt().plusMinutes(10);
+    }
+
+    /** Decision is irreversible; crossing the grace boundary cannot abort a decided switch. */
+    public boolean canExpireChange(LocalDateTime graceUntil,LocalDateTime switchDecidedAt,LocalDateTime now) {
+        return switchDecidedAt==null && graceUntil!=null && now!=null && !now.isBefore(graceUntil);
+    }
+
     private boolean hasValidDeadline(Order order, LocalDateTime now) {
         return order != null
                 && now != null

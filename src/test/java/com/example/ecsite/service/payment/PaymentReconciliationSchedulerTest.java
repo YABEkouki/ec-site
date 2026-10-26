@@ -15,7 +15,7 @@ class PaymentReconciliationSchedulerTest {
 
         PaymentReconciliationScheduler scheduler =
                 new PaymentReconciliationScheduler(
-                        reconciliationService);
+                        reconciliationService, mock(com.example.ecsite.service.orderchange.OrderIncreaseService.class));
 
         scheduler.reconcile();
 

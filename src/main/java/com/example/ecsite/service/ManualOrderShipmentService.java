@@ -39,6 +39,7 @@ public class ManualOrderShipmentService {
         if (order.getStatus() != OrderStatus.PAID)
             throw new InvalidOrderStatusException("支払済みの注文だけを発送済みに変更できます。");
         shipmentGuard.requirePrepared(order);
+        paymentGuard.requireNoOrderChange(order);
         context.refreshPayments(order);
         paymentGuard.validateManualShipment(order);
         var now = orders.findCurrentTimeInTokyo();

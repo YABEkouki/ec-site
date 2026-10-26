@@ -125,6 +125,7 @@
 
     <section>
         <h2>注文操作</h2>
+        <p><a th:href="@{/orders/{id}/increase(id=${order.id})}" class="button button-secondary">数量増加・受付済み候補を確認する</a></p>
 
         <p th:if="${withinModificationPeriod}">
             この注文は

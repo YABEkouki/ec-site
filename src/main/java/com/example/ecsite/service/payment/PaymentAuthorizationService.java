@@ -90,10 +90,21 @@ public class PaymentAuthorizationService {
         return result;
     }
 
+    /** Exact saved target for the customer display. The caller has already checked ownership. */
+    public PaymentAuthorizationRecovery recoverAuthorization(Order order, Long expectedPaymentId) {
+        Long paymentId=paymentService.getRecoverableAuthorizationPaymentId(order);
+        if(!java.util.Objects.equals(paymentId,expectedPaymentId))
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.RESULT_PERSISTENCE_UNKNOWN,order.getId());
+        return recoverExisting(order,paymentId);
+    }
+
     public PaymentAuthorizationRecovery recoverAuthorization(Order order) {
 
         Long paymentId = paymentService.getRecoverableAuthorizationPaymentId(order);
+        return recoverExisting(order,paymentId);
+    }
 
+    private PaymentAuthorizationRecovery recoverExisting(Order order,Long paymentId) {
         PaymentOperationSnapshot snapshot = snapshots.authorization(order.getId(), paymentId);
         String providerPaymentId = snapshot.providerPaymentId();
 
@@ -101,6 +112,8 @@ public class PaymentAuthorizationService {
 
         AuthorizationResult result = recovery.result();
 
+        if(result.providerTransactionId()!=null && !providerPaymentId.equals(result.providerTransactionId()))
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.RESULT_PERSISTENCE_UNKNOWN,order.getId());
         applySafely(snapshot, result);
 
         return new PaymentAuthorizationRecovery(

@@ -504,4 +504,22 @@ class PaymentAuthorizationServiceTest {
         verify(paymentAuthorizationResultService).apply(snapshot,result);
         verifyNoInteractions(snapshots);
     }
+    @Test
+    void exactDisplayTargetRejectsWrongPaymentBeforeGateway() {
+        when(order.getId()).thenReturn(100L);
+        when(paymentService.getRecoverableAuthorizationPaymentId(order)).thenReturn(20L);
+        assertThrows(PaymentSafetyStopException.class,()->service.recoverAuthorization(order,21L));
+        verifyNoInteractions(paymentGateway,snapshots);
+    }
+
+    @Test
+    void exactDisplayTargetRejectsForeignFlowResponseWithoutApplying() {
+        when(order.getId()).thenReturn(100L);
+        when(paymentService.getRecoverableAuthorizationPaymentId(order)).thenReturn(20L);
+        when(snapshots.authorization(100L,20L)).thenReturn(PaymentSnapshotFixtures.authorization(100L,20L));
+        when(paymentGateway.retrieveAuthorization("pf_test_123")).thenReturn(new AuthorizationRecovery(
+            new AuthorizationResult(AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,"pfw_other",null,null),"synthetic"));
+        assertThrows(PaymentSafetyStopException.class,()->service.recoverAuthorization(order,20L));
+        verifyNoInteractions(paymentAuthorizationResultService);
+    }
 }

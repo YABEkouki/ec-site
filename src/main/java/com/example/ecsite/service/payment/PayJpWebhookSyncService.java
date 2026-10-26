@@ -12,6 +12,14 @@ public class PayJpWebhookSyncService {
     private final PayJpWebhookCaptureSyncService captureSyncService;
     private final PayJpWebhookCancellationSyncService cancellationSyncService;
 
+    private com.example.ecsite.service.orderchange.NewFlowClosureReconciliationService closures;
+    @org.springframework.beans.factory.annotation.Autowired
+    public PayJpWebhookSyncService(PayJpWebhookAuthorizationSyncService authorizationSyncService,
+            PayJpWebhookCaptureSyncService captureSyncService,PayJpWebhookCancellationSyncService cancellationSyncService,
+            com.example.ecsite.service.orderchange.NewFlowClosureReconciliationService closures){
+        this(authorizationSyncService,captureSyncService,cancellationSyncService);this.closures=closures;
+    }
+
     public PayJpWebhookSyncService(
             PayJpWebhookAuthorizationSyncService authorizationSyncService,
             PayJpWebhookCaptureSyncService captureSyncService,
@@ -39,5 +47,8 @@ public class PayJpWebhookSyncService {
                         eventType,
                         providerPaymentId);
         }
+        // NEVER boundary: nested financial proxies have returned only after their commits completed.
+        // Existing synchronization failures propagate; only the independent GET-only trigger is deferred.
+        if(closures!=null&&eventType.startsWith("payment_flow."))closures.afterWebhook(providerPaymentId);
     }
 }

@@ -162,10 +162,10 @@ class CheckoutControllerTest {
                         "checkoutPaymentId",
                         20L);
 
-        verify(session)
+        verify(session, never())
                 .setAttribute(
-                        "checkoutPaymentClientSecret",
-                        "client_secret_test");
+                        org.mockito.ArgumentMatchers.eq("checkoutPaymentClientSecret"),
+                        org.mockito.ArgumentMatchers.any());
 
         verify(sessionStatus, never())
                 .setComplete();
@@ -355,95 +355,54 @@ class CheckoutControllerTest {
     }
 
     @Test
-    void paymentDisplaysPaymentPageWhenSessionStateExists() {
+    void paymentDisplaysSameFlowOnlyAfterOwnershipCheckWithoutSessionSecret() {
+        when(session.getAttribute("checkoutOrderId")).thenReturn(10L);
+        when(session.getAttribute("checkoutPaymentId")).thenReturn(20L);
+        Order order=mock(Order.class);
+        when(orderService.findOrderByIdAndUserId(10L,USER_ID)).thenReturn(order);
+        when(paymentAuthorizationService.recoverAuthorization(order,20L)).thenReturn(
+            new com.example.ecsite.service.payment.PaymentAuthorizationRecovery(20L,
+                new AuthorizationResult(AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,"pfw_test",null,null),
+                "synthetic-secret",com.example.ecsite.service.payment.PaymentAuthorizationRecoveryAction.RESUME_CHECKOUT));
+        when(payJpProperties.publicKey()).thenReturn("pk_test_example");
+        Model model=new ConcurrentModel();
+        assertEquals("checkout/payment",controller.payment(loginUser,session,model));
+        assertTrue(model.getAttribute("card").toString().contains("redacted"));
+        assertEquals(10L,model.getAttribute("orderId"));
+        verify(session).removeAttribute("checkoutPaymentClientSecret");
+        verify(session,never()).setAttribute(org.mockito.ArgumentMatchers.eq("checkoutPaymentClientSecret"),org.mockito.ArgumentMatchers.any());
+    }
 
-        when(session.getAttribute("checkoutOrderId"))
-                .thenReturn(10L);
-
-        when(session.getAttribute("checkoutPaymentId"))
-                .thenReturn(20L);
-
-        when(session.getAttribute(
-                "checkoutPaymentClientSecret"))
-                .thenReturn("client_secret_test");
-
-        when(payJpProperties.publicKey())
-                .thenReturn("pk_test_example");
-
-        Model model = new ConcurrentModel();
-
-        String view = controller.payment(
-                session,
-                model);
-
-        assertEquals(
-                "checkout/payment",
-                view);
-
-        assertEquals(
-                10L,
-                model.getAttribute("orderId"));
-
-        assertEquals(
-                "client_secret_test",
-                model.getAttribute("clientSecret"));
-
-        assertEquals(
-                "pk_test_example",
-                model.getAttribute("payjpPublicKey"));
+    @Test
+    void paymentRejectsOtherOwnerBeforeProviderLookup() {
+        when(session.getAttribute("checkoutOrderId")).thenReturn(10L);
+        when(session.getAttribute("checkoutPaymentId")).thenReturn(20L);
+        when(orderService.findOrderByIdAndUserId(10L,USER_ID)).thenThrow(new IllegalArgumentException("not found"));
+        assertThrows(IllegalArgumentException.class,()->controller.payment(loginUser,session,new ConcurrentModel()));
+        verifyNoInteractions(paymentAuthorizationService);
     }
 
     @Test
     void paymentRedirectsHomeWhenSessionStateIsMissing() {
-
-        when(session.getAttribute("checkoutOrderId"))
-                .thenReturn(null);
-
-        when(session.getAttribute("checkoutPaymentId"))
-                .thenReturn(null);
-
-        when(session.getAttribute(
-                "checkoutPaymentClientSecret"))
-                .thenReturn(null);
-
-        Model model = new ConcurrentModel();
-
-        String view = controller.payment(
-                session,
-                model);
-
-        assertEquals(
-                "redirect:/",
-                view);
+        assertEquals("redirect:/",controller.payment(loginUser,session,new ConcurrentModel()));
     }
 
     @Test
-    void paymentFailsWhenPayJpPublicKeyIsMissing() {
-
-        when(session.getAttribute("checkoutOrderId"))
-                .thenReturn(10L);
-
-        when(session.getAttribute("checkoutPaymentId"))
-                .thenReturn(20L);
-
-        when(session.getAttribute(
-                "checkoutPaymentClientSecret"))
-                .thenReturn("client_secret_test");
-
-        when(payJpProperties.publicKey())
-                .thenReturn("");
-
-        Model model = new ConcurrentModel();
-
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> controller.payment(
-                        session,
-                        model));
-
-        assertEquals(
-                "PAY.JP公開鍵が設定されていません。",
-                exception.getMessage());
+    void processingOrActionRequiredNeverExposesCardForReconfirm() {
+        when(session.getAttribute("checkoutOrderId")).thenReturn(10L);
+        when(session.getAttribute("checkoutPaymentId")).thenReturn(20L);
+        Order order=mock(Order.class);
+        when(orderService.findOrderByIdAndUserId(10L,USER_ID)).thenReturn(order);
+        for(var status:List.of(AuthorizationResultStatus.PENDING,AuthorizationResultStatus.REQUIRES_ACTION,
+                AuthorizationResultStatus.REQUIRES_CONFIRMATION)) {
+            when(paymentAuthorizationService.recoverAuthorization(order,20L)).thenReturn(
+                new com.example.ecsite.service.payment.PaymentAuthorizationRecovery(20L,
+                    new AuthorizationResult(status,"pfw_test",null,null),"synthetic-secret",
+                    com.example.ecsite.service.payment.PaymentAuthorizationRecoveryAction.WAIT));
+            Model model=new ConcurrentModel();
+            assertEquals("checkout/payment",controller.payment(loginUser,session,model));
+            assertNull(model.getAttribute("card"));
+        }
     }
 
     @Test
@@ -471,7 +430,8 @@ class CheckoutControllerTest {
                 paymentId))
                 .thenReturn(result);
 
-        String viewName = controller.paymentReturn(
+        String viewName = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);
@@ -486,8 +446,7 @@ class CheckoutControllerTest {
                         "カード情報を確認して、もう一度お試しください。");
 
         verify(session, never())
-                .removeAttribute(
-                        org.mockito.ArgumentMatchers.anyString());
+                .removeAttribute("checkoutOrderId");
 
         verify(sessionStatus, never())
                 .setComplete();
@@ -518,7 +477,8 @@ class CheckoutControllerTest {
                 paymentId))
                 .thenReturn(result);
 
-        String viewName = controller.paymentReturn(
+        String viewName = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);
@@ -533,8 +493,7 @@ class CheckoutControllerTest {
                         "カード決済を続けてください。");
 
         verify(session, never())
-                .removeAttribute(
-                        org.mockito.ArgumentMatchers.anyString());
+                .removeAttribute("checkoutOrderId");
 
         verify(sessionStatus, never())
                 .setComplete();
@@ -1322,7 +1281,8 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        String view = controller.paymentReturn(
+        String view = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);
@@ -1350,7 +1310,7 @@ class CheckoutControllerTest {
                 .removeAttribute(
                         "checkoutPaymentId");
 
-        verify(session)
+        verify(session, org.mockito.Mockito.atLeastOnce())
                 .removeAttribute(
                         "checkoutPaymentClientSecret");
 
@@ -1384,7 +1344,8 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        String view = controller.paymentReturn(
+        String view = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);
@@ -1406,7 +1367,7 @@ class CheckoutControllerTest {
                 .removeAttribute(
                         "checkoutPaymentId");
 
-        verify(session)
+        verify(session, org.mockito.Mockito.atLeastOnce())
                 .removeAttribute(
                         "checkoutPaymentClientSecret");
 
@@ -1440,7 +1401,8 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        String view = controller.paymentReturn(
+        String view = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);
@@ -1457,7 +1419,7 @@ class CheckoutControllerTest {
                 .removeAttribute(
                         "checkoutPaymentId");
 
-        verify(session, never())
+        verify(session)
                 .removeAttribute(
                         "checkoutPaymentClientSecret");
 
@@ -1491,7 +1453,8 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        String view = controller.paymentReturn(
+        String view = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);
@@ -1530,7 +1493,8 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        String view = controller.paymentReturn(
+        String view = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);
@@ -1567,7 +1531,8 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
-        String view = controller.paymentReturn(
+        String view = controller.paymentContinue(
+                loginUser,
                 session,
                 sessionStatus,
                 redirectAttributes);

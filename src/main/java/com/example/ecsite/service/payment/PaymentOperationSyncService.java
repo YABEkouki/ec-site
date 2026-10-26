@@ -20,6 +20,14 @@ public class PaymentOperationSyncService {
     private final PaymentCaptureResultService capture;
     private final PaymentCancellationResultService userCancellation;
     private final AdminPaymentCancellationResultService adminCancellation;
+    private com.example.ecsite.service.orderchange.OrderReauthorizationService orderChanges;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PaymentOperationSyncService(PaymentGateway gateway,PaymentAuthorizationResultService authorization,
+            PaymentCaptureResultService capture,PaymentCancellationResultService userCancellation,AdminPaymentCancellationResultService adminCancellation,
+            com.example.ecsite.service.orderchange.OrderReauthorizationService orderChanges){
+        this(gateway,authorization,capture,userCancellation,adminCancellation);this.orderChanges=orderChanges;
+    }
 
     public PaymentOperationSyncService(PaymentGateway gateway, PaymentAuthorizationResultService authorization,
             PaymentCaptureResultService capture, PaymentCancellationResultService userCancellation,
@@ -32,6 +40,8 @@ public class PaymentOperationSyncService {
     }
 
     public PaymentSynchronizationOutcome synchronize(PaymentOperationSnapshot snapshot) {
+        if(com.example.ecsite.entity.PaymentTransaction.isOrderChangePurpose(snapshot.type(),snapshot.purpose()))
+            return orderChanges==null?PaymentSynchronizationOutcome.SKIPPED:orderChanges.synchronize(snapshot);
         if (snapshot.status() != PaymentTransactionStatus.PENDING
                 || snapshot.provider() != PaymentProvider.PAYJP
                 || snapshot.providerPaymentId() == null || snapshot.providerPaymentId().isBlank()) {

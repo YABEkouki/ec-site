@@ -31,7 +31,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @DataJpaTest(showSql=false,properties={"spring.jpa.show-sql=false","spring.sql.init.mode=never"})
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace=AutoConfigureTestDatabase.Replace.NONE)
-@Import({com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class,TimeConfig.class,PaymentService.class,PaymentConsistencyEvaluator.class})
+@Import({com.example.ecsite.service.OrderModificationGuard.class,com.example.ecsite.service.OrderModificationPolicy.class,PaymentPostGuardService.class,TimeConfig.class,PaymentService.class,PaymentConsistencyEvaluator.class,OrderPaymentGuard.class,com.example.ecsite.service.orderchange.OrderChangeStore.class})
 @EnableConfigurationProperties(PayJpSafetyProperties.class)
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 @Testcontainers

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ja">
+<head><meta charset="UTF-8"><title>注文商品の数量増加</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body>
+<header th:replace="~{fragments/header :: header}"></header>
+<h1>注文商品の数量増加</h1>
+<section th:if="${mode == 'INPUT'}">
+    <p>既に注文した商品の数量だけを増やせます。注文時の単価で計算します。</p>
+    <form th:action="@{/orders/{id}/increase/preview(id=${orderId})}" th:object="${increaseForm}" method="post">
+        <input type="hidden" th:field="*{contentRevision}">
+        <table><thead><tr><th>商品</th><th>注文時単価（税込）</th><th>現在数量</th><th>変更後数量</th></tr></thead>
+        <tbody><tr th:each="line,stat : ${input.lines}">
+            <td th:text="${line.name}"></td><td th:text="${line.price + '円'}"></td><td th:text="${line.beforeQuantity}"></td>
+            <td><input type="hidden" th:field="*{items[__${stat.index}__].orderItemId}">
+                <input type="number" step="1" th:min="${line.beforeQuantity}" max="2147483647" required th:field="*{items[__${stat.index}__].quantity}" th:attr="aria-label=${line.name + 'の変更後数量'}"></td>
+        </tr></tbody></table>
+        <button type="submit" class="button-primary">変更後の金額を確認する</button>
+    </form>
+</section>
+<section th:if="${mode == 'CONFIRM'}">
+    <h2>変更内容の確認</h2>
+    <table><thead><tr><th>商品</th><th>単価（税込）</th><th>変更前数量</th><th>変更後数量</th></tr></thead>
+    <tbody><tr th:each="line : ${preview.lines}"><td th:text="${line.name}"></td><td th:text="${line.price + '円'}"></td><td th:text="${line.beforeQuantity}"></td><td th:text="${line.afterQuantity}"></td></tr></tbody></table>
+    <p>変更前合計：<strong th:text="${preview.beforeAmount + '円'}"></strong></p>
+    <dl><dt>変更後商品小計（税込）</dt><dd th:text="${preview.amount.itemSubtotal + '円'}"></dd>
+        <dt>送料等（税込）</dt><dd th:text="${preview.amount.chargeTotal + '円'}"></dd>
+        <dt>内消費税</dt><dd th:text="${preview.amount.taxAmount + '円'}"></dd>
+        <dt>変更後合計（税込）</dt><dd><strong th:text="${preview.amount.totalAmount + '円'}"></strong></dd></dl>
+    <p>受付後に追加在庫を確保します。元の注文内容・金額は、注文変更が完了するまで変わりません。</p>
+    <p>候補受付だけでは決済や注文変更は完了しません。受付後の画面からカード認証を開始できます。</p>
+    <form th:action="@{/orders/{id}/increase(id=${orderId})}" method="post">
+        <input type="hidden" name="confirmationToken" th:value="${confirmationToken}">
+        <button type="submit" class="button-primary">この内容で変更候補を受け付ける</button>
+    </form>
+</section>
+<section th:if="${mode == 'STATUS'}">
+    <h2>変更候補の状態</h2><p role="status" th:text="${statusMessage}"></p>
+    <p>受付時の変更前合計：<span th:text="${operation.beforeAmount + '円'}"></span></p>
+    <p>変更候補の合計：<span th:text="${operation.afterAmount + '円'}"></span></p>
+    <p th:if="${!withdrawalStatus.requested and operation.state == 'RESERVED'}">カード認証はまだ開始していません。候補を取り下げると、確保した追加在庫を解放します。</p>
+    <p th:if="${withdrawalStatus.requested and operation.state != 'ABORTED'}" role="status">取り下げ依頼を受付済みです。取り下げ完了ではありません。確認・復旧をお待ちください。</p>
+    <p th:if="${withdrawalStatus.manualReviewRequired}">要確認・復旧待ちです。元の注文はキャンセルされていません。</p>
+    <p th:if="${withdrawalStatus.canRequest}"><a th:href="@{/orders/{id}/increase/{op}/withdraw(id=${orderId},op=${operation.id})}" class="button-secondary">変更候補の取り下げを確認する</a></p>
+    <form th:if="${!withdrawalStatus.requested and (operation.state == 'RESERVED' or operation.state == 'AUTHORIZING' or operation.state == 'AUTH_UNKNOWN')}"
+          th:action="@{/orders/{id}/increase/{op}/payment(id=${orderId},op=${operation.id})}" method="post">
+        <button type="submit">カード認証を開始・確認する</button>
+    </form>
+    <form th:if="${!withdrawalStatus.requested and operation.state != 'RESERVED' and operation.state != 'COMPLETED' and operation.state != 'ABORTED' and operation.state != 'MANUAL_REVIEW'}"
+          th:action="@{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operation.id})}" method="post">
+        <button type="submit">サーバーで結果を確認して続行する</button>
+    </form>
+    <p th:if="${!withdrawalStatus.requested and operation.state == 'REQUIRES_ACTION'}">追加認証待ちです。元の認証画面で続行してください。中断後の再confirmや、この画面からの自動認証再開は行いません。</p>
+    <p><a th:href="@{/orders/{id}/increase/{op}/payment(id=${orderId},op=${operation.id})}">同じ決済の状態を照会する</a>（新しい与信・取消は送信しません）</p>
+    <p><a th:href="@{/orders/{id}/increase/{op}(id=${orderId},op=${operation.id})}">状態を再表示する</a>（決済は開始しません）</p>
+</section>
+<section th:if="${mode == 'WITHDRAW_CONFIRM'}">
+    <h2>変更候補の取り下げ確認</h2>
+    <p>数量増加の変更候補だけを取り下げます。元の注文はキャンセルされません。</p>
+    <p>決済処理が開始済みの場合は、取り下げ依頼を受け付けて結果を確認します。受付だけでは取り下げ完了を意味しません。追加在庫は安全を確認できるまで保持されます。</p>
+    <form th:action="@{/orders/{id}/increase/{op}/withdraw(id=${orderId},op=${operation.id})}" method="post">
+        <input type="hidden" name="requestId" th:value="${withdrawalCommand.requestId}">
+        <input type="hidden" name="expectedVersion" th:value="${withdrawalCommand.expectedVersion}">
+        <button type="submit" class="button-secondary">変更候補の取り下げを依頼する</button>
+    </form>
+    <p><a th:href="@{/orders/{id}/increase/{op}(id=${orderId},op=${operation.id})}">状態画面へ戻る</a></p>
+</section>
+<section th:if="${mode == 'UNAVAILABLE'}"><h2>現在、この変更を受け付けできません</h2>
+    <p>数量・注文状態・変更期限・発送準備状況、または確認画面の有効性をご確認ください。受付済みの場合は注文詳細から状態をご確認ください。</p>
+    <p>このエラー表示は、元注文のキャンセルを意味しません。</p>
+</section>
+<p th:if="${orderId != null}"><a th:href="@{/orders/{id}(id=${orderId})}">注文詳細へ戻る</a></p>
+<p><a th:href="@{/orders}">注文一覧へ戻る</a></p>
+</body></html>

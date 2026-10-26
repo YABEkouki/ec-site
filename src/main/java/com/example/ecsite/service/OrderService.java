@@ -197,7 +197,8 @@ public class OrderService {
                 checkoutForm.getShippingAddressLine().trim(),
                 checkoutForm.getShippingPhone().trim());
 
-        for (com.example.ecsite.cart.CartItem cartItem : cart.getItems()) {
+        for (com.example.ecsite.cart.CartItem cartItem : cart.getItems().stream()
+                .sorted(Comparator.comparing(com.example.ecsite.cart.CartItem::getProductId)).toList()) {
 
             Product product;
 
@@ -295,7 +296,7 @@ public class OrderService {
                 userId,
                 username);
 
-        for (OrderItem item : savedOrder.getItems()) {
+        for (OrderItem item : savedOrder.getItems().stream().sorted(Comparator.comparing(OrderItem::getProductId)).toList()) {
 
             inventoryService.decreaseForOrder(
                     item.getProductId(),
@@ -982,7 +983,7 @@ public class OrderService {
                 username,
                 internalNote);
 
-        for (OrderItem item : order.getItems()) {
+        for (OrderItem item : order.getItems().stream().sorted(Comparator.comparing(OrderItem::getProductId)).toList()) {
 
             inventoryService.restoreForOrderCancellation(
                     item.getProductId(),
@@ -1095,6 +1096,7 @@ public class OrderService {
                     "現在の注文状態では配送先を変更できません。");
         }
 
+        orderPaymentGuard.requireNoOrderChange(order);
         orderModificationGuard.requireAllowed(order);
 
         String newShippingName = form.getShippingName().trim();

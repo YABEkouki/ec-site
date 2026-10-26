@@ -174,6 +174,14 @@ public class StockMovement {
         return movement;
     }
 
+    public static StockMovement createOrderChange(Product product,int before,int after,int quantity,
+            Long orderId,java.util.UUID operationId,Long itemId) {
+        StockMovement movement=createOrderItemChange(product,before,after,quantity,orderId);
+        movement.movementType=quantity<0?StockMovementType.ORDER_CHANGE_RESERVATION:StockMovementType.ORDER_CHANGE_RELEASE;
+        movement.reason="order_change="+operationId+", order_item="+itemId;
+        return movement;
+    }
+
     public Long getId() {
         return id;
     }

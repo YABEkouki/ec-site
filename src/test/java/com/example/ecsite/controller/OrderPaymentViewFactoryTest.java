@@ -39,4 +39,5 @@ class OrderPaymentViewFactoryTest {
  @Test void preparedCancellationIsHiddenEvenBeforeDeadline(){prepare();assertThat(factory(DEADLINE.minusNanos(1)).create(order,List.of(payment),history).canCancel()).isFalse();}
  @Test void localCancellationWithoutPaymentIsAllowedBeforeDeadline(){assertThat(factory(DEADLINE.minusNanos(1)).create(order,List.of(),List.of()).canCancel()).isTrue();}
  @Test void existingPendingCancelIsNotPresentedAsNewCancellation(){var cancel=new PaymentTransaction(payment,PaymentTransactionType.CANCEL,200,0,"cancel",DEADLINE);id(cancel,65);history.add(cancel);assertThat(factory(DEADLINE.minusNanos(1)).create(order,List.of(payment),history).canCancel()).isFalse();}
+ @Test void explicitCapturePurposePreservesPendingAndCapturedView(){var cap=ship();ReflectionTestUtils.setField(cap,"purpose",PaymentTransactionPurpose.SHIPMENT_CAPTURE);assertThat(view().canRequery()).isTrue();cap.markSucceeded("pf",DEADLINE);payment.markCaptured(DEADLINE);order.recordShipmentCaptureSucceeded(52L,DEADLINE);assertThat(view().message()).isEqualTo("売上確定済み");}
 }

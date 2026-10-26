@@ -128,4 +128,20 @@ public class InventoryService {
         stockMovementRepository.save(movement);
     }
 
+    @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public long reserveForOrderChange(Long productId,int quantity,Long orderId,java.util.UUID operationId,Long itemId) {
+        if(quantity<=0)throw new IllegalArgumentException("Positive reservation required");
+        Product product=productRepository.findByIdForUpdate(productId).orElseThrow(()->new ProductNotFoundException(productId));
+        return changeReservation(product,-quantity,orderId,operationId,itemId);
+    }
+    @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public long releaseForOrderChange(Long productId,int quantity,Long orderId,java.util.UUID operationId,Long itemId) {
+        if(quantity<=0)throw new IllegalArgumentException("Positive release required");
+        Product product=productRepository.findByIdForUpdateIncludingInactive(productId).orElseThrow(()->new ProductNotFoundException(productId));
+        return changeReservation(product,quantity,orderId,operationId,itemId);
+    }
+    private long changeReservation(Product product,int delta,Long orderId,java.util.UUID operationId,Long itemId) {
+        int before=product.getStock();product.adjustStock(delta);
+        return stockMovementRepository.saveAndFlush(StockMovement.createOrderChange(product,before,product.getStock(),delta,orderId,operationId,itemId)).getId();
+    }
 }

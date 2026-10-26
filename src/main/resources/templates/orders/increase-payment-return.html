@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="referrer" content="no-referrer">
+<script th:attr="nonce=${paymentScriptNonce}">history.replaceState(null, '', window.location.pathname);</script>
+<title>カード認証後の確認</title></head>
+<body>
+<h1>カード認証後の確認</h1>
+<p>ブラウザの戻り先だけでは決済や注文変更の完了は確定しません。サーバーで結果を確認してください。</p>
+<noscript><p>URLから一時的な認証情報を除去するためJavaScriptを有効にしてください。URLを共有しないでください。</p></noscript>
+<form th:action="@{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operationId})}" method="post">
+    <button type="submit">サーバーで確認して注文変更を続ける</button>
+</form>
+<p><a th:href="@{/orders/{id}/increase/{op}(id=${orderId},op=${operationId})}">変更候補の状態を表示する</a></p>
+</body></html>

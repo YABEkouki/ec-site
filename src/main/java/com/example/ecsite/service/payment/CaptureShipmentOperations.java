@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(propagation = Propagation.MANDATORY)
 public class CaptureShipmentOperations {
+    private final OrderPaymentGuard paymentGuard;
     private final OrderRepository orders;
     private final PaymentRepository payments;
     private final PaymentTransactionRepository transactions;
@@ -42,7 +43,8 @@ public class CaptureShipmentOperations {
             PaymentTransactionRepository transactions, EntityManager em, OrderWriteContext context,
             OrderShipmentGuard guard, CaptureShipmentPolicy policy, OrderStatusHistoryService histories,
             CaptureRequestStore requests, CaptureConnectionProperties connection, PayJpProperties activeConnection,
-            PayJpSafetyProperties safety, OrderStatusHistoryRepository shipmentHistory) {
+            PayJpSafetyProperties safety, OrderStatusHistoryRepository shipmentHistory, OrderPaymentGuard paymentGuard) {
+        this.paymentGuard=paymentGuard;
         this.orders = orders; this.payments = payments; this.transactions = transactions; this.em = em;
         this.context = context; this.guard = guard; this.policy = policy; this.histories = histories;
         this.requests = requests; this.connection = connection; this.activeConnection = activeConnection;
@@ -56,6 +58,7 @@ public class CaptureShipmentOperations {
         Order order = orders.findByIdForUpdate(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
         context.refreshWritableOrder(order);
         if (order.getStatus() != OrderStatus.ORDERED && order.getStatus() != OrderStatus.SHIPPED) throw recovery(orderId);
+        if (order.getStatus()==OrderStatus.ORDERED) paymentGuard.requireNoOrderChange(order);
         guard.requirePrepared(order);
         LockedData data = load(order, null);
         PaymentOperationSnapshot saved = null;
@@ -65,7 +68,7 @@ public class CaptureShipmentOperations {
             if (candidates.size() != 1) throw recovery(orderId);
             saved = PaymentOperationSnapshot.from(candidates.getFirst());
         }
-        var decision = policy.classify(order, data.payments(), data.history(), saved);
+        var decision = policy.classify(order, data.payments(), data.history(), saved, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED) throw recovery(orderId);
         if (decision.disposition() != CaptureShipmentPolicy.Disposition.NEW) {
             return startResult(saved, decision.disposition() == CaptureShipmentPolicy.Disposition.CONTINUE
@@ -77,7 +80,7 @@ public class CaptureShipmentOperations {
         var now = orders.findCurrentTimeInTokyo();
         var capture = new PaymentTransaction(payment, PaymentTransactionType.CAPTURE, order.getTotalAmount(),
                 order.getContentRevision(), UUID.randomUUID().toString(), now,
-                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), internalNote));
+                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), internalNote), PaymentTransactionPurpose.SHIPMENT_CAPTURE);
         transactions.saveAndFlush(capture);
         var created = now.atZone(JST).toInstant();
         var http = CaptureHttpRequest.create(identity, payment.getProviderPaymentId(), capture.getAmount(), capture.getIdempotencyKey());
@@ -113,7 +116,7 @@ public class CaptureShipmentOperations {
         context.refreshWritableOrder(order);
         guard.requirePrepared(order);
         var data = load(order, snapshot);
-        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
             return new CaptureInitialPostPreparationService.AlreadyApplied();
         if (decision.disposition() != CaptureShipmentPolicy.Disposition.CONTINUE) throw recovery(order.getId());
@@ -171,7 +174,7 @@ public class CaptureShipmentOperations {
                 && Objects.equals(t.getPayment().getId(), order.getShipmentCapturePaymentId())).toList();
         if (captures.size() != 1) throw new CaptureRequeryRejectedException();
         var snapshot = expected == null ? PaymentOperationSnapshot.from(captures.getFirst()) : expected;
-        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
             return startResult(snapshot, PaymentStartDisposition.ALREADY_APPLIED);
         if (decision.disposition() != CaptureShipmentPolicy.Disposition.CONTINUE) throw new CaptureRequeryRejectedException();
@@ -187,7 +190,11 @@ public class CaptureShipmentOperations {
         if (order.getStatus() != OrderStatus.SHIPPED || !order.hasCompleteShippingPreparation()
                 || !Objects.equals(order.getShipmentCapturePaymentId(), snapshot.paymentId())) return PaymentResultApplication.CONFLICT;
         LockedData data = load(order, snapshot);
-        var decision = policy.classify(order, data.payments(), data.history(), snapshot);
+        var target = data.history().stream().filter(t -> Objects.equals(t.getId(), snapshot.transactionId())).findFirst().orElse(null);
+        var targetPayment = data.payments().stream().filter(p -> Objects.equals(p.getId(), snapshot.paymentId())).findFirst().orElse(null);
+        if (!new PaymentPurposeResolver().matches(order, targetPayment, target, snapshot, data.payments(), data.history(), paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order)))
+            return PaymentResultApplication.CONFLICT;
+        var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));
         if (!Objects.equals(snapshot.providerPaymentId(), result.providerTransactionId())) return PaymentResultApplication.CONFLICT;
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)
             return result.status() == CaptureResultStatus.CAPTURED

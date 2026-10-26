@@ -21,6 +21,8 @@ public class CaptureShipmentSnapshotMatcher {
                 && Objects.equals(order.getShipmentCapturePaymentId(),payment.getId())
                 && Objects.equals(expected.orderId(),order.getId()) && Objects.equals(expected.paymentId(),payment.getId())
                 && Objects.equals(expected.transactionId(),transaction.getId())
+                && expected.purpose()==transaction.getPurpose()
+                && (transaction.getPurpose()==null || transaction.getPurpose()==PaymentTransactionPurpose.SHIPMENT_CAPTURE)
                 && expected.type()==PaymentTransactionType.CAPTURE && transaction.getTransactionType()==PaymentTransactionType.CAPTURE
                 && validKey(transaction.getIdempotencyKey()) && Objects.equals(expected.idempotencyKey(),transaction.getIdempotencyKey())
                 && payment.getProvider()==PaymentProvider.PAYJP && payment.getPaymentMethod()==PaymentMethod.CARD

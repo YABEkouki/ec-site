@@ -55,6 +55,7 @@ public class OrderShippingPreparationService {
         if (isAlreadyPrepared(order)) {
             return result(order, ShippingPreparationStartResult.Status.ALREADY_STARTED);
         }
+        paymentGuard.requireNoOrderChange(order);
         writeContext.refreshPayments(order);
         if (order.getStatus() == OrderStatus.ORDERED) {
             payments.validateCardPaymentForShippingPreparation(order);
