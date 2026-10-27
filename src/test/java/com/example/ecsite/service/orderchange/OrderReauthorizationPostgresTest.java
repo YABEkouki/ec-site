@@ -25,7 +25,7 @@ class OrderReauthorizationPostgresTest {
     @Autowired org.springframework.test.web.servlet.MockMvc adminMvc;
     @Autowired OrderReauthorizationService service;
     @Autowired OldCancelRecoveryService recovery;
-    @Autowired OldCancelRecoveryAuditRepository recoveryAudits;
+    @MockitoSpyBean OldCancelRecoveryAuditRepository recoveryAudits;
     @Autowired OrderReauthorizationTransactions resultTransactions;
     @Autowired OrderIncreaseService increases;
     @Autowired JdbcTemplate jdbc;
@@ -1743,6 +1743,125 @@ class OrderReauthorizationPostgresTest {
         assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,f.base().order())).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from order_change_recovery_audits where operation_id=?",Integer.class,f.op().id())).isEqualTo(1);
         verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).capture(any());verify(gateway,never()).cancelAuthorization(any());
+    }
+    Map<String,List<String>> recoveryDiagnosticBusiness(RecoveryFixture f){
+        var values=new LinkedHashMap<>(preservedBusiness(f.base(),f.op()));
+        values.put("operation",jdbc.queryForList("select to_jsonb(t)::text from order_change_operations t where id=?",String.class,f.op().id()));
+        values.put("allPayments",jdbc.queryForList("select to_jsonb(t)::text from payments t where order_id=? order by id",String.class,f.base().order()));
+        values.put("allTransactions",jdbc.queryForList("select to_jsonb(t)::text from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? order by t.id",String.class,f.base().order()));
+        values.put("requests",jdbc.queryForList("select to_jsonb(t)::text from order_change_financial_requests t where operation_id=? order by id",String.class,f.op().id()));
+        values.put("dispatches",jdbc.queryForList("select to_jsonb(t)::text from order_change_request_dispatches t join order_change_financial_requests r on r.id=t.request_id where r.operation_id=? order by t.request_id",String.class,f.op().id()));
+        return values;
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(longs={0L,5_000_000_000L,5_000_000_001L})
+    void recoveryDiagnosticsReproduceFiveSecondLimitWithoutSleep(long elapsed){
+        var f=recoveryFixture();var c=recoveryCommand(f);var before=recoveryDiagnosticBusiness(f);
+        var ticks=new AtomicLong();var events=new ArrayList<OldCancelRecoveryDiagnostics.Entry>();
+        doAnswer(call->{ticks.set(elapsed);return observation(newFlow,"requires_capture",f.op().afterAmount(),
+            Map.of("order_id",Long.toString(c.orderId()),"order_change_operation_id",c.operationId().toString()));})
+            .when(gateway).observeOrderChangeFlow(newFlow);
+        var controlled=new OldCancelRecoveryService(resultTransactions,recoveryAudits,gateway,
+            java.time.Clock.fixed(java.time.Instant.now(),java.time.ZoneOffset.UTC),ticks::get,events::add);
+        if(elapsed<=5_000_000_000L){
+            assertThat(controlled.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);assertThat(events).isEmpty();
+        }else{
+            assertThat(controlled.recoverDetailed(c).detail()).isEqualTo(OldCancelRecovery.Detail.HOLD);
+            assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(before);
+            assertThat(state(c.operationId())).isEqualTo("MANUAL_REVIEW");
+            assertThat(recoveryAudits.find(c.requestId()).orElseThrow().get("result_code")).isEqualTo("HOLD");
+            assertThat(events).singleElement().satisfies(e->{
+                assertThat(e.stage()).isEqualTo(OldCancelRecoveryDiagnostics.Stage.CONSUME);
+                assertThat(e.reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.OBSERVATION_STALE);
+                assertThat(e.observationElapsedMs()).isEqualTo(5000);
+                assertThat(e.lockRevalidationMs()).isZero();
+            });
+        }
+        verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).capture(any());verify(gateway,never()).cancelAuthorization(any());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"snapshot","context","version","payment","competition","lock","transaction","audit","readback"})
+    void recoveryDiagnosticsIdentifyConflictAndInfrastructureStage(String failure){
+        var f=recoveryFixture();var c=recoveryCommand(f);var before=recoveryDiagnosticBusiness(f);
+        var events=new ArrayList<OldCancelRecoveryDiagnostics.Entry>();
+        var delegate=mock(OrderReauthorizationTransactions.class,org.mockito.AdditionalAnswers.delegatesTo(resultTransactions));
+        var auditDelegate=mock(OldCancelRecoveryAuditRepository.class,org.mockito.AdditionalAnswers.delegatesTo(recoveryAudits));
+        var controlled=new OldCancelRecoveryService(delegate,auditDelegate,gateway,clock,System::nanoTime,events::add);
+        if(failure.equals("snapshot")){
+            doAnswer(call->{var saved=resultTransactions.recoverySnapshot(call.getArgument(0),false,call.getArgument(2));
+                return new OldCancelRecovery.Snapshot(saved.command(),saved.version(),false,saved.oldPaymentId(),saved.newPaymentId(),saved.cancellation(),saved.creation(),saved.oldFlow(),saved.newFlow(),"00".repeat(32));})
+                .when(delegate).recoverySnapshot(any(),eq(false),any());
+        }else if(failure.equals("context")){
+            var afterGet=new AtomicBoolean();
+            tx(()->{doAnswer(call->{var row=new LinkedHashMap<String,Object>((Map<String,Object>)call.callRealMethod());
+                if(afterGet.get())row.put("context_digest",new byte[32]);return row;}).when(recoveryAudits).locked(c.requestId());return null;});
+            doAnswer(call->{afterGet.set(true);return observation(newFlow,"requires_capture",f.op().afterAmount(),
+                Map.of("order_id",Long.toString(c.orderId()),"order_change_operation_id",c.operationId().toString()));})
+                .when(gateway).observeOrderChangeFlow(newFlow);
+        }else if(failure.equals("lock")){
+            doThrow(new org.springframework.dao.CannotAcquireLockException("SECRET_lock"))
+                .when(orders).findByIdForUpdate(c.orderId());
+        }else if(List.of("version","payment","competition").contains(failure)){
+            // Change the target after GET in a separate committed transaction, then compare to that winner's state.
+            doAnswer(call->{
+                if(failure.equals("version"))jdbc.update("update order_change_operations set version=version+1 where id=?",c.operationId());
+                if(failure.equals("payment"))jdbc.update("update payments set status='REQUIRES_ACTION' where id=(select new_payment_id from order_change_operations where id=?)",c.operationId());
+                if(failure.equals("competition"))tx(()->{transactions.saveAndFlush(new PaymentTransaction(payments.findById(f.base().oldPayment()).orElseThrow(),PaymentTransactionType.CAPTURE,f.op().beforeAmount(),0,UUID.randomUUID().toString(),orders.findCurrentTimeInTokyo(),PaymentTransactionPurpose.SHIPMENT_CAPTURE));return null;});
+                before.clear();before.putAll(recoveryDiagnosticBusiness(f));
+                return observation(newFlow,"requires_capture",f.op().afterAmount(),Map.of("order_id",Long.toString(c.orderId()),"order_change_operation_id",c.operationId().toString()));})
+                .when(gateway).observeOrderChangeFlow(newFlow);
+        }else{
+            doThrow(new org.springframework.dao.CannotAcquireLockException("SECRET_payload_not_for_diagnostics"))
+                .when(delegate).applyRecoveredOldCancellation(any(),any(),any(),any());
+            if(failure.equals("audit"))doThrow(new IllegalStateException("SECRET_audit")).when(auditDelegate).hold(c.requestId());
+            if(failure.equals("readback"))doThrow(new IllegalStateException("SECRET_readback")).when(delegate).recoveryReadback(any(),any());
+        }
+        if(failure.equals("audit")||failure.equals("readback"))assertThatThrownBy(()->controlled.recover(c)).isInstanceOf(RuntimeException.class);
+        else assertThat(controlled.recover(c)).isIn(OldCancelRecovery.Result.HOLD,OldCancelRecovery.Result.CONFLICT);
+        assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(before);
+        assertThat(events).isNotEmpty();assertThat(events.toString()).doesNotContain("SECRET","Bearer","client_secret");
+        if(failure.equals("snapshot"))assertThat(events.getFirst().reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.SNAPSHOT_CONFLICT);
+        if(failure.equals("context"))assertThat(events.getFirst().reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.CONTEXT_DIGEST_CONFLICT);
+        if(failure.equals("version"))assertThat(events.getFirst().reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.VERSION_CONFLICT);
+        if(failure.equals("payment"))assertThat(events.getFirst().reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.PAYMENT_STATE_CONFLICT);
+        if(failure.equals("competition"))assertThat(events.getFirst().reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.FINANCIAL_COMPETITION);
+        if(failure.equals("lock"))assertThat(events.getFirst().stage()).isEqualTo(OldCancelRecoveryDiagnostics.Stage.LOCK);
+        if(failure.equals("audit"))assertThat(events.getLast().stage()).isEqualTo(OldCancelRecoveryDiagnostics.Stage.AUDIT_RESULT);
+        if(failure.equals("readback"))assertThat(events.getLast().stage()).isEqualTo(OldCancelRecoveryDiagnostics.Stage.READBACK);
+        verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).capture(any());verify(gateway,never()).cancelAuthorization(any());
+    }
+    @Test void recoveryDiagnosticsRecordRealTransactionRollbackAtAuditApplication(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var before=recoveryDiagnosticBusiness(f);
+        var name="diagnostic_apply_"+c.orderId();installRecoveryFailure(name,c.operationId(),"COMMIT_PENDING");
+        var events=new ArrayList<OldCancelRecoveryDiagnostics.Entry>();
+        var controlled=new OldCancelRecoveryService(resultTransactions,recoveryAudits,gateway,clock,System::nanoTime,events::add);
+        try{
+            assertThat(controlled.recoverDetailed(c).detail()).isEqualTo(OldCancelRecovery.Detail.AUDIT_FAILED);
+            assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(before);
+            assertThat(recoveryAudits.find(c.requestId()).orElseThrow().get("result_code")).isEqualTo("HOLD");
+            assertThat(events).singleElement().satisfies(e->{assertThat(e.stage()).isEqualTo(OldCancelRecoveryDiagnostics.Stage.APPLY);
+                assertThat(e.reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.DB_FAILURE);});
+            verify(gateway,never()).sendOrderChangeRequest(any());
+        }finally{removeRecoveryFailure(name);}
+    }
+    @Test void recoveryDiagnosticsIdentifyAuditStartFailureWithoutGet(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var before=recoveryDiagnosticBusiness(f);
+        var broken=mock(OldCancelRecoveryAuditRepository.class,org.mockito.AdditionalAnswers.delegatesTo(recoveryAudits));
+        doThrow(new IllegalStateException("SECRET_audit_start")).when(broken).start(any(),any());
+        var events=new ArrayList<OldCancelRecoveryDiagnostics.Entry>();
+        var controlled=new OldCancelRecoveryService(resultTransactions,broken,gateway,clock,System::nanoTime,events::add);
+        assertThatThrownBy(()->controlled.recover(c)).isInstanceOf(IllegalStateException.class);
+        assertThat(events).singleElement().satisfies(e->{assertThat(e.stage()).isEqualTo(OldCancelRecoveryDiagnostics.Stage.AUDIT_START);
+            assertThat(e.reason()).isEqualTo(OldCancelRecoveryDiagnostics.Reason.AUDIT_FAILED);});
+        assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(before);verifyNoInteractions(gateway);
+    }
+    @Test void recoveryDiagnosticSinkFailureDoesNotMaskSafetyOutcome(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var before=recoveryDiagnosticBusiness(f);
+        doThrow(new IllegalStateException("SECRET_transport")).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        var controlled=new OldCancelRecoveryService(resultTransactions,recoveryAudits,gateway,clock,System::nanoTime,e->{throw new IllegalStateException("SECRET_sink");});
+        assertThat(controlled.recoverDetailed(c).detail()).isEqualTo(OldCancelRecovery.Detail.GET_UNKNOWN);
+        assertThat(recoveryAudits.find(c.requestId()).orElseThrow().get("result_code")).isEqualTo("HOLD");
+        assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(before);verify(gateway,never()).sendOrderChangeRequest(any());
     }
     @Test void explicitRecoveryRejectsWrongVersionAndUnauthorizedActor(){
         var f=recoveryFixture();var c=recoveryCommand(f);

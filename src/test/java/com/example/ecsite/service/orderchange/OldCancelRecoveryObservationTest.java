@@ -19,6 +19,17 @@ class OldCancelRecoveryObservationTest {
         var observed=new OldCancelRecovery.Observation(null,null,null,start,start,100,100);
         assertThatThrownBy(()->observed.consume(Clock.fixed(start.plusSeconds(wall),ZoneOffset.UTC),()->100+elapsed)).isInstanceOf(IllegalStateException.class);
     }
+    @Test void staleObservationHasStableNonSensitiveReason() {
+        var observed=new OldCancelRecovery.Observation(null,null,null,start,start,100,100);
+        assertThatThrownBy(()->observed.consume(Clock.fixed(start.plusSeconds(6),ZoneOffset.UTC),()->6_000_000_100L))
+            .isInstanceOf(IllegalStateException.class).hasMessage("OBSERVATION_STALE");
+    }
+    @Test void reusedObservationHasDistinctReason() {
+        var observed=new OldCancelRecovery.Observation(null,null,null,start,start,100,100);
+        observed.consume(Clock.fixed(start,ZoneOffset.UTC),()->101);
+        assertThatThrownBy(()->observed.consume(Clock.fixed(start,ZoneOffset.UTC),()->102))
+            .hasMessage("OBSERVATION_CONSUMED");
+    }
     @Test void rejectsCompletionBeforeStart(){
         var observed=new OldCancelRecovery.Observation(null,null,null,start,start.minusSeconds(1),100,101);
         assertThatThrownBy(()->observed.consume(Clock.fixed(start,ZoneOffset.UTC),()->102)).isInstanceOf(IllegalStateException.class);

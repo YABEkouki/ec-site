@@ -33,6 +33,13 @@ public final class OldCancelRecovery {
         final PayJpPaymentFlowObservation oldFlow,newFlow;
         final Instant started,finished;
         final long startNanos,endNanos;
+        OldCancelRecoveryDiagnostics.Stage stage=OldCancelRecoveryDiagnostics.Stage.APPLY;
+        Long lockStartedNanos, revalidatedNanos;
+        void stage(OldCancelRecoveryDiagnostics.Stage value){stage=value;}
+        void lockStarted(long now){stage=OldCancelRecoveryDiagnostics.Stage.LOCK;lockStartedNanos=now;}
+        void revalidated(long now){revalidatedNanos=now;}
+        long elapsedMs(long now){return now-startNanos<0?-1:(now-startNanos)/1_000_000L;}
+        long lockMs(long now){long end=revalidatedNanos==null?now:revalidatedNanos;return lockStartedNanos==null||end-lockStartedNanos<0?-1:(end-lockStartedNanos)/1_000_000L;}
         private final AtomicBoolean consumed=new AtomicBoolean();
         Observation(Snapshot snapshot,PayJpPaymentFlowObservation oldFlow,PayJpPaymentFlowObservation newFlow,
                 Instant started,Instant finished,long startNanos,long endNanos){
@@ -42,9 +49,12 @@ public final class OldCancelRecovery {
         void consume(Clock clock,java.util.function.LongSupplier nanos){
             var now=clock.instant();long elapsed=nanos.getAsLong()-startNanos;
             if(started==null||finished==null||finished.isBefore(started)||now.isBefore(finished)
-                    ||Duration.between(started,now).compareTo(Duration.ofSeconds(5))>0
-                    ||endNanos-startNanos<0||elapsed<endNanos-startNanos||elapsed>5_000_000_000L
-                    ||!consumed.compareAndSet(false,true))throw new IllegalStateException("Recovery observation stale or consumed");
+                    ||endNanos-startNanos<0||elapsed<endNanos-startNanos)
+                throw new OldCancelRecoveryDiagnostics.Failure(OldCancelRecoveryDiagnostics.Reason.OBSERVATION_CLOCK_INVALID);
+            if(Duration.between(started,now).compareTo(Duration.ofSeconds(5))>0||elapsed>5_000_000_000L)
+                throw new OldCancelRecoveryDiagnostics.Failure(OldCancelRecoveryDiagnostics.Reason.OBSERVATION_STALE);
+            if(!consumed.compareAndSet(false,true))
+                throw new OldCancelRecoveryDiagnostics.Failure(OldCancelRecoveryDiagnostics.Reason.OBSERVATION_CONSUMED);
         }
     }
 }
