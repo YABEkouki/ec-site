@@ -14,7 +14,8 @@ public record PayJpPaymentFlowObservation(String id,String status,Long amount,St
     @JsonProperty("capture_method") String captureMethod,Boolean livemode,
     @JsonProperty("expired_at") OffsetDateTime expiredAt,
     @JsonProperty("canceled_at") OffsetDateTime canceledAt,Map<String,Object> metadata,
-    @JsonIgnore boolean amountReceivedPresent){
+    @JsonIgnore boolean amountReceivedPresent,
+    @JsonIgnore OldAuthorizationCancellationEvidence oldCancellationEvidence){
     /** Pure raw-tree contract shared with the internal NEW_ABORT preparation validator.
      * This validates values only; it does not establish transport provenance or mint a permit. */
     public static void requireRequestedAbortAuthorization(
@@ -44,6 +45,16 @@ public record PayJpPaymentFlowObservation(String id,String status,Long amount,St
             Long amountCapturable,String captureMethod,Boolean livemode,OffsetDateTime expiredAt,
             OffsetDateTime canceledAt,Map<String,Object> metadata){
         this(id,status,amount,currency,amountReceived,amountCapturable,captureMethod,livemode,expiredAt,canceledAt,metadata,true);
+    }
+    public PayJpPaymentFlowObservation(String id,String status,Long amount,String currency,Long received,
+            Long capturable,String method,Boolean mode,OffsetDateTime expired,OffsetDateTime canceled,
+            Map<String,Object> metadata,boolean present){
+        this(id,status,amount,currency,received,capturable,method,mode,expired,canceled,metadata,present,null);
+    }
+    /** Only the order-change GET boundary supplies raw-tree evidence; DTO constructors do not infer it. */
+    public PayJpPaymentFlowObservation withOldCancellationEvidence(OldAuthorizationCancellationEvidence evidence){
+        return new PayJpPaymentFlowObservation(id,status,amount,currency,amountReceived,amountCapturable,captureMethod,
+            livemode,expiredAt,canceledAt,metadata,amountReceivedPresent,evidence);
     }
     @JsonCreator
     public static PayJpPaymentFlowObservation fromJson(@JsonProperty("id") String id,@JsonProperty("status") String status,

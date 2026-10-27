@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><title>旧与信取消の再照合</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body>
+<header th:replace="~{fragments/admin-header :: header}"></header>
+<h1>旧与信取消の再照合</h1>
+<p th:class="${recoveryResult == 'COMPLETED' ? 'message-success' : 'message-error'}" th:if="${recoveryMessage}" th:text="${recoveryMessage}"></p>
+<p th:if="${recoveryResult}">結果コード：<span th:text="${recoveryResult}"></span></p>
+<table><tbody>
+<tr><th>注文ID</th><td th:text="${recoveryPage.target.orderId}"></td></tr>
+<tr><th>operation ID</th><td th:text="${recoveryPage.target.operationId}"></td></tr>
+<tr><th>現在の状態</th><td th:text="${recoveryPage.target.state}"></td></tr>
+<tr><th>停止理由</th><td th:text="${recoveryPage.target.stopReason}"></td></tr>
+<tr><th>旧Payment ID／与信額</th><td><span th:text="${recoveryPage.target.oldPaymentId}"></span> ／ <span th:text="${recoveryPage.target.oldAmount}"></span>円</td></tr>
+<tr><th>新Payment ID／与信額</th><td><span th:text="${recoveryPage.target.newPaymentId}"></span> ／ <span th:text="${recoveryPage.target.newAmount}"></span>円</td></tr>
+<tr><th>現在のoperation version</th><td th:text="${recoveryPage.target.version}"></td></tr>
+</tbody></table>
+<p>保存済みの新旧FlowをGETで再照合し、安全条件がすべて成立した場合だけ注文切替を進めます。金融POST、新しい与信、Cancel、Captureの送信は行いません。</p>
+<p>証拠不足・結果不明の場合は停止します。再照合の受付だけで注文切替完了とは扱いません。</p>
+<form th:if="${recoveryCommand != null}" method="post" th:action="@{/admin/orders/{id}/changes/{op}/old-cancel-recovery(id=${recoveryPage.target.orderId},op=${recoveryPage.target.operationId})}" onsubmit="this.querySelector('button[type=submit]').disabled=true;">
+<input type="hidden" name="requestId" th:value="${recoveryCommand.requestId}">
+<input type="hidden" name="expectedVersion" th:value="${recoveryCommand.expectedVersion}">
+<label for="recoveryReason">操作理由</label>
+<select id="recoveryReason" name="reason" required><option value="VERIFY_OLD_CANCEL">旧与信取消の証拠を再確認する</option></select>
+<button type="submit">GETで再照合する</button>
+</form>
+<p th:if="${recoveryCommand == null}">現在は再照合の実行対象ではありません。状態と監査記録を確認してください。</p>
+<h2>再照合の監査記録</h2>
+<table><thead><tr><th>操作者</th><th>操作理由</th><th>実行日時（JST）</th><th>回復要求UUID</th><th>開始version</th><th>結果コード</th><th>終了日時（JST）</th></tr></thead>
+<tbody><tr th:each="audit : ${recoveryPage.audits}"><td th:text="${audit.actorUsername}"></td><td th:text="${audit.reason}"></td><td th:text="${audit.startedAt}"></td><td th:text="${audit.requestId}"></td><td th:text="${audit.expectedVersion}"></td><td th:text="${audit.result}"></td><td th:text="${audit.finishedAt}"></td></tr></tbody></table>
+<p><a th:href="@{/admin/orders/{id}(id=${recoveryPage.target.orderId})}">注文詳細へ戻る</a></p>
+</body></html>

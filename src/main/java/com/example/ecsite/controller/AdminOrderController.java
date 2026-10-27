@@ -76,6 +76,7 @@ public class AdminOrderController {
 
     private final OrderShippingPreparationViewFactory shippingPreparationViewFactory;
     private final OrderPaymentViewReadService paymentViewReader;
+    private final com.example.ecsite.service.orderchange.AdminOldCancelRecoveryViewService recoveryViews;
 
     public AdminOrderController(
             OrderService orderService,
@@ -91,9 +92,10 @@ public class AdminOrderController {
             PaymentCaptureService paymentCaptureService,
             AdminPaymentCancellationService adminPaymentCancellationService,
             OrderShippingPreparationViewFactory shippingPreparationViewFactory,
-            OrderPaymentViewReadService paymentViewReader) {
+            OrderPaymentViewReadService paymentViewReader, com.example.ecsite.service.orderchange.AdminOldCancelRecoveryViewService recoveryViews) {
 
         this.paymentViewReader = paymentViewReader;
+        this.recoveryViews = recoveryViews;
 
         this.shippingPreparationViewFactory = shippingPreparationViewFactory;
         this.orderService = orderService;
@@ -296,6 +298,7 @@ public class AdminOrderController {
                 "assignableAdmins",
                 assignableAdmins);
 
+        model.addAttribute("recoveryTargets", recoveryViews.eligible(id));
         return "admin/orders/detail";
     }
 

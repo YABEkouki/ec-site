@@ -367,11 +367,15 @@ public class PayJpPaymentGateway implements PaymentGateway {
     public PayJpPaymentFlowObservation observeOrderChangeFlow(String flowId) {
         if(flowId==null||!flowId.matches("pfw_[A-Za-z0-9_-]{1,251}"))throw new IllegalArgumentException("Invalid Flow identifier");
         try {
-            var result=restClient.get().uri("/v2/payment_flows/{id}",flowId).retrieve().body(PayJpPaymentFlowObservation.class);
+            var body=restClient.get().uri("/v2/payment_flows/{id}",flowId).retrieve().body(tools.jackson.databind.JsonNode.class);
+            var result=body==null?null:JsonMapper.builder().build().treeToValue(body,PayJpPaymentFlowObservation.class);
+            if(result!=null&&"canceled".equals(result.status())&&captureConnection!=null)
+                result=result.withOldCancellationEvidence(OldAuthorizationCancellationEvidence.fromJson(body,captureConnection.requireIdentity(activeConnection)));
             if(result==null||!flowId.equals(result.id())||result.status()==null)
                 throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
             return result;
         } catch(RestClientException failure){throw classify(failure);}
+          catch(tools.jackson.core.JacksonException failure){throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);}
     }
 
     /** Called only by the disconnected sender after loading a committed request.

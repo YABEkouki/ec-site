@@ -583,14 +583,181 @@ public class OrderReauthorizationTransactions {
     private final InventoryService inventory;
     private final CaptureConnectionProperties connection;
     private final PayJpProperties provider;
+    private final OldCancelRecoveryAuditRepository recoveryAudits;
     public OrderReauthorizationTransactions(OrderRepository orders,PaymentRepository payments,PaymentTransactionRepository transactions,
             OrderContentChangeHistoryRepository histories,ProductRepository products,OrderChangeStore changes,
             OrderChangeFinancialRequestStore requests,JdbcTemplate jdbc,EntityManager em,OrderWriteContext context,
             OrderModificationPolicy policy,OrderAmountCalculator calculator,InventoryService inventory,
-            CaptureConnectionProperties connection,PayJpProperties provider){
+            CaptureConnectionProperties connection,PayJpProperties provider,OldCancelRecoveryAuditRepository recoveryAudits){
         this.orders=orders;this.payments=payments;this.transactions=transactions;this.histories=histories;this.products=products;
         this.changes=changes;this.requests=requests;this.jdbc=jdbc;this.em=em;this.context=context;this.policy=policy;
-        this.calculator=calculator;this.inventory=inventory;this.connection=connection;this.provider=provider;
+        this.calculator=calculator;this.inventory=inventory;this.connection=connection;this.provider=provider;this.recoveryAudits=recoveryAudits;
+    }
+    @Transactional(propagation=Propagation.REQUIRES_NEW,readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    OldCancelRecovery.Snapshot recoverySnapshot(OldCancelRecovery.Command command,boolean committing,OldCancelRecovery.Actor actor){
+        requireRecoveryActor(actor);
+        var order=orders.findById(command.orderId()).orElseThrow();
+        var op=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=?",command.operationId(),command.orderId());
+        var all=payments.findByOrderIdOrderByCreatedAtAscIdAsc(command.orderId());
+        var history=new ArrayList<PaymentTransaction>();for(var p:all)history.addAll(transactions.findByPaymentIdOrderByCreatedAtAscIdAsc(p.getId()));
+        var data=new Locked(order,op,all,history,jdbc.queryForList("select * from order_change_items where operation_id=? order by order_item_id",command.operationId()));
+        return recoveryTarget(data,command,committing,actor);
+    }
+    private OldCancelRecovery.Snapshot recoveryTarget(Locked data,OldCancelRecovery.Command command,boolean committing,OldCancelRecovery.Actor actor){
+        var op=data.operation();long expected=committing?Math.addExact(command.expectedVersion(),1):command.expectedVersion();
+        if(number(op,"version")!=expected||!(committing?"COMMIT_PENDING":"MANUAL_REVIEW").equals(op.get("state"))
+                ||(!committing&&!"CANCEL_FLOW_EVIDENCE_MISMATCH".equals(op.get("financial_review_reason")))
+                ||abortRequested(data)||op.get("switch_decided_at")==null||op.get("new_payment_id")==null
+                ||op.get("content_change_history_id")!=null||op.get("abort_flow_closed_at")!=null)
+            throw new IllegalStateException("Recovery operation is not eligible");
+        validateBase(data);
+        var held=jdbc.queryForList("select order_item_id,product_id,quantity,state from inventory_reservations where operation_id=?",command.operationId());
+        if(held.size()!=data.items().size()||held.stream().anyMatch(r->!"HELD".equals(r.get("state"))||data.items().stream().noneMatch(i->
+            number(i,"order_item_id")==number(r,"order_item_id")&&number(i,"product_id")==number(r,"product_id")&&integer(i,"increase_quantity")==integer(r,"quantity"))))
+            throw new IllegalStateException("Recovery held reservation mismatch");
+        var decision=((java.sql.Timestamp)op.get("switch_decided_at")).toLocalDateTime();
+        if(decision.isBefore(((java.sql.Timestamp)op.get("accepted_at")).toLocalDateTime())
+                ||decision.isAfter(((java.sql.Timestamp)op.get("grace_until")).toLocalDateTime()))throw new IllegalStateException("Recovery decision outside accepted window");
+        var old=payment(data,number(op,"old_payment_id"));var next=payment(data,number(op,"new_payment_id"));
+        var cancel=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL);
+        var auth=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION);
+        if(old.getId().equals(next.getId())||old.getStatus()!=(committing?PaymentStatus.CANCELLED:PaymentStatus.AUTHORIZED)
+                ||next.getStatus()!=PaymentStatus.AUTHORIZED||old.getAmount()!=integer(op,"before_amount")||next.getAmount()!=integer(op,"after_amount")
+                ||old.getProvider()!=PaymentProvider.PAYJP||next.getProvider()!=PaymentProvider.PAYJP
+                ||old.getPaymentMethod()!=PaymentMethod.CARD||next.getPaymentMethod()!=PaymentMethod.CARD
+                ||old.getProviderPaymentId()==null||next.getProviderPaymentId()==null||old.getProviderPaymentId().equals(next.getProviderPaymentId())
+                ||auth.getStatus()!=PaymentTransactionStatus.SUCCEEDED||!validAuthorization(data,auth,next)
+                ||cancel.getStatus()!=(committing?PaymentTransactionStatus.SUCCEEDED:PaymentTransactionStatus.PENDING)
+                ||cancel.getTransactionType()!=PaymentTransactionType.CANCEL||!cancel.getPayment().getId().equals(old.getId())
+                ||cancel.getAmount()!=old.getAmount()||cancel.getOrderContentRevision()!=integer(op,"base_content_revision")
+                ||(committing&&!Objects.equals(cancel.getProviderTransactionId(),old.getProviderPaymentId())))
+            throw new IllegalStateException("Recovery financial history mismatch");
+        var oldAuth=data.transactions().stream().filter(t->t.getPayment().getId().equals(old.getId())&&t.getTransactionType()==PaymentTransactionType.AUTHORIZE).toList();
+        if(oldAuth.size()!=1||oldAuth.getFirst().getStatus()!=PaymentTransactionStatus.SUCCEEDED||oldAuth.getFirst().getAmount()!=old.getAmount()
+                ||oldAuth.getFirst().getOrderContentRevision()!=integer(op,"base_content_revision")
+                ||!Objects.equals(oldAuth.getFirst().getProviderTransactionId(),old.getProviderPaymentId())
+                ||data.transactions().stream().anyMatch(t->t.getTransactionType()==PaymentTransactionType.CAPTURE
+                    ||t.getPurpose()==PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT
+                    ||(t.getStatus()==PaymentTransactionStatus.PENDING&&!t.getId().equals(cancel.getId()))))
+            throw new IllegalStateException("Recovery competing financial operation");
+        var rows=jdbc.queryForList("select id,request_kind from order_change_financial_requests where operation_id=?",command.operationId());
+        if(rows.size()!=2||rows.stream().filter(r->"CREATE".equals(r.get("request_kind"))).count()!=1
+                ||rows.stream().filter(r->"OLD_CANCEL".equals(r.get("request_kind"))).count()!=1)throw new IllegalStateException("Recovery request set mismatch");
+        var saved=requests.find(requestId(rows,"OLD_CANCEL"));var creation=requests.find(requestId(rows,"CREATE"));
+        var request=saved.httpRequest();var create=creation.httpRequest();var identity=connection.requireIdentity(provider);
+        if(saved.paymentId()!=old.getId()||saved.transactionId()!=cancel.getId()||request.orderId()!=command.orderId()
+                ||!request.operationId().equals(command.operationId())||request.purpose()!=PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL
+                ||!"OLD_CANCEL".equals(request.kind())||!"CANCEL".equals(request.transactionType())||request.amount()!=old.getAmount()
+                ||!Objects.equals(request.flowId(),old.getProviderPaymentId())||!request.idempotencyKey().equals(cancel.getIdempotencyKey())
+                ||!request.connection().equals(identity)||creation.paymentId()!=next.getId()||creation.transactionId()!=auth.getId()
+                ||create.orderId()!=command.orderId()||!create.operationId().equals(command.operationId())||!"CREATE".equals(create.kind())
+                ||create.amount()!=next.getAmount()||!create.idempotencyKey().equals(auth.getIdempotencyKey())||!create.connection().equals(identity))
+            throw new IllegalStateException("Recovery saved request mismatch");
+        if(!List.of(committing?"OBSERVED":"STARTED").equals(jdbc.queryForList("select state from order_change_request_dispatches where request_id=?",String.class,saved.id()))
+                ||!List.of("OBSERVED").equals(jdbc.queryForList("select state from order_change_request_dispatches where request_id=?",String.class,creation.id())))
+            throw new IllegalStateException("Recovery dispatch state mismatch");
+        if(committing){
+            var audit=jdbc.queryForMap("select * from order_change_recovery_audits where request_id=?",command.requestId());
+            OldCancelRecoveryAuditRepository.requireIdentity(audit,command,actor);
+            if(!"COMMIT_PENDING".equals(audit.get("result_code"))||number(audit,"applied_version")!=expected
+                    ||number(audit,"old_cancel_request_id")!=saved.id()||!old.getProviderPaymentId().equals(audit.get("old_flow_id"))
+                    ||!next.getProviderPaymentId().equals(audit.get("new_flow_id")))throw new IllegalStateException("Recovery resume is not anchored");
+        }
+        return new OldCancelRecovery.Snapshot(command,expected,committing,old.getId(),next.getId(),saved,creation,
+            old.getProviderPaymentId(),next.getProviderPaymentId(),recoveryDigest(data));
+    }
+    private String recoveryDigest(Locked data){
+        var text=new StringBuilder("old-cancel-recovery/context/v1").append(baseFingerprint(data.order()));
+        text.append(jdbc.queryForObject("select to_jsonb(o)::text from order_change_operations o where id=?",String.class,data.operation().get("id")));
+        text.append(jdbc.queryForList("select to_jsonb(p)::text from payments p where order_id=? order by id",String.class,data.order().getId()));
+        text.append(jdbc.queryForList("select to_jsonb(t)::text from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? order by t.id",String.class,data.order().getId()));
+        for(String table:List.of("order_change_items","inventory_reservations","order_change_financial_requests"))
+            text.append(jdbc.queryForList("select to_jsonb(r)::text from "+table+" r where operation_id=? order by to_jsonb(r)::text",String.class,data.operation().get("id")));
+        text.append(jdbc.queryForList("select to_jsonb(d)::text from order_change_request_dispatches d join order_change_financial_requests r on r.id=d.request_id where r.operation_id=? order by d.request_id",String.class,data.operation().get("id")));
+        return HexFormat.of().formatHex(recoveryHash(text.toString()));
+    }
+    private static byte[] recoveryHash(String text){
+        try{return MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+        catch(NoSuchAlgorithmException impossible){throw new IllegalStateException("Recovery digest unavailable");}
+    }
+    private Locked recoveryLock(long orderId,UUID operationId){
+        var data=lock(orderId,operationId);
+        jdbc.queryForList("select id from payments where order_id=? order by id for update",orderId);
+        jdbc.queryForList("select t.id from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? order by t.payment_id,t.id for update of t",orderId);
+        data.transactions().forEach(em::refresh);
+        jdbc.queryForList("select order_item_id from inventory_reservations where operation_id=? order by order_item_id for update",operationId);
+        return data;
+    }
+    void applyRecoveredOldCancellation(OldCancelRecovery.Observation observed,OldCancelRecovery.Actor actor,Clock clock,java.util.function.LongSupplier nanos){
+        requireRecoveryActor(actor);var saved=observed.snapshot;var c=saved.command();
+        if(saved.committing())throw new IllegalStateException("Recovery phase mismatch");
+        var data=recoveryLock(c.orderId(),c.operationId());var target=recoveryTarget(data,c,false,actor);
+        var audit=recoveryAudits.locked(c.requestId());OldCancelRecoveryAuditRepository.requireIdentity(audit,c,actor);
+        if((!saved.digest().equals(target.digest())||saved.version()!=target.version()||saved.cancellation().id()!=target.cancellation().id()||saved.creation().id()!=target.creation().id())||!Arrays.equals((byte[])audit.get("context_digest"),HexFormat.of().parseHex(saved.digest()))
+                ||number(audit,"old_cancel_request_id")!=target.cancellation().id()
+                ||!List.of("STARTED","HOLD").contains(audit.get("result_code")))throw new IllegalStateException("Recovery snapshot conflict");
+        observed.consume(clock,nanos);requireRecoveryNewAuthorization(data,observed.newFlow,clock);
+        var old=payment(data,saved.oldPaymentId());
+        if(observed.oldFlow==null||!"canceled".equals(observed.oldFlow.status())||!matchesOldCancellation(data,old,observed.oldFlow))
+            throw new OldCancelRecovery.EvidenceFailure(OldCancelRecovery.Detail.OLD_EVIDENCE_UNCONFIRMED);
+        var cancel=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL);
+        cancel.markSucceeded(old.getProviderPaymentId(),now());old.markCancelled(now());requests.observed(c.operationId(),"OLD_CANCEL");
+        state(data,"COMMIT_PENDING",null);
+        var evidence=recoveryHash(saved.digest()+"|"+observed.oldFlow.id()+"|"+observed.oldFlow.status()+"|"+observed.oldFlow.amountReceived()+"|"+observed.oldFlow.amountCapturable()
+            +"|"+observed.newFlow.id()+"|"+observed.newFlow.amount()+"|"+observed.started+"|"+observed.finished);
+        recoveryAudits.applied(c.requestId(),number(data.operation(),"version"),evidence);
+    }
+    OldCancelRecovery.Result completeRecoveredOrder(OldCancelRecovery.Observation observed,OldCancelRecovery.Actor actor,Clock clock,java.util.function.LongSupplier nanos){
+        requireRecoveryActor(actor);var saved=observed.snapshot;var c=saved.command();
+        if(!saved.committing())throw new IllegalStateException("Recovery phase mismatch");
+        var data=recoveryLock(c.orderId(),c.operationId());var target=recoveryTarget(data,c,true,actor);
+        var audit=recoveryAudits.locked(c.requestId());OldCancelRecoveryAuditRepository.requireIdentity(audit,c,actor);
+        if((!saved.digest().equals(target.digest())||saved.version()!=target.version()||saved.cancellation().id()!=target.cancellation().id()||saved.creation().id()!=target.creation().id()))throw new IllegalStateException("Recovery completion snapshot conflict");
+        observed.consume(clock,nanos);requireRecoveryNewAuthorization(data,observed.newFlow,clock);
+        // Self invocation deliberately shares this transaction; never hold locks across a nested REQUIRES_NEW.
+        var view=completeInternal(c.orderId(),c.operationId(),observed.newFlow,true);
+        if(!"COMPLETED".equals(view.state()))throw new IllegalStateException("Recovery completion did not apply");
+        var op=jdbc.queryForMap("select version,content_change_history_id from order_change_operations where id=?",c.operationId());
+        recoveryAudits.completed(c.requestId(),number(op,"version"),number(op,"content_change_history_id"));
+        return OldCancelRecovery.Result.COMPLETED;
+    }
+    private void requireRecoveryNewAuthorization(Locked data,PayJpPaymentFlowObservation observed,Clock clock){
+        var next=payment(data,number(data.operation(),"new_payment_id"));
+        if(!matchesFlow(data,next,observed,true)||!authorized(observed,next.getAmount())
+                ||(observed.expiredAt()!=null&&!observed.expiredAt().toInstant().isAfter(clock.instant().plusSeconds(5))))
+            throw new OldCancelRecovery.EvidenceFailure(OldCancelRecovery.Detail.NEW_AUTH_UNAVAILABLE);
+    }
+    @Transactional(propagation=Propagation.REQUIRES_NEW,readOnly=true)
+    OldCancelRecovery.Result recoveryCompleted(OldCancelRecovery.Command c,OldCancelRecovery.Actor actor){
+        requireRecoveryActor(actor);var row=jdbc.queryForMap("select * from order_change_recovery_audits where request_id=?",c.requestId());
+        OldCancelRecoveryAuditRepository.requireIdentity(row,c,actor);
+        var op=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=?",c.operationId(),c.orderId());
+        if(!"COMPLETED".equals(row.get("result_code"))||!"COMPLETED".equals(op.get("state"))
+                ||!Objects.equals(row.get("content_change_history_id"),op.get("content_change_history_id"))
+                ||number(row,"completed_version")!=number(op,"version"))throw new IllegalStateException("Recovery completed outcome conflict");
+        return OldCancelRecovery.Result.COMPLETED;
+    }
+    /** Audit and business state must be read from one database snapshot during a concurrent completion. */
+    @Transactional(propagation=Propagation.REQUIRES_NEW,readOnly=true,isolation=Isolation.REPEATABLE_READ)
+    OldCancelRecovery.Result recoveryReadback(OldCancelRecovery.Command c,OldCancelRecovery.Actor actor){
+        requireRecoveryActor(actor);
+        var audit=jdbc.queryForMap("select * from order_change_recovery_audits where request_id=?",c.requestId());
+        OldCancelRecoveryAuditRepository.requireIdentity(audit,c,actor);
+        if("COMPLETED".equals(audit.get("result_code")))return recoveryCompleted(c,actor);
+        if("COMMIT_PENDING".equals(audit.get("result_code"))){
+            try{recoverySnapshot(c,true,actor);}catch(IllegalStateException changed){return OldCancelRecovery.Result.CONFLICT;}
+            return OldCancelRecovery.Result.COMMIT_PENDING;
+        }
+        if("CONFLICT".equals(audit.get("result_code")))return OldCancelRecovery.Result.CONFLICT;
+        try{recoverySnapshot(c,false,actor);}catch(IllegalStateException changed){return OldCancelRecovery.Result.CONFLICT;}
+        return OldCancelRecovery.Result.HOLD;
+    }
+    private void requireRecoveryActor(OldCancelRecovery.Actor actor){
+        var authentication=org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if(authentication==null||!authentication.isAuthenticated()||authentication.getAuthorities().stream().noneMatch(a->"ROLE_ADMIN".equals(a.getAuthority()))
+                ||!(authentication.getPrincipal() instanceof com.example.ecsite.security.AdminUserDetails principal)||!principal.isEnabled()
+                ||actor==null||!Objects.equals(principal.getId(),actor.id())||!Objects.equals(principal.getUsername(),actor.username()))
+            throw new org.springframework.security.access.AccessDeniedException("Valid administrator authentication required");
     }
     /** One durable first-confirm screen. Not a provider POST permit and never contains a secret. */
     public boolean issueBrowserConfirmation(long orderId,UUID operationId,PayJpPaymentFlowObservation observed){
@@ -764,7 +931,9 @@ public class OrderReauthorizationTransactions {
         var op=data.operation();var target=payment(data,number(op,abort?"new_payment_id":"old_payment_id"));
         if(abort&&op.get("switch_decided_at")!=null)return review(data,"ABORT_AFTER_DECISION");
         if(!abort&&op.get("switch_decided_at")==null)return review(data,"CANCEL_WITHOUT_DECISION");
-        if(!matchesFlow(data,target,observed,abort))return review(data,"CANCEL_FLOW_EVIDENCE_MISMATCH");
+        if(!abort&&observed!=null&&"canceled".equals(observed.status())){
+            if(!matchesOldCancellation(data,target,observed))return review(data,"CANCEL_FLOW_EVIDENCE_MISMATCH");
+        }else if(!matchesFlow(data,target,observed,abort))return review(data,"CANCEL_FLOW_EVIDENCE_MISMATCH");
         requests.observed(operationId,abort?"NEW_ABORT":"OLD_CANCEL");
         var cancel=transaction(data,abort?PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT:PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL);
         if(cancel.getStatus()==PaymentTransactionStatus.SUCCEEDED)return view(data);
@@ -778,8 +947,13 @@ public class OrderReauthorizationTransactions {
         return view(data);
     }
     public View complete(long orderId,UUID operationId,PayJpPaymentFlowObservation observed){
+        return completeInternal(orderId,operationId,observed,false);
+    }
+    private View completeInternal(long orderId,UUID operationId,PayJpPaymentFlowObservation observed,boolean explicitRecovery){
         var data=lock(orderId,operationId);if(progressBlocked(data))return view(data);var op=data.operation();
         if(!"COMMIT_PENDING".equals(op.get("state"))||op.get("switch_decided_at")==null)throw new IllegalStateException("Old cancellation has not been confirmed");
+        // Dedicated recovery must finish together with its audit, never through an automatic result route.
+        if(!explicitRecovery&&Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from order_change_recovery_audits where operation_id=? and applied_version is not null)",Boolean.class,operationId)))return view(data);
         validateBase(data);requireHeld(data);requireNoPending(data,null);
         var next=payment(data,number(op,"new_payment_id"));var old=payment(data,number(op,"old_payment_id"));
         if(old.getStatus()!=PaymentStatus.CANCELLED||transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL).getStatus()!=PaymentTransactionStatus.SUCCEEDED
@@ -881,6 +1055,31 @@ public class OrderReauthorizationTransactions {
             &&value.livemode()==identity.mode().equals("LIVE")&&value.metadata()!=null
             &&Long.toString(data.order().getId()).equals(value.metadata().get("order_id"))
             &&data.operation().get("id").toString().equals(value.metadata().get("order_change_operation_id"));
+    }
+    private boolean matchesOldCancellation(Locked data,Payment old,PayJpPaymentFlowObservation observed){
+        var op=data.operation();var identity=connection.requireIdentity(provider);
+        validateBase(data);
+        if(old.getId()!=number(op,"old_payment_id")||!Objects.equals(old.getOrder().getId(),data.order().getId())
+                ||old.getProvider()!=PaymentProvider.PAYJP||old.getPaymentMethod()!=PaymentMethod.CARD
+                ||old.getAmount()!=integer(op,"before_amount")||observed.oldCancellationEvidence()==null
+                ||!observed.oldCancellationEvidence().matches(old.getProviderPaymentId(),old.getAmount(),identity))return false;
+        var cancel=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL);
+        var requestId=view(data).oldCancelRequest();if(requestId==null)return false;
+        var saved=requests.find(requestId);var request=saved.httpRequest();
+        if(saved.paymentId()!=old.getId()||saved.transactionId()!=cancel.getId()
+                ||!request.operationId().equals(op.get("id"))||request.orderId()!=data.order().getId()
+                ||!"OLD_CANCEL".equals(request.kind())||!"CANCEL".equals(request.transactionType())
+                ||request.purpose()!=PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL
+                ||request.amount()!=old.getAmount()||!Objects.equals(request.flowId(),old.getProviderPaymentId())
+                ||!request.connection().equals(identity)||!request.idempotencyKey().equals(cancel.getIdempotencyKey())
+                ||!Objects.equals(cancel.getPayment().getId(),old.getId())||cancel.getAmount()!=old.getAmount()
+                ||cancel.getOrderContentRevision()!=integer(op,"base_content_revision"))return false;
+        if(jdbc.queryForObject("select count(*) from order_change_request_dispatches where request_id=? and state in ('STARTED','OBSERVED')",Integer.class,requestId)!=1)return false;
+        if(data.transactions().stream().noneMatch(t->t.getPayment().getId().equals(old.getId())
+                &&t.getTransactionType()==PaymentTransactionType.AUTHORIZE&&t.getStatus()==PaymentTransactionStatus.SUCCEEDED
+                &&t.getAmount()==old.getAmount()&&Objects.equals(t.getProviderTransactionId(),old.getProviderPaymentId())))return false;
+        return data.transactions().stream().noneMatch(t->t.getTransactionType()==PaymentTransactionType.CAPTURE
+            ||(t.getStatus()==PaymentTransactionStatus.PENDING&&!t.getId().equals(cancel.getId())));
     }
     private boolean matchesFlow(Locked data,Payment payment,PayJpPaymentFlowObservation value,boolean requireMetadata){
         var identity=connection.requireIdentity(provider);

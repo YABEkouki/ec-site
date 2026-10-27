@@ -69,6 +69,14 @@ class PayJpOrderChangeRequestTest {
         assertThat(result.amount()).isNull();assertThat(result.amountReceived()).isNull();assertThat(result.amountCapturable()).isNull();
         assertThat(result.livemode()).isNull();assertThat(result.metadata()).isNull();assertThat(result.status()).isEqualTo("unknown_future");
     }
+    @ParameterizedTest @CsvSource({"null,730","0,0","null,0","0,730"})
+    void orderChangeGetRetainsStrictOldCancellationEvidence(String received,String capturable){
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andExpect(method(HttpMethod.GET))
+            .andRespond(withSuccess("{\"id\":\"pfw_old\",\"status\":\"canceled\",\"amount\":730,\"currency\":\"jpy\",\"capture_method\":\"manual\",\"livemode\":false,\"amount_received\":"+received+",\"amount_capturable\":"+capturable+"}",MediaType.APPLICATION_JSON));
+        var observed=gateway.observeOrderChangeFlow("pfw_old");
+        assertThat(observed.oldCancellationEvidence().matches("pfw_old",730,identity)).isTrue();
+        assertThat(observed.amountReceived()).isEqualTo(received.equals("null")?null:0L);
+    }
     @Test void cancelRequiresKnownAuthorizedObservationAndUsesSavedKey(){
         var request=OrderChangeHttpRequest.cancel(identity,UUID.randomUUID(),10,5500,"fixed-cancel","pfw_old",false);
         server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_old")).andRespond(withSuccess(

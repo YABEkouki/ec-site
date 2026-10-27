@@ -42,7 +42,7 @@ class AdminOrderShippingPreparationViewTest {
                 mock(OrderStatusHistoryService.class), mock(OrderNoteService.class),
                 mock(OrderHandlingStatusHistoryService.class), mock(OrderShippingAddressHistoryService.class),
                 mock(OrderAssigneeHistoryService.class), mock(OrderContentChangeHistoryService.class),
-                mock(AdminAccountService.class), payments, captures, cancellations, factory, paymentViewReader);
+                mock(AdminAccountService.class), payments, captures, cancellations, factory, paymentViewReader, mock(com.example.ecsite.service.orderchange.AdminOldCancelRecoveryViewService.class));
         var resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/"); resolver.setSuffix(".html");
         resolver.setTemplateMode("HTML"); resolver.setCharacterEncoding("UTF-8");

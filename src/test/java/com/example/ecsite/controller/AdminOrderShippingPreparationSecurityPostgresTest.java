@@ -199,7 +199,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 .andExpect(flash().attribute("successMessage", "この注文は既に発送準備を開始しています。"));
         assertThat(row(id)).isEqualTo(saved);
         verify(preparation, times(2)).start(id);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(67);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(68);
     }
 
     @ParameterizedTest

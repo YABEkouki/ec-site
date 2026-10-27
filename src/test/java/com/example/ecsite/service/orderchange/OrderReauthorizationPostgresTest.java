@@ -20,8 +20,12 @@ import com.example.ecsite.payment.payjp.PayJpPaymentFlowObservation;
 
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
 @com.example.ecsite.support.CaptureConnectionTest
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 class OrderReauthorizationPostgresTest {
+    @Autowired org.springframework.test.web.servlet.MockMvc adminMvc;
     @Autowired OrderReauthorizationService service;
+    @Autowired OldCancelRecoveryService recovery;
+    @Autowired OldCancelRecoveryAuditRepository recoveryAudits;
     @Autowired OrderReauthorizationTransactions resultTransactions;
     @Autowired OrderIncreaseService increases;
     @Autowired JdbcTemplate jdbc;
@@ -63,7 +67,7 @@ class OrderReauthorizationPostgresTest {
     final AtomicReference<String> newState=new AtomicReference<>("requires_capture");
     final AtomicBoolean oldCancelled=new AtomicBoolean();
     String newFlow;
-    PayJpPaymentFlowObservation observation(String flow,String status,int amount,Map<String,Object> metadata){return new PayJpPaymentFlowObservation(flow,status,(long)amount,"jpy",0L,"requires_capture".equals(status)?(long)amount:0L,"manual",false,null,null,metadata);}
+    PayJpPaymentFlowObservation observation(String flow,String status,int amount,Map<String,Object> metadata){return jsonObservation(flow,status,amount,metadata,"0");}
     void mockFlow(Fixture f,OrderChangeStore.Operation op){
         reset(gateway);newState.set("requires_capture");oldCancelled.set(false);newFlow="pfw_new_"+op.id();
         transport=call->{
@@ -1544,7 +1548,10 @@ class OrderReauthorizationPostgresTest {
         if(!capturable.equals("MISSING"))fields.put("amount_capturable",capturable.equals("NULL")?null:Long.valueOf(capturable));
         if(!received.equals("MISSING"))fields.put("amount_received",received.equals("NULL")?null:Long.valueOf(received));
         var mapper=tools.jackson.databind.json.JsonMapper.builder().build();
-        return mapper.readValue(mapper.writeValueAsString(fields),PayJpPaymentFlowObservation.class);
+        var raw=mapper.readTree(mapper.writeValueAsString(fields));
+        var result=mapper.treeToValue(raw,PayJpPaymentFlowObservation.class);
+        return result.withOldCancellationEvidence(com.example.ecsite.payment.payjp.OldAuthorizationCancellationEvidence.fromJson(raw,
+            new com.example.ecsite.payment.capture.CaptureConnectionIdentity("test-capture","test-account","TEST","https://api.pay.jp")));
     }
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({
@@ -1677,13 +1684,13 @@ class OrderReauthorizationPostgresTest {
         assertThat(oldCancelled).isFalse();verify(gateway,times(1)).sendOrderChangeRequest(any());
         assertThat(jdbc.queryForObject("select switch_decided_at from order_change_operations where id=?",java.time.LocalDateTime.class,op.id())).isNull();
     }
-    @Test void canceledNullAfterUnknownCancelNeverSwitchesOrAutomaticallyReposts(){
+    @Test void canceledMissingReceivedAfterUnknownCancelNeverSwitchesOrAutomaticallyReposts(){
         var f=fixture();var op=accept(f,3);mockFlow(f,op);var cancelPosts=new AtomicInteger();
         doAnswer(call->{var saved=((OrderChangeRequestSender.Dispatch)call.getArgument(0)).request();
             if(saved.httpRequest().kind().equals("OLD_CANCEL")){cancelPosts.incrementAndGet();oldCancelled.set(true);throw new PaymentGatewayException(PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN,null,null,true);}
             return transport.answer(call);
         }).when(gateway).sendOrderChangeRequest(any());
-        doAnswer(call->oldCancelled.get()?jsonObservation(f.oldFlow(),"canceled",op.beforeAmount(),Map.of(),"NULL"):observation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of()))
+        doAnswer(call->oldCancelled.get()?jsonObservation(f.oldFlow(),"canceled",op.beforeAmount(),Map.of(),"MISSING"):observation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of()))
             .when(gateway).observeOrderChangeFlow(f.oldFlow());
         assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
         assertThat(cancelPosts).hasValue(1);
@@ -1694,6 +1701,415 @@ class OrderReauthorizationPostgresTest {
         assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
         assertThat(cancelPosts).hasValue(1);
         verify(gateway,times(2)).sendOrderChangeRequest(any()); // CREATE + one Cancel, no automatic or stopped-state retry.
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"0,0","NULL,FULL","NULL,0","0,FULL"})
+    void oldCancellationObservedShapesConvergeWithoutReposting(String received,String capturable){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);var posts=new AtomicInteger();
+        doAnswer(call->{var saved=((OrderChangeRequestSender.Dispatch)call.getArgument(0)).request();
+            if(saved.httpRequest().kind().equals("OLD_CANCEL")){posts.incrementAndGet();oldCancelled.set(true);
+                throw new PaymentGatewayException(PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN,null,null,true);}
+            return transport.answer(call);
+        }).when(gateway).sendOrderChangeRequest(any());
+        doAnswer(call->oldCancelled.get()?jsonObservation(f.oldFlow(),"canceled",op.beforeAmount(),Map.of(),received,
+            capturable.equals("FULL")?Integer.toString(op.beforeAmount()):capturable):observation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of()))
+            .when(gateway).observeOrderChangeFlow(f.oldFlow());
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("COMPLETED");
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("COMPLETED");
+        assertThat(posts).hasValue(1);
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.oldPayment())).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.product())).isEqualTo(19);
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op.id())).isEqualTo("CONSUMED");
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,f.order())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order())).isNotEqualTo(f.oldPayment());
+    }
+    record RecoveryFixture(Fixture base,OrderChangeStore.Operation op){}
+    RecoveryFixture recoveryFixture(){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        doAnswer(call->oldCancelled.get()?jsonObservation(f.oldFlow(),"canceled",op.beforeAmount(),Map.of(),"MISSING")
+            :observation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of())).when(gateway).observeOrderChangeFlow(f.oldFlow());
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
+        doReturn(jsonObservation(f.oldFlow(),"canceled",op.beforeAmount(),Map.of(),"NULL",Integer.toString(op.beforeAmount())))
+            .when(gateway).observeOrderChangeFlow(f.oldFlow());
+        clearInvocations(gateway);admin();return new RecoveryFixture(f,op);
+    }
+    OldCancelRecovery.Command recoveryCommand(RecoveryFixture f){return new OldCancelRecovery.Command(f.base().order(),f.op().id(),UUID.randomUUID(),version(f.op().id()),"VERIFY_OLD_CANCEL");}
+    @Test void explicitRecoveryCompletesWithoutAnyFinancialPostAndIsIdempotent(){
+        var f=recoveryFixture();var command=recoveryCommand(f);
+        assertThat(recovery.recover(command)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        assertThat(recovery.recover(command)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        assertThat(state(f.op().id())).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.base().product())).isEqualTo(19);
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,f.base().order())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from order_change_recovery_audits where operation_id=?",Integer.class,f.op().id())).isEqualTo(1);
+        verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).capture(any());verify(gateway,never()).cancelAuthorization(any());
+    }
+    @Test void explicitRecoveryRejectsWrongVersionAndUnauthorizedActor(){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        assertThatThrownBy(()->recovery.recover(new OldCancelRecovery.Command(c.orderId(),c.operationId(),c.requestId(),c.expectedVersion()+1,c.reason()))).isInstanceOf(IllegalStateException.class);
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        assertThatThrownBy(()->recovery.recover(c)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verifyNoInteractions(gateway);assertHeldOriginal(f.base(),f.op());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"reason","state","oldPayment","newPayment","oldAuth","newAuth","cancel","dispatch","missingDispatch","reservation","revision","active","shipping","capture","newAbort"})
+    void explicitRecoveryRejectsIneligibleSavedTargets(String field){
+        var f=recoveryFixture();var c=recoveryCommand(f);long next=jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,c.operationId());
+        switch(field){
+            case "reason"->jdbc.update("update order_change_operations set financial_review_reason='OTHER_REASON' where id=?",c.operationId());
+            case "state"->jdbc.update("update order_change_operations set state='OLD_CANCEL_UNKNOWN' where id=?",c.operationId());
+            case "oldPayment"->jdbc.update("update payments set status='CANCELLED' where id=?",f.base().oldPayment());
+            case "newPayment"->jdbc.update("update payments set status='REQUIRES_ACTION' where id=?",next);
+            case "oldAuth"->jdbc.update("update payment_transactions set status='FAILED' where payment_id=? and transaction_type='AUTHORIZE'",f.base().oldPayment());
+            case "newAuth"->jdbc.update("update payment_transactions set status='PENDING' where payment_id=? and transaction_type='AUTHORIZE'",next);
+            case "cancel"->jdbc.update("update payment_transactions set status='FAILED' where order_change_operation_id=? and transaction_type='CANCEL'",c.operationId());
+            case "dispatch"->jdbc.update("update order_change_request_dispatches set state='OBSERVED',observed_at=clock_timestamp() where request_id=(select id from order_change_financial_requests where operation_id=? and request_kind='OLD_CANCEL')",c.operationId());
+            case "missingDispatch"->{long id=jdbc.queryForObject("select id from order_change_financial_requests where operation_id=? and request_kind='OLD_CANCEL'",Long.class,c.operationId());requestedDispatchFixtureMutation("order_change_request_dispatches","trg_change_dispatch_progress","delete from order_change_request_dispatches where request_id=?",id);}
+            case "reservation"->jdbc.update("update inventory_reservations set state='CONSUMED',consumed_at=localtimestamp where operation_id=?",c.operationId());
+            case "revision"->jdbc.update("update orders set content_revision=content_revision+1 where id=?",c.orderId());
+            case "active"->jdbc.update("update orders set active_payment_id=? where id=?",next,c.orderId());
+            case "shipping"->jdbc.update("update orders set shipping_preparation_started_at=localtimestamp,shipping_preparation_started_by_account_id=9,shipping_preparation_started_by_username='shipper' where id=?",c.orderId());
+            case "capture"->tx(()->{transactions.saveAndFlush(new PaymentTransaction(payments.findById(f.base().oldPayment()).orElseThrow(),PaymentTransactionType.CAPTURE,f.op().beforeAmount(),0,UUID.randomUUID().toString(),orders.findCurrentTimeInTokyo(),PaymentTransactionPurpose.SHIPMENT_CAPTURE));return null;});
+            case "newAbort"->tx(()->{transactions.saveAndFlush(PaymentTransaction.forOrderChange(payments.findById(next).orElseThrow(),PaymentTransactionType.CANCEL,f.op().afterAmount(),0,UUID.randomUUID().toString(),orders.findCurrentTimeInTokyo(),PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT,c.operationId()));return null;});
+        }
+        assertThatThrownBy(()->recovery.recover(c)).isInstanceOf(RuntimeException.class);
+        verifyNoInteractions(gateway);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"timeout","500","disconnect","oldEvidence","newExpired"})
+    void explicitRecoveryStopsOnUnconfirmedEvidence(String failure){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        if(List.of("timeout","500","disconnect").contains(failure))doThrow(new PaymentGatewayException(
+            failure.equals("500")?PaymentGatewayErrorCategory.SERVER_RESULT_UNKNOWN:PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN,
+            failure.equals("500")?500:null,null,true)).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        else if(failure.equals("oldEvidence"))doReturn(jsonObservation(f.base().oldFlow(),"canceled",f.op().beforeAmount(),Map.of(),"1")).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        else newState.set("canceled");
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.HOLD);assertHeldOriginal(f.base(),f.op());
+        assertThat(state(c.operationId())).isEqualTo("MANUAL_REVIEW");verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    void installRecoveryFailure(String name,UUID operation,String status){
+        jdbc.execute("create function "+name+"() returns trigger language plpgsql as $$ begin if NEW.operation_id='"+operation+"'::uuid and NEW.result_code='"+status+"' then raise exception 'Synthetic recovery audit failure'; end if; return NEW; end; $$");
+        jdbc.execute("create trigger "+name+" before update on order_change_recovery_audits for each row execute function "+name+"()");
+    }
+    void removeRecoveryFailure(String name){jdbc.execute("drop trigger "+name+" on order_change_recovery_audits");jdbc.execute("drop function "+name+"()");}
+    @Test void recoveryAuditFailureRollsBackEveryCancellationMutation(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var before=preservedBusiness(f.base(),f.op());var name="recovery_apply_"+c.orderId();
+        installRecoveryFailure(name,c.operationId(),"COMMIT_PENDING");
+        try{
+            assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.HOLD);
+            assertThat(preservedBusiness(f.base(),f.op())).isEqualTo(before);assertThat(state(c.operationId())).isEqualTo("MANUAL_REVIEW");
+        }finally{removeRecoveryFailure(name);}
+    }
+    @Test void recoveryCompletionFailureKeepsCommitPendingAndExplicitRetryCompletes(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var name="recovery_complete_"+c.orderId();installRecoveryFailure(name,c.operationId(),"COMPLETED");
+        try{
+            assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMMIT_PENDING);
+            assertThat(state(c.operationId())).isEqualTo("COMMIT_PENDING");
+            assertThat(service.reconcile(c.orderId(),c.operationId()).state()).isEqualTo("COMMIT_PENDING");
+            assertThat(service.advance(c.orderId(),c.operationId()).state()).isEqualTo("COMMIT_PENDING");
+            webhook.synchronize("payment_flow.canceled",f.base().oldFlow());
+            assertThat(state(c.operationId())).isEqualTo("COMMIT_PENDING");
+            assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,c.orderId())).isZero();
+            assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,c.operationId())).isEqualTo("HELD");
+            assertThatThrownBy(()->shippingPreparation.start(c.orderId())).isInstanceOf(RuntimeException.class);
+        }finally{removeRecoveryFailure(name);}
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @Test void lostCancellationCommitAcknowledgementIsReadBackWithoutReplaying(){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        var delegate=mock(OrderReauthorizationTransactions.class,org.mockito.AdditionalAnswers.delegatesTo(resultTransactions));
+        doAnswer(call->{resultTransactions.applyRecoveredOldCancellation(call.getArgument(0),call.getArgument(1),call.getArgument(2),call.getArgument(3));throw new IllegalStateException("Synthetic lost commit acknowledgement");})
+            .when(delegate).applyRecoveredOldCancellation(any(),any(),any(),any());
+        var uncertain=new OldCancelRecoveryService(delegate,recoveryAudits,gateway,clock);
+        assertThat(uncertain.recover(c)).isEqualTo(OldCancelRecovery.Result.COMMIT_PENDING);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @Test void recoveredOperationCanConvergeAfterDeadlineAndOnlyNewPaymentCanCapture(){
+        var f=recoveryFixture();var c=recoveryCommand(f);doReturn(f.op().graceUntil().plusHours(1)).when(orders).findCurrentTimeInTokyo();
+        doReturn(f.op().graceUntil().plusHours(1).atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
+        assertThatThrownBy(()->shippingPreparation.start(c.orderId())).isInstanceOf(RuntimeException.class);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        shippingPreparation.start(c.orderId());when(gateway.capture(any())).thenAnswer(call->{var request=(com.example.ecsite.payment.capture.CaptureHttpRequest)call.getArgument(0);assertThat(request.flowId()).isEqualTo(newFlow);return new CaptureResult(CaptureResultStatus.PENDING,newFlow,null,null);});
+        assertThat(capture.captureForShipment(c.orderId(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.PENDING);
+        verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @Test void reusedRecoveryUuidWithDifferentContentIsRejected(){
+        var f=recoveryFixture();var c=recoveryCommand(f);assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        clearInvocations(gateway);
+        assertThatThrownBy(()->recovery.recover(new OldCancelRecovery.Command(c.orderId(),c.operationId(),c.requestId(),c.expectedVersion()+1,c.reason()))).isInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(gateway);
+    }
+    @Test void concurrentExplicitRecoveriesNeverDuplicateCompletion()throws Exception{
+        var f=recoveryFixture();var c=recoveryCommand(f);var entered=new java.util.concurrent.CountDownLatch(2);
+        doAnswer(call->{entered.countDown();if(!entered.await(10,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("Recovery GET barrier timed out");return jsonObservation(f.base().oldFlow(),"canceled",f.op().beforeAmount(),Map.of(),"NULL",Integer.toString(f.op().beforeAmount()));}).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        var pool=java.util.concurrent.Executors.newFixedThreadPool(2);
+        try{
+            java.util.concurrent.Callable<OldCancelRecovery.Result> task=()->{admin();try{return recovery.recover(c);}finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}};
+            var first=pool.submit(task);var second=pool.submit(task);
+            assertThat(List.of(first.get(30,java.util.concurrent.TimeUnit.SECONDS),second.get(30,java.util.concurrent.TimeUnit.SECONDS))).contains(OldCancelRecovery.Result.COMPLETED);
+            assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,c.orderId())).isEqualTo(1);
+            assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.base().product())).isEqualTo(19);
+            verify(gateway,never()).sendOrderChangeRequest(any());
+        }finally{pool.shutdownNow();}
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"oldFlow","newFlow","newAmount","newMetadata","newExpiry","connection"})
+    void explicitRecoveryRejectsMismatchedFlowBindings(String field){
+        var f=recoveryFixture();var c=recoveryCommand(f);var metadata=Map.<String,Object>of("order_id",Long.toString(c.orderId()),"order_change_operation_id",c.operationId().toString());
+        switch(field){
+            case "oldFlow"->doReturn(jsonObservation("pfw_other","canceled",f.op().beforeAmount(),Map.of(),"NULL",Integer.toString(f.op().beforeAmount()))).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+            case "newFlow"->doReturn(observation("pfw_other","requires_capture",f.op().afterAmount(),metadata)).when(gateway).observeOrderChangeFlow(newFlow);
+            case "newAmount"->doReturn(observation(newFlow,"requires_capture",f.op().afterAmount()+1,metadata)).when(gateway).observeOrderChangeFlow(newFlow);
+            case "newMetadata"->doReturn(observation(newFlow,"requires_capture",f.op().afterAmount(),Map.of())).when(gateway).observeOrderChangeFlow(newFlow);
+            case "newExpiry"->doReturn(new PayJpPaymentFlowObservation(newFlow,"requires_capture",(long)f.op().afterAmount(),"jpy",0L,(long)f.op().afterAmount(),"manual",false,java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(1),null,metadata)).when(gateway).observeOrderChangeFlow(newFlow);
+            case "connection"->{var mapper=tools.jackson.databind.json.JsonMapper.builder().build();var raw=mapper.readTree("{\"id\":\""+f.base().oldFlow()+"\",\"status\":\"canceled\",\"amount\":"+f.op().beforeAmount()+",\"currency\":\"jpy\",\"capture_method\":\"manual\",\"livemode\":false,\"amount_received\":null,\"amount_capturable\":0}");
+                var wrong=jsonObservation(f.base().oldFlow(),"canceled",f.op().beforeAmount(),Map.of(),"NULL").withOldCancellationEvidence(com.example.ecsite.payment.payjp.OldAuthorizationCancellationEvidence.fromJson(raw,new com.example.ecsite.payment.capture.CaptureConnectionIdentity("other","test-account","TEST","https://api.pay.jp")));
+                doReturn(wrong).when(gateway).observeOrderChangeFlow(f.base().oldFlow());}
+        }
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.HOLD);assertHeldOriginal(f.base(),f.op());verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @Test void recoveryRejectsVersionChangedDuringGet(){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        doAnswer(call->{jdbc.update("update order_change_operations set version=version+1 where id=?",c.operationId());return jsonObservation(f.base().oldFlow(),"canceled",f.op().beforeAmount(),Map.of(),"NULL");}).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.CONFLICT);assertHeldOriginal(f.base(),f.op());verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @Test void recoveryRejectsMonotonicallyStaleGetEvidence(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var nanos=new AtomicLong();
+        var slow=new OldCancelRecoveryService(resultTransactions,recoveryAudits,gateway,clock,()->nanos.addAndGet(3_000_000_000L));
+        assertThat(slow.recover(c)).isEqualTo(OldCancelRecovery.Result.HOLD);assertHeldOriginal(f.base(),f.op());verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @Test void recoveryStartAuditRollbackPreventsAllGets(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var name="recovery_start_"+c.orderId();installRecoveryFailure(name,c.operationId(),"STARTED");
+        jdbc.execute("drop trigger "+name+" on order_change_recovery_audits");jdbc.execute("create trigger "+name+" before insert on order_change_recovery_audits for each row execute function "+name+"()");
+        try{
+            assertThatThrownBy(()->recovery.recover(c)).isInstanceOf(RuntimeException.class);verifyNoInteractions(gateway);assertHeldOriginal(f.base(),f.op());
+            assertThat(jdbc.queryForObject("select count(*) from order_change_recovery_audits where operation_id=?",Integer.class,c.operationId())).isZero();
+        }finally{removeRecoveryFailure(name);}
+    }
+    @Test void lostAuditStartCommitAcknowledgementNeverStartsGetUntilExplicitRetry(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var delegate=mock(OldCancelRecoveryAuditRepository.class,org.mockito.AdditionalAnswers.delegatesTo(recoveryAudits));
+        doAnswer(call->{recoveryAudits.start(call.getArgument(0),call.getArgument(1));throw new IllegalStateException("Synthetic audit commit acknowledgement loss");}).when(delegate).start(any(),any());
+        var uncertain=new OldCancelRecoveryService(resultTransactions,delegate,gateway,clock);
+        assertThatThrownBy(()->uncertain.recover(c)).isInstanceOf(IllegalStateException.class);verifyNoInteractions(gateway);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        assertThat(jdbc.queryForObject("select count(*) from order_change_recovery_audits where operation_id=?",Integer.class,c.operationId())).isEqualTo(1);
+    }
+    @Test void ordinaryPathsDoNotReopenTheRecoveryTarget(){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        assertThat(service.advance(c.orderId(),c.operationId()).state()).isEqualTo("MANUAL_REVIEW");
+        assertThat(service.reconcile(c.orderId(),c.operationId()).state()).isEqualTo("MANUAL_REVIEW");
+        webhook.synchronize("payment_flow.canceled",f.base().oldFlow());verifyNoInteractions(gateway);assertHeldOriginal(f.base(),f.op());
+        assertThatThrownBy(()->capture.captureForShipment(c.orderId(),9L,"shipper",null)).isInstanceOf(RuntimeException.class);verify(gateway,never()).capture(any());
+    }
+    @Test void v68AuditIdentityAndTerminalOutcomesCannotBeRewrittenOrDeleted(){
+        var f=recoveryFixture();var c=recoveryCommand(f);assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        assertThatThrownBy(()->jdbc.update("update order_change_recovery_audits set actor_username='other' where request_id=?",c.requestId())).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->jdbc.update("delete from order_change_recovery_audits where request_id=?",c.requestId())).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->jdbc.update("update order_change_recovery_audits set result_code='COMMIT_PENDING',completed_version=null,content_change_history_id=null where request_id=?",c.requestId())).isInstanceOf(RuntimeException.class);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+    }
+
+    record AuditFixture(RecoveryFixture recovery, OldCancelRecovery.Command command){}
+    AuditFixture v68StartedAudit(){
+        var f=recoveryFixture();var c=recoveryCommand(f);var actor=new OldCancelRecovery.Actor(9L,"shipper");
+        recoveryAudits.start(resultTransactions.recoverySnapshot(c,false,actor),actor);
+        return new AuditFixture(f,c);
+    }
+    long v68History(){
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("COMPLETED");
+        long history=jdbc.queryForObject("select content_change_history_id from order_change_operations where id=?",Long.class,op.id());
+        clearInvocations(gateway);return history;
+    }
+    void v68State(UUID id,String state,Long history){
+        boolean applied=List.of("COMMIT_PENDING","COMPLETED").contains(state);
+        jdbc.update("""
+            update order_change_recovery_audits set result_code=?,
+              applied_version=case when ? then expected_version+1 else null end,
+              completed_version=case when ? then expected_version+2 else null end,
+              evidence_digest=?,content_change_history_id=?,updated_at=clock_timestamp(),
+              finished_at=case when ? then null else clock_timestamp() end where request_id=?
+            """,state,applied,state.equals("COMPLETED"),applied?new byte[32]:null,
+            state.equals("COMPLETED")?history:null,state.equals("STARTED"),id);
+    }
+    void v68SqlRejected(Runnable action,String sqlState){
+        assertThatThrownBy(action::run).isInstanceOfSatisfying(org.springframework.dao.DataAccessException.class,
+            e->assertThat(((java.sql.SQLException)e.getMostSpecificCause()).getSQLState()).isEqualTo(sqlState));
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"HOLD","CONFLICT","COMMIT_PENDING","COMPLETED"})
+    void v68OnlyStartedMayBeInserted(String target){
+        var f=v68StartedAudit();long history=target.equals("COMPLETED")?v68History():0;
+        v68SqlRejected(()->jdbc.update("""
+            insert into order_change_recovery_audits
+              (request_id,order_id,operation_id,old_cancel_request_id,actor_id,actor_username,reason_code,original_reason,
+               expected_version,old_flow_id,new_flow_id,context_digest,result_code,applied_version,completed_version,
+               evidence_digest,content_change_history_id,started_at,updated_at,finished_at)
+            select ?,order_id,operation_id,old_cancel_request_id,actor_id,actor_username,reason_code,original_reason,
+               expected_version,old_flow_id,new_flow_id,context_digest,?,
+               case when ? then expected_version+1 else null end,
+               case when ? then expected_version+2 else null end,?,?,started_at,clock_timestamp(),clock_timestamp()
+            from order_change_recovery_audits where request_id=?
+            """,UUID.randomUUID(),target,List.of("COMMIT_PENDING","COMPLETED").contains(target),target.equals("COMPLETED"),
+            List.of("COMMIT_PENDING","COMPLETED").contains(target)?new byte[32]:null,target.equals("COMPLETED")?history:null,
+            f.command().requestId()),"P0001");
+        verifyNoInteractions(gateway);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "STARTED,STARTED,true","STARTED,HOLD,true","STARTED,CONFLICT,true","STARTED,COMMIT_PENDING,true","STARTED,COMPLETED,false",
+        "HOLD,STARTED,false","HOLD,HOLD,true","HOLD,CONFLICT,true","HOLD,COMMIT_PENDING,true","HOLD,COMPLETED,false",
+        "CONFLICT,STARTED,false","CONFLICT,HOLD,false","CONFLICT,CONFLICT,true","CONFLICT,COMMIT_PENDING,false","CONFLICT,COMPLETED,false",
+        "COMMIT_PENDING,STARTED,false","COMMIT_PENDING,HOLD,false","COMMIT_PENDING,CONFLICT,false","COMMIT_PENDING,COMMIT_PENDING,true","COMMIT_PENDING,COMPLETED,true",
+        "COMPLETED,STARTED,false","COMPLETED,HOLD,false","COMPLETED,CONFLICT,false","COMPLETED,COMMIT_PENDING,false","COMPLETED,COMPLETED,true"})
+    void v68AuditTransitionTable(String from,String to,boolean allowed){
+        var f=v68StartedAudit();var before=preservedBusiness(f.recovery().base(),f.recovery().op());
+        Long history=from.equals("COMPLETED")||to.equals("COMPLETED")?v68History():null;
+        if(!from.equals("STARTED")){
+            if(from.equals("COMPLETED"))v68State(f.command().requestId(),"COMMIT_PENDING",null);
+            v68State(f.command().requestId(),from,history);
+        }
+        Runnable update=from.equals(to)?()->jdbc.update("update order_change_recovery_audits set result_code=result_code where request_id=?",f.command().requestId())
+            :()->v68State(f.command().requestId(),to,history);
+        if(allowed){update.run();assertThat(recoveryAudits.find(f.command().requestId()).orElseThrow().get("result_code")).isEqualTo(to);}
+        else v68SqlRejected(update,"P0001");
+        assertThat(preservedBusiness(f.recovery().base(),f.recovery().op())).isEqualTo(before);
+        clearInvocations(gateway);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"commit-null","completed-null","completed-both-null","completed-applied-null","expected-null"})
+    void v68RejectsNullVersionsOnUpdate(String kind){
+        var f=v68StartedAudit();Long history=kind.startsWith("completed")?v68History():null;
+        if(kind.startsWith("completed"))v68State(f.command().requestId(),"COMMIT_PENDING",null);
+        String assignments=switch(kind){
+            case "commit-null"->"result_code='COMMIT_PENDING',applied_version=null,evidence_digest=decode(repeat('00',32),'hex'),finished_at=clock_timestamp()";
+            case "completed-null"->"result_code='COMPLETED',completed_version=null,content_change_history_id="+history;
+            case "completed-both-null"->"result_code='COMPLETED',applied_version=null,completed_version=null,content_change_history_id="+history;
+            case "completed-applied-null"->"result_code='COMPLETED',applied_version=null,completed_version=expected_version+2,content_change_history_id="+history;
+            default->"expected_version=null";
+        };
+        String state=List.of("commit-null","completed-null").contains(kind)?"23514":"P0001";
+        v68SqlRejected(()->jdbc.update("update order_change_recovery_audits set "+assignments+" where request_id=?",f.command().requestId()),state);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"COMMIT_PENDING,false,false","COMPLETED,false,true","COMPLETED,true,false","COMPLETED,false,false"})
+    void v68RejectsNullVersionsOnInsert(String target,boolean applied,boolean completed){
+        var f=v68StartedAudit();Long history=target.equals("COMPLETED")?v68History():null;
+        v68SqlRejected(()->jdbc.update("""
+            insert into order_change_recovery_audits
+              (request_id,order_id,operation_id,old_cancel_request_id,actor_id,actor_username,reason_code,original_reason,
+               expected_version,old_flow_id,new_flow_id,context_digest,result_code,applied_version,completed_version,
+               evidence_digest,content_change_history_id,started_at,updated_at,finished_at)
+            select ?,order_id,operation_id,old_cancel_request_id,actor_id,actor_username,reason_code,original_reason,
+               expected_version,old_flow_id,new_flow_id,context_digest,?,
+               case when ? then expected_version+1 else null end,
+               case when ? then expected_version+2 else null end,?,?,started_at,clock_timestamp(),clock_timestamp()
+            from order_change_recovery_audits where request_id=?
+            """,UUID.randomUUID(),target,applied,completed,new byte[32],history,f.command().requestId()),"P0001");
+    }
+    @Test void v68RepositoryPermittedRetriesAndConflictFreeze(){
+        var f=v68StartedAudit();var c=f.command();var actor=new OldCancelRecovery.Actor(9L,"shipper");
+        var snapshot=resultTransactions.recoverySnapshot(c,false,actor);
+        recoveryAudits.start(snapshot,actor);recoveryAudits.hold(c.requestId());recoveryAudits.hold(c.requestId());
+        recoveryAudits.start(snapshot,actor);recoveryAudits.conflict(c.requestId());var frozen=jdbc.queryForObject("select to_jsonb(a)::text from order_change_recovery_audits a where request_id=?",String.class,c.requestId());
+        recoveryAudits.hold(c.requestId());recoveryAudits.conflict(c.requestId());recoveryAudits.start(snapshot,actor);
+        assertThat(jdbc.queryForObject("select to_jsonb(a)::text from order_change_recovery_audits a where request_id=?",String.class,c.requestId())).isEqualTo(frozen);
+        v68SqlRejected(()->jdbc.update("update order_change_recovery_audits set finished_at=finished_at+interval '1 second' where request_id=?",c.requestId()),"P0001");
+        verifyNoInteractions(gateway);
+    }
+
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"request_id","order_id","operation_id","old_cancel_request_id","actor_id","actor_username","expected_version","started_at"})
+    void v68AuditIdentifiersRemainImmutableBeforeOutcome(String field){
+        var f=v68StartedAudit();
+        String value=switch(field){
+            case "request_id","operation_id"->"'"+UUID.randomUUID()+"'::uuid";
+            case "actor_username"->"'different-admin'";
+            case "started_at"->"started_at+interval '1 second'";
+            default->field+"+1";
+        };
+        v68SqlRejected(()->jdbc.update("update order_change_recovery_audits set "+field+"="+value+" where request_id=?",f.command().requestId()),"P0001");
+        v68SqlRejected(()->jdbc.update("delete from order_change_recovery_audits where request_id=?",f.command().requestId()),"P0001");
+    }
+
+    @Test void recoveryReadbackToleratesConcurrentCompletionAfterAuditWasRead(){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        var uncertainResults=mock(OrderReauthorizationTransactions.class,org.mockito.AdditionalAnswers.delegatesTo(resultTransactions));
+        doAnswer(call->{resultTransactions.applyRecoveredOldCancellation(call.getArgument(0),call.getArgument(1),call.getArgument(2),call.getArgument(3));throw new IllegalStateException("Synthetic commit acknowledgement loss");})
+            .when(uncertainResults).applyRecoveredOldCancellation(any(),any(),any(),any());
+        var uncertainAudits=mock(OldCancelRecoveryAuditRepository.class,org.mockito.AdditionalAnswers.delegatesTo(recoveryAudits));var raced=new AtomicBoolean();
+        doAnswer(call->{var row=recoveryAudits.find(c.requestId());
+            if(row.isPresent()&&"COMMIT_PENDING".equals(row.get().get("result_code"))&&raced.compareAndSet(false,true))
+                assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+            return row;
+        }).when(uncertainAudits).find(c.requestId());
+        var uncertain=new OldCancelRecoveryService(uncertainResults,uncertainAudits,gateway,clock);
+        assertThat(uncertain.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);assertThat(raced).isTrue();
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,c.orderId())).isEqualTo(1);
+        verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    String recoveryUrl(RecoveryFixture f){return "/admin/orders/"+f.base().order()+"/changes/"+f.op().id()+"/old-cancel-recovery";}
+    org.springframework.test.web.servlet.request.RequestPostProcessor recoveryAdmin(){
+        return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
+            new com.example.ecsite.security.AdminUserDetails(9L,"shipper","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
+    }
+    @Test void adminRecoveryPageIsReadOnlyAndPostIsIdempotent()throws Exception{
+        var f=recoveryFixture();var session=new org.springframework.mock.web.MockHttpSession();var before=preservedBusiness(f.base(),f.op());
+        var response=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(recoveryUrl(f)).with(recoveryAdmin()).session(session))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.view().name("admin/orders/old-cancel-recovery")).andReturn();
+        var command=(OldCancelRecovery.Command)response.getModelAndView().getModel().get("recoveryCommand");
+        assertThat(command).isNotNull();verifyNoInteractions(gateway);assertThat(preservedBusiness(f.base(),f.op())).isEqualTo(before);
+        for(int i=0;i<2;i++)adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(recoveryUrl(f)).with(recoveryAdmin())
+            .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()).session(session)
+            .param("requestId",command.requestId().toString()).param("expectedVersion",Long.toString(command.expectedVersion())).param("reason",command.reason())
+            .param("actorId","99999").param("actorUsername","forged"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isFound());
+        assertThat(state(f.op().id())).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForObject("select actor_username from order_change_recovery_audits where request_id=?",String.class,command.requestId())).isEqualTo("shipper");
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,f.base().order())).isEqualTo(1);
+        verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @Test void adminRecoveryLinkAndAuditDisplayUseSavedDataOnly()throws Exception{
+        var f=recoveryFixture();var url=recoveryUrl(f);var session=new org.springframework.mock.web.MockHttpSession();
+        var detail=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/"+f.base().order()).with(recoveryAdmin())).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn();
+        assertThat(detail.getResponse().getContentAsString()).contains(url);
+        var page=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(url).with(recoveryAdmin()).session(session)).andReturn();
+        var command=(OldCancelRecovery.Command)page.getModelAndView().getModel().get("recoveryCommand");
+        assertThat(page.getResponse().getContentAsString()).contains("750","850","金融POST","name=\"_csrf\"");
+        assertThat(version(f.op().id())).isEqualTo(command.expectedVersion());
+        assertThat(jdbc.queryForObject("select count(*) from order_change_recovery_audits where operation_id=?",Integer.class,f.op().id())).isZero();verifyNoInteractions(gateway);
+        adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(url).with(recoveryAdmin()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()).session(session)
+            .param("requestId",command.requestId().toString()).param("expectedVersion",Long.toString(command.expectedVersion())).param("reason",command.reason())).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isFound());
+        clearInvocations(gateway);
+        var audited=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(url).with(recoveryAdmin()).session(session)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn();
+        assertThat(audited.getResponse().getContentAsString()).contains(command.requestId().toString(),"shipper","COMPLETED").doesNotContain("client_secret","request_body","request_fingerprint");verifyNoInteractions(gateway);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"version","reason"})
+    void adminRecoveryRejectsTargetChangedAfterConfirmation(String change)throws Exception{
+        var f=recoveryFixture();var session=new org.springframework.mock.web.MockHttpSession();
+        var page=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(recoveryUrl(f)).with(recoveryAdmin()).session(session)).andReturn();
+        var c=(OldCancelRecovery.Command)page.getModelAndView().getModel().get("recoveryCommand");
+        if(change.equals("version"))jdbc.update("update order_change_operations set version=version+1 where id=?",f.op().id());
+        else jdbc.update("update order_change_operations set financial_review_reason='OTHER' where id=?",f.op().id());
+        adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(recoveryUrl(f)).with(recoveryAdmin()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()).session(session)
+            .param("requestId",c.requestId().toString()).param("expectedVersion",Long.toString(c.expectedVersion())).param("reason",c.reason()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash().attribute("recoveryResult",change.equals("version")?"VERSION_CONFLICT":"NOT_ELIGIBLE"));
+        verifyNoInteractions(gateway);assertHeldOriginal(f.base(),f.op());
+        adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/"+f.base().order()+"/changes/"+UUID.randomUUID()+"/old-cancel-recovery").with(recoveryAdmin()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"old","new","get"})
+    void detailedRecoveryOutcomesDistinguishUnconfirmedEvidence(String field){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        if(field.equals("old"))doReturn(jsonObservation(f.base().oldFlow(),"canceled",f.op().beforeAmount(),Map.of(),"1")).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        if(field.equals("new"))newState.set("canceled");
+        if(field.equals("get"))doThrow(new PaymentGatewayException(PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN,null,null,true)).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        assertThat(recovery.recoverDetailed(c).detail()).isEqualTo(field.equals("old")?OldCancelRecovery.Detail.OLD_EVIDENCE_UNCONFIRMED:field.equals("new")?OldCancelRecovery.Detail.NEW_AUTH_UNAVAILABLE:OldCancelRecovery.Detail.GET_UNKNOWN);
+        assertHeldOriginal(f.base(),f.op());verify(gateway,never()).sendOrderChangeRequest(any());
     }
     @Test void switchesOnceWithoutSecondStockDecrementAndCanAcceptSecondIncrease(){
         var f=fixture();var op=accept(f,5);mockFlow(f,op);

@@ -71,8 +71,17 @@ class OrderChangePaymentCustomerPostgresTest {
  final String secret="browser-only-secret-marker";
  String flow;
  com.example.ecsite.payment.payjp.PayJpPaymentFlowObservation observed(String id,String status,int amount,Map<String,Object> metadata){
-  return new com.example.ecsite.payment.payjp.PayJpPaymentFlowObservation(id,status,(long)amount,"jpy",0L,
-   status.equals("requires_capture")?(long)amount:0L,"manual",false,null,null,metadata);
+  var fields=new LinkedHashMap<String,Object>();
+  fields.put("id",id);fields.put("status",status);fields.put("amount",amount);fields.put("currency","jpy");
+  fields.put("capture_method","manual");fields.put("livemode",false);fields.put("metadata",metadata);
+  fields.put("amount_received",0);fields.put("amount_capturable",status.equals("requires_capture")?amount:0);
+  var mapper=tools.jackson.databind.json.JsonMapper.builder().build();
+  var raw=mapper.readTree(mapper.writeValueAsString(fields));
+  var result=mapper.treeToValue(raw,com.example.ecsite.payment.payjp.PayJpPaymentFlowObservation.class);
+  // Match the production GET boundary: validate the original JSON, never a reconstructed DTO.
+  return status.equals("canceled")?result.withOldCancellationEvidence(
+   com.example.ecsite.payment.payjp.OldAuthorizationCancellationEvidence.fromJson(raw,
+    new com.example.ecsite.payment.capture.CaptureConnectionIdentity("test-capture","test-account","TEST","https://api.pay.jp"))):result;
  }
  void mockFlow(Fixture f,UUID op){
   flow="pfw_browser_"+op;newState.set("requires_payment_method");oldCancelled.set(false);

@@ -132,7 +132,7 @@ class AdminOrderControllerTest {
                 paymentCaptureService,
                 adminPaymentCancellationService,
                 new OrderShippingPreparationViewFactory(new com.example.ecsite.service.OrderModificationPolicy(),
-                        java.time.Clock.system(java.time.ZoneId.of("Asia/Tokyo"))), paymentViewReader);
+                        java.time.Clock.system(java.time.ZoneId.of("Asia/Tokyo"))), paymentViewReader, mock(com.example.ecsite.service.orderchange.AdminOldCancelRecoveryViewService.class));
     }
 
     @Test

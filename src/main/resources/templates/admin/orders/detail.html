@@ -19,6 +19,11 @@
     <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error">
     </p>
 
+    <section th:if="${recoveryTargets != null and !#lists.isEmpty(recoveryTargets)}">
+        <h2>注文変更の旧与信取消再照合</h2>
+        <p th:each="target : ${recoveryTargets}"><a th:href="@{/admin/orders/{id}/changes/{op}/old-cancel-recovery(id=${order.id},op=${target.operationId})}">旧与信取消の再照合を確認する</a></p>
+    </section>
+
     <h2>注文情報</h2>
 
     <table>
