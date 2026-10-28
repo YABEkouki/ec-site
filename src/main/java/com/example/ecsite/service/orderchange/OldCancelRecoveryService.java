@@ -54,9 +54,8 @@ public class OldCancelRecoveryService {
         if(!committing){
             OldCancelRecovery.Observation observation;
             try{observation=observe(snapshot,true);}catch(RuntimeException unavailable){diagnose(command,OldCancelRecoveryDiagnostics.Stage.GET,null,unavailable);hold(command);return new OldCancelRecovery.Outcome(OldCancelRecovery.Result.HOLD,OldCancelRecovery.Detail.GET_UNKNOWN);}
-            try{results.applyRecoveredOldCancellation(observation,actor,clock,nanos);}
+            try{return outcome(results.applyAndCompleteRecoveredOrder(observation,actor,clock,nanos));}
             catch(RuntimeException unknownCommit){diagnose(command,observation.stage,observation,unknownCommit);return failedOutcome(reread(command,actor),unknownCommit);}
-            try{snapshot=results.recoverySnapshot(command,true,actor);}catch(IllegalStateException changed){diagnose(command,OldCancelRecoveryDiagnostics.Stage.SNAPSHOT,null,changed);return outcome(reread(command,actor));}
         }
         final OldCancelRecovery.Observation latest;
         try{latest=observe(snapshot,false);}catch(RuntimeException unavailable){diagnose(command,OldCancelRecoveryDiagnostics.Stage.GET,null,unavailable);return new OldCancelRecovery.Outcome(OldCancelRecovery.Result.COMMIT_PENDING,OldCancelRecovery.Detail.GET_UNKNOWN);}

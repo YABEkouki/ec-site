@@ -50,17 +50,18 @@ class OrderReauthorizationPostgresTest {
     org.mockito.stubbing.Answer<PayJpPaymentFlowObservation> transport;
     record Fixture(long order,long user,long item,long product,long oldPayment,String oldFlow){}
     <T>T tx(java.util.function.Supplier<T> body){return new TransactionTemplate(manager).execute(s->body.get());}
-    Fixture fixture(){return tx(()->{
+    Fixture fixture(){return fixture(100,2);}
+    Fixture fixture(int price,int quantity){return tx(()->{
         var now=orders.findCurrentTimeInTokyo();String key=UUID.randomUUID().toString();
         var user=new User();user.setUsername("reauth-"+key);user.setPassword("unused");user.setEnabled(true);user.setCreatedAt(now);user.setUpdatedAt(now);users.saveAndFlush(user);
         var category=categories.saveAndFlush(new Category(key));var tax=taxes.findAll().getFirst();
         var product=new Product();product.setName("item");product.setPrice(900);product.setStock(20);product.setCategory(category);product.setTaxCategory(tax);products.saveAndFlush(product);
-        var order=new Order(user.getId(),750,now,now.plusHours(1));
-        order.addItem(new OrderItem(product.getId(),"ordered",category.getId(),category.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));
+        int total=price*quantity+550;var order=new Order(user.getId(),total,now,now.plusHours(1));
+        order.addItem(new OrderItem(product.getId(),"ordered",category.getId(),category.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),price,quantity));
         order.addCharge(new OrderCharge(OrderChargeType.SHIPPING,"送料・梱包料",550,tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),10));orders.saveAndFlush(order);
         histories.record(order,null,OrderStatus.ORDERED,OrderStatusHistoryActorType.USER,user.getId(),user.getUsername(),null);
-        var payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,750,now);payment.setProviderPaymentId("pfw_"+key,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
-        var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,750,0,key,now,PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);auth.markSucceeded(payment.getProviderPaymentId(),now);transactions.saveAndFlush(auth);
+        var payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,total,now);payment.setProviderPaymentId("pfw_"+key,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
+        var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,total,0,key,now,PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);auth.markSucceeded(payment.getProviderPaymentId(),now);transactions.saveAndFlush(auth);
         return new Fixture(order.getId(),user.getId(),order.getItems().getFirst().getId(),product.getId(),payment.getId(),payment.getProviderPaymentId());
     });}
     OrderChangeStore.Operation accept(Fixture f,int quantity){int revision=jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order());return increases.accept(new OrderIncreaseService.Request(f.order(),f.user(),UUID.randomUUID(),revision,Map.of(f.item(),quantity)));}
@@ -1725,7 +1726,10 @@ class OrderReauthorizationPostgresTest {
     }
     record RecoveryFixture(Fixture base,OrderChangeStore.Operation op){}
     RecoveryFixture recoveryFixture(){
-        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        return recoveryFixture(fixture(),3);
+    }
+    RecoveryFixture recoveryFixture(Fixture f,int quantity){
+        var op=accept(f,quantity);mockFlow(f,op);
         doAnswer(call->oldCancelled.get()?jsonObservation(f.oldFlow(),"canceled",op.beforeAmount(),Map.of(),"MISSING")
             :observation(f.oldFlow(),"requires_capture",op.beforeAmount(),Map.of())).when(gateway).observeOrderChangeFlow(f.oldFlow());
         assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("MANUAL_REVIEW");
@@ -1812,7 +1816,7 @@ class OrderReauthorizationPostgresTest {
                 .when(gateway).observeOrderChangeFlow(newFlow);
         }else{
             doThrow(new org.springframework.dao.CannotAcquireLockException("SECRET_payload_not_for_diagnostics"))
-                .when(delegate).applyRecoveredOldCancellation(any(),any(),any(),any());
+                .when(delegate).applyAndCompleteRecoveredOrder(any(),any(),any(),any());
             if(failure.equals("audit"))doThrow(new IllegalStateException("SECRET_audit")).when(auditDelegate).hold(c.requestId());
             if(failure.equals("readback"))doThrow(new IllegalStateException("SECRET_readback")).when(delegate).recoveryReadback(any(),any());
         }
@@ -1919,8 +1923,64 @@ class OrderReauthorizationPostgresTest {
             assertThat(preservedBusiness(f.base(),f.op())).isEqualTo(before);assertThat(state(c.operationId())).isEqualTo("MANUAL_REVIEW");
         }finally{removeRecoveryFailure(name);}
     }
+    @Test void atomicRecoveryMatchesAcceptanceAmountsAndUsesOnlyTwoGets(){
+        var f=recoveryFixture(fixture(180,1),2);var c=recoveryCommand(f);
+        assertThat(f.op().beforeAmount()).isEqualTo(730);assertThat(f.op().afterAmount()).isEqualTo(910);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        long next=jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,c.operationId());
+        assertThat(jdbc.queryForObject("select total_amount from orders where id=?",Integer.class,c.orderId())).isEqualTo(910);
+        assertThat(jdbc.queryForObject("select quantity from order_items where id=?",Integer.class,f.base().item())).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,c.orderId())).isEqualTo(next);
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.base().oldPayment())).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,next)).isEqualTo("AUTHORIZED");
+        assertThat(jdbc.queryForObject("select status from payment_transactions where order_change_operation_id=? and transaction_type='CANCEL'",String.class,c.operationId())).isEqualTo("SUCCEEDED");
+        assertThat(jdbc.queryForObject("select d.state from order_change_request_dispatches d join order_change_financial_requests r on r.id=d.request_id where r.operation_id=? and r.request_kind='OLD_CANCEL'",String.class,c.operationId())).isEqualTo("OBSERVED");
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,c.operationId())).isEqualTo("CONSUMED");
+        assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,f.base().product())).isEqualTo(19);
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,c.orderId())).isEqualTo(1);
+        assertThat(recoveryAudits.find(c.requestId()).orElseThrow().get("result_code")).isEqualTo("COMPLETED");
+        verify(gateway,times(1)).observeOrderChangeFlow(f.base().oldFlow());verify(gateway,times(1)).observeOrderChangeFlow(newFlow);
+        verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).capture(any());verify(gateway,never()).cancelAuthorization(any());
+        clearInvocations(gateway);assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);verifyNoInteractions(gateway);
+    }
+    @Test void atomicRecoveryReusesExistingHoldAuditAndOriginalContext(){
+        var f=recoveryFixture();var c=recoveryCommand(f);
+        doThrow(new PaymentGatewayException(PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN,null,null,true)).when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.HOLD);
+        var before=recoveryAudits.find(c.requestId()).orElseThrow();
+        doReturn(jsonObservation(f.base().oldFlow(),"canceled",f.op().beforeAmount(),Map.of(),"NULL",Integer.toString(f.op().beforeAmount())))
+            .when(gateway).observeOrderChangeFlow(f.base().oldFlow());
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        var after=recoveryAudits.find(c.requestId()).orElseThrow();
+        assertThat(after.get("started_at")).isEqualTo(before.get("started_at"));assertThat(after.get("context_digest")).isEqualTo(before.get("context_digest"));
+        assertThat(jdbc.queryForObject("select count(*) from order_change_recovery_audits where operation_id=?",Integer.class,c.operationId())).isEqualTo(1);
+        verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).capture(any());verify(gateway,never()).cancelAuthorization(any());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"COMMIT_PENDING","COMPLETED"})
+    void atomicRecoveryRollsBackCancellationAndOrderOnAuditFailure(String failedState){
+        var f=recoveryFixture();var c=recoveryCommand(f);var before=recoveryDiagnosticBusiness(f);
+        var name="atomic_recovery_"+c.orderId();installRecoveryFailure(name,c.operationId(),failedState);
+        try{
+            assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.HOLD);
+            assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(before);
+            assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,c.orderId())).isZero();
+            assertThat(recoveryAudits.find(c.requestId()).orElseThrow().get("result_code")).isEqualTo("HOLD");
+            verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).capture(any());verify(gateway,never()).cancelAuthorization(any());
+        }finally{removeRecoveryFailure(name);}
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,c.orderId())).isEqualTo(1);
+    }
+    void seedLegacyRecoveryCancellation(RecoveryFixture f,OldCancelRecovery.Command c){
+        var actor=new OldCancelRecovery.Actor(9L,"shipper");
+        var snapshot=resultTransactions.recoverySnapshot(c,false,actor);recoveryAudits.start(snapshot,actor);
+        long start=System.nanoTime();var started=clock.instant();
+        var old=gateway.observeOrderChangeFlow(f.base().oldFlow());var next=gateway.observeOrderChangeFlow(newFlow);
+        resultTransactions.applyRecoveredOldCancellation(new OldCancelRecovery.Observation(snapshot,old,next,started,clock.instant(),start,System.nanoTime()),actor,clock,System::nanoTime);
+    }
     @Test void recoveryCompletionFailureKeepsCommitPendingAndExplicitRetryCompletes(){
-        var f=recoveryFixture();var c=recoveryCommand(f);var name="recovery_complete_"+c.orderId();installRecoveryFailure(name,c.operationId(),"COMPLETED");
+        var f=recoveryFixture();var c=recoveryCommand(f);seedLegacyRecoveryCancellation(f,c);var name="recovery_complete_"+c.orderId();installRecoveryFailure(name,c.operationId(),"COMPLETED");
         try{
             assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMMIT_PENDING);
             assertThat(state(c.operationId())).isEqualTo("COMMIT_PENDING");
@@ -1937,10 +1997,10 @@ class OrderReauthorizationPostgresTest {
     @Test void lostCancellationCommitAcknowledgementIsReadBackWithoutReplaying(){
         var f=recoveryFixture();var c=recoveryCommand(f);
         var delegate=mock(OrderReauthorizationTransactions.class,org.mockito.AdditionalAnswers.delegatesTo(resultTransactions));
-        doAnswer(call->{resultTransactions.applyRecoveredOldCancellation(call.getArgument(0),call.getArgument(1),call.getArgument(2),call.getArgument(3));throw new IllegalStateException("Synthetic lost commit acknowledgement");})
-            .when(delegate).applyRecoveredOldCancellation(any(),any(),any(),any());
+        doAnswer(call->{resultTransactions.applyAndCompleteRecoveredOrder(call.getArgument(0),call.getArgument(1),call.getArgument(2),call.getArgument(3));throw new IllegalStateException("Synthetic lost commit acknowledgement");})
+            .when(delegate).applyAndCompleteRecoveredOrder(any(),any(),any(),any());
         var uncertain=new OldCancelRecoveryService(delegate,recoveryAudits,gateway,clock);
-        assertThat(uncertain.recover(c)).isEqualTo(OldCancelRecovery.Result.COMMIT_PENDING);
+        assertThat(uncertain.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
         assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);verify(gateway,never()).sendOrderChangeRequest(any());
     }
     @Test void recoveredOperationCanConvergeAfterDeadlineAndOnlyNewPaymentCanCapture(){
@@ -2156,7 +2216,7 @@ class OrderReauthorizationPostgresTest {
         var f=recoveryFixture();var c=recoveryCommand(f);
         var uncertainResults=mock(OrderReauthorizationTransactions.class,org.mockito.AdditionalAnswers.delegatesTo(resultTransactions));
         doAnswer(call->{resultTransactions.applyRecoveredOldCancellation(call.getArgument(0),call.getArgument(1),call.getArgument(2),call.getArgument(3));throw new IllegalStateException("Synthetic commit acknowledgement loss");})
-            .when(uncertainResults).applyRecoveredOldCancellation(any(),any(),any(),any());
+            .when(uncertainResults).applyAndCompleteRecoveredOrder(any(),any(),any(),any());
         var uncertainAudits=mock(OldCancelRecoveryAuditRepository.class,org.mockito.AdditionalAnswers.delegatesTo(recoveryAudits));var raced=new AtomicBoolean();
         doAnswer(call->{var row=recoveryAudits.find(c.requestId());
             if(row.isPresent()&&"COMMIT_PENDING".equals(row.get().get("result_code"))&&raced.compareAndSet(false,true))

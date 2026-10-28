@@ -718,6 +718,21 @@ public class OrderReauthorizationTransactions {
             +"|"+observed.newFlow.id()+"|"+observed.newFlow.amount()+"|"+observed.started+"|"+observed.finished);
         recoveryAudits.applied(c.requestId(),number(data.operation(),"version"),evidence);
     }
+    /** One commit for cancellation, order switch and audit. No provider calls occur under these locks. */
+    OldCancelRecovery.Result applyAndCompleteRecoveredOrder(OldCancelRecovery.Observation observed,OldCancelRecovery.Actor actor,Clock clock,java.util.function.LongSupplier nanos){
+        // Self invocation shares this REQUIRES_NEW transaction; any later failure rolls back cancellation too.
+        applyRecoveredOldCancellation(observed,actor,clock,nanos);
+        // completeInternal re-locks/refreshes managed state and requires a clean persistence context.
+        // Flush is not a commit: preserve all-or-nothing rollback across the existing completion logic.
+        em.flush();
+        observed.stage(OldCancelRecoveryDiagnostics.Stage.COMPLETE);
+        var c=observed.snapshot.command();
+        var view=completeInternal(c.orderId(),c.operationId(),observed.newFlow,true);
+        if(!"COMPLETED".equals(view.state()))throw new IllegalStateException("Recovery completion did not apply");
+        var op=jdbc.queryForMap("select version,content_change_history_id from order_change_operations where id=?",c.operationId());
+        recoveryAudits.completed(c.requestId(),number(op,"version"),number(op,"content_change_history_id"));
+        return OldCancelRecovery.Result.COMPLETED;
+    }
     OldCancelRecovery.Result completeRecoveredOrder(OldCancelRecovery.Observation observed,OldCancelRecovery.Actor actor,Clock clock,java.util.function.LongSupplier nanos){
         requireRecoveryActor(actor);var saved=observed.snapshot;var c=saved.command();
         if(!saved.committing())throw new IllegalStateException("Recovery phase mismatch");
