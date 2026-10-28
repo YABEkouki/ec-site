@@ -2003,6 +2003,44 @@ class OrderReauthorizationPostgresTest {
         assertThat(uncertain.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
         assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);verify(gateway,never()).sendOrderChangeRequest(any());
     }
+    @Test void adminCaptureButtonUsesRecoveredNewPaymentAnd910AfterPreparation()throws Exception{
+        var f=recoveryFixture(fixture(180,1),2);var c=recoveryCommand(f);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,c.orderId());
+        doReturn(deadline).when(orders).findCurrentTimeInTokyo();
+        doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
+        shippingPreparation.start(c.orderId());clearInvocations(gateway);
+        var before=recoveryDiagnosticBusiness(f);
+        var response=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/"+c.orderId()).with(recoveryAdmin()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.model().attribute("canCaptureForShipment",true)).andReturn();
+        var shown=(Order)response.getModelAndView().getModel().get("order");
+        long next=jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,c.operationId());
+        assertThat(shown.getActivePaymentId()).isEqualTo(next).isNotEqualTo(f.base().oldPayment());assertThat(shown.getTotalAmount()).isEqualTo(910);
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.base().oldPayment())).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,next)).isEqualTo("AUTHORIZED");
+        assertThat(response.getResponse().getContentAsString()).contains("action=\"/admin/orders/"+c.orderId()+"/capture-and-ship\"","発送を確定して売上確定を実行する","910");
+        assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(before);verifyNoInteractions(gateway);
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,next)).isZero();
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"RESERVED","MANUAL_REVIEW","COMMIT_PENDING"})
+    void adminCaptureButtonAndShipmentServiceRejectUnfinishedChange(String phase)throws Exception{
+        Fixture base;OrderChangeStore.Operation op;
+        if(phase.equals("RESERVED")){base=fixture(180,1);op=accept(base,2);admin();}
+        else{var f=recoveryFixture(fixture(180,1),2);base=f.base();op=f.op();if(phase.equals("COMMIT_PENDING"))seedLegacyRecoveryCancellation(f,recoveryCommand(f));}
+        assertThat(state(op.id())).isEqualTo(phase);
+        // Isolated contradictory fixture: even persisted preparation must not override an unfinished change.
+        tx(()->{var order=orders.findByIdForUpdate(base.order()).orElseThrow();order.beginShippingPreparation(op.graceUntil(),9L,"shipper");return null;});
+        clearInvocations(gateway);
+        assertThatThrownBy(()->capture.captureForShipment(base.order(),9L,"shipper",null)).hasMessageContaining("未解決");
+        var response=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/"+base.order()).with(recoveryAdmin()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.model().attribute("canCaptureForShipment",false)).andReturn();
+        assertThat(response.getResponse().getContentAsString()).doesNotContain("action=\"/admin/orders/"+base.order()+"/capture-and-ship\"");
+        assertThat(state(op.id())).isEqualTo(phase);verifyNoInteractions(gateway);
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests r join payments p on p.id=r.payment_id where p.order_id=?",Integer.class,base.order())).isZero();
+    }
     @Test void recoveredIncreaseCapturesNewPaymentFor910AtRevisionOneExactlyOnce(){
         var base=fixture(180,1);
         assertThat(jdbc.queryForMap("select total_amount,content_revision from orders where id=?",base.order()))

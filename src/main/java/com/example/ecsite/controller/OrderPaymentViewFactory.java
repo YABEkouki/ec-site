@@ -42,6 +42,11 @@ public class OrderPaymentViewFactory {
     public static View unavailable() { return new View(State.REVIEW, false, false, false, false); }
 
     public View create(Order order, List<Payment> payments, List<PaymentTransaction> history) {
+        return create(order,payments,history,Set.of(),Set.of());
+    }
+
+    public View create(Order order, List<Payment> payments, List<PaymentTransaction> history,
+            Set<UUID> completedChanges, Set<UUID> abortedChanges) {
         if (!validData(order, payments, history)) return unavailable();
         boolean unprepared = order.getShippingPreparationStartedAt() == null
                 && order.getShippingPreparationStartedByAccountId() == null && order.getShippingPreparationStartedByUsername() == null;
@@ -81,7 +86,7 @@ public class OrderPaymentViewFactory {
                 if (authorizations.size() != 1 || !Objects.equals(authorizations.getFirst().getProviderTransactionId(), card.getProviderPaymentId())
                         || !consistency.evaluate(order, card, authorizations.getFirst()).canCapture()
                         || history.stream().anyMatch(t -> t.getTransactionType() == PaymentTransactionType.CAPTURE)) return unavailable();
-                var decision = capturePolicy.classify(order, payments, history, null);
+                var decision = capturePolicy.classify(order, payments, history, null, completedChanges, abortedChanges);
                 return new View(State.AUTHORIZED, decision.disposition() == CaptureShipmentPolicy.Disposition.NEW, false, cancellable, false);
             }
             if (local) return new View(State.UNRECORDED, false, false, cancellable, true);
@@ -95,7 +100,7 @@ public class OrderPaymentViewFactory {
                 && Objects.equals(t.getPayment().getId(), order.getShipmentCapturePaymentId())).toList();
         if (captures.size() != 1) return unavailable();
         PaymentTransaction capture = captures.getFirst();
-        var decision = capturePolicy.classify(order, payments, history, snapshot(capture));
+        var decision = capturePolicy.classify(order, payments, history, snapshot(capture), completedChanges, abortedChanges);
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.CONTINUE)
             return new View(State.CAPTURE_PENDING, false, false, false, false);
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)

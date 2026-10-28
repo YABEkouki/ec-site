@@ -40,4 +40,22 @@ class OrderPaymentViewFactoryTest {
  @Test void localCancellationWithoutPaymentIsAllowedBeforeDeadline(){assertThat(factory(DEADLINE.minusNanos(1)).create(order,List.of(),List.of()).canCancel()).isTrue();}
  @Test void existingPendingCancelIsNotPresentedAsNewCancellation(){var cancel=new PaymentTransaction(payment,PaymentTransactionType.CANCEL,200,0,"cancel",DEADLINE);id(cancel,65);history.add(cancel);assertThat(factory(DEADLINE.minusNanos(1)).create(order,List.of(payment),history).canCancel()).isFalse();}
  @Test void explicitCapturePurposePreservesPendingAndCapturedView(){var cap=ship();ReflectionTestUtils.setField(cap,"purpose",PaymentTransactionPurpose.SHIPMENT_CAPTURE);assertThat(view().canRequery()).isTrue();cap.markSucceeded("pf",DEADLINE);payment.markCaptured(DEADLINE);order.recordShipmentCaptureSucceeded(52L,DEADLINE);assertThat(view().message()).isEqualTo("売上確定済み");}
+ @Test void completedIncreaseEvidenceSelectsNewPaymentAcrossCaptureLifecycle(){
+  prepare();var operation=UUID.randomUUID();payment.markCancelled(DEADLINE);
+  var cancel=PaymentTransaction.forOrderChange(payment,PaymentTransactionType.CANCEL,200,0,"old-cancel",DEADLINE,PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL,operation);id(cancel,64);cancel.markSucceeded("pf",DEADLINE);
+  var next=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,300,DEADLINE);id(next,53);next.setProviderPaymentId("pf-new",DEADLINE);next.markAuthorized(DEADLINE);
+  var authorization=PaymentTransaction.forOrderChange(next,PaymentTransactionType.AUTHORIZE,300,1,"new-auth",DEADLINE,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION,operation);id(authorization,65);authorization.markSucceeded("pf-new",DEADLINE);
+  ReflectionTestUtils.setField(order,"totalAmount",300);ReflectionTestUtils.setField(order,"contentRevision",1);ReflectionTestUtils.setField(order,"activePaymentId",53L);
+  var all=List.of(payment,next);history.add(cancel);history.add(authorization);var views=factory(DEADLINE);
+  assertThat(views.create(order,all,history).canCapture()).isFalse();
+  assertThat(views.create(order,all,history,Set.of(UUID.randomUUID()),Set.of()).canCapture()).isFalse();
+  assertThat(views.create(order,all,history,Set.of(),Set.of(operation)).canCapture()).isFalse();
+  assertThat(views.create(order,all,history,Set.of(operation),Set.of()).canCapture()).isTrue();
+  ReflectionTestUtils.setField(order,"activePaymentId",52L);assertThat(views.create(order,all,history,Set.of(operation),Set.of()).canCapture()).isFalse();ReflectionTestUtils.setField(order,"activePaymentId",53L);
+  order.confirmCardShipment(DEADLINE,9L,"shipper",53L);
+  var capture=new PaymentTransaction(next,PaymentTransactionType.CAPTURE,300,1,"capture-new",DEADLINE,new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN,9L,"shipper",null));id(capture,66);history.add(capture);
+  assertThat(views.create(order,all,history,Set.of(operation),Set.of()).state()).isEqualTo(OrderPaymentViewFactory.State.CAPTURE_PENDING);
+  capture.markSucceeded("pf-new",DEADLINE);next.markCaptured(DEADLINE);order.recordShipmentCaptureSucceeded(53L,DEADLINE);
+  assertThat(views.create(order,all,history,Set.of(operation),Set.of()).state()).isEqualTo(OrderPaymentViewFactory.State.CAPTURED);
+ }
 }
