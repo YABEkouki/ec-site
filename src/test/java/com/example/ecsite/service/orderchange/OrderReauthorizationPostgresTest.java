@@ -2003,6 +2003,66 @@ class OrderReauthorizationPostgresTest {
         assertThat(uncertain.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
         assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);verify(gateway,never()).sendOrderChangeRequest(any());
     }
+    @Test void recoveredIncreaseCapturesNewPaymentFor910AtRevisionOneExactlyOnce(){
+        var base=fixture(180,1);
+        assertThat(jdbc.queryForMap("select total_amount,content_revision from orders where id=?",base.order()))
+            .containsEntry("total_amount",730).containsEntry("content_revision",0);
+        assertThat(jdbc.queryForObject("select quantity from order_items where id=?",Integer.class,base.item())).isEqualTo(1);
+        var f=recoveryFixture(base,2);var c=recoveryCommand(f);
+        long next=jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,c.operationId());
+        assertThat(next).isNotEqualTo(base.oldPayment());assertThat(state(c.operationId())).isEqualTo("MANUAL_REVIEW");
+        assertThat(jdbc.queryForMap("select status,amount from payments where id=?",next))
+            .containsEntry("status","AUTHORIZED").containsEntry("amount",910);
+        assertThat(jdbc.queryForMap("select status,amount,order_content_revision from payment_transactions where payment_id=? and transaction_type='AUTHORIZE'",next))
+            .containsEntry("status","SUCCEEDED").containsEntry("amount",910).containsEntry("order_content_revision",1);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        assertThat(state(c.operationId())).isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForMap("select total_amount,content_revision,active_payment_id from orders where id=?",base.order()))
+            .containsEntry("total_amount",910).containsEntry("content_revision",1).containsEntry("active_payment_id",next);
+        assertThat(jdbc.queryForObject("select quantity from order_items where id=?",Integer.class,base.item())).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,base.oldPayment())).isEqualTo("CANCELLED");
+        assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,c.operationId())).isEqualTo("CONSUMED");
+        assertThat(jdbc.queryForObject("select stock from products where id=?",Integer.class,base.product())).isEqualTo(19);
+        assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,base.order())).isEqualTo(1);
+        java.util.function.Supplier<List<Object>> unchanged=()->List.of(
+            jdbc.queryForList("select to_jsonb(r)::text from inventory_reservations r where operation_id=? order by order_item_id",c.operationId()),
+            jdbc.queryForList("select to_jsonb(p)::text from products p where id=?",base.product()),
+            jdbc.queryForList("select to_jsonb(m)::text from stock_movements m where order_id=? order by id",base.order()),
+            jdbc.queryForList("select to_jsonb(h)::text from order_content_change_histories h where order_id=? order by id",base.order()));
+        var beforeShipment=unchanged.get();
+        var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,base.order());
+        doReturn(deadline).when(orders).findCurrentTimeInTokyo();
+        doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
+        shippingPreparation.start(base.order());
+        clearInvocations(gateway);
+        when(gateway.capture(any())).thenAnswer(call->{
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var request=(com.example.ecsite.payment.capture.CaptureHttpRequest)call.getArgument(0);
+            assertThat(request.flowId()).isEqualTo(newFlow).isNotEqualTo(base.oldFlow());assertThat(request.amount()).isEqualTo(910);
+            assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,base.order())).isEqualTo("SHIPPED");
+            assertThat(jdbc.queryForMap("select payment_id,amount,order_content_revision,status from payment_transactions where payment_id=? and transaction_type='CAPTURE'",next))
+                .containsEntry("payment_id",next).containsEntry("amount",910).containsEntry("order_content_revision",1).containsEntry("status","PENDING");
+            return new CaptureResult(CaptureResultStatus.CAPTURED,newFlow,null,null);
+        });
+        assertThat(capture.captureForShipment(base.order(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,next)).isEqualTo("CAPTURED");
+        assertThat(jdbc.queryForMap("select status,amount,order_content_revision from payment_transactions where payment_id=? and transaction_type='CAPTURE'",next))
+            .containsEntry("status","SUCCEEDED").containsEntry("amount",910).containsEntry("order_content_revision",1);
+        assertThat(jdbc.queryForMap("select status,shipment_capture_payment_id from orders where id=?",base.order()))
+            .containsEntry("status","SHIPPED").containsEntry("shipment_capture_payment_id",next);
+        assertThat(jdbc.queryForObject("select paid_at from orders where id=?",java.time.LocalDateTime.class,base.order())).isNotNull();
+        assertThat(jdbc.queryForObject("select request_body from capture_requests where payment_id=?",byte[].class,next))
+            .isEqualTo("{\"amount_to_capture\":910}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(capture.captureForShipment(base.order(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+        verify(gateway,times(1)).capture(any());verify(gateway,never()).capture(argThat(r->r.flowId().equals(base.oldFlow())));
+        verify(gateway,never()).retrievePaymentFlow(any());verify(gateway,never()).sendOrderChangeRequest(any());
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=? and transaction_type='CAPTURE'",Integer.class,base.oldPayment())).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,base.oldPayment())).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,next)).isEqualTo(1);
+        assertThat(unchanged.get()).isEqualTo(beforeShipment);
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,base.oldPayment())).isEqualTo("CANCELLED");
+        assertThat(state(c.operationId())).isEqualTo("COMPLETED");
+    }
     @Test void recoveredOperationCanConvergeAfterDeadlineAndOnlyNewPaymentCanCapture(){
         var f=recoveryFixture();var c=recoveryCommand(f);doReturn(f.op().graceUntil().plusHours(1)).when(orders).findCurrentTimeInTokyo();
         doReturn(f.op().graceUntil().plusHours(1).atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
