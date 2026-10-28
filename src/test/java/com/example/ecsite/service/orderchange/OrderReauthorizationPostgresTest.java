@@ -2041,6 +2041,96 @@ class OrderReauthorizationPostgresTest {
         assertThat(state(op.id())).isEqualTo(phase);verifyNoInteractions(gateway);
         assertThat(jdbc.queryForObject("select count(*) from capture_requests r join payments p on p.id=r.payment_id where p.order_id=?",Integer.class,base.order())).isZero();
     }
+    @Autowired com.example.ecsite.service.payment.PaymentCaptureStartService diagnosticCaptureStart;
+    @Autowired com.example.ecsite.service.payment.CaptureInitialPostPreparationService diagnosticCapturePreparation;
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @org.junit.jupiter.params.provider.ValueSource(strings={"   ","発送確認済み","  発送確認済み  "})
+    void capturePreparationNormalizesNoteAfterRecoveredIncrease(String note){
+        var f=recoveryFixture(fixture(180,1),2);var c=recoveryCommand(f);
+        assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+        var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,c.orderId());
+        doReturn(deadline).when(orders).findCurrentTimeInTokyo();
+        doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
+        shippingPreparation.start(c.orderId());clearInvocations(gateway);
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? and t.transaction_type='CAPTURE'",Integer.class,c.orderId())).isZero();
+        var started=diagnosticCaptureStart.start(c.orderId(),9L,"shipper",note);
+        assertThat(started.disposition()).isEqualTo(com.example.ecsite.service.payment.PaymentStartDisposition.NEW);
+        long id=started.transactionId();
+        assertThat(jdbc.queryForObject("select status from payment_transactions where id=?",String.class,id)).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("select internal_note from payment_transactions where id=?",String.class,id)).isEqualTo(note==null||note.trim().isEmpty()?null:note.trim());
+        assertThat(started.snapshot().internalNote()).isEqualTo(note==null||note.trim().isEmpty()?null:note.trim());
+        assertThat(jdbc.queryForObject("select internal_note from order_status_histories where order_id=? and to_status='SHIPPED'",String.class,c.orderId())).isEqualTo(started.snapshot().internalNote());
+        var afterStart=recoveryDiagnosticBusiness(f);
+        assertThat(diagnosticCapturePreparation.prepare(started.initialPost()))
+            .isInstanceOf(com.example.ecsite.service.payment.CaptureInitialPostPreparationService.Ready.class);
+        assertThat(recoveryDiagnosticBusiness(f)).isEqualTo(afterStart);
+        assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,c.orderId())).isEqualTo("SHIPPED");
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,started.paymentId())).isEqualTo("AUTHORIZED");
+        assertThat(jdbc.queryForObject("select paid_at from orders where id=?",java.time.LocalDateTime.class,c.orderId())).isNull();
+        verifyNoInteractions(gateway);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(value={"false|NULL","false|EMPTY","false|SPACES","true|NULL","true|EMPTY","true|SPACES","false|TEXT","true|TEXT","false|PADDED","true|PADDED"},delimiter='|')
+    void ordinaryAndRecoveredShipmentNormalizeNotesAndCaptureOnce(boolean recovered,String input){
+        Fixture base;long active;String flow;
+        if(recovered){
+            var f=recoveryFixture(fixture(180,1),2);var c=recoveryCommand(f);
+            assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
+            base=f.base();active=jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,base.order());flow=newFlow;
+            assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,base.oldPayment())).isEqualTo("CANCELLED");
+        }else{base=fixture(180,1);active=base.oldPayment();flow=base.oldFlow();admin();}
+        var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,base.order());
+        doReturn(deadline).when(orders).findCurrentTimeInTokyo();
+        doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
+        shippingPreparation.start(base.order());clearInvocations(gateway);
+        var stable=List.of(jdbc.queryForList("select to_jsonb(t)::text from products t where id=?",String.class,base.product()),
+            jdbc.queryForList("select to_jsonb(t)::text from inventory_reservations t join order_change_operations op on op.id=t.operation_id where op.order_id=?",String.class,base.order()),
+            jdbc.queryForList("select to_jsonb(t)::text from order_content_change_histories t where order_id=?",String.class,base.order()));
+        int amount=recovered?910:730;int revision=recovered?1:0;
+        when(gateway.capture(any())).thenAnswer(call->{
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var request=(com.example.ecsite.payment.capture.CaptureHttpRequest)call.getArgument(0);
+            assertThat(request.flowId()).isEqualTo(flow);assertThat(request.amount()).isEqualTo(amount);
+            return new CaptureResult(CaptureResultStatus.CAPTURED,flow,null,null);
+        });
+        String note=switch(input){case "NULL"->null;case "EMPTY"->"";case "SPACES"->"   ";case "TEXT"->"発送確認済み";case "PADDED"->"  発送確認済み  ";default->throw new AssertionError();};
+        String expected=note==null||note.trim().isEmpty()?null:note.trim();
+        assertThat(capture.captureForShipment(base.order(),9L,"shipper",note).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+        assertThat(capture.captureForShipment(base.order(),9L,"shipper",note).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+        verify(gateway,times(1)).capture(any());
+        assertThat(jdbc.queryForObject("select internal_note from payment_transactions where payment_id=? and transaction_type='CAPTURE'",String.class,active)).isEqualTo(expected);
+        assertThat(jdbc.queryForObject("select internal_note from order_status_histories where order_id=? and to_status='SHIPPED'",String.class,base.order())).isEqualTo(expected);
+        assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,base.order())).isEqualTo("SHIPPED");
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,active)).isEqualTo("CAPTURED");
+        assertThat(jdbc.queryForMap("select amount,order_content_revision,status from payment_transactions where payment_id=? and transaction_type='CAPTURE'",active))
+            .containsEntry("amount",amount).containsEntry("order_content_revision",revision).containsEntry("status","SUCCEEDED");
+        assertThat(jdbc.queryForObject("select count(*) from capture_requests where payment_id=?",Integer.class,active)).isEqualTo(1);
+        assertThat(List.of(jdbc.queryForList("select to_jsonb(t)::text from products t where id=?",String.class,base.product()),
+            jdbc.queryForList("select to_jsonb(t)::text from inventory_reservations t join order_change_operations op on op.id=t.operation_id where op.order_id=?",String.class,base.order()),
+            jdbc.queryForList("select to_jsonb(t)::text from order_content_change_histories t where order_id=?",String.class,base.order()))).isEqualTo(stable);
+        verify(gateway,never()).retrievePaymentFlow(any());verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans={false,true})
+    void capturePreparationStillRejectsActuallyDifferentShipmentNote(boolean recovered){
+        Fixture base;
+        if(recovered){var f=recoveryFixture(fixture(180,1),2);assertThat(recovery.recover(recoveryCommand(f))).isEqualTo(OldCancelRecovery.Result.COMPLETED);base=f.base();}
+        else{base=fixture(180,1);admin();}
+        var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,base.order());
+        doReturn(deadline).when(orders).findCurrentTimeInTokyo();
+        doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
+        shippingPreparation.start(base.order());clearInvocations(gateway);
+        var started=diagnosticCaptureStart.start(base.order(),9L,"shipper","original");
+        assertThat(jdbc.update("update order_status_histories set internal_note='different' where order_id=? and to_status='SHIPPED'",base.order())).isEqualTo(1);
+        assertThatThrownBy(()->diagnosticCapturePreparation.prepare(started.initialPost()))
+            .isExactlyInstanceOf(IllegalStateException.class).hasMessageContaining("売上確定対象を安全に確認できません");
+        assertThat(jdbc.queryForObject("select status from payment_transactions where id=?",String.class,started.transactionId())).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,started.paymentId())).isEqualTo("AUTHORIZED");
+        assertThat(jdbc.queryForObject("select internal_note from payment_transactions where id=?",String.class,started.transactionId())).isEqualTo("original");
+        assertThat(jdbc.queryForObject("select internal_note from order_status_histories where order_id=? and to_status='SHIPPED'",String.class,base.order())).isEqualTo("different");
+        verifyNoInteractions(gateway);
+    }
     @Test void recoveredIncreaseCapturesNewPaymentFor910AtRevisionOneExactlyOnce(){
         var base=fixture(180,1);
         assertThat(jdbc.queryForMap("select total_amount,content_revision from orders where id=?",base.order()))

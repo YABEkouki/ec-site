@@ -77,10 +77,12 @@ public class CaptureShipmentOperations {
         Payment payment = data.payments().stream().filter(p -> p.getId().equals(decision.paymentId())).findFirst().orElseThrow();
         var identity = connection.requireIdentity(activeConnection);
         if (!safety.isValid()) throw recovery(orderId);
+        String note = internalNote == null ? null : internalNote.trim();
+        if (note != null && note.isEmpty()) note = null;
         var now = orders.findCurrentTimeInTokyo();
         var capture = new PaymentTransaction(payment, PaymentTransactionType.CAPTURE, order.getTotalAmount(),
                 order.getContentRevision(), UUID.randomUUID().toString(), now,
-                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), internalNote), PaymentTransactionPurpose.SHIPMENT_CAPTURE);
+                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), note), PaymentTransactionPurpose.SHIPMENT_CAPTURE);
         transactions.saveAndFlush(capture);
         var created = now.atZone(JST).toInstant();
         var http = CaptureHttpRequest.create(identity, payment.getProviderPaymentId(), capture.getAmount(), capture.getIdempotencyKey());
@@ -88,7 +90,7 @@ public class CaptureShipmentOperations {
                 created.plus(safety.postMaxAge()).truncatedTo(ChronoUnit.MICROS));
         order.confirmCardShipment(now, actor.getId(), actor.getUsername(), payment.getId());
         histories.record(order, OrderStatus.ORDERED, OrderStatus.SHIPPED, OrderStatusHistoryActorType.ADMIN,
-                actor.getId(), actor.getUsername(), internalNote);
+                actor.getId(), actor.getUsername(), note);
         var snapshot = PaymentOperationSnapshot.from(capture);
         return new PaymentCaptureStart(snapshot.paymentId(), snapshot.transactionId(), snapshot.providerPaymentId(),
                 snapshot.amount(), snapshot.idempotencyKey(), PaymentStartDisposition.NEW, snapshot,
