@@ -13,6 +13,14 @@ class OrderEditCandidateCalculatorTest {
     final OrderEditCandidateCalculator calculator = new OrderEditCandidateCalculator();
     final LocalDateTime now = LocalDateTime.of(2026,10,30,13,59);
     Context context() { return new Context(facts(initial(),List.of()),2,"ORDERED",now.minusDays(1),now.plusMinutes(1),null,null,null,now); }
+    @Test void formalRecalculationDefersDeadlineButPreservesAllOtherChecks() {
+        var c=context();var expired=new Context(c.facts(),c.customerId(),c.status(),c.orderedAt(),c.deadline(),null,null,null,c.deadline().plusHours(1));
+        var req=request(new Line(3L,8,2));var catalog=List.of(offer(8,1000));
+        assertThat(calculator.calculate(expired,req,catalog).route()).isEqualTo(OrderChangeRoutePolicy.Route.BLOCKED);
+        assertThat(calculator.calculateForAdmission(expired,req,catalog)).isEqualTo(calculator.calculate(c,req,catalog));
+        var foreign=new Context(c.facts(),999,c.status(),c.orderedAt(),c.deadline(),null,null,null,c.now());
+        assertThat(calculator.calculateForAdmission(foreign,req,catalog).route()).isEqualTo(OrderChangeRoutePolicy.Route.BLOCKED);
+    }
     Offer offer(long id,int price) { return new Offer(id,"新商品",4,"分類",price,5,"STANDARD","標準",1000,true); }
     Request request(Line... lines) { return new Request(1,0,List.of(lines)); }
     Line keep(int qty) { return new Line(3L,7,qty); }

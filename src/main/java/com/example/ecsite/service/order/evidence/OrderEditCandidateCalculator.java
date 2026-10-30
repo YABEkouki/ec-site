@@ -16,10 +16,18 @@ public final class OrderEditCandidateCalculator {
     private final OrderAmountCalculator amounts=new OrderAmountCalculator(new ShippingChargeCalculator(),new TaxCalculator());
 
     public Result calculate(Context context, Request request, List<Offer> catalog) {
+        return calculate(context,request,catalog,true);
+    }
+    /** Candidate validation only: V71's original commit evidence decides formal timeliness.
+     * The caller supplies the real context time; no fabricated time or modified deadline. */
+    public Result calculateForAdmission(Context context, Request request, List<Offer> catalog) {
+        return calculate(context,request,catalog,false);
+    }
+    private Result calculate(Context context, Request request, List<Offer> catalog,boolean previewDeadline) {
         try {
             Objects.requireNonNull(context);Objects.requireNonNull(request);
             var facts=Objects.requireNonNull(context.facts());var before=Objects.requireNonNull(facts.current());
-            if(!admitted(context,request,before))return blocked(Reason.ADMISSION_DENIED);
+            if(!admitted(context,request,before,previewDeadline))return blocked(Reason.ADMISSION_DENIED);
             if(!new OrderPaymentEvidenceValidator().validate(facts).locallyVerified())return blocked(Reason.INVALID_EVIDENCE);
             if(request.lines().size()>1000) return blocked(Reason.INVALID_INPUT);
             var offers=new TreeMap<Long,Offer>();
@@ -85,10 +93,10 @@ public final class OrderEditCandidateCalculator {
         if(result.route()==Route.BLOCKED)return result;
         return confirmed!=null&&confirmed.equals(result.candidate())?result:blocked(Reason.CONFIRMATION_CHANGED);
     }
-    private static boolean admitted(Context c,Request r,OrderContentSnapshot s) {
+    private static boolean admitted(Context c,Request r,OrderContentSnapshot s,boolean previewDeadline) {
         return r.orderId()==s.orderId()&&r.expectedRevision()==s.contentRevision()&&c.customerId()==s.customerId()
             &&"ORDERED".equals(c.status())&&c.orderedAt()!=null&&c.deadline()!=null&&c.now()!=null
-            &&c.deadline().isAfter(c.orderedAt())&&c.now().isBefore(c.deadline())
+            &&c.deadline().isAfter(c.orderedAt())&&(!previewDeadline||c.now().isBefore(c.deadline()))
             &&c.preparationStartedAt()==null&&c.preparationAccountId()==null&&c.preparationUsername()==null;
     }
     private static boolean available(Offer o) { return o!=null&&o.active(); }
