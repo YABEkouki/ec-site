@@ -64,6 +64,29 @@ class OrderPaymentEvidenceValidatorTest {
         assertThat(result.disposition()).isEqualTo(OrderPaymentEvidenceDecision.Disposition.EVIDENCE_CURRENT);
         assertThat(result.requiresExternalVerification()).isTrue();
     }
+    @ParameterizedTest @org.junit.jupiter.params.provider.CsvSource({"0,6000","2,5000","2,6000"})
+    void checkpointAllowsCurrentStateAtOrBelowAuthorization(int revision,int amount) {
+        var start=snapshot(revision,amount,7);
+        var checkpoint=new Checkpoint(1,10,20,revision,CODEC.fingerprint(start),"11".repeat(32),"22".repeat(32));
+        var e=signed(new Epoch(1,EPOCH,1,10,20,6000,0,Origin.LEGACY_CURRENT_CHECKPOINT,start,null,checkpoint,ZERO));
+        assertThat(validator.validate(facts(e,List.of())).locallyVerified()).isTrue();
+    }
+    @ParameterizedTest @ValueSource(strings={"over","oldRevision","digest","fingerprint","order","payment"})
+    void checkpointBoundaryExpansionDoesNotWeakenOtherEvidence(String mutation) {
+        var start=snapshot(0,6000,7);var cp=new Checkpoint(1,10,20,0,CODEC.fingerprint(start),"11".repeat(32),"22".repeat(32));
+        int authRevision=mutation.equals("oldRevision")?1:0;
+        if(mutation.equals("over")) {start=snapshot(0,6001,7);cp=new Checkpoint(1,10,20,0,CODEC.fingerprint(start),"11".repeat(32),"22".repeat(32));}
+        if(mutation.equals("fingerprint"))cp=new Checkpoint(1,10,20,0,ZERO,"11".repeat(32),"22".repeat(32));
+        var e=signed(new Epoch(1,EPOCH,mutation.equals("order")?99:1,mutation.equals("payment")?11:10,20,6000,authRevision,Origin.LEGACY_CURRENT_CHECKPOINT,start,null,cp,ZERO));
+        if(mutation.equals("digest"))e=new Epoch(e.version(),e.id(),e.orderId(),e.paymentId(),e.authorizationId(),e.authorizedAmount(),e.authorizationRevision(),e.origin(),e.start(),null,e.checkpoint(),ZERO);
+        var f=facts(e,List.of());
+        if(authRevision==1)f=copy(f,start,10L,f.payments(),List.of(new Authorization(20,1,10,"AUTHORIZE","SUCCEEDED",6000,1,"pfw_test","INITIAL_ORDER_AUTHORIZATION",null)),e,List.of(),null,false,false);
+        assertThat(validator.validate(f).locallyVerified()).isFalse();
+    }
+    @Test void initialOriginStillRequiresExactAuthorizationRevision() {
+        var e=signed(new Epoch(1,EPOCH,1,10,20,6000,0,Origin.INITIAL_AUTH,snapshot(1,6000,7),null,null,ZERO));
+        assertThat(validator.validate(facts(e,List.of())).locallyVerified()).isFalse();
+    }
     @ParameterizedTest @ValueSource(strings={"missing","duplicate","branch","gap","digest","version","changeVersion","changeDigest","payment","current","head","predecessor","operation","owner","over"})
     void rejectsBrokenEvidenceWithoutDecreasedAmountFallback(String mutation) {
         var e=initial(); var a=change(e,null,31,5000,7); var b=change(e,a,32,5500,8); var f=facts(e,List.of(a,b));

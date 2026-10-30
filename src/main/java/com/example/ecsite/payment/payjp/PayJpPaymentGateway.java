@@ -105,6 +105,16 @@ public class PayJpPaymentGateway implements PaymentGateway {
     }
 
     @Override
+    public OrderAuthorizationObservation observeOrderAuthorization(OrderAuthorizationObservation.Expected expected) {
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Enrollment GET requires no transaction");
+        if(expected==null||captureConnection==null||!expected.connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Enrollment observation connection mismatch");
+        try{return OrderAuthorizationObservation.retrieve(expected,restClient,abortObservationClock,abortObservationTicker);}
+        catch(RestClientException failure){throw classify(failure);}
+        catch(IllegalArgumentException|IllegalStateException failure){throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);}
+    }
+
+    @Override
     public OldAuthorizationObservation observeOldAuthorization(OldAuthorizationObservation.Expected expected){
         if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Old authorization GET requires no database transaction");
         if(expected==null||captureConnection==null||!expected.connection().equals(captureConnection.requireIdentity(activeConnection)))

@@ -103,7 +103,7 @@ public final class OrderPaymentEvidenceValidator {
             case LEGACY_CURRENT_CHECKPOINT -> {
                 var c=e.checkpoint();
                 if(c==null || c.orderId()!=e.orderId() || c.paymentId()!=e.paymentId() || c.authorizationId()!=a.id()
-                        || c.revision()!=s.contentRevision() || s.contentRevision()<=a.revision() || s.totalAmount()>=a.amount()
+                        || c.revision()!=s.contentRevision() || s.contentRevision()<a.revision() || s.totalAmount()>a.amount()
                         || !OrderEvidenceDigests.matches(c.contentFingerprint(),codec.fingerprint(s))
                         || !OrderEvidenceDigests.validHash(c.localAssessmentDigest()) || !OrderEvidenceDigests.validHash(c.externalObservationDigest()))throw invalid();
             }

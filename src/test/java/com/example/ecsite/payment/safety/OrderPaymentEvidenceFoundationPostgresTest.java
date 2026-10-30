@@ -24,7 +24,7 @@ class OrderPaymentEvidenceFoundationPostgresTest {
         db=new PaymentSafetyExpandPostgresTest();db.isolatedSchema();db.migrate("68");jdbc=db.jdbc;
         long[] legacy=db.legacyFixture();
         var old=fixture();long oldHistory=legacyHistory(old,6000,5000);UUID oldOperation=legacyOperation(old);
-        var before=db.legacyRows();db.migrate("69");
+        var before=db.legacyRows();db.migrate("69");db.migrate("70");
         for(var entry:before.entrySet()) {
             String remove=entry.getKey().equals("orders")?"-'current_evidence_epoch_id'-'evidence_head_history_id'":"";
             String sql="select (to_jsonb(t)-'active_payment_id'-'purpose'"+remove+")::text from "+entry.getKey()+" t order by id";

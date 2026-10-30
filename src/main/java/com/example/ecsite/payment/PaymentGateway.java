@@ -1,6 +1,12 @@
 package com.example.ecsite.payment;
 
 public interface PaymentGateway {
+    /** Internal Feature125 enrollment GET only; no financial execution permission. */
+    default com.example.ecsite.payment.payjp.OrderAuthorizationObservation observeOrderAuthorization(
+            com.example.ecsite.payment.payjp.OrderAuthorizationObservation.Expected expected) {
+        throw new UnsupportedOperationException("Order authorization observation is not supported");
+    }
+
 
     /** Trusted GET-only authorization observation for internal NEW_ABORT preparation. */
     default com.example.ecsite.payment.payjp.AbortPreparationObservation observeAbortPreparation(
