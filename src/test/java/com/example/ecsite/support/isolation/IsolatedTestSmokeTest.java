@@ -15,7 +15,8 @@ class IsolatedTestSmokeTest {
     @Autowired ApplicationContext context;
     @Test void commonContainerIsUsedAndFlywayIsValidated() throws Exception {
         assertThat(jdbc.queryForObject("select current_database()",String.class)).startsWith("isolated_");
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)).isEqualTo(70);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)).isEqualTo(71);
+        assertThat(jdbc.queryForObject("select state from order_edit_runtime_control where id=1",String.class)).isEqualTo("STOPPED");
         assertThat(jdbc.queryForObject("select to_regclass('order_payment_evidence_epochs') is not null",Boolean.class)).isTrue();
         assertThat(jdbc.queryForObject("select to_regclass('order_change_request_dispatches') is not null",Boolean.class)).isTrue();
         assertThat(context.getBeansOfType(com.example.ecsite.service.payment.PaymentAuditNotificationScheduler.class)).isEmpty();
