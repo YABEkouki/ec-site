@@ -47,6 +47,7 @@ class PaymentServiceTest {
     private PaymentRepository paymentRepository;
     private PaymentTransactionRepository paymentTransactionRepository;
     private PaymentService paymentService;
+    private final OrderPaymentGuard admissionGuard = mock(OrderPaymentGuard.class);
     private CaptureShipmentOperations captureOperations;
     private com.example.ecsite.service.OrderModificationGuard orderModificationGuard;
 
@@ -70,7 +71,7 @@ class PaymentServiceTest {
                 new PaymentConsistencyEvaluator(),
                 orderModificationGuard,
                 captureOperations,
-                mock(OrderPaymentGuard.class),
+                admissionGuard,
                 clock);
     }
 
@@ -915,6 +916,10 @@ class PaymentServiceTest {
 
     @Test
     void cancellationResultCancelsPaymentAndCompletesTransaction() {
+        org.mockito.Mockito.doThrow(new com.example.ecsite.exception.InvalidOrderStatusException("admission blocked"))
+                .when(admissionGuard).requireNoOrderChange(any());
+        org.mockito.Mockito.doThrow(new com.example.ecsite.exception.InvalidOrderStatusException("admission blocked"))
+                .when(admissionGuard).requireNoEditAdmission(any());
 
         Order order = mock(Order.class);
         when(order.getActivePaymentId()).thenReturn(null);
@@ -962,6 +967,8 @@ class PaymentServiceTest {
         assertEquals(
                 LocalDateTime.of(2026, 10, 1, 10, 0),
                 transaction.getCompletedAt());
+        verify(admissionGuard, never()).requireNoOrderChange(any());
+        verify(admissionGuard, never()).requireNoEditAdmission(any());
     }
 
     @Test

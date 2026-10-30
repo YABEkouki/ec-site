@@ -105,6 +105,8 @@ public class OrderChangeFinancialRequestStore {
         requireTransaction();
         var saved=find(id);var request=saved.httpRequest();
         jdbc.queryForObject("select id from orders where id=? for update",Long.class,request.orderId());
+        if("CREATE".equals(request.kind()))
+            new com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard(jdbc).requireClear(request.orderId());
         var op=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=? for update",request.operationId(),request.orderId());
         jdbc.queryForList("select id from payments where order_id=? order by id for update",request.orderId());
         if(op.get("abort_request_id")!=null)throw new DispatchUnavailable();

@@ -14,11 +14,14 @@ import com.example.ecsite.repository.PaymentTransactionRepository;
 @Transactional(propagation = Propagation.MANDATORY)
 public class OrderPaymentGuard {
     private final com.example.ecsite.service.orderchange.OrderChangeStore changes;
+    private final com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard admissions;
     private final PaymentRepository payments;
     private final PaymentTransactionRepository transactions;
 
     public OrderPaymentGuard(PaymentRepository payments, PaymentTransactionRepository transactions,
-            com.example.ecsite.service.orderchange.OrderChangeStore changes) {
+            com.example.ecsite.service.orderchange.OrderChangeStore changes,
+            com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard admissions) {
+        this.admissions = admissions;
         this.changes = changes;
         this.payments = payments;
         this.transactions = transactions;
@@ -82,7 +85,12 @@ public class OrderPaymentGuard {
         return changes.abortedOperationIds(order.getId());
     }
 
+    public void requireNoEditAdmission(Order order) {
+        admissions.requireClear(order.getId());
+    }
+
     public void requireNoOrderChange(Order order) {
+        requireNoEditAdmission(order);
         if (changes.unresolved(order.getId())) reject("未解決の注文変更があるため、この操作を開始できません。");
     }
 

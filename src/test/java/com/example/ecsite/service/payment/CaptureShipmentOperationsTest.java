@@ -20,6 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class CaptureShipmentOperationsTest {
+    OrderPaymentGuard admissionGuard=mock(OrderPaymentGuard.class);
     OrderRepository orders=mock(OrderRepository.class);
     PaymentRepository payments=mock(PaymentRepository.class);
     PaymentTransactionRepository transactions=mock(PaymentTransactionRepository.class);
@@ -31,11 +32,28 @@ class CaptureShipmentOperationsTest {
     com.example.ecsite.config.CaptureConnectionProperties connection=new com.example.ecsite.config.CaptureConnectionProperties("test", "account", "TEST", "https://api.pay.jp");
     com.example.ecsite.config.PayJpProperties active=new com.example.ecsite.config.PayJpProperties("pk_test_dummy", "sk_test_dummy", "https://api.pay.jp", "dummy");
     com.example.ecsite.config.PayJpSafetyProperties safety=new com.example.ecsite.config.PayJpSafetyProperties(java.time.Duration.ofSeconds(5),java.time.Duration.ofSeconds(15),java.time.Duration.ofHours(23));
-    CaptureShipmentOperations service=new CaptureShipmentOperations(orders,payments,transactions,em,context,new OrderShipmentGuard(),policy,histories,requests,connection,active,safety,mock(OrderStatusHistoryRepository.class),mock(OrderPaymentGuard.class));
+    CaptureShipmentOperations service=new CaptureShipmentOperations(orders,payments,transactions,em,context,new OrderShipmentGuard(),policy,histories,requests,connection,active,safety,mock(OrderStatusHistoryRepository.class),admissionGuard);
     LocalDateTime now=LocalDateTime.of(2026,10,19,15,0);
     Order order=new Order(1L,200,now.minusDays(1),now.minusHours(1));
     Payment payment;
     List<PaymentTransaction> history=new ArrayList<>();
+
+    @Test void unresolvedAdmissionBlocksInitialPostPreparation() {
+        var first=start();
+        doThrow(new com.example.ecsite.exception.InvalidOrderStatusException("admission blocked"))
+            .when(admissionGuard).requireNoEditAdmission(order);
+        assertThatThrownBy(()->service.prepareInitialPost(first.initialPost()))
+            .isInstanceOf(com.example.ecsite.exception.InvalidOrderStatusException.class);
+    }
+    @Test void admissionGateDoesNotBlockRequeryOrFinancialResultApplication() {
+        var first=start();
+        doThrow(new com.example.ecsite.exception.InvalidOrderStatusException("admission blocked"))
+            .when(admissionGuard).requireNoEditAdmission(order);
+        assertThat(service.prepareRequery(42L).disposition()).isEqualTo(PaymentStartDisposition.REUSED);
+        assertThat(service.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,"pfw_provider",null,null)))
+            .isEqualTo(PaymentResultApplication.APPLIED);
+        verify(admissionGuard,never()).requireNoEditAdmission(any());
+    }
     @BeforeEach void setup() {
         actor(9L,"shipper"); ReflectionTestUtils.setField(order,"id",42L);
         order.beginShippingPreparation(now.minusHours(1),7L,"preparer");

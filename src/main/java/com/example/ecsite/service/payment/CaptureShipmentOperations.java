@@ -116,6 +116,7 @@ public class CaptureShipmentOperations {
         context.requireCleanWritableReadCommitted();
         Order order = orders.findByIdForUpdate(snapshot.orderId()).orElseThrow(() -> new OrderNotFoundException(snapshot.orderId()));
         context.refreshWritableOrder(order);
+        paymentGuard.requireNoEditAdmission(order);
         guard.requirePrepared(order);
         var data = load(order, snapshot);
         var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order));

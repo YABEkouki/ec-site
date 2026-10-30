@@ -807,7 +807,7 @@ public class OrderReauthorizationTransactions {
             """,now(),now(),operationId,op.get("version"))==1;
     }
     public View prepare(long orderId,UUID operationId){
-        var data=lock(orderId,operationId);var op=data.operation();
+        var data=lock(orderId,operationId,true);var op=data.operation();
         if(progressBlocked(data)||!"RESERVED".equals(op.get("state")))return view(data);
         if(op.get("new_payment_id")!=null)return review(data,"LEGACY_REQUEST_REVIEW");
         validateBase(data);requireHeld(data);
@@ -1015,9 +1015,11 @@ public class OrderReauthorizationTransactions {
         jdbc.update("update order_change_operations set content_change_history_id=? where id=?",saved.getId(),operationId);
         state(data,"COMPLETED",null);return view(data);
     }
-    private Locked lock(long orderId,UUID operationId){
+    private Locked lock(long orderId,UUID operationId){return lock(orderId,operationId,false);}
+    private Locked lock(long orderId,UUID operationId,boolean starting){
         context.requireCleanWritableReadCommitted();
         var order=orders.findByIdForUpdate(orderId).orElseThrow();context.refreshWritableOrder(order);
+        if(starting)new com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard(jdbc).requireClear(orderId);
         changes.operation(orderId,operationId).orElseThrow();
         var operation=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=?",operationId,orderId);
         var all=payments.findByOrderIdForUpdate(orderId);all.forEach(em::refresh);
