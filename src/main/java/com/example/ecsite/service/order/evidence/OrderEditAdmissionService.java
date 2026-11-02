@@ -21,7 +21,8 @@ public final class OrderEditAdmissionService {
     }
     /** DB states are observed facts, not aliases for the coordinator's outcome. */
     public record Result(Outcome outcome,UUID admissionId,String databaseAdmissionState,String databaseExecutionState,String reason) {}
-    private record Row(UUID id,long order,long customer,UUID key,UUID generation,String xid,byte[] request,byte[] candidate,String admission,String execution,Binding binding,Proof proof) {}
+    private record Row(UUID id,long order,long customer,UUID key,UUID generation,String xid,byte[] request,byte[] candidate,String admission,String execution,Binding binding,Proof proof,Financial financial) {}
+    private record Financial(String audit,byte[] canonical,byte[] digest,String binding,byte[] bindingCanonical,byte[] bindingDigest) {}
     private record Binding(int revision,UUID epoch,Long head,byte[] fingerprint,long payment,long authorization,
             int authorizedAmount,int authorizationRevision,int before,int after,int requestVersion,int candidateVersion,
             String route,byte[] requestDigest,byte[] candidateDigest,byte[] beforeSnapshot,byte[] epochDigest,byte[] headDigest,String flow,java.time.Instant deadline) {}
@@ -166,6 +167,12 @@ public final class OrderEditAdmissionService {
     private Row find(long customer,long order,UUID key) {
         var rows=jdbc.query("""
             select a.*,a.original_xid::text original_xid_text,
+              to_jsonb(a)->>'financial_snapshot' financial_audit,
+              decode(substr(to_jsonb(a)->>'financial_canonical',3),'hex') financial_bytes,
+              decode(substr(to_jsonb(a)->>'financial_digest',3),'hex') financial_hash,
+              to_jsonb(p)->>'financial_binding' financial_binding_audit,
+              decode(substr(to_jsonb(p)->>'financial_binding_canonical',3),'hex') financial_binding_bytes,
+              decode(substr(to_jsonb(p)->>'financial_binding_digest',3),'hex') financial_binding_hash,
               e.start_snapshot epoch_snapshot,e.evidence_digest epoch_digest,e.provider_flow_id epoch_flow,
               h.after_snapshot head_snapshot,h.evidence_digest head_digest,
               p.admission_id proof_id,p.db_generation_id proof_generation,p.original_xid::text proof_xid,
@@ -187,7 +194,8 @@ public final class OrderEditAdmissionService {
                     r.getObject("proof_commit",java.time.OffsetDateTime.class).toInstant(),r.getObject("proof_deadline",java.time.OffsetDateTime.class).toInstant(),
                     r.getBytes("proof_request_digest"),r.getBytes("proof_candidate_digest"),r.getString("proof_before"),r.getString("proof_after"),r.getInt("proof_version"));
                 return new Row(r.getObject("id",UUID.class),r.getLong("order_id"),r.getLong("customer_id"),r.getObject("submission_key",UUID.class),r.getObject("db_generation_id",UUID.class),
-                    r.getString("original_xid_text"),r.getBytes("request_payload"),r.getBytes("candidate_payload"),r.getString("admission_state"),r.getString("execution_state"),binding,proof);
+                    r.getString("original_xid_text"),r.getBytes("request_payload"),r.getBytes("candidate_payload"),r.getString("admission_state"),r.getString("execution_state"),binding,proof,new Financial(r.getString("financial_audit"),r.getBytes("financial_bytes"),r.getBytes("financial_hash"),
+                    r.getString("financial_binding_audit"),r.getBytes("financial_binding_bytes"),r.getBytes("financial_binding_hash")));
             },customer,order,key);
         if(rows.isEmpty())return null;
         var row=rows.getFirst();
@@ -211,9 +219,44 @@ public final class OrderEditAdmissionService {
             ||!proof.decision().equals(row.admission())||!proof.deadline().equals(b.deadline())||!Arrays.equals(proof.requestDigest(),b.requestDigest())
             ||!Arrays.equals(proof.candidateDigest(),b.candidateDigest())||!"committed".equals(proof.before())||!"committed".equals(proof.after())||proof.version()!=1
             ||proof.commit().isBefore(proof.deadline())!=proof.decision().equals("ACCEPTED")))throw new IllegalArgumentException("Receipt decision proof binding mismatch");
+        validateFinancial(row);
         return row;
         } catch(IllegalArgumentException invalid){throw new UntrustedReceipt(row);}
     }
+    /** Optional only for genuine pre-V72 receipts: never creates or repairs their missing basis. */
+    private static void validateFinancial(Row row) {
+        var f=row.financial();
+        if(f.audit()==null){
+            if(f.canonical()!=null||f.digest()!=null||f.binding()!=null||f.bindingCanonical()!=null||f.bindingDigest()!=null)throw new IllegalArgumentException("Partial financial evidence");
+            return;
+        }
+        var codec=new OrderAdmissionFinancialSnapshotCodec();var snap=codec.decode(f.audit());var b=row.binding();
+        if(!Arrays.equals(codec.canonical(snap),f.canonical())||!Arrays.equals(codec.digest(snap),f.digest())
+            ||!snap.admissionId().equals(row.id())||snap.orderId()!=row.order()||snap.customerId()!=row.customer()
+            ||!snap.dbGeneration().equals(row.generation())||!snap.originalXid().equals(row.xid())
+            ||snap.revision()!=b.revision()||!snap.epoch().equals(b.epoch())||!Objects.equals(snap.head(),b.head())
+            ||snap.payment()!=b.payment()||snap.authorization()!=b.authorization()||snap.authorizedAmount()!=b.authorizedAmount()
+            ||snap.authorizationRevision()!=b.authorizationRevision()||snap.orderAmount()!=b.before()
+            ||!snap.requestDigest().equals(HexFormat.of().formatHex(b.requestDigest()))
+            ||!snap.candidateDigest().equals(HexFormat.of().formatHex(b.candidateDigest()))
+            ||!snap.fingerprint().equals(HexFormat.of().formatHex(b.fingerprint()))
+            ||!snap.epochDigest().equals(HexFormat.of().formatHex(b.epochDigest()))||!snap.headDigest().equals(HexFormat.of().formatHex(b.headDigest()))
+            ||snap.deadline()!=micros(b.deadline()))throw new IllegalArgumentException("Financial receipt mismatch");
+        if(row.proof()==null){if(f.binding()!=null||f.bindingCanonical()!=null||f.bindingDigest()!=null)throw new IllegalArgumentException("Premature financial binding");return;}
+        if(f.binding()==null||!Arrays.equals(codec.binding(f.binding()),f.bindingCanonical())
+            ||!Arrays.equals(codec.bindingDigest(f.binding()),f.bindingDigest()))throw new IllegalArgumentException("Invalid commit binding");
+        // Check identities against the independently validated V71 proof, never today's Payment.
+        var p=row.proof();var expected=tools.jackson.databind.json.JsonMapper.builder().build().createObjectNode();
+        expected.put("domain",OrderAdmissionFinancialSnapshotCodec.BINDING_DOMAIN);expected.put("version",1);
+        expected.put("admissionId",row.id().toString());expected.put("orderId",row.order());expected.put("dbGeneration",row.generation().toString());
+        expected.put("originalXid",row.xid());expected.put("verificationXid",p.verificationXid());
+        expected.put("requestDigest",snap.requestDigest());expected.put("candidateDigest",snap.candidateDigest());
+        expected.put("snapshotVersion",1);expected.put("snapshotDigest",HexFormat.of().formatHex(f.digest()));
+        expected.put("originalCommit",micros(p.commit()));expected.put("deadline",micros(p.deadline()));
+        expected.put("statusBefore",p.before());expected.put("statusAfter",p.after());expected.put("decision",p.decision());expected.put("guardVersion",p.version());
+        if(!Arrays.equals(codec.binding(expected.toString()),f.bindingCanonical()))throw new IllegalArgumentException("Commit binding identity mismatch");
+    }
+    private static long micros(java.time.Instant value){return Math.addExact(Math.multiplyExact(value.getEpochSecond(),1_000_000L),value.getNano()/1000);}
     private static void same(Row row,byte[] request,byte[] candidate) {
         if(!Arrays.equals(row.request(),request)||!Arrays.equals(row.candidate(),candidate))throw new Denied(Outcome.CONFLICT,"SUBMISSION_CONTENT_CONFLICT");
     }
