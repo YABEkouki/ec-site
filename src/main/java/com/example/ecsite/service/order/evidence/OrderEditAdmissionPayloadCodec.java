@@ -76,8 +76,7 @@ public final class OrderEditAdmissionPayloadCodec {
             var p=canonical(candidate);before=snapshots.decode(snapshots.encode(before));
             if(request.customerId()!=p.customerId()||request.orderId()!=p.orderId()||request.revision()!=p.revision()
                 ||before.orderId()!=p.orderId()||before.customerId()!=p.customerId()||before.contentRevision()!=p.revision()
-                ||before.totalAmount()!=p.beforeAmount()||!snapshots.fingerprint(before).equals(p.baseFingerprint())
-                ||p.preview().totalAmount()>p.authorizedAmount())throw invalid();
+                ||before.totalAmount()!=p.beforeAmount()||!snapshots.fingerprint(before).equals(p.baseFingerprint()))throw invalid();
             var saved=new TreeMap<Long,OrderContentSnapshot.Item>();before.items().forEach(i->saved.put(i.orderItemId(),i));
             var expected=new ArrayList<OrderContentSnapshot.Item>();var additions=new TreeMap<Long,Integer>();
             for(var l:normalize(new Request(request.orderId(),request.revision(),request.lines())).lines()) {

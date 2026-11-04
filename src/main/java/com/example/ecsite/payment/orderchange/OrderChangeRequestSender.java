@@ -23,10 +23,12 @@ public class OrderChangeRequestSender {
         start.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
     @Transactional(propagation=Propagation.NEVER)
-    public PayJpPaymentFlowObservation send(long requestId){
+    public PayJpPaymentFlowObservation send(long requestId){return send(requestId,null);}
+    @Transactional(propagation=Propagation.NEVER)
+    public PayJpPaymentFlowObservation send(long requestId,com.example.ecsite.service.order.evidence.OrderEditApplicationPlan.Ownership owner){
         if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Sender requires no transaction");
         // A lost/failed commit response throws here: no dispatch token and no provider call.
-        var saved=start.execute(status->store.findForDispatch(requestId));
+        var saved=start.execute(status->owner==null?store.findForDispatch(requestId):store.findForDispatch(requestId,owner));
         return gateway.sendOrderChangeRequest(new Dispatch(saved));
     }
 }

@@ -1,5 +1,8 @@
 package com.example.ecsite.service.payment;
 
+import com.example.ecsite.payment.PaymentContentEvidence;
+
+
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -21,6 +24,11 @@ public final class PaymentPurposeResolver {
     public boolean matches(Order order, Payment payment, PaymentTransaction operation,
             PaymentOperationSnapshot snapshot, List<Payment> payments, List<PaymentTransaction> history,
             Set<UUID> completedChanges, Set<UUID> abortedChanges) {
+        return matches(order,payment,operation,snapshot,payments,history,completedChanges,abortedChanges,null);
+    }
+    public boolean matches(Order order, Payment payment, PaymentTransaction operation,
+            PaymentOperationSnapshot snapshot, List<Payment> payments, List<PaymentTransaction> history,
+            Set<UUID> completedChanges, Set<UUID> abortedChanges, PaymentContentEvidence contentEvidence) {
         if (order == null || payment == null || operation == null || snapshot == null
                 || payment.getOrder() == null || operation.getPayment() == null
                 || !Objects.equals(order.getId(),payment.getOrder().getId())
@@ -53,17 +61,32 @@ public final class PaymentPurposeResolver {
         var auth=own.stream().filter(t->t.getTransactionType()==PaymentTransactionType.AUTHORIZE).toList();
         if(auth.size()!=1 || auth.getFirst().getAmount()!=payment.getAmount()) return false;
         var authorization=auth.getFirst();
+        // A settled cancellation replay is an identity check, never a new financial permit.
+        // The active binding is deliberately cleared after success; require the exact settled
+        // snapshot and complete completed-generation history instead of inventing active facts.
+        if(expected==PaymentTransactionPurpose.ORDER_CANCELLATION
+                && terminalCancellationReplay(order,payment,operation,snapshot,payments,history)) {
+            return own.size()==2 && authorization.getStatus()==PaymentTransactionStatus.SUCCEEDED
+                    && Objects.equals(authorization.getProviderTransactionId(),payment.getProviderPaymentId())
+                    && authorization.getOrderContentRevision()<=operation.getOrderContentRevision()
+                    && operation.getOrderContentRevision()==order.getContentRevision()
+                    && operation.getAmount()==payment.getAmount()
+                    && ((operation.getInitiatorType()==PaymentTransactionInitiatorType.USER
+                            && Objects.equals(operation.getInitiatorId(),order.getUserId()))
+                        || (operation.getInitiatorType()==PaymentTransactionInitiatorType.ADMIN
+                            && operation.getInitiatorId()!=null && operation.getInitiatorId()>0));
+        }
         if(expected==PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION) {
             if(own.size()!=1 || (order.getStatus()!=OrderStatus.ORDERED && order.getStatus()!=OrderStatus.CANCELLED)) return false;
             if(operation.getStatus()==PaymentTransactionStatus.SUCCEEDED)
-                return new PaymentConsistencyEvaluator().evaluate(order,payment,authorization).canCapture();
+                return new PaymentConsistencyEvaluator().evaluate(order,payment,authorization,contentEvidence).canCapture();
             return order.getTotalAmount()==payment.getAmount()
                     && order.getContentRevision()==operation.getOrderContentRevision();
         }
         if(payment.getProviderPaymentId()==null || payment.getProviderPaymentId().isBlank()
                 || !Objects.equals(authorization.getProviderTransactionId(),payment.getProviderPaymentId())
                 || authorization.getStatus()!=PaymentTransactionStatus.SUCCEEDED
-                || !new PaymentConsistencyEvaluator().evaluate(order,payment,authorization).canCapture()) return false;
+                || !new PaymentConsistencyEvaluator().evaluate(order,payment,authorization,contentEvidence).canCapture()) return false;
         if(expected==PaymentTransactionPurpose.ORDER_CANCELLATION) {
             return (order.getStatus()==OrderStatus.ORDERED || order.getStatus()==OrderStatus.CANCELLED)
                     && own.size()==2 && operation.getAmount()==payment.getAmount()

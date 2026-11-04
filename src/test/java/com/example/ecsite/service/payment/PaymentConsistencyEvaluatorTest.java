@@ -13,13 +13,21 @@ import com.example.ecsite.entity.Payment;
 import com.example.ecsite.entity.PaymentTransaction;
 
 class PaymentConsistencyEvaluatorTest {
+    /** Real nullable enrollment columns are NULL for these pre-Feature125 fixtures. */
+    private Order legacyOrder() {
+        Order order = mock(Order.class);
+        when(order.getCurrentEvidenceEpochId()).thenReturn(null);
+        when(order.getEvidenceHeadHistoryId()).thenReturn(null);
+        return order;
+    }
+
 
     private final PaymentConsistencyEvaluator evaluator = new PaymentConsistencyEvaluator();
 
     @Test
     void returnsConsistentWhenAmountsAndRevisionMatch() {
 
-        Order order = mock(Order.class);
+        Order order = legacyOrder();
         Payment payment = mock(Payment.class);
         PaymentTransaction authorizationTransaction = mock(PaymentTransaction.class);
 
@@ -138,7 +146,7 @@ class PaymentConsistencyEvaluatorTest {
             int orderContentRevision,
             int authorizationContentRevision) {
 
-        Order order = mock(Order.class);
+        Order order = legacyOrder();
         Payment payment = mock(Payment.class);
         PaymentTransaction authorizationTransaction = mock(PaymentTransaction.class);
 

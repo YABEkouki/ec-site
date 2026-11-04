@@ -1,5 +1,7 @@
 package com.example.ecsite.controller;
 
+import com.example.ecsite.payment.PaymentContentEvidence;
+
 import java.time.*;
 import java.util.*;
 import com.example.ecsite.entity.*;
@@ -47,6 +49,10 @@ public class OrderPaymentViewFactory {
 
     public View create(Order order, List<Payment> payments, List<PaymentTransaction> history,
             Set<UUID> completedChanges, Set<UUID> abortedChanges) {
+        return create(order,payments,history,completedChanges,abortedChanges,null);
+    }
+    public View create(Order order, List<Payment> payments, List<PaymentTransaction> history,
+            Set<UUID> completedChanges, Set<UUID> abortedChanges, PaymentContentEvidence contentEvidence) {
         if (!validData(order, payments, history)) return unavailable();
         boolean unprepared = order.getShippingPreparationStartedAt() == null
                 && order.getShippingPreparationStartedByAccountId() == null && order.getShippingPreparationStartedByUsername() == null;
@@ -84,9 +90,9 @@ public class OrderPaymentViewFactory {
                 var authorizations = history.stream().filter(t -> Objects.equals(t.getPayment().getId(), card.getId())
                         && t.getTransactionType() == PaymentTransactionType.AUTHORIZE && t.getStatus() == PaymentTransactionStatus.SUCCEEDED).toList();
                 if (authorizations.size() != 1 || !Objects.equals(authorizations.getFirst().getProviderTransactionId(), card.getProviderPaymentId())
-                        || !consistency.evaluate(order, card, authorizations.getFirst()).canCapture()
+                        || !consistency.evaluate(order, card, authorizations.getFirst(), contentEvidence).canCapture()
                         || history.stream().anyMatch(t -> t.getTransactionType() == PaymentTransactionType.CAPTURE)) return unavailable();
-                var decision = capturePolicy.classify(order, payments, history, null, completedChanges, abortedChanges);
+                var decision = capturePolicy.classify(order, payments, history, null, completedChanges, abortedChanges, contentEvidence);
                 return new View(State.AUTHORIZED, decision.disposition() == CaptureShipmentPolicy.Disposition.NEW, false, cancellable, false);
             }
             if (local) return new View(State.UNRECORDED, false, false, cancellable, true);
@@ -100,7 +106,7 @@ public class OrderPaymentViewFactory {
                 && Objects.equals(t.getPayment().getId(), order.getShipmentCapturePaymentId())).toList();
         if (captures.size() != 1) return unavailable();
         PaymentTransaction capture = captures.getFirst();
-        var decision = capturePolicy.classify(order, payments, history, snapshot(capture), completedChanges, abortedChanges);
+        var decision = capturePolicy.classify(order, payments, history, snapshot(capture), completedChanges, abortedChanges, contentEvidence);
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.CONTINUE)
             return new View(State.CAPTURE_PENDING, false, false, false, false);
         if (decision.disposition() == CaptureShipmentPolicy.Disposition.ALREADY_APPLIED)

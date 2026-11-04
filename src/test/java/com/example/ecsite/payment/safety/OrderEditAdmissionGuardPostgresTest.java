@@ -60,8 +60,12 @@ class OrderEditAdmissionGuardPostgresTest {
     // Real entry methods and real DB gate; unrelated collaborators are mocked to keep financial IO impossible.
     static void invoke(String operation,Fixture f) {
         var o=order(f.order());var repository=mock(OrderRepository.class);
-        when(repository.findByIdForUpdate(f.order())).thenReturn(Optional.of(o));
-        when(repository.findByIdAndUserIdForUpdate(f.order(),f.customer())).thenReturn(Optional.of(o));
+        // Preserve the real Repository contract: entry guards run AFTER the Order lock, even when collaborators are mocked.
+        org.mockito.stubbing.Answer<Optional<Order>> locked=call->{
+            jdbc.queryForObject("select id from orders where id=? for update",Long.class,f.order());return Optional.of(o);
+        };
+        when(repository.findByIdForUpdate(f.order())).thenAnswer(locked);
+        when(repository.findByIdAndUserIdForUpdate(f.order(),f.customer())).thenAnswer(locked);
         var dependencies=new HashMap<Class<?>,Object>();
         dependencies.put(OrderRepository.class,repository);dependencies.put(OrderPaymentGuard.class,guard());
         dependencies.put(OrderChangeStore.class,new OrderChangeStore(jdbc));

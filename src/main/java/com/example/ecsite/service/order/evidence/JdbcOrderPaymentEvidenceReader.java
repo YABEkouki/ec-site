@@ -32,7 +32,20 @@ public final class JdbcOrderPaymentEvidenceReader {
         return readData(orderId);
     }
     public Read readLocked(long orderId) {lock(orderId);return readData(orderId);}
-    private Read readData(long orderId) {
+    /** Consistent display-only content read; no locks and no financial-state eligibility inference. */
+    public Read readShipmentAdvisory(long orderId) {
+        if(!ownsTransaction()||!"repeatable read".equals(jdbc.queryForObject("show transaction_isolation",String.class)))return failure(State.CONFLICT);
+        return readData(orderId,new OrderPaymentEvidenceValidator()::validateContent);
+    }
+    /** Caller already owns Order; do not reacquire an operation lock after its Payment locks. */
+    public Read readShipmentUnderOrderLock(long orderId) {
+        if(!ownsTransaction())return failure(State.CONFLICT);
+        String isolation=jdbc.queryForObject("show transaction_isolation",String.class);
+        if(!Set.of("read committed","repeatable read").contains(isolation))return failure(State.CONFLICT);
+        return readData(orderId,new OrderPaymentEvidenceValidator()::validateContent);
+    }
+    private Read readData(long orderId) {return readData(orderId,new OrderPaymentEvidenceValidator()::validate);}
+    private Read readData(long orderId,java.util.function.Function<Facts,OrderPaymentEvidenceDecision> validation) {
         try {
             var g=groups(orderId);var orders=g.get("orders");if(orders.isEmpty())return failure(State.NOT_FOUND);
             var o=orders.getFirst();var current=new OrderContentSnapshotFactory().fromRows(o,g.get("items"),g.get("charges"));
@@ -80,7 +93,7 @@ public final class JdbcOrderPaymentEvidenceReader {
             var facts=new Facts(current,nullableLong(o,"active_payment_id"),payments,auths,epochId!=null,epoch,changes,nullableLong(o,"evidence_head_history_id"),unresolved,pending);
             String assessment=mapper.writeValueAsString(g);
             if(assessment.getBytes(StandardCharsets.UTF_8).length>MAX_READ_BYTES)throw invalid();
-            return new Read(State.READ,facts,new OrderPaymentEvidenceValidator().validate(facts),assessment,OrderCheckpointReceiptCodec.hash(assessment),o,observation);
+            return new Read(State.READ,facts,validation.apply(facts),assessment,OrderCheckpointReceiptCodec.hash(assessment),o,observation);
         } catch(org.springframework.dao.ConcurrencyFailureException e){return failure(State.CONFLICT);}
         catch(IllegalArgumentException|NoSuchElementException|ArithmeticException e){return failure(State.INVALID);}
     }

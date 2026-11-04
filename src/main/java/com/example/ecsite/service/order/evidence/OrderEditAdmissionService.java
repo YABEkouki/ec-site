@@ -78,7 +78,10 @@ public final class OrderEditAdmissionService {
                 var now=jdbc.queryForObject("select timezone('Asia/Tokyo',clock_timestamp())",java.time.LocalDateTime.class);
                 var context=OrderEditCandidateSources.context(read,command.customerId(),now);
                 var result=calculator.calculateForAdmission(context,normalized,catalog(normalized));
-                if(result.route()!=OrderChangeRoutePolicy.Route.RETAIN_AUTH)throw new Denied(Outcome.BLOCKED,"RETAIN_AUTH_NON_NOOP_REQUIRED");
+                if(result.route()!=OrderChangeRoutePolicy.Route.RETAIN_AUTH&&result.route()!=OrderChangeRoutePolicy.Route.REAUTHORIZE)throw new Denied(Outcome.BLOCKED,"NON_NOOP_EDIT_REQUIRED");
+                if(result.route()==OrderChangeRoutePolicy.Route.REAUTHORIZE&&!Boolean.TRUE.equals(jdbc.queryForObject(
+                    "select to_regprocedure('f125_reauth_initialize(uuid,uuid,bigint,bigint,uuid,bytea)') is not null",Boolean.class)))
+                    throw new Denied(Outcome.BLOCKED,"REAUTHORIZATION_MIGRATION_REQUIRED");
                 byte[] fresh=payloads.candidate(result.candidate());
                 if(!Arrays.equals(fresh,candidate))throw new Denied(Outcome.CONFLICT,"CONFIRMATION_CHANGED");
                 payloads.validateSaved(payloads.decodeRequest(request),payloads.decodeCandidate(fresh),read.facts().current());
@@ -88,12 +91,12 @@ public final class OrderEditAdmissionService {
                       request_version,request_payload,request_digest,candidate_version,candidate_payload,candidate_digest,
                       base_content_revision,base_evidence_epoch_id,base_evidence_history_id,base_fingerprint,
                       base_payment_id,base_authorization_id,authorized_amount,authorization_revision,before_amount,after_amount,
-                      deadline_at,db_generation_id)
+                      deadline_at,db_generation_id,route)
                     select ?,o.id,o.user_id,'DB supplies actor',?,1,?,sha256(?),1,?,sha256(?),?,?,?,?,?,?,?,?,?, ?,
-                      o.change_deadline_at at time zone 'Asia/Tokyo',? from orders o where o.id=?
+                      o.change_deadline_at at time zone 'Asia/Tokyo',?,? from orders o where o.id=?
                     """,id,command.submissionKey(),request,request,fresh,fresh,p.revision(),p.epochId(),p.headHistoryId(),
                     HexFormat.of().parseHex(p.baseFingerprint()),p.paymentId(),p.authorizationId(),p.authorizedAmount(),p.authorizationRevision(),
-                    p.beforeAmount(),p.preview().totalAmount(),generation,p.orderId());
+                    p.beforeAmount(),p.preview().totalAmount(),generation,result.route().name(),p.orderId());
                 return Objects.requireNonNull(find(command.customerId(),normalized.orderId(),command.submissionKey()));
             });
         } catch(Denied denied){return response(denied.outcome,null,denied.reason);}
@@ -207,7 +210,7 @@ public final class OrderEditAdmissionService {
             ||!Arrays.equals(b.fingerprint(),HexFormat.of().parseHex(candidate.baseFingerprint()))
             ||b.payment()!=candidate.paymentId()||b.authorization()!=candidate.authorizationId()||b.authorizedAmount()!=candidate.authorizedAmount()
             ||b.authorizationRevision()!=candidate.authorizationRevision()||b.before()!=candidate.beforeAmount()||b.after()!=candidate.preview().totalAmount()
-            ||b.requestVersion()!=1||b.candidateVersion()!=1||!"RETAIN_AUTH".equals(b.route())
+            ||b.requestVersion()!=1||b.candidateVersion()!=1||!(candidate.preview().totalAmount()>candidate.authorizedAmount()?"REAUTHORIZE":"RETAIN_AUTH").equals(b.route())
             ||!OrderEvidenceDigests.sha256(row.request()).equals(HexFormat.of().formatHex(b.requestDigest()))
             ||!OrderEvidenceDigests.sha256(row.candidate()).equals(HexFormat.of().formatHex(b.candidateDigest()))
             ||!Arrays.equals(b.epochDigest(),HexFormat.of().parseHex(candidate.epochDigest()))||!Arrays.equals(b.headDigest(),HexFormat.of().parseHex(candidate.headDigest()))

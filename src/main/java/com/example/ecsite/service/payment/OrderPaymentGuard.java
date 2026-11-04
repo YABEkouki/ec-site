@@ -1,5 +1,9 @@
 package com.example.ecsite.service.payment;
 
+import com.example.ecsite.payment.PaymentContentEvidence;
+import com.example.ecsite.payment.OrderPaymentEvidenceGuard;
+
+
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -25,6 +29,24 @@ public class OrderPaymentGuard {
         this.changes = changes;
         this.payments = payments;
         this.transactions = transactions;
+    }
+
+    private OrderPaymentEvidenceGuard contentEvidence;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setContentEvidence(OrderPaymentEvidenceGuard contentEvidence) {
+        this.contentEvidence = contentEvidence;
+    }
+
+    /** Re-read saved content evidence under the caller's Order lock; never an external payment permit. */
+    public PaymentContentEvidence paymentContentEvidence(Order order) {
+        // Manually constructed legacy unit fixtures retain the old signature. The evaluator fails
+        // closed for enrolled orders without a proof; Spring always injects the real reader.
+        return contentEvidence == null ? null : contentEvidence.inspect(order);
+    }
+
+    public PaymentContentEvidence paymentContentEvidenceAdvisory(Order order) {
+        return contentEvidence == null ? null : contentEvidence.inspectAdvisory(order);
     }
 
     public void validateItemChange(Order order) {

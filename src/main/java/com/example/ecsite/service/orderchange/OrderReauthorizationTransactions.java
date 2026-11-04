@@ -343,6 +343,7 @@ public class OrderReauthorizationTransactions {
     @Transactional(propagation=Propagation.MANDATORY)
     RequestedAbortDispatchControl.Context loadRequestedAbortDispatchContext(long requestId){
         var saved=requests.find(requestId);var request=saved.httpRequest();
+        rejectOwnedLegacy(request.orderId(),request.operationId());
         if(!"NEW_ABORT".equals(request.kind())||request.purpose()!=PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT
                 ||!"CANCEL".equals(request.transactionType()))throw new IllegalStateException("Expected dedicated new abort request");
         var data=lock(request.orderId(),request.operationId());var op=data.operation();
@@ -491,6 +492,7 @@ public class OrderReauthorizationTransactions {
     }
     /** Package-private, unconnected preparation only. This neither starts dispatch nor closes a Flow. */
     StoredOrderChangeRequest prepareRequestedAbort(long orderId,UUID operationId,long expectedVersion,RequestedAbortEvidence evidence){
+        rejectOwnedLegacy(orderId,operationId);
         var data=lock(orderId,operationId);var op=data.operation();
         if(evidence==null||!abortRequested(data)||terminal(data)||op.get("switch_decided_at")!=null
                 ||op.get("content_change_history_id")!=null||op.get("abort_flow_closed_at")!=null
@@ -538,6 +540,7 @@ public class OrderReauthorizationTransactions {
     public AbortReceipt requestAbort(AbortRequest command){
         var data=lock(command.orderId(),command.operationId());var op=data.operation();long version=number(op,"version");
         if(data.order().getUserId()!=command.customerId())throw new com.example.ecsite.exception.OrderNotFoundException(command.orderId());
+        if(owned(data))return new AbortReceipt(AbortResult.NOT_ALLOWED,version);
         if(abortRequested(data)){
             boolean same=command.requestId().equals(op.get("abort_request_id"))
                 &&command.requesterType().name().equals(op.get("abort_requester_type"))
@@ -604,6 +607,7 @@ public class OrderReauthorizationTransactions {
         return recoveryTarget(data,command,committing,actor);
     }
     private OldCancelRecovery.Snapshot recoveryTarget(Locked data,OldCancelRecovery.Command command,boolean committing,OldCancelRecovery.Actor actor){
+        rejectOwnedLegacy(command.orderId(),command.operationId());
         var op=data.operation();long expected=committing?Math.addExact(command.expectedVersion(),1):command.expectedVersion();
         if(number(op,"version")!=expected)throw new OldCancelRecoveryDiagnostics.Failure(OldCancelRecoveryDiagnostics.Reason.VERSION_CONFLICT);
         if(!(committing?"COMMIT_PENDING":"MANUAL_REVIEW").equals(op.get("state"))
@@ -792,6 +796,7 @@ public class OrderReauthorizationTransactions {
     }
     /** One durable first-confirm screen. Not a provider POST permit and never contains a secret. */
     public boolean issueBrowserConfirmation(long orderId,UUID operationId,PayJpPaymentFlowObservation observed){
+        if(bridge().isOwned(orderId,operationId))return false;
         var data=lock(orderId,operationId);var op=data.operation();
         if(!"AUTHORIZING".equals(op.get("state")) || op.get("switch_decided_at")!=null
                 || abortRequested(data) || op.get("new_payment_id")==null || op.get("browser_confirmation_issued_at")!=null || expired(data))return false;
@@ -807,6 +812,15 @@ public class OrderReauthorizationTransactions {
             """,now(),now(),operationId,op.get("version"))==1;
     }
     public View prepare(long orderId,UUID operationId){
+        if(bridge().isOwned(orderId,operationId))throw new IllegalStateException("Order edit ownership required");
+        return prepareLocked(orderId,operationId);
+    }
+    public View prepareForOrderEdit(long orderId,UUID operationId,com.example.ecsite.service.order.evidence.OrderEditApplicationPlan.Ownership owner){
+        bridge().canonicalLock(orderId,operationId);
+        bridge().requireOwner(orderId,operationId,owner);
+        return prepareLocked(orderId,operationId);
+    }
+    private View prepareLocked(long orderId,UUID operationId){
         var data=lock(orderId,operationId,true);var op=data.operation();
         if(progressBlocked(data)||!"RESERVED".equals(op.get("state")))return view(data);
         if(op.get("new_payment_id")!=null)return review(data,"LEGACY_REQUEST_REVIEW");
@@ -825,6 +839,16 @@ public class OrderReauthorizationTransactions {
         state(data,"AUTHORIZING",null);return current(orderId,operationId);
     }
     public View describe(long orderId,UUID operationId){return view(lock(orderId,operationId));}
+    /** A READY owned cancellation needs a fresh worker owner, not result application from an uncanceled old Flow. */
+    public boolean hasUnstartedOrderEditOldCancellation(long orderId,UUID operationId){
+        var data=lock(orderId,operationId);
+        if(!owned(data))return false;
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            select exists(select 1 from order_change_financial_requests r
+                join order_change_request_dispatches d on d.request_id=r.id
+                where r.operation_id=? and r.order_id=? and r.request_kind='OLD_CANCEL' and d.state='READY')
+            """,Boolean.class,operationId,orderId));
+    }
     public View forSnapshot(PaymentOperationSnapshot snapshot){
         var operations=jdbc.queryForList("select order_change_operation_id from payment_transactions where id=? and payment_id=?",UUID.class,snapshot.transactionId(),snapshot.paymentId());
         if(operations.size()!=1||operations.getFirst()==null)throw new IllegalArgumentException("Missing order change transaction");
@@ -929,6 +953,15 @@ public class OrderReauthorizationTransactions {
         return view(data);
     }
     public View decide(long orderId,UUID operationId,PayJpPaymentFlowObservation newObservation,PayJpPaymentFlowObservation oldObservation){
+        if(bridge().isOwned(orderId,operationId))throw new IllegalStateException("Order edit ownership required");
+        return decideLocked(orderId,operationId,newObservation,oldObservation);
+    }
+    public View decideForOrderEdit(long orderId,UUID operationId,PayJpPaymentFlowObservation newObservation,PayJpPaymentFlowObservation oldObservation,com.example.ecsite.service.order.evidence.OrderEditApplicationPlan.Ownership owner){
+        bridge().canonicalLock(orderId,operationId);
+        bridge().requireOwner(orderId,operationId,owner);
+        return decideLocked(orderId,operationId,newObservation,oldObservation);
+    }
+    private View decideLocked(long orderId,UUID operationId,PayJpPaymentFlowObservation newObservation,PayJpPaymentFlowObservation oldObservation){
         var data=lock(orderId,operationId);var op=data.operation();if(progressBlocked(data)||op.get("switch_decided_at")!=null)return view(data);
         if(!"AUTHORIZED".equals(op.get("state")))throw new IllegalStateException("Authorization is not confirmed");
         validateBase(data);requireHeld(data);requireNoPending(data,null);
@@ -962,6 +995,15 @@ public class OrderReauthorizationTransactions {
         var op=data.operation();var target=payment(data,number(op,abort?"new_payment_id":"old_payment_id"));
         if(abort&&op.get("switch_decided_at")!=null)return review(data,"ABORT_AFTER_DECISION");
         if(!abort&&op.get("switch_decided_at")==null)return review(data,"CANCEL_WITHOUT_DECISION");
+        if(!abort&&owned(data)&&Boolean.TRUE.equals(jdbc.queryForObject("""
+            select exists(select 1 from order_change_financial_requests r
+                join order_change_request_dispatches d on d.request_id=r.id
+                where r.operation_id=? and r.order_id=? and r.request_kind='OLD_CANCEL' and d.state='READY')
+            """,Boolean.class,operationId,orderId))){
+            if(target.getStatus()==PaymentStatus.AUTHORIZED&&matchesFlow(data,target,observed,false)
+                    &&authorized(observed,target.getAmount()))return view(data);
+            return review(data,"UNSTARTED_OLD_CANCEL_FLOW_CONFLICT");
+        }
         if(!abort&&observed!=null&&"canceled".equals(observed.status())){
             if(!matchesOldCancellation(data,target,observed))return review(data,"CANCEL_FLOW_EVIDENCE_MISMATCH");
         }else if(!matchesFlow(data,target,observed,abort))return review(data,"CANCEL_FLOW_EVIDENCE_MISMATCH");
@@ -983,6 +1025,7 @@ public class OrderReauthorizationTransactions {
     private View completeInternal(long orderId,UUID operationId,PayJpPaymentFlowObservation observed,boolean explicitRecovery){
         var data=lock(orderId,operationId);if(progressBlocked(data))return view(data);var op=data.operation();
         if(!"COMMIT_PENDING".equals(op.get("state"))||op.get("switch_decided_at")==null)throw new IllegalStateException("Old cancellation has not been confirmed");
+        if(bridge().isOwned(orderId,operationId))return view(data);
         // Dedicated recovery must finish together with its audit, never through an automatic result route.
         if(!explicitRecovery&&Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from order_change_recovery_audits where operation_id=? and applied_version is not null)",Boolean.class,operationId)))return view(data);
         validateBase(data);requireHeld(data);requireNoPending(data,null);
@@ -1018,8 +1061,10 @@ public class OrderReauthorizationTransactions {
     private Locked lock(long orderId,UUID operationId){return lock(orderId,operationId,false);}
     private Locked lock(long orderId,UUID operationId,boolean starting){
         context.requireCleanWritableReadCommitted();
+        boolean orderEdit=bridge().isOwned(orderId,operationId);
+        if(orderEdit)bridge().canonicalLock(orderId,operationId);
         var order=orders.findByIdForUpdate(orderId).orElseThrow();context.refreshWritableOrder(order);
-        if(starting)new com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard(jdbc).requireClear(orderId);
+        if(starting&&!orderEdit)new com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard(jdbc).requireClear(orderId);
         changes.operation(orderId,operationId).orElseThrow();
         var operation=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=?",operationId,orderId);
         var all=payments.findByOrderIdForUpdate(orderId);all.forEach(em::refresh);
@@ -1028,6 +1073,7 @@ public class OrderReauthorizationTransactions {
         return new Locked(order,operation,all,history,items);
     }
     private void validateBase(Locked data){
+        if(owned(data)){bridge().validateBase(data.order().getId(),(UUID)data.operation().get("id"));return;}
         var order=data.order();var op=data.operation();
         if(order.getStatus()!=OrderStatus.ORDERED||order.getContentRevision()!=integer(op,"base_content_revision")||order.getTotalAmount()!=integer(op,"before_amount")
                 ||!Objects.equals(order.getActivePaymentId(),number(op,"old_payment_id"))||order.getShipmentCapturePaymentId()!=null
@@ -1046,6 +1092,7 @@ public class OrderReauthorizationTransactions {
         candidateAmount(data);
     }
     private OrderAmount candidateAmount(Locked data){
+        if(owned(data))return bridge().candidateAmount(data.order().getId(),(UUID)data.operation().get("id"));
         var pricing=new OrderPricingContext();
         for(var item:data.order().getItems()){
             int quantity=data.items().stream().filter(r->number(r,"order_item_id")==item.getId()).findFirst().map(r->integer(r,"after_quantity")).orElse(item.getQuantity());
@@ -1062,6 +1109,7 @@ public class OrderReauthorizationTransactions {
         return amount;
     }
     private void requireHeld(Locked data){
+        if(owned(data)){bridge().requireHeld(data.order().getId(),(UUID)data.operation().get("id"));return;}
         var reservations=changes.reservations((UUID)data.operation().get("id"));
         if(reservations.size()!=data.items().size()||reservations.stream().anyMatch(r->!"HELD".equals(r.state())||data.items().stream().noneMatch(
                 i->number(i,"order_item_id")==r.itemId()&&number(i,"product_id")==r.productId()&&integer(i,"increase_quantity")==r.quantity())))
@@ -1069,6 +1117,11 @@ public class OrderReauthorizationTransactions {
     }
     private void release(Locked data){
         if(abortRequested(data)||data.operation().get("switch_decided_at")!=null)throw new IllegalStateException("Operation cannot release reservations");
+        if(owned(data)){
+            // JDBC release proof must see the definitive financial result written by JPA.
+            em.flush();
+            bridge().release(data.order().getId(),(UUID)data.operation().get("id"));state(data,"ABORTED",null);return;
+        }
         requireHeld(data);var id=(UUID)data.operation().get("id");var held=changes.reservations(id);
         for(long product:held.stream().map(OrderChangeStore.Reservation::productId).distinct().sorted().toList())em.refresh(products.findByIdForUpdateIncludingInactive(product).orElseThrow());
         for(var reservation:held){long movement=inventory.releaseForOrderChange(reservation.productId(),reservation.quantity(),data.order().getId(),id,reservation.itemId());changes.released(id,reservation.itemId(),movement,now());}
@@ -1094,7 +1147,7 @@ public class OrderReauthorizationTransactions {
         validateBase(data);
         if(old.getId()!=number(op,"old_payment_id")||!Objects.equals(old.getOrder().getId(),data.order().getId())
                 ||old.getProvider()!=PaymentProvider.PAYJP||old.getPaymentMethod()!=PaymentMethod.CARD
-                ||old.getAmount()!=integer(op,"before_amount")||observed.oldCancellationEvidence()==null
+                ||old.getAmount()!=integer(op,owned(data)?"old_authorized_amount":"before_amount")||observed.oldCancellationEvidence()==null
                 ||!observed.oldCancellationEvidence().matches(old.getProviderPaymentId(),old.getAmount(),identity))return false;
         var cancel=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_OLD_AUTH_CANCEL);
         var requestId=view(data).oldCancelRequest();if(requestId==null)return false;
@@ -1140,7 +1193,12 @@ public class OrderReauthorizationTransactions {
     private boolean abortRequested(Locked data){return data.operation().get("abort_request_id")!=null;}
     private boolean progressBlocked(Locked data){return terminal(data)||abortRequested(data);}
     private boolean terminal(Locked data){return List.of("COMPLETED","ABORTED","MANUAL_REVIEW").contains(data.operation().get("state"));}
-    private boolean expired(Locked data){var grace=(java.sql.Timestamp)data.operation().get("grace_until");return policy.canExpireChange(grace.toLocalDateTime(),null,now());}
+    private com.example.ecsite.service.order.evidence.OrderEditReauthorizationBridge bridge(){return new com.example.ecsite.service.order.evidence.OrderEditReauthorizationBridge(jdbc);}
+    private void rejectOwnedLegacy(long orderId,UUID operationId){
+        if(bridge().isOwned(orderId,operationId))throw new IllegalStateException("Legacy command does not support owned order edit reauthorization");
+    }
+    private boolean owned(Locked data){return bridge().isOwned(data.order().getId(),(UUID)data.operation().get("id"));}
+    private boolean expired(Locked data){if(owned(data))return bridge().expired(data.order().getId(),(UUID)data.operation().get("id"));var grace=(java.sql.Timestamp)data.operation().get("grace_until");return policy.canExpireChange(grace.toLocalDateTime(),null,now());}
     private LocalDateTime now(){return orders.findCurrentTimeInTokyo();}
     private View current(long order,UUID operation){return view(lock(order,operation));}
     private View view(Locked data){

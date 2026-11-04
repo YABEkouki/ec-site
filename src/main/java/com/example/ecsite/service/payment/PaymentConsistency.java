@@ -9,7 +9,8 @@ public record PaymentConsistency(
         int authorizationContentRevision) {
 
     public boolean canCapture() {
-        return status == PaymentConsistencyStatus.CONSISTENT
+        return status == PaymentConsistencyStatus.EVIDENCE_VERIFIED
+                || status == PaymentConsistencyStatus.CONSISTENT
                 || status == PaymentConsistencyStatus.AMOUNT_DECREASED;
     }
 }

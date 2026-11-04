@@ -15,6 +15,14 @@ import com.example.ecsite.service.pricing.OrderAmount;
 public class OrderChangeStore {
     private final JdbcTemplate jdbc;
     public OrderChangeStore(JdbcTemplate jdbc){this.jdbc=jdbc;}
+    /** Enrollment is a persisted fact, not an amount/revision heuristic. Caller holds the Order lock. */
+    public boolean hasContentEvidence(long orderId){return Boolean.TRUE.equals(jdbc.queryForObject("""
+        select exists(select 1 from orders o where o.id=? and
+            (o.current_evidence_epoch_id is not null or o.evidence_head_history_id is not null
+            or exists(select 1 from order_payment_evidence_epochs e where e.order_id=o.id)
+            or exists(select 1 from order_content_change_histories h where h.order_id=o.id and
+                (h.evidence_version is not null or h.evidence_epoch_id is not null or h.after_snapshot is not null))))
+        """,Boolean.class,orderId));}
     public Set<UUID> completedOperationIds(long orderId){return settledIds(orderId,"COMPLETED");}
     public Set<UUID> abortedOperationIds(long orderId){return settledIds(orderId,"ABORTED");}
     private Set<UUID> settledIds(long orderId,String state){return Set.copyOf(jdbc.queryForList(

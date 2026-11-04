@@ -10,14 +10,18 @@ import static com.example.ecsite.service.order.evidence.OrderPaymentEvidenceDeci
 public final class OrderPaymentEvidenceValidator {
     private final OrderContentSnapshotCodec codec=new OrderContentSnapshotCodec();
 
-    public OrderPaymentEvidenceDecision validate(Facts f) {
+    private enum Mode { EDIT, SHIPMENT_CONTENT }
+    public OrderPaymentEvidenceDecision validate(Facts f) {return validate(f,Mode.EDIT);}
+    /** Full saved content validation; capture lifecycle eligibility belongs to the capture policy. */
+    public OrderPaymentEvidenceDecision validateContent(Facts f) {return validate(f,Mode.SHIPMENT_CONTENT);}
+    private OrderPaymentEvidenceDecision validate(Facts f,Mode mode) {
         Reason stage=Reason.INVALID_CONTENT;
         try {
             if(f==null)return decision(null,Disposition.BLOCKED,stage,null);
             codec.encode(f.current());
             if(f.unresolvedOperation())return decision(f,Disposition.BLOCKED,Reason.UNRESOLVED_OPERATION,null);
             stage=Reason.FINANCIAL_STATE;
-            var auth=authorization(f);
+            var auth=authorization(f,mode);
             if(!f.evidenceRequired()) {
                 if(f.epoch()!=null || !f.histories().isEmpty() || f.headHistoryId()!=null)
                     return decision(f,Disposition.REVIEW_REQUIRED,Reason.INVALID_EPOCH,auth);
@@ -61,14 +65,14 @@ public final class OrderPaymentEvidenceValidator {
         }
     }
 
-    private Authorization authorization(Facts f) {
-        if(f.pendingFinancialOperation() || f.activePaymentId()==null)throw invalid();
+    private Authorization authorization(Facts f,Mode mode) {
+        if(mode==Mode.EDIT&&f.pendingFinancialOperation() || f.activePaymentId()==null)throw invalid();
         var ids=new HashSet<Long>();
         for(var p:f.payments())if(p.id()<=0 || !ids.add(p.id()) || p.orderId()!=f.current().orderId()
                 || p.amount()<=0 || !Set.of("PENDING","REQUIRES_ACTION","AUTHORIZED","CAPTURED","CANCELLED","FAILED").contains(p.status()))throw invalid();
         var active=f.payments().stream().filter(p->!Set.of("FAILED","CANCELLED").contains(p.status())).toList();
         if(active.size()!=1)throw invalid();var p=active.getFirst();
-        if(p.id()!=f.activePaymentId() || !"AUTHORIZED".equals(p.status()) || !"PAYJP".equals(p.provider())
+        if(p.id()!=f.activePaymentId() || !("AUTHORIZED".equals(p.status())||mode==Mode.SHIPMENT_CONTENT&&"CAPTURED".equals(p.status())) || !"PAYJP".equals(p.provider())
                 || !"CARD".equals(p.method()) || p.flowId()==null || !p.flowId().matches("pfw_[A-Za-z0-9_-]{1,251}"))throw invalid();
         var authIds=new HashSet<Long>();
         for(var a:f.authorizations())if(a.id()<=0 || !authIds.add(a.id()) || a.orderId()!=f.current().orderId()
