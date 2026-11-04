@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>注文内容の一括編集</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body>
+<header th:replace="~{fragments/header :: header}"></header>
+<main>
+<h1>注文内容の一括編集</h1>
+<p>現在は内容の確認まで利用できます。注文・在庫・決済は変更されません。</p>
+<p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error" role="alert"></p>
+<section th:if="${page != null}">
+    <p>変更期限（日本時間）：<strong th:text="${#temporals.format(page.deadline, 'yyyy/MM/dd HH:mm')}"></strong></p>
+    <p th:unless="${page.editable}" th:text="${page.unavailableReason}" class="message-error" role="alert"></p>
+    <section th:if="${page.editable and editForm != null}">
+    <p>数量0は削除です。商品の入れ替えは、元の商品を0にして新しい商品を追加してください。</p>
+    <p>既存明細は注文時単価を維持します。追加する商品の価格・税区分は確認時に再計算します。</p>
+    <form th:action="@{/orders/{id}/edit/confirm(id=${orderId})}" th:object="${editForm}" method="post">
+        <input type="hidden" th:field="*{revision}">
+        <div th:if="${#fields.hasAnyErrors()}" class="message-error" role="alert">
+            <p th:each="error : ${#fields.allErrors()}" th:text="${error}"></p>
+        </div>
+        <table><caption>変更する商品</caption><thead><tr><th>商品</th><th>単価（税込）</th><th>現在数量</th><th>変更後数量</th></tr></thead>
+        <tbody><tr th:each="line,stat : *{lines}">
+            <td><span th:text="${rows[stat.index].productName}"></span><input type="hidden" th:field="*{lines[__${stat.index}__].existingItemId}"><input type="hidden" th:field="*{lines[__${stat.index}__].productId}"></td>
+            <td><span th:text="${rows[stat.index].existing ? '注文時単価：' : '追加商品の現在価格：'}"></span><span th:if="${rows[stat.index].unitPrice != null}" th:text="${rows[stat.index].unitPrice + '円'}"></span><span th:unless="${rows[stat.index].unitPrice != null}">確認できません</span></td>
+            <td th:text="${rows[stat.index].beforeQuantity}"></td>
+            <td><label>変更後数量<input type="number" th:field="*{lines[__${stat.index}__].quantity}" min="0" max="2147483647" step="1" required th:attr="aria-label=${rows[stat.index].productName + 'の変更後数量'}"></label></td>
+        </tr></tbody></table>
+        <h2>商品を検索して追加</h2>
+        <label for="edit-keyword">商品名・キーワード</label><input type="search" id="edit-keyword" name="keyword" th:value="${keyword}" maxlength="100">
+        <button type="submit" th:formaction="@{/orders/{id}/edit/search(id=${orderId})}">検索する</button>
+        <section th:if="${productPage != null}">
+            <p th:if="${productPage.empty}">該当する商品はありません。</p>
+            <table th:unless="${productPage.empty}"><thead><tr><th>商品</th><th>現在価格（税込）</th><th>参考在庫</th><th>追加</th></tr></thead><tbody>
+            <tr th:each="product : ${productPage.content}"><td><a th:href="@{/products/{id}(id=${product.id})}" target="_blank" rel="noopener" th:text="${product.name}"></a></td><td th:text="${product.price + '円'}"></td><td th:text="${product.stock}"></td><td><button type="submit" name="addProductId" th:value="${product.id}" th:formaction="@{/orders/{id}/edit/add(id=${orderId})}">1個追加する</button></td></tr>
+            </tbody></table>
+            <button th:if="${productPage.hasPrevious()}" type="submit" name="page" th:value="${productPage.number - 1}" th:formaction="@{/orders/{id}/edit/search(id=${orderId})}">前の検索結果</button>
+            <button th:if="${productPage.hasNext()}" type="submit" name="page" th:value="${productPage.number + 1}" th:formaction="@{/orders/{id}/edit/search(id=${orderId})}">次の検索結果</button>
+        </section>
+        <p>表示在庫は参考です。在庫は確保されていません。</p>
+        <button type="submit">変更内容と金額を確認する</button>
+    </form>
+    </section>
+</section>
+<p><a th:href="@{/orders/{id}/edit(id=${orderId})}">現在の注文から入力し直す</a></p>
+<p><a th:href="@{/orders/{id}/cancel(id=${orderId})}">すべての商品を取り消す場合は注文キャンセルへ</a></p>
+<p><a th:href="@{/orders/{id}(id=${orderId})}">注文詳細へ戻る</a></p>
+</main>
+</body></html>
