@@ -29,6 +29,7 @@ class LegacyOrderEvidenceEnrollmentPostgresTest {
         db.migrate("70");
         var after=jdbc.queryForList("select conname from pg_constraint where conrelid='order_payment_evidence_epochs'::regclass and contype='c' order by conname",String.class);
         assertThat(after.size()).isEqualTo(constraints.size());assertThat(after).contains("ck_f125_epoch_origin_boundaries");
+        db.migrate("75"); // Exercise enrollment against the current admission/application schema too.
     }
     Fixture fixture() {
         long o=db.order(),p=db.payment(o);jdbc.update("update payments set amount=6000 where id=?",p);
@@ -50,6 +51,30 @@ class LegacyOrderEvidenceEnrollmentPostgresTest {
     JdbcOrderPaymentEvidenceReader.Read read(long order) {
         var tx=new TransactionTemplate(new DataSourceTransactionManager(db.source));tx.setReadOnly(true);tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         return tx.execute(s->new JdbcOrderPaymentEvidenceReader(jdbc).read(order));
+    }
+    @Test void customerBoundEnrollmentRejectsForeignOwnerWithoutObservation(){
+        var f=fixture();long owner=jdbc.queryForObject("select user_id from orders where id=?",Long.class,f.order());
+        var g=gateway(MockOrderAuthorizationTransport::observe);
+        assertThat(service(g).enrollForCustomer(f.order(),owner+100000).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.NOT_FOUND);
+        verifyNoInteractions(g);
+        assertThat(jdbc.queryForObject("select count(*) from order_payment_evidence_epochs where order_id=?",Integer.class,f.order())).isZero();
+    }
+    @Test void customerBoundEnrollmentIsIdempotentAndPreservesBusinessState(){
+        var f=fixture();long owner=jdbc.queryForObject("select user_id from orders where id=?",Long.class,f.order());
+        var before=jdbc.queryForMap("select content_revision,total_amount,status from orders where id=?",f.order());
+        var g=gateway(MockOrderAuthorizationTransport::observe);var enrollment=service(g);
+        assertThat(enrollment.enrollForCustomer(f.order(),owner).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.ENROLLED);
+        assertThat(enrollment.enrollForCustomer(f.order(),owner).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.ALREADY_ENROLLED);
+        assertThat(jdbc.queryForMap("select content_revision,total_amount,status from orders where id=?",f.order())).isEqualTo(before);
+        verify(g,times(1)).observeOrderAuthorization(any());
+        assertThat(read(f.order()).decision().locallyVerified()).isTrue();
+    }
+    @Test void ownerChangeDuringObservationCannotEnrollAnotherCustomersOrder(){
+        var f=fixture();long owner=jdbc.queryForObject("select user_id from orders where id=?",Long.class,f.order());
+        long other=db.order();long otherOwner=jdbc.queryForObject("select user_id from orders where id=?",Long.class,other);
+        var g=gateway(expected->{jdbc.update("update orders set user_id=? where id=?",otherOwner,f.order());return MockOrderAuthorizationTransport.observe(expected);});
+        assertThat(service(g).enrollForCustomer(f.order(),owner).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.NOT_FOUND);
+        assertThat(jdbc.queryForObject("select count(*) from order_payment_evidence_epochs where order_id=?",Integer.class,f.order())).isZero();
     }
     @Test void equalAmountAndRevisionEnrollsWithoutChangingOrderOrPaymentAndIsIdempotent() {
         var f=fixture();var before=jdbc.queryForMap("select content_revision,total_amount,status from orders where id=?",f.order());

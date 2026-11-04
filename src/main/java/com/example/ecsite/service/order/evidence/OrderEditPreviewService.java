@@ -21,6 +21,8 @@ public class OrderEditPreviewService {
         public OrderContentSnapshot before(){return context.facts().current();}
         public LocalDateTime deadline(){return context.deadline();}
         public boolean editable(){return unavailableReason==null;}
+        /** Button availability only; the enrollment service makes the authoritative locked decision. */
+        public boolean legacyEnrollmentAvailable(){return !context.facts().evidenceRequired()&&stateReason(context)==null;}
     }
     public record Preview(OrderContentSnapshot before,OrderContentSnapshot after,LocalDateTime deadline,OrderChangeRoutePolicy.Route route){}
     private final JdbcTemplate jdbc;
@@ -37,17 +39,20 @@ public class OrderEditPreviewService {
         var now=jdbc.queryForObject("select timezone('Asia/Tokyo',clock_timestamp())",LocalDateTime.class);
         var context=OrderEditCandidateSources.context(read,customer,now);
         if(context.facts().current().customerId()!=customer)throw new OrderNotFoundException(order);
-        String reason=null;
-        if(!"ORDERED".equals(context.status()))reason="現在の注文状態では編集できません。";
-        else if(context.preparationStartedAt()!=null||context.preparationAccountId()!=null||context.preparationUsername()!=null)reason="発送準備が始まっているため、編集できません。";
-        else if(!context.now().isBefore(context.deadline()))reason="注文変更期限を過ぎています。";
-        else if(read.decision()==null||!read.decision().locallyVerified())reason="注文・決済情報の確認が必要なため、一括編集は利用できません。";
+        String reason=stateReason(context);
+        if(reason==null&&(read.decision()==null||!read.decision().locallyVerified()))reason="注文・決済情報の確認が必要なため、一括編集は利用できません。";
         if(reason==null){
             var admissions=jdbc.queryForList("select admission_state,execution_state,closed_at,applied_operation_id from order_edit_admissions where order_id=? order by id",order);
             if(admissions.stream().anyMatch(r->OrderEditAdmissionGuard.blocks((String)r.get("admission_state"),(String)r.get("execution_state"),r.get("closed_at")!=null,r.get("applied_operation_id")!=null)))
                 reason="受付済みの注文変更を確認中です。処理結果を確認してください。";
         }
         return new PageContext(context,reason);
+    }
+    static String stateReason(Context context){
+        if(!"ORDERED".equals(context.status()))return "現在の注文状態では編集できません。";
+        if(context.preparationStartedAt()!=null||context.preparationAccountId()!=null||context.preparationUsername()!=null)return "発送準備が始まっているため、編集できません。";
+        if(!context.now().isBefore(context.deadline()))return "注文変更期限を過ぎています。";
+        return null;
     }
     public Preview preview(long order,long customer,Request request){
         var page=load(order,customer);if(!page.editable())throw new InvalidOrderStatusException(page.unavailableReason());

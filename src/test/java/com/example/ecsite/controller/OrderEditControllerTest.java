@@ -32,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OrderEditControllerTest {
     @Autowired MockMvc mvc;
     @MockitoBean OrderEditPreviewService service;
+    @MockitoBean OrderEditBrowserService browser;
     @MockitoBean AdminUserDetailsService adminUserDetailsService;
     @MockitoBean CustomUserDetailsService customUserDetailsService;
     @MockitoBean AdminAuthenticationSuccessHandler adminAuthenticationSuccessHandler;
@@ -42,6 +43,10 @@ class OrderEditControllerTest {
     OrderEditPreviewService.PageContext page;
     LocalDateTime now=LocalDateTime.of(2026,11,4,13,0);
     @BeforeEach void data(){
+        when(browser.load(anyLong())).thenAnswer(a->service.load(a.getArgument(0),2L));
+        when(browser.preview(anyLong(),any())).thenAnswer(a->service.preview(a.getArgument(0),2L,a.getArgument(1)));
+        when(browser.offer(anyLong())).thenAnswer(a->service.offer(a.getArgument(0)));
+        when(browser.search(any(),anyInt())).thenAnswer(a->service.search(a.getArgument(0),a.getArgument(1)));
         before=snapshot(1);after=snapshot(2);
         var facts=new OrderPaymentEvidence.Facts(before,10L,List.of(),List.of(),true,null,List.of(),null,false,false);
         page=new OrderEditPreviewService.PageContext(new OrderEditCandidate.Context(facts,2,"ORDERED",now.minusDays(1),now.plusHours(1),null,null,null,now),null);
@@ -49,6 +54,34 @@ class OrderEditControllerTest {
         when(service.search(any(),anyInt())).thenReturn(Page.empty(PageRequest.of(0,10)));
         when(service.preview(eq(1L),eq(2L),any())).thenReturn(new OrderEditPreviewService.Preview(before,after,now.plusHours(1),OrderChangeRoutePolicy.Route.REAUTHORIZE));
         when(service.offer(8)).thenReturn(new OrderEditCandidate.Offer(8,"追加商品",4,"分類",1000,5,"STANDARD","標準",1000,true));
+    }
+    @Test void legacyPageOffersExplicitPostAndDoesNotEnrollOnGet()throws Exception{
+        var facts=new OrderPaymentEvidence.Facts(before,10L,List.of(),List.of(),false,null,List.of(),null,false,false);
+        when(service.load(1,2)).thenReturn(new OrderEditPreviewService.PageContext(new OrderEditCandidate.Context(facts,2,"ORDERED",now.minusDays(1),now.plusHours(1),null,null,null,now),"確認が必要です"));
+        mvc.perform(get(URL).with(user(customer))).andExpect(status().isOk())
+            .andExpect(content().string(containsString("action=\"/orders/1/edit/enroll\"")))
+            .andExpect(content().string(containsString("注文情報を確認して編集を開始する")));
+        verify(browser,never()).enroll(anyLong());
+    }
+    @Test void explicitEnrollmentRedirectsToEditing()throws Exception{
+        when(browser.enroll(1)).thenReturn(new LegacyOrderEvidenceEnrollment.Result(LegacyOrderEvidenceEnrollment.Status.ENROLLED,null));
+        mvc.perform(post(URL+"/enroll").with(user(customer)).with(csrf())).andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl(URL)).andExpect(flash().attributeExists("successMessage"));
+        verify(browser).enroll(1);
+    }
+    @Test void enrollmentNeedsCsrfAndGetNeverEnrolls()throws Exception{
+        mvc.perform(post(URL+"/enroll").with(user(customer))).andExpect(status().isForbidden());
+        mvc.perform(get(URL).with(user(customer))).andExpect(status().isOk());
+        verify(browser,never()).enroll(anyLong());
+    }
+    @Test void foreignEnrollmentIsNotFound()throws Exception{
+        when(browser.enroll(1)).thenThrow(new OrderNotFoundException(1L));
+        mvc.perform(post(URL+"/enroll").with(user(customer)).with(csrf())).andExpect(status().isNotFound());
+    }
+    @Test void unknownEnrollmentIsNotReportedAsSuccess()throws Exception{
+        when(browser.enroll(1)).thenReturn(new LegacyOrderEvidenceEnrollment.Result(LegacyOrderEvidenceEnrollment.Status.COMMIT_UNKNOWN,null));
+        mvc.perform(post(URL+"/enroll").with(user(customer)).with(csrf())).andExpect(status().is3xxRedirection())
+            .andExpect(flash().attributeExists("errorMessage")).andExpect(flash().attributeCount(1));
     }
     OrderContentSnapshot snapshot(int quantity){
         int subtotal=6000*quantity;

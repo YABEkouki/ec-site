@@ -14,7 +14,7 @@ import com.example.ecsite.payment.capture.CaptureConnectionIdentity;
 import com.example.ecsite.payment.payjp.OrderAuthorizationObservation;
 import com.example.ecsite.service.order.evidence.JdbcOrderPaymentEvidenceReader.Read;
 
-/** Explicit internal enrollment only. No bean, controller, scheduler or financial POST connection.
+/** Explicit checkpoint enrollment only. No scheduler or financial POST connection.
  * Every exception after write begins may be an ambiguous commit; caller must re-read, never
  * infer failure/success or retry finance. A repeat call returns the existing verified epoch. */
 public final class LegacyOrderEvidenceEnrollment {
@@ -32,10 +32,16 @@ public final class LegacyOrderEvidenceEnrollment {
         readTx=new TransactionTemplate(manager);readTx.setReadOnly(true);readTx.setTimeout(5);readTx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         writeTx=new TransactionTemplate(manager);writeTx.setTimeout(5);writeTx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
-    public Result enroll(long orderId) {
+    /** The customer binding is rechecked before GET and after the canonical Order lock. */
+    public Result enrollForCustomer(long orderId,long customerId){
+        if(customerId<=0)return result(Status.NOT_FOUND);return enroll(orderId,customerId);
+    }
+    public Result enroll(long orderId){return enroll(orderId,null);}
+    private Result enroll(long orderId,Long customerId) {
         if(orderId<=0||TransactionSynchronizationManager.isActualTransactionActive())return result(Status.BLOCKED);
         final Read before;
         try {before=readTx.execute(s->reader.read(orderId));}catch(RuntimeException e){return result(Status.REVIEW_REQUIRED);}
+        if(foreignCustomer(before,customerId))return result(Status.NOT_FOUND);
         var existing=existing(before);if(existing!=null)return existing;
         try {if(!readTx.execute(s->eligible(before)))return result(Status.BLOCKED);}catch(RuntimeException e){return result(Status.REVIEW_REQUIRED);}
         final OrderAuthorizationObservation.Expected expected;
@@ -44,7 +50,7 @@ public final class LegacyOrderEvidenceEnrollment {
         catch(RuntimeException e){return result(Status.OBSERVATION_UNAVAILABLE);}
         try {
             return writeTx.execute(s->{
-                var now=reader.readLocked(orderId);var repeated=existing(now);if(repeated!=null)return repeated;
+                var now=reader.readLocked(orderId);if(foreignCustomer(now,customerId))return result(Status.NOT_FOUND);var repeated=existing(now);if(repeated!=null)return repeated;
                 if(!Objects.equals(before.localFingerprint(),now.localFingerprint()))return result(Status.CONFLICT);
                 if(!eligible(now))return result(Status.BLOCKED);
                 try {observation.consume(expected(now));}catch(RuntimeException invalidObservation){return result(Status.OBSERVATION_UNAVAILABLE);}
@@ -93,7 +99,18 @@ public final class LegacyOrderEvidenceEnrollment {
         var o=r.order();
         LocalDateTime dbNow=jdbc.queryForObject("select timezone('Asia/Tokyo',clock_timestamp())",LocalDateTime.class);
         return "ORDERED".equals(t(o,"status"))&&nullableText(o,"shipping_preparation_started_at")==null
-            &&LocalDateTime.parse(t(o,"change_deadline_at")).isAfter(dbNow);
+            &&nullableLong(o,"shipping_preparation_started_by_account_id")==null
+            &&nullableText(o,"shipping_preparation_started_by_username")==null
+            &&LocalDateTime.parse(t(o,"change_deadline_at")).isAfter(dbNow)&&admissionsClear(r.facts().current().orderId());
+    }
+    private boolean foreignCustomer(Read r,Long customer){
+        return customer!=null&&r!=null&&r.state()==JdbcOrderPaymentEvidenceReader.State.READ&&r.facts().current().customerId()!=customer;
+    }
+    private boolean admissionsClear(long order){
+        // Preserve the pre-V71 internal enrollment API; no receipt table means no admission can exist.
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("select to_regclass('order_edit_admissions') is not null",Boolean.class)))return true;
+        return jdbc.queryForList("select admission_state,execution_state,closed_at,applied_operation_id from order_edit_admissions where order_id=? order by id",order)
+            .stream().noneMatch(a->OrderEditAdmissionGuard.blocks((String)a.get("admission_state"),(String)a.get("execution_state"),a.get("closed_at")!=null,a.get("applied_operation_id")!=null));
     }
     private OrderAuthorizationObservation.Expected expected(Read r) {
         var a=r.facts().authorizations().stream().filter(x->x.id()==r.decision().authorizationId()).findFirst().orElseThrow();

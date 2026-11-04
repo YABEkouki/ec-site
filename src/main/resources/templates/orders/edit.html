@@ -7,7 +7,14 @@
 <h1>注文内容の一括編集</h1>
 <p>現在は内容の確認まで利用できます。注文・在庫・決済は変更されません。</p>
 <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error" role="alert"></p>
+<p th:if="${successMessage}" th:text="${successMessage}" class="message-success" role="status"></p>
 <section th:if="${page != null}">
+    <section th:if="${page.legacyEnrollmentAvailable}">
+        <p>注文内容・金額を変更せず、決済情報を照会して編集可否を確認します。</p>
+        <form th:action="@{/orders/{id}/edit/enroll(id=${orderId})}" method="post">
+            <button type="submit">注文情報を確認して編集を開始する</button>
+        </form>
+    </section>
     <p>変更期限（日本時間）：<strong th:text="${#temporals.format(page.deadline, 'yyyy/MM/dd HH:mm')}"></strong></p>
     <p th:unless="${page.editable}" th:text="${page.unavailableReason}" class="message-error" role="alert"></p>
     <section th:if="${page.editable and editForm != null}">

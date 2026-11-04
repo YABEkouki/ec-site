@@ -15,15 +15,15 @@ import com.example.ecsite.form.OrderEditForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.order.evidence.*;
 
-/** Preview only. Neither these routes nor session quotes authorize an order change. */
+/** Preview and explicit checkpoint enrollment only. Session quotes never authorize an order change. */
 @Controller
 @RequestMapping("/orders/{id}/edit")
 public class OrderEditController {
     private static final String QUOTES=OrderEditController.class.getName()+".previews";
     private record Quote(long customer,OrderEditCandidate.Request request,OrderEditPreviewService.Preview preview){}
     public record Row(String productName,Integer unitPrice,boolean existing,int beforeQuantity){}
-    private final OrderEditPreviewService service;
-    public OrderEditController(OrderEditPreviewService service){this.service=service;}
+    private final OrderEditBrowserService service;
+    public OrderEditController(OrderEditBrowserService service){this.service=service;}
     @InitBinder("editForm") void binder(WebDataBinder binder){
         binder.setAllowedFields("revision","lines[*].existingItemId","lines[*].productId","lines[*].quantity");
         binder.setAutoGrowCollectionLimit(1000);
@@ -34,16 +34,27 @@ public class OrderEditController {
     @GetMapping
     public String input(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
             @RequestParam(required=false) UUID preview,HttpSession session,Model model){
-        var page=service.load(id,user.getId());OrderEditForm form=OrderEditForm.from(page.before());
+        var page=service.load(id);OrderEditForm form=OrderEditForm.from(page.before());
         if(preview!=null){var q=quote(session,preview,id,user.getId());if(q!=null)form=OrderEditForm.from(q.request());
             else model.addAttribute("errorMessage","確認画面の有効性を確認できません。入力し直してください。");}
         return edit(page,form,null,null,0,model);
+    }
+    @PostMapping("/enroll")
+    public String enroll(@PathVariable long id,RedirectAttributes flash){
+        var result=service.enroll(id);
+        switch(result.status()){
+            case ENROLLED,ALREADY_ENROLLED -> flash.addFlashAttribute("successMessage","注文情報の確認が完了しました。編集内容をご確認ください。");
+            case COMMIT_UNKNOWN -> flash.addFlashAttribute("errorMessage","確認結果を確定できません。注文詳細から状態を確認してください。");
+            case OBSERVATION_UNAVAILABLE -> flash.addFlashAttribute("errorMessage","決済情報を確認できませんでした。注文内容は変更していません。");
+            default -> flash.addFlashAttribute("errorMessage","注文情報を確認できないため、編集を開始できません。注文詳細をご確認ください。");
+        }
+        return "redirect:/orders/"+id+"/edit";
     }
     @PostMapping("/search")
     public String search(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
             @Valid @ModelAttribute("editForm") OrderEditForm form,BindingResult binding,
             @RequestParam(defaultValue="") String keyword,@RequestParam(defaultValue="0") int page,Model model){
-        var order=service.load(id,user.getId());
+        var order=service.load(id);
         if(!binding.hasErrors()&&order.editable())try{model.addAttribute("productPage",service.search(keyword,page));}
         catch(IllegalArgumentException invalid){binding.reject("search",invalid.getMessage());}
         return edit(order,form,binding,keyword,page,model);
@@ -52,7 +63,7 @@ public class OrderEditController {
     public String add(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
             @Valid @ModelAttribute("editForm") OrderEditForm form,BindingResult binding,
             @RequestParam long addProductId,@RequestParam(defaultValue="") String keyword,Model model){
-        var order=service.load(id,user.getId());
+        var order=service.load(id);
         if(!binding.hasErrors()&&order.editable())try{service.offer(addProductId);form.add(addProductId);}
         catch(IllegalArgumentException|ArithmeticException invalid){binding.reject("add","選択した商品は追加できません。数量・商品を確認してください。");}
         return edit(order,form,binding,keyword,0,model);
@@ -61,10 +72,10 @@ public class OrderEditController {
     public String confirm(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
             @Valid @ModelAttribute("editForm") OrderEditForm form,BindingResult binding,
             @RequestParam(defaultValue="") String keyword,HttpSession session,Model model){
-        var order=service.load(id,user.getId());
+        var order=service.load(id);
         if(binding.hasErrors()||!order.editable())return edit(order,form,binding,keyword,0,model);
         try{
-            var request=form.request(id);var calculated=service.preview(id,user.getId(),request);
+            var request=form.request(id);var calculated=service.preview(id,request);
             if(calculated.route()==OrderChangeRoutePolicy.Route.NO_CHANGE){binding.reject("unchanged","変更内容がありません。");return edit(order,form,binding,keyword,0,model);}
             UUID token=UUID.randomUUID();synchronized(session){var quotes=quotes(session);quotes.put(token,new Quote(user.getId(),request,calculated));while(quotes.size()>8)quotes.remove(quotes.keySet().iterator().next());}
             return "redirect:/orders/"+id+"/edit/confirm?preview="+token;
@@ -73,10 +84,10 @@ public class OrderEditController {
     @GetMapping("/confirm")
     public String confirmation(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
             @RequestParam UUID preview,HttpSession session,Model model,RedirectAttributes flash){
-        service.load(id,user.getId());var q=quote(session,preview,id,user.getId());
+        service.load(id);var q=quote(session,preview,id,user.getId());
         if(q==null){flash.addFlashAttribute("errorMessage","確認画面の有効性を確認できません。入力し直してください。");return "redirect:/orders/"+id+"/edit";}
         final OrderEditPreviewService.Preview fresh;
-        try{fresh=service.preview(id,user.getId(),q.request());}
+        try{fresh=service.preview(id,q.request());}
         catch(IllegalArgumentException changed){
             flash.addFlashAttribute("errorMessage","商品または注文内容が変わりました。入力内容を保持していますので、内容を確認してください。");
             return "redirect:/orders/"+id+"/edit?preview="+preview;
