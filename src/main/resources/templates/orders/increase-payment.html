@@ -8,10 +8,10 @@
 <div id="payment-form"></div>
 <p id="payment-error" role="alert"></p>
 <button type="button" id="payment-submit">このカードで認証する</button>
-<form th:action="@{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operationId})}" method="post">
+<form th:action="${paymentContinueUrl != null} ? @{${paymentContinueUrl}} : @{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operationId})}" method="post">
     <button type="submit">サーバーで結果を確認して続行する</button>
 </form>
-<p><a th:href="@{/orders/{id}/increase/{op}(id=${orderId},op=${operationId})}">変更候補の状態へ戻る</a></p>
+<p><a th:href="${paymentStatusUrl != null} ? @{${paymentStatusUrl}} : @{/orders/{id}/increase/{op}(id=${orderId},op=${operationId})}">変更候補の状態へ戻る</a></p>
 <script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
 <script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
 (() => {

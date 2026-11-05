@@ -17,7 +17,9 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)
             throws ServletException,IOException {
         String path=request.getRequestURI().substring(request.getContextPath().length());
-        if(!path.matches("/orders/[^/]+/increase/[^/]+/payment(?:/return|/continue)?")
+        boolean edit=path.matches("/orders/[^/]+/edit/[^/]+/payment(?:/return|/continue)?");
+        boolean editContinue=path.matches("/orders/[^/]+/edit/continue");
+        if(!edit&&!editContinue&&!path.matches("/orders/[^/]+/increase/[^/]+/payment(?:/return|/continue)?")
                 && !path.matches("/checkout/payment(?:/return|/continue)?")){
             chain.doFilter(request,response);return;
         }
@@ -29,7 +31,13 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
         response.setHeader("Content-Security-Policy","default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; "
             +"script-src 'nonce-"+nonce+"'"+(returned?"":" https://js.pay.jp")+"; "
             +(returned?"":"frame-src https://js.pay.jp; connect-src 'self' https://js.pay.jp https://api.pay.jp; style-src 'unsafe-inline';"));
-        if(!returned){chain.doFilter(request,response);return;}
+        if(!returned&&!edit&&!editContinue){chain.doFilter(request,response);return;}
+        Map<String,String[]> parameters=new LinkedHashMap<>();
+        if(!returned&&"POST".equals(request.getMethod())){
+            var csrf=request.getParameterValues("_csrf");if(csrf!=null)parameters.put("_csrf",csrf.clone());
+            var admission=request.getParameter("admission");
+            if(editContinue&&admission!=null&&admission.matches("[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))parameters.put("admission",new String[]{admission});
+        }
         var redacted=new HttpServletRequestWrapper(request){
             @Override public String getQueryString(){return null;}
             @Override public String getHeader(String name){return "referer".equalsIgnoreCase(name)?null:super.getHeader(name);}
@@ -37,10 +45,10 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
             @Override public Enumeration<String> getHeaderNames(){
                 return Collections.enumeration(Collections.list(super.getHeaderNames()).stream().filter(n->!"referer".equalsIgnoreCase(n)).toList());
             }
-            @Override public String getParameter(String name){return null;}
-            @Override public String[] getParameterValues(String name){return null;}
-            @Override public Enumeration<String> getParameterNames(){return Collections.emptyEnumeration();}
-            @Override public Map<String,String[]> getParameterMap(){return Map.of();}
+            @Override public String getParameter(String name){var values=parameters.get(name);return values==null||values.length==0?null:values[0];}
+            @Override public String[] getParameterValues(String name){var values=parameters.get(name);return values==null?null:values.clone();}
+            @Override public Enumeration<String> getParameterNames(){return Collections.enumeration(parameters.keySet());}
+            @Override public Map<String,String[]> getParameterMap(){var copy=new LinkedHashMap<String,String[]>();parameters.forEach((k,v)->copy.put(k,v.clone()));return Collections.unmodifiableMap(copy);}
         };
         chain.doFilter(redacted,response);
     }

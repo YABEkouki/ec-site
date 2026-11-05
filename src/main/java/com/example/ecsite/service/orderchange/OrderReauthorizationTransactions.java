@@ -794,6 +794,58 @@ public class OrderReauthorizationTransactions {
                 ||actor==null||!Objects.equals(principal.getId(),actor.id())||!Objects.equals(principal.getUsername(),actor.username()))
             throw new org.springframework.security.access.AccessDeniedException("Valid administrator authentication required");
     }
+    /** Exact saved target for the existing one-time browser confirmation marker; contains no SDK secret. */
+    public record BrowserTarget(UUID admission,UUID operation,long order,long customer,long payment,long authorization,
+            String flow,int amount,int revision,long operationVersion,long controlVersion){
+        @Override public String toString(){return "OrderEditBrowserTarget[redacted]";}
+    }
+    public Optional<BrowserTarget> prepareOrderEditBrowser(long order,long customer,UUID admission){
+        var ids=jdbc.queryForList("""
+            select op.id from order_edit_admissions a join orders o on o.id=a.order_id and o.user_id=a.customer_id
+            join order_change_operations op on op.order_id=a.order_id and op.submission_key=a.submission_key
+            where a.id=? and a.order_id=? and a.customer_id=? and a.route='REAUTHORIZE'
+              and a.admission_state='ACCEPTED' and a.closed_at is null and f125_reauth_is_owned(a.order_id,op.id)
+            """,UUID.class,admission,order,customer);
+        if(ids.size()!=1)return Optional.empty();
+        var data=lock(order,ids.getFirst());var op=data.operation();
+        jdbc.queryForObject("select f125_execution_assert_basis(?)",Object.class,admission);
+        if(!Objects.equals(data.order().getUserId(),customer)||!"AUTHORIZING".equals(op.get("state"))
+            ||op.get("switch_decided_at")!=null||abortRequested(data)||op.get("browser_confirmation_issued_at")!=null
+            ||op.get("new_payment_id")==null||expired(data))return Optional.empty();
+        var controls=jdbc.queryForList("""
+            select c.version from order_edit_execution_controls c join order_edit_admissions a on a.id=c.admission_id
+            where a.id=? and a.execution_state='RECOVERY_PENDING' and c.active_attempt_id is null
+              and exists(select 1 from order_edit_execution_attempt_results x where x.admission_id=c.admission_id
+                and x.disposition='UNKNOWN' and x.reason_code='REAUTHORIZATION_WAITING'
+                and x.control_version=c.version-1 and x.fencing_token<c.fencing_token)
+            """,Long.class,admission);
+        if(controls.size()!=1)return Optional.empty();
+        var next=payment(data,number(op,"new_payment_id"));var auth=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION);
+        if(next.getStatus()!=PaymentStatus.PENDING||next.getProviderPaymentId()==null||next.getProviderPaymentId().isBlank()
+            ||payment(data,number(op,"old_payment_id")).getStatus()!=PaymentStatus.AUTHORIZED
+            ||auth.getStatus()!=PaymentTransactionStatus.PENDING||!validAuthorization(data,auth,next))return Optional.empty();
+        validateBase(data);requireHeld(data);requireNoPending(data,auth.getId());
+        return Optional.of(new BrowserTarget(admission,(UUID)op.get("id"),order,customer,next.getId(),auth.getId(),next.getProviderPaymentId(),
+            next.getAmount(),auth.getOrderContentRevision(),number(op,"version"),controls.getFirst()));
+    }
+    /** Separate from the legacy entry: never accepts a generic operation or creates a financial request. */
+    public boolean issueOrderEditBrowser(BrowserTarget target,PayJpPaymentFlowObservation observed,long observationStarted){
+        if(!freshBrowserObservation(observationStarted))return false;
+        var current=prepareOrderEditBrowser(target.order(),target.customer(),target.admission());
+        if(current.isEmpty()||!current.get().equals(target))return false;
+        var data=lock(target.order(),target.operation());var next=payment(data,target.payment());
+        if(!matchesFlow(data,next,observed,true)||!"requires_payment_method".equals(observed.status())||!freshBrowserObservation(observationStarted))return false;
+        boolean issued=jdbc.update("""
+            update order_change_operations set browser_confirmation_issued_at=?,version=version+1,updated_at=?
+            where id=? and order_id=? and version=? and state='AUTHORIZING'
+              and browser_confirmation_issued_at is null and switch_decided_at is null
+            """,now(),now(),target.operation(),target.order(),target.operationVersion())==1;
+        if(issued)org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization(){
+            @Override public void beforeCommit(boolean readOnly){if(!freshBrowserObservation(observationStarted))throw new IllegalStateException("Browser observation expired");}
+        });
+        return issued;
+    }
+    private static boolean freshBrowserObservation(long started){long elapsed=System.nanoTime()-started;return elapsed>=0&&elapsed<5_000_000_000L;}
     /** One durable first-confirm screen. Not a provider POST permit and never contains a secret. */
     public boolean issueBrowserConfirmation(long orderId,UUID operationId,PayJpPaymentFlowObservation observed){
         if(bridge().isOwned(orderId,operationId))return false;

@@ -30,7 +30,7 @@ class OrderEditBrowserFlowPostgresTest {
         var factory=new StaticListableBeanFactory(Map.of("admissions",new OrderEditAdmissionService(db.source),
             "executions",new OrderEditExecutionService(db.source,gateway,LegacyOrderEvidenceEnrollmentPostgresTest.C)));
         return new OrderEditBrowserService(mock(OrderEditPreviewService.class),factory.getBeanProvider(LegacyOrderEvidenceEnrollment.class),db.jdbc,
-            factory.getBeanProvider(OrderEditAdmissionService.class),factory.getBeanProvider(OrderEditExecutionService.class));
+            factory.getBeanProvider(OrderEditAdmissionService.class),factory.getBeanProvider(OrderEditExecutionService.class),factory.getBeanProvider(OrderEditCardService.class));
     }
     @Test void receiptExecutionReloadAndDuplicateSubmissionReuseOneApplyAndOneGet(){
         var f=OrderEditAdmissionServicePostgresTest.fixture(false);var c=OrderEditAdmissionServicePostgresTest.command(f);customer(f.customer());

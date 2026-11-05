@@ -25,7 +25,8 @@ class OrderEditBrowserServiceTest {
     @SuppressWarnings("unchecked") ObjectProvider<OrderEditExecutionService> executions=mock(ObjectProvider.class);
     OrderEditAdmissionService admissionService=mock(OrderEditAdmissionService.class);
     OrderEditExecutionService executionService=mock(OrderEditExecutionService.class);
-    OrderEditBrowserService service=new OrderEditBrowserService(preview,provider,jdbc,admissions,executions);
+    @SuppressWarnings("unchecked") ObjectProvider<OrderEditCardService> cards=mock(ObjectProvider.class);
+    OrderEditBrowserService service=new OrderEditBrowserService(preview,provider,jdbc,admissions,executions,cards);
     LocalDateTime now=LocalDateTime.of(2026,11,4,13,0);
     @BeforeEach void actor(){
         var p=new CustomUserDetails(2L,"buyer","unused",true,List.of(new SimpleGrantedAuthority("ROLE_USER")));
@@ -54,6 +55,19 @@ class OrderEditBrowserServiceTest {
         owned();when(admissions.getObject()).thenReturn(admissionService);
         when(admissionService.submit(any())).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.RUNTIME_UNAVAILABLE,null,null,null,"STOPPED"));
         service.submit(1,UUID.randomUUID(),new OrderEditCandidate.Request(1,0,List.of()),candidate());verifyNoInteractions(executions,executionService);
+    }
+    @Test void heldReauthorizationContinuesOnlyByExistingReconciliation(){
+        var id=UUID.randomUUID();var row=new HashMap<>(receipt(id,"RECOVERY_PENDING"));row.put("route","REAUTHORIZE");
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        when(admissions.getObject()).thenReturn(admissionService);when(executions.getObject()).thenReturn(executionService);
+        when(admissionService.recover(2,1,(UUID)row.get("submission_key"))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","RECOVERY_PENDING","saved"));
+        service.continueAdmission(1,id);verify(executionService).reconcile(id);verify(executionService,never()).execute(any());verifyNoInteractions(preview,cards);
+    }
+    @Test void cardStartRequiresOwnedReauthorizationAndRuntime(){
+        var id=UUID.randomUUID();var row=new HashMap<>(receipt(id,"RECOVERY_PENDING"));row.put("route","RETAIN_AUTH");
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        assertThat(service.startCard(1,id)).isEmpty();verifyNoInteractions(cards);
+        row.put("route","REAUTHORIZE");assertThat(service.startCard(1,id)).isEmpty();verifyNoInteractions(cards);
     }
     @Test void ambiguousSubmissionLookupOnlyReadsOwnedSavedKey(){
         owned();var key=UUID.randomUUID();var id=UUID.randomUUID();

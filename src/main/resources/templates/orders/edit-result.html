@@ -8,13 +8,15 @@
 <h2 th:text="${result.label}" role="status"></h2>
 <p th:if="${result.label == '受付済み'}">受付が成立しました。注文変更はまだ完了していません。</p>
 <p th:if="${result.label == '処理中'}">注文変更を処理しています。処理結果をご確認ください。</p>
-<p th:if="${result.label == 'カード認証待ち'}">カード認証が必要です。現在、この画面から認証を開始できません。注文変更は完了していません。</p>
+<p th:if="${result.label == 'カード認証待ち'}">カード認証が必要です。認証後もサーバーで金融結果を確認するまで、注文変更は完了していません。</p>
 <p th:if="${result.label == '確認待ち'}">結果を確認中です。注文変更の完了は確定していません。新しい編集要求を作成せず、注文詳細をご確認ください。</p>
 <p th:if="${result.label == '未適用終了'}">この受付による注文変更は適用されずに終了しました。</p>
 <p th:if="${result.label == '変更完了'}">注文内容の変更が完了しました。</p>
 <p th:if="${result.id != null}"><a th:href="@{/orders/{id}/edit/result(id=${orderId},admission=${result.id})}">保存済みの処理結果を確認する</a></p>
-<form th:if="${result.canContinue}" th:action="@{/orders/{id}/edit/continue(id=${orderId})}" method="post">
-<input type="hidden" name="admission" th:value="${result.id}"><button type="submit">受付済み処理を継続する</button>
+<form th:if="${result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
+<button type="submit">カード認証を開始する</button>
+</form>
+<form th:if="${result.canContinue}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><button type="submit">受付済み処理を継続する</button>
 </form>
 <section th:if="${pendingPreview != null}">
 <p>同じ確認内容で受付結果を照合します。受付が保存されていない場合のみ、同じ要求を再送します。</p>

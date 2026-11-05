@@ -22,8 +22,11 @@ public class OrderEditBrowserService {
     private final JdbcTemplate jdbc;
     private final ObjectProvider<OrderEditAdmissionService> admissions;
     private final ObjectProvider<OrderEditExecutionService> executions;
-    public record BrowserResult(UUID id,String label,boolean canContinue){}
-    public OrderEditBrowserService(OrderEditPreviewService previews,ObjectProvider<LegacyOrderEvidenceEnrollment> enrollment,JdbcTemplate jdbc,ObjectProvider<OrderEditAdmissionService> admissions,ObjectProvider<OrderEditExecutionService> executions){this.previews=previews;this.enrollment=enrollment;this.jdbc=jdbc;this.admissions=admissions;this.executions=executions;}
+    private final ObjectProvider<OrderEditCardService> cards;
+    public record BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate){
+        public BrowserResult(UUID id,String label,boolean canContinue){this(id,label,canContinue,false);}
+    }
+    public OrderEditBrowserService(OrderEditPreviewService previews,ObjectProvider<LegacyOrderEvidenceEnrollment> enrollment,JdbcTemplate jdbc,ObjectProvider<OrderEditAdmissionService> admissions,ObjectProvider<OrderEditExecutionService> executions,ObjectProvider<OrderEditCardService> cards){this.previews=previews;this.enrollment=enrollment;this.jdbc=jdbc;this.admissions=admissions;this.executions=executions;this.cards=cards;}
     public OrderEditPreviewService.PageContext load(long order){return previews.load(order,customer());}
     public OrderEditPreviewService.Preview preview(long order,OrderEditCandidate.Request request){return previews.preview(order,customer(),request);}
     public OrderEditCandidate.Offer offer(long product){customer();return previews.offer(product);}
@@ -52,10 +55,21 @@ public class OrderEditBrowserService {
         var result=admissions.getObject().submit(new OrderEditAdmissionService.Command(customer,key,request,candidate));
         executeAccepted(order,result);return result;
     }
+    public Optional<com.example.ecsite.service.orderchange.OrderChangeBrowserService.Card> startCard(long order,UUID id){
+        outside();var row=receipt(order,id);
+        if(!"REAUTHORIZE".equals(row.get("route"))||!submissionAvailable())return Optional.empty();
+        try{return cards.getObject().start(order,customer(),id);}catch(BeanCreationException unavailable){return Optional.empty();}
+    }
     public OrderEditAdmissionService.Result continueAdmission(long order,UUID id){
         outside();var row=receipt(order,id); // Authorization does not depend on a currently editable deadline.
         var result=admissions.getObject().recover(customer(),order,(UUID)row.get("submission_key"));
-        executeAccepted(order,result);return result;
+        executeAccepted(order,result);
+        if(result.outcome()==OrderEditAdmissionService.Outcome.ACCEPTED&&submissionAvailable()){
+            var fresh=receipt(order,id);
+            if("REAUTHORIZE".equals(fresh.get("route"))&&Set.of("RECOVERY_PENDING","REVIEW_REQUIRED").contains((String)fresh.get("execution_state")))
+                try{executions.getObject().reconcile(id);}catch(RuntimeException unconfirmed){/* Existing proof/holds remain unresolved. */}
+        }
+        return result;
     }
     private void executeAccepted(long order,OrderEditAdmissionService.Result result){
         if(result.outcome()!=OrderEditAdmissionService.Outcome.ACCEPTED||result.admissionId()==null||!submissionAvailable())return;
@@ -84,7 +98,9 @@ public class OrderEditBrowserService {
         else if("ACCEPTED".equals(a)&&"QUEUED".equals(x)){label="受付済み";retry=true;}
         else if("ACCEPTED".equals(a)&&Set.of("OBSERVING","APPLYING").contains(x==null?"":x))label="処理中";
         else if(Set.of("RECORDED_UNVERIFIED","UNPROVEN").contains(a==null?"":a))retry=true;
-        return new BrowserResult(id,label,retry&&submissionAvailable());
+        if("ACCEPTED".equals(a)&&"REAUTHORIZE".equals(row.get("route"))&&Set.of("RECOVERY_PENDING","REVIEW_REQUIRED").contains(x==null?"":x))retry=true;
+        boolean available=(retry||Boolean.TRUE.equals(row.get("auth_available")))&&submissionAvailable();
+        return new BrowserResult(id,label,retry&&available,Boolean.TRUE.equals(row.get("auth_available"))&&available);
     }
     private void requireOwner(long order,long customer){
         if(jdbc.queryForList("select id from orders where id=? and user_id=?",order,customer).size()!=1)throw new OrderNotFoundException(order);
@@ -92,9 +108,15 @@ public class OrderEditBrowserService {
     private Map<String,Object> receipt(long order,UUID id){
         outside();long customer=customer();if(id==null)throw new OrderNotFoundException(order);
         var rows=jdbc.queryForList("""
-            select a.id,a.submission_key,a.admission_state,a.execution_state,a.closed_at,a.applied_operation_id,
-              exists(select 1 from order_change_operations op where op.order_id=a.order_id and op.submission_key=a.submission_key
-                and op.execution_version=1 and op.execution_route='REAUTHORIZE' and op.state='REQUIRES_ACTION') as auth_waiting
+            select a.id,a.submission_key,a.admission_state,a.execution_state,a.closed_at,a.applied_operation_id,a.route,
+              exists(select 1 from order_change_operations op join payments p on p.id=op.new_payment_id and p.order_id=a.order_id
+                where op.order_id=a.order_id and op.submission_key=a.submission_key and f125_reauth_is_owned(a.order_id,op.id)
+                  and op.state in ('AUTHORIZING','REQUIRES_ACTION') and p.provider_payment_id is not null) as auth_waiting,
+              exists(select 1 from order_change_operations op join order_edit_execution_controls c on c.admission_id=a.id
+                join payments p on p.id=op.new_payment_id and p.order_id=a.order_id
+                where op.order_id=a.order_id and op.submission_key=a.submission_key and f125_reauth_is_owned(a.order_id,op.id)
+                  and op.state='AUTHORIZING' and op.browser_confirmation_issued_at is null and p.provider_payment_id is not null
+                  and a.execution_state='RECOVERY_PENDING' and c.active_attempt_id is null) as auth_available
             from order_edit_admissions a join orders o on o.id=a.order_id and o.user_id=a.customer_id
             where o.id=? and o.user_id=? and a.id=?
             """,order,customer,id);
