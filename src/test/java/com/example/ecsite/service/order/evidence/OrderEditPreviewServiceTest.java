@@ -79,6 +79,8 @@ class OrderEditPreviewServiceTest {
     }
     @Test void existingSnapshotIsNotRepricedForAnIncrease(){
         product(7,9999,8);var p=service.preview(1,2,request(new Line(3L,7,2)));
+        assertThat(p.candidate()).isNotNull();assertThat(p.candidate().previewSnapshot()).isEqualTo(p.after());
+        assertThat(p.candidate().sourceEvidence()).isEqualTo(facts);
         assertThat(p.after().items().getFirst().unitPrice()).isEqualTo(6000);assertThat(p.after().items().getFirst().taxRateBasisPoints()).isEqualTo(1000);
         assertThat(p.route()).isEqualTo(OrderChangeRoutePolicy.Route.REAUTHORIZE);
     }

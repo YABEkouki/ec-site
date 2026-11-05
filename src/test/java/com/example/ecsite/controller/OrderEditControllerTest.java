@@ -55,6 +55,54 @@ class OrderEditControllerTest {
         when(service.preview(eq(1L),eq(2L),any())).thenReturn(new OrderEditPreviewService.Preview(before,after,now.plusHours(1),OrderChangeRoutePolicy.Route.REAUTHORIZE));
         when(service.offer(8)).thenReturn(new OrderEditCandidate.Offer(8,"追加商品",4,"分類",1000,5,"STANDARD","標準",1000,true));
     }
+    @Test void submitReusesServerQuoteKeyAndRedirectsToOwnedResult()throws Exception{
+        var candidate=mock(OrderEditCandidate.Candidate.class);
+        when(service.preview(eq(1L),eq(2L),any())).thenReturn(new OrderEditPreviewService.Preview(before,after,now.plusHours(1),OrderChangeRoutePolicy.Route.RETAIN_AUTH,candidate));
+        var confirmation=mvc.perform(form("/confirm")).andExpect(status().is3xxRedirection()).andReturn();
+        var session=(MockHttpSession)confirmation.getRequest().getSession(false);String location=confirmation.getResponse().getRedirectedUrl();
+        UUID key=UUID.fromString(location.substring(location.indexOf("preview=")+8));UUID id=UUID.randomUUID();
+        when(browser.submit(eq(1L),eq(key),any(),eq(candidate))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","test"));
+        for(int i=0;i<2;i++)mvc.perform(post(URL+"/submit").with(user(customer)).with(csrf()).session(session).param("preview",key.toString()).param("totalAmount","1"))
+            .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl(URL+"/result?admission="+id));
+        verify(browser,times(2)).submit(eq(1L),eq(key),any(),eq(candidate));
+    }
+    @Test void confirmationOnlyEnablesSubmissionWhenRuntimeAllowsIt()throws Exception{
+        var candidate=mock(OrderEditCandidate.Candidate.class);
+        when(service.preview(eq(1L),eq(2L),any())).thenReturn(new OrderEditPreviewService.Preview(before,after,now.plusHours(1),OrderChangeRoutePolicy.Route.RETAIN_AUTH,candidate));
+        var r=mvc.perform(form("/confirm")).andReturn();var session=(MockHttpSession)r.getRequest().getSession(false);var location=r.getResponse().getRedirectedUrl();
+        mvc.perform(get(location).with(user(customer)).session(session)).andExpect(status().isOk()).andExpect(model().attribute("submissionAvailable",false))
+            .andExpect(content().string(containsString("disabled")));
+        when(browser.submissionAvailable()).thenReturn(true);
+        mvc.perform(get(location).with(user(customer)).session(session)).andExpect(status().isOk()).andExpect(model().attribute("submissionAvailable",true));
+    }
+    @Test void unknownCommitWithoutReceiptPreservesOriginalKeyForExplicitRetry()throws Exception{
+        var candidate=mock(OrderEditCandidate.Candidate.class);
+        when(service.preview(eq(1L),eq(2L),any())).thenReturn(new OrderEditPreviewService.Preview(before,after,now.plusHours(1),OrderChangeRoutePolicy.Route.RETAIN_AUTH,candidate));
+        var confirmation=mvc.perform(form("/confirm")).andReturn();var session=(MockHttpSession)confirmation.getRequest().getSession(false);
+        String location=confirmation.getResponse().getRedirectedUrl();UUID key=UUID.fromString(location.substring(location.indexOf("preview=")+8));
+        when(browser.submit(eq(1L),eq(key),any(),eq(candidate))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.COMMIT_UNKNOWN,null,null,null,"unknown"));
+        mvc.perform(post(URL+"/submit").with(user(customer)).with(csrf()).session(session).param("preview",key.toString()))
+            .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl(URL+"/result?preview="+key));
+        when(browser.submissionAvailable()).thenReturn(true);
+        mvc.perform(get(URL+"/result").with(user(customer)).session(session).param("preview",key.toString())).andExpect(status().isOk())
+            .andExpect(content().string(containsString("同じ確認内容で再送する"))).andExpect(content().string(containsString(key.toString())));
+        mvc.perform(post(URL+"/submit").with(user(customer)).with(csrf()).session(session).param("preview",key.toString())).andExpect(status().is3xxRedirection());
+        verify(browser,times(2)).submit(eq(1L),eq(key),any(),eq(candidate));
+        verify(browser,never()).continueAdmission(anyLong(),any());
+    }
+    @Test void resultGetOnlyReadsAndCanRenderCardWait()throws Exception{
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"カード認証待ち",false));
+        mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer))).andExpect(status().isOk())
+            .andExpect(content().string(containsString("カード認証待ち")));
+        verify(browser).result(1,id);verify(browser,never()).continueAdmission(anyLong(),any());verify(browser,never()).submit(anyLong(),any(),any(),any());
+    }
+    @Test void submitAndContinueNeedCsrfAndQuoteCannotBeInvented()throws Exception{
+        mvc.perform(post(URL+"/submit").with(user(customer)).param("preview",UUID.randomUUID().toString())).andExpect(status().isForbidden());
+        mvc.perform(post(URL+"/continue").with(user(customer)).param("admission",UUID.randomUUID().toString())).andExpect(status().isForbidden());
+        mvc.perform(post(URL+"/submit").with(user(customer)).with(csrf()).param("preview",UUID.randomUUID().toString()))
+            .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl(URL));
+        verify(browser,never()).submit(anyLong(),any(),any(),any());
+    }
     @Test void legacyPageOffersExplicitPostAndDoesNotEnrollOnGet()throws Exception{
         var facts=new OrderPaymentEvidence.Facts(before,10L,List.of(),List.of(),false,null,List.of(),null,false,false);
         when(service.load(1,2)).thenReturn(new OrderEditPreviewService.PageContext(new OrderEditCandidate.Context(facts,2,"ORDERED",now.minusDays(1),now.plusHours(1),null,null,null,now),"確認が必要です"));
@@ -118,7 +166,7 @@ class OrderEditControllerTest {
         String location=r.getResponse().getRedirectedUrl();var session=(MockHttpSession)r.getRequest().getSession(false);
         var html=mvc.perform(get(location).with(user(customer)).session(session)).andExpect(status().isOk()).andExpect(view().name("orders/edit-confirm"))
             .andReturn().getResponse().getContentAsString();
-        assertThat(html).contains("変更前","変更後","差額","内税","disabled").doesNotContain("action=\"/orders/1/edit/submit\"");
+        assertThat(html).contains("変更前","変更後","差額","内税","disabled");
         var capture=org.mockito.ArgumentCaptor.forClass(OrderEditCandidate.Request.class);verify(service,times(2)).preview(eq(1L),eq(2L),capture.capture());
         assertThat(capture.getValue().lines().getFirst().quantity()).isEqualTo(2);
         String token=location.substring(location.indexOf("preview="));

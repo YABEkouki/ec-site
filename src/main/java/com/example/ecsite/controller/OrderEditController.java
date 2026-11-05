@@ -15,7 +15,7 @@ import com.example.ecsite.form.OrderEditForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.order.evidence.*;
 
-/** Preview and explicit checkpoint enrollment only. Session quotes never authorize an order change. */
+/** Customer preview, explicit receipt submission and read-only result routes. */
 @Controller
 @RequestMapping("/orders/{id}/edit")
 public class OrderEditController {
@@ -96,7 +96,43 @@ public class OrderEditController {
             flash.addFlashAttribute("errorMessage","価格または注文内容が変わりました。内容を再確認してください。");
             return "redirect:/orders/"+id+"/edit?preview="+preview;
         }
-        model.addAttribute("preview",fresh);model.addAttribute("previewToken",preview);return "orders/edit-confirm";
+        model.addAttribute("preview",fresh);model.addAttribute("previewToken",preview);model.addAttribute("submissionAvailable",fresh.candidate()!=null&&service.submissionAvailable());return "orders/edit-confirm";
+    }
+    @PostMapping("/submit")
+    public String submit(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
+            @RequestParam UUID preview,HttpSession session,RedirectAttributes flash){
+        var saved=quote(session,preview,id,user.getId());
+        if(saved==null||saved.preview().candidate()==null){flash.addFlashAttribute("errorMessage","確認内容を確認できません。入力し直してください。");return "redirect:/orders/"+id+"/edit";}
+        var result=service.submit(id,preview,saved.request(),saved.preview().candidate());
+        if(result.admissionId()==null&&(result.outcome()==OrderEditAdmissionService.Outcome.COMMIT_UNKNOWN||result.outcome()==OrderEditAdmissionService.Outcome.UNPROVEN))
+            return "redirect:/orders/"+id+"/edit/result?preview="+preview;
+        return submitted(id,result,flash);
+    }
+    @GetMapping("/result")
+    public String result(@PathVariable long id,@RequestParam(required=false) UUID admission,@RequestParam(required=false) UUID preview,
+            @AuthenticationPrincipal CustomUserDetails user,HttpSession session,Model model){
+        if(admission!=null){model.addAttribute("result",service.result(id,admission));return "orders/edit-result";}
+        if(preview==null||quote(session,preview,id,user.getId())==null)throw new IllegalArgumentException("保存済みの確認内容が必要です。");
+        var found=service.findAdmission(id,preview);
+        if(found!=null)return "redirect:/orders/"+id+"/edit/result?admission="+found;
+        model.addAttribute("result",new OrderEditBrowserService.BrowserResult(null,"確認待ち",false));
+        model.addAttribute("pendingPreview",preview);model.addAttribute("pendingRetryAvailable",service.submissionAvailable());return "orders/edit-result";
+    }
+    @PostMapping("/continue")
+    public String continueAdmission(@PathVariable long id,@RequestParam UUID admission,RedirectAttributes flash){
+        var result=service.continueAdmission(id,admission);
+        if(result.admissionId()==null){flash.addFlashAttribute("errorMessage","受付結果を確認できません。保存済みの処理結果を再確認してください。");return "redirect:/orders/"+id+"/edit/result?admission="+admission;}
+        return submitted(id,result,flash);
+    }
+    private String submitted(long order,OrderEditAdmissionService.Result result,RedirectAttributes flash){
+        if(result.admissionId()!=null)return "redirect:/orders/"+order+"/edit/result?admission="+result.admissionId();
+        String message=switch(result.outcome()){
+            case RUNTIME_UNAVAILABLE -> "現在、注文変更の確定を利用できません。注文内容は変更していません。";
+            case REJECTED_LATE -> "注文変更期限を過ぎたため、受付できませんでした。";
+            case COMMIT_UNKNOWN,UNPROVEN -> "受付結果を確認できません。同じ確認内容で再送するか、注文詳細をご確認ください。";
+            default -> "注文状態または確認内容が変わったため、受付できません。内容をご確認ください。";
+        };
+        flash.addFlashAttribute("errorMessage",message);return "redirect:/orders/"+order+"/edit";
     }
     private String edit(OrderEditPreviewService.PageContext page,OrderEditForm form,BindingResult binding,String keyword,int number,Model model){
         model.addAttribute("page",page);model.addAttribute("editForm",form);model.addAttribute("keyword",keyword==null?"":keyword);model.addAttribute("searchPage",number);

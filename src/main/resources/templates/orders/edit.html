@@ -5,7 +5,7 @@
 <header th:replace="~{fragments/header :: header}"></header>
 <main>
 <h1>注文内容の一括編集</h1>
-<p>現在は内容の確認まで利用できます。注文・在庫・決済は変更されません。</p>
+<p>この編集画面では注文・在庫・決済は変更されません。確定前に変更内容をご確認ください。</p>
 <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error" role="alert"></p>
 <p th:if="${successMessage}" th:text="${successMessage}" class="message-success" role="status"></p>
 <section th:if="${page != null}">

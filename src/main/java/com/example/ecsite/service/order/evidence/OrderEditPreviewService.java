@@ -24,7 +24,9 @@ public class OrderEditPreviewService {
         /** Button availability only; the enrollment service makes the authoritative locked decision. */
         public boolean legacyEnrollmentAvailable(){return !context.facts().evidenceRequired()&&stateReason(context)==null;}
     }
-    public record Preview(OrderContentSnapshot before,OrderContentSnapshot after,LocalDateTime deadline,OrderChangeRoutePolicy.Route route){}
+    public record Preview(OrderContentSnapshot before,OrderContentSnapshot after,LocalDateTime deadline,OrderChangeRoutePolicy.Route route,Candidate candidate){
+        public Preview(OrderContentSnapshot before,OrderContentSnapshot after,LocalDateTime deadline,OrderChangeRoutePolicy.Route route){this(before,after,deadline,route,null);}
+    }
     private final JdbcTemplate jdbc;
     private final ProductService products;
     private final JdbcOrderPaymentEvidenceReader reader;
@@ -70,7 +72,7 @@ public class OrderEditPreviewService {
             if(request.lines().stream().allMatch(l->l.quantity()==0))throw new IllegalArgumentException("商品をすべて削除する場合は、注文キャンセルをご利用ください。");
             throw new IllegalArgumentException("数量・商品・注文の版を確認してください。価格変更時は再確認が必要です。");
         }
-        return new Preview(page.before(),result.candidate().previewSnapshot(),page.deadline(),result.route());
+        return new Preview(page.before(),result.candidate().previewSnapshot(),page.deadline(),result.route(),result.candidate());
     }
     public Offer offer(long id){
         try{

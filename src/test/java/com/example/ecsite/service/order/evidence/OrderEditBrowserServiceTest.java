@@ -21,7 +21,11 @@ class OrderEditBrowserServiceTest {
     LegacyOrderEvidenceEnrollment legacy=mock(LegacyOrderEvidenceEnrollment.class);
     @SuppressWarnings("unchecked") ObjectProvider<LegacyOrderEvidenceEnrollment> provider=mock(ObjectProvider.class);
     JdbcTemplate jdbc=mock(JdbcTemplate.class);
-    OrderEditBrowserService service=new OrderEditBrowserService(preview,provider,jdbc);
+    @SuppressWarnings("unchecked") ObjectProvider<OrderEditAdmissionService> admissions=mock(ObjectProvider.class);
+    @SuppressWarnings("unchecked") ObjectProvider<OrderEditExecutionService> executions=mock(ObjectProvider.class);
+    OrderEditAdmissionService admissionService=mock(OrderEditAdmissionService.class);
+    OrderEditExecutionService executionService=mock(OrderEditExecutionService.class);
+    OrderEditBrowserService service=new OrderEditBrowserService(preview,provider,jdbc,admissions,executions);
     LocalDateTime now=LocalDateTime.of(2026,11,4,13,0);
     @BeforeEach void actor(){
         var p=new CustomUserDetails(2L,"buyer","unused",true,List.of(new SimpleGrantedAuthority("ROLE_USER")));
@@ -31,6 +35,55 @@ class OrderEditBrowserServiceTest {
     @AfterEach void clear(){SecurityContextHolder.clearContext();org.springframework.transaction.support.TransactionSynchronizationManager.setActualTransactionActive(false);}
     OrderEditPreviewService.PageContext page(String state,LocalDateTime deadline,LocalDateTime preparing){
         return new OrderEditPreviewService.PageContext(new OrderEditCandidate.Context(facts(initial(),List.of()),2,state,now.minusDays(1),deadline,preparing,null,null,now),null);
+    }
+    OrderEditCandidate.Candidate candidate(){return new OrderEditCandidate.Candidate(facts(initial(),List.of()),initial().start(),List.of(),List.of(),List.of());}
+    Map<String,Object> receipt(UUID id,String state){return Map.of("id",id,"submission_key",UUID.randomUUID(),"admission_state","ACCEPTED","execution_state",state);}
+    void owned(){when(jdbc.queryForList(anyString(),eq(1L),eq(2L))).thenReturn(List.of(Map.of("id",1L)));}
+    @Test void submissionUsesSavedKeyAndOnlyExecutesAcceptedQueuedReceipt(){
+        owned();var id=UUID.randomUUID();var key=UUID.randomUUID();var request=new OrderEditCandidate.Request(1,0,List.of());
+        when(admissions.getObject()).thenReturn(admissionService);when(executions.getObject()).thenReturn(executionService);
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(receipt(id,"QUEUED")));
+        var accepted=new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","test");
+        when(admissionService.submit(any())).thenReturn(accepted);
+        assertThat(service.submit(1,key,request,candidate())).isEqualTo(accepted);
+        var command=org.mockito.ArgumentCaptor.forClass(OrderEditAdmissionService.Command.class);verify(admissionService).submit(command.capture());
+        assertThat(command.getValue().customerId()).isEqualTo(2);assertThat(command.getValue().submissionKey()).isEqualTo(key);verify(executionService).execute(id);
+    }
+    @Test void unavailableRuntimeNeverResolvesExecutionEvenForAcceptedReceipt(){
+        owned();when(admissions.getObject()).thenReturn(admissionService);
+        when(admissionService.submit(any())).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.RUNTIME_UNAVAILABLE,null,null,null,"STOPPED"));
+        service.submit(1,UUID.randomUUID(),new OrderEditCandidate.Request(1,0,List.of()),candidate());verifyNoInteractions(executions,executionService);
+    }
+    @Test void ambiguousSubmissionLookupOnlyReadsOwnedSavedKey(){
+        owned();var key=UUID.randomUUID();var id=UUID.randomUUID();
+        when(jdbc.queryForList(anyString(),eq(UUID.class),eq(1L),eq(2L),eq(key))).thenReturn(List.of(id));
+        assertThat(service.findAdmission(1,key)).isEqualTo(id);verifyNoInteractions(admissions,executions,preview,legacy);
+    }
+    @ParameterizedTest @ValueSource(strings={"COMPLETED","CLOSED_UNAPPLIED","OBSERVING","REVIEW_REQUIRED"})
+    void resultDisplaysPersistedStateWithoutExecuting(String state){
+        var id=UUID.randomUUID();var row=new HashMap<>(receipt(id,state));
+        if(state.equals("COMPLETED")||state.equals("CLOSED_UNAPPLIED"))row.put("closed_at",now);
+        if(state.equals("COMPLETED"))row.put("applied_operation_id",UUID.randomUUID());
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        var label=switch(state){case "COMPLETED"->"変更完了";case "CLOSED_UNAPPLIED"->"未適用終了";case "OBSERVING"->"処理中";default->"確認待ち";};
+        assertThat(service.result(1,id).label()).isEqualTo(label);verifyNoInteractions(admissions,executions);
+    }
+    @Test void resultReadHasNoAdmissionOrExecutionSideEffects(){
+        var id=UUID.randomUUID();when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(receipt(id,"RECOVERY_PENDING")));
+        assertThat(service.result(1,id).label()).isEqualTo("確認待ち");verifyNoInteractions(admissions,executions,admissionService,executionService,legacy);
+    }
+    @Test void ownedQueuedContinuationDoesNotRevalidateTodaysDeadline(){
+        when(preview.load(1,2)).thenReturn(page("ORDERED",now.minusHours(1),null));
+        var id=UUID.randomUUID();var row=receipt(id,"QUEUED");when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        when(admissions.getObject()).thenReturn(admissionService);when(executions.getObject()).thenReturn(executionService);when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        when(admissionService.recover(2,1,(UUID)row.get("submission_key"))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","saved"));
+        service.continueAdmission(1,id);verify(executionService).execute(id);verifyNoInteractions(preview);
+    }
+    @Test void cardAuthenticationWaitIsDisplayOnly(){
+        var id=UUID.randomUUID();var row=new HashMap<>(receipt(id,"RECOVERY_PENDING"));row.put("auth_waiting",true);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        assertThat(service.result(1,id).label()).isEqualTo("カード認証待ち");verifyNoInteractions(executions,admissions);
     }
     @Test void getOnlyLoadsOwnedPreviewWithoutResolvingEnrollmentBean(){
         assertThat(service.load(1)).isNotNull();verify(preview).load(1,2);verifyNoInteractions(provider,legacy,jdbc);
