@@ -18,7 +18,7 @@ import static org.mockito.ArgumentMatchers.*;
 /** Existing guarded isolated PG17 runtime only. Provider calls are mocked, never HTTP. */
 class OrderEditBrowserFlowPostgresTest {
     static PaymentSafetyExpandPostgresTest db;
-    @BeforeAll static void database(){OrderEditApplicationPostgresTest.database();db=OrderEditApplicationPostgresTest.db;db.migrate("75");}
+    @BeforeAll static void database(){OrderEditApplicationPostgresTest.database();db=OrderEditApplicationPostgresTest.db;db.migrate("76");}
     @AfterAll static void cleanup(){OrderEditApplicationPostgresTest.cleanup();}
     @BeforeEach void runtime(TestInfo info){new OrderEditAdmissionFoundationPostgresTest().runtime(info);}
     @AfterEach void actor(){SecurityContextHolder.clearContext();}

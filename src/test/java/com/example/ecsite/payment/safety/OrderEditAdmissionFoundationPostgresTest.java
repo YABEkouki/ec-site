@@ -49,8 +49,15 @@ class OrderEditAdmissionFoundationPostgresTest {
     @BeforeEach void runtime(TestInfo info) {
         jdbc.update("update order_edit_runtime_control set state='STOPPED',generation_id=null,version=version+1 where id=1");
         if(!info.getTestMethod().orElseThrow().getName().equals("migrationStartsStoppedAndDoesNotInstallProductionActivation")) {
-            generation=UUID.randomUUID();
-            jdbc.update("insert into order_edit_runtime_generations(id,identity) values (?,f125_admission_identity())",generation);
+            // V76 forbids abandoning unresolved generations. Reuse the same test lineage;
+            // older-schema safety tests retain their original generation-switch fixtures.
+            boolean operational=Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure('f125_runtime_available()') is not null",Boolean.class));
+            var open=operational?jdbc.queryForList("select distinct db_generation_id from order_edit_admissions where closed_at is null",UUID.class):List.<UUID>of();
+            assertThat(open).hasSizeLessThanOrEqualTo(1);
+            if(open.isEmpty()){
+                generation=UUID.randomUUID();
+                jdbc.update("insert into order_edit_runtime_generations(id,identity) values (?,f125_admission_identity())",generation);
+            }else generation=open.getFirst();
             jdbc.update("update order_edit_runtime_control set state='ISOLATED_TEST',generation_id=?,version=version+1 where id=1",generation);
         }
     }

@@ -45,7 +45,7 @@ public class OrderEditBrowserService {
     }
     /** Display hint only; authoritative runtime identity/generation fencing remains in the backend. */
     public boolean submissionAvailable(){
-        customer();try{return Boolean.TRUE.equals(jdbc.queryForObject("select state='ISOLATED_TEST' and generation_id is not null from order_edit_runtime_control where id=1",Boolean.class));}
+        customer();try{return Boolean.TRUE.equals(jdbc.queryForObject("select f125_runtime_available()",Boolean.class));}
         catch(org.springframework.dao.DataAccessException unavailable){return false;}
     }
     public OrderEditAdmissionService.Result submit(long order,UUID key,OrderEditCandidate.Request request,OrderEditCandidate.Candidate candidate){

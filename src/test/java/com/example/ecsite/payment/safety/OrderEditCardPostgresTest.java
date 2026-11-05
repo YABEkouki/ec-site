@@ -35,6 +35,7 @@ class OrderEditCardPostgresTest {
         r.add("spring.datasource.url",POSTGRES::getJdbcUrl);r.add("spring.datasource.username",POSTGRES::getUsername);r.add("spring.datasource.password",POSTGRES::getPassword);
         r.add("spring.flyway.url",POSTGRES::getJdbcUrl);r.add("spring.flyway.user",POSTGRES::getUsername);r.add("spring.flyway.password",POSTGRES::getPassword);
     }
+    @Autowired com.example.ecsite.service.payment.PayJpWebhookSyncService webhooks;
     @Autowired OrderEditBrowserService browser;
     @Autowired JdbcTemplate jdbc;@Autowired OrderEditExecutionService execution;@Autowired OrderEditCardService cards;
     @Autowired OrderReauthorizationTransactions transactions;@Autowired CaptureConnectionProperties connection;@Autowired PayJpProperties provider;
@@ -45,7 +46,7 @@ class OrderEditCardPostgresTest {
         var db=OrderEditAdmissionFoundationPostgresTest.open(POSTGRES);db.schema="public";db.source.setCurrentSchema("public");
         OrderEditAdmissionServicePostgresTest.db=db;OrderEditAdmissionServicePostgresTest.jdbc=db.jdbc;
         LegacyOrderEvidenceEnrollmentPostgresTest.db=db;LegacyOrderEvidenceEnrollmentPostgresTest.jdbc=db.jdbc;
-        OrderEditAdmissionFoundationPostgresTest.jdbc=jdbc;new OrderEditAdmissionFoundationPostgresTest().runtime(info);
+        OrderEditAdmissionFoundationPostgresTest.jdbc=jdbc;configureRuntime(info);
         f=OrderEditAdmissionServicePostgresTest.fixture(false);var command=OrderEditAdmissionServicePostgresTest.command(f,3,UUID.randomUUID());
         receipt=new OrderEditAdmissionService(db.source).submit(command).admissionId();assertThat(receipt).isNotNull();
         amount=command.confirmed().previewSnapshot().totalAmount();state.set("requires_payment_method");cancelled.set(false);
@@ -63,6 +64,7 @@ class OrderEditCardPostgresTest {
         assertThat(execution.execute(receipt).status()).isEqualTo(OrderEditExecutionService.Status.HELD);
         when(gateway.retrieveAuthorization(flow)).thenAnswer(a->{outside();return new AuthorizationRecovery(new AuthorizationResult(AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,null,null,null),"secret_for_widget_only");});
     }
+    void configureRuntime(TestInfo info){new OrderEditAdmissionFoundationPostgresTest().runtime(info);}
     void outside(){assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();}
     PayJpPaymentFlowObservation observation(String id,String status,int total,Map<String,Object> metadata){
         var fields=new LinkedHashMap<String,Object>();fields.put("id",id);fields.put("status",status);fields.put("amount",total);fields.put("currency","jpy");fields.put("capture_method","manual");fields.put("livemode",false);fields.put("amount_received",0);fields.put("amount_capturable",status.equals("requires_capture")?total:0);fields.put("metadata",metadata);
@@ -136,6 +138,38 @@ class OrderEditCardPostgresTest {
             assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
             verify(gateway,times(1)).sendOrderChangeRequest(any());
         }finally{pool.shutdownNow();}
+    }
+
+    void stopRuntime(){jdbc.queryForObject("select f125_runtime_stop((select version from order_edit_runtime_control where id=1),'isolated stop')",Object.class);}
+    void resumeTestRuntime(){jdbc.update("update order_edit_runtime_control set state='ISOLATED_TEST',generation_id=(select db_generation_id from order_edit_admissions where id=?),version=version+1 where id=1",receipt);}
+    void waitForBackoff(){jdbc.queryForObject("select pg_sleep(greatest(0,extract(epoch from next_attempt_at-clock_timestamp()))+0.02) from order_edit_execution_controls where admission_id=?",Object.class,receipt);}
+    @Test void stoppedWebhookCannotApplyFinanceAndSavedReceiptResumesByGet(){
+        actor();state.set("requires_capture");stopRuntime();clearInvocations(gateway);
+        assertThatThrownBy(()->webhooks.synchronize("payment_flow.amount_capturable_updated",flow)).isInstanceOf(RuntimeException.class);
+        browser.continueAdmission(f.order(),receipt);assertThat(browser.result(f.order(),receipt).label()).isNotEqualTo("変更完了");
+        verifyNoInteractions(gateway);assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+        resumeTestRuntime();execution.reconcile(receipt);waitForBackoff();assertThat(execution.reconcile(receipt).status()).isEqualTo(OrderEditExecutionService.Status.COMPLETED);
+        verify(gateway,times(1)).sendOrderChangeRequest(any()); // Only OLD_CANCEL; CREATE happened before invocations were cleared.
+    }
+    @Test void stopAfterDispatchCommitDoesNotUndoPermitOrAllowDuplicatePost()throws Exception{
+        state.set("requires_capture");execution.reconcile(receipt);waitForBackoff();
+        var sending=new java.util.concurrent.CountDownLatch(1);var returned=new java.util.concurrent.CountDownLatch(1);
+        doAnswer(a->{
+            outside();var request=((OrderChangeRequestSender.Dispatch)a.getArgument(0)).request().httpRequest();assertThat(request.kind()).isEqualTo("OLD_CANCEL");
+            sending.countDown();assertThat(returned.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();cancelled.set(true);
+            return observation(request.flowId(),"canceled",6000,Map.of());
+        }).when(gateway).sendOrderChangeRequest(any());
+        var pool=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try{
+            var worker=pool.submit(()->execution.execute(receipt));assertThat(sending.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            stopRuntime();assertThat(jdbc.queryForObject("select d.state from order_change_request_dispatches d join order_change_financial_requests q on q.id=d.request_id where q.operation_id=? and q.request_kind='OLD_CANCEL'",String.class,operation)).isEqualTo("STARTED");
+            returned.countDown();assertThat(worker.get(10,java.util.concurrent.TimeUnit.SECONDS).status()).isNotEqualTo(OrderEditExecutionService.Status.COMPLETED);
+            assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
+            // Keep the real lease and automatic window; never rewrite protected control fields.
+            jdbc.queryForObject("select pg_sleep(greatest(0,extract(epoch from lease_until-clock_timestamp()))+0.02) from order_edit_execution_controls where admission_id=?",Object.class,receipt);
+            resumeTestRuntime();execution.reconcile(receipt);waitForBackoff();assertThat(execution.reconcile(receipt).status()).isEqualTo(OrderEditExecutionService.Status.COMPLETED);
+            verify(gateway,times(2)).sendOrderChangeRequest(any());
+        }finally{returned.countDown();pool.shutdownNow();}
     }
 
 }
