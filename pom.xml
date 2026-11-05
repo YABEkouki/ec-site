@@ -186,4 +186,46 @@
         </plugins>
     </build>
 
+    <!-- Manual goals only: never activates or migrates during the application lifecycle. -->
+    <profiles>
+        <profile>
+            <id>f125-db-maintenance</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-maven-plugin</artifactId>
+                        <version>12.4.0</version>
+                        <configuration>
+                            <url>${env.FLYWAY_URL}</url>
+                            <user>${env.FLYWAY_USER}</user>
+                            <password>${env.FLYWAY_PASSWORD}</password>
+                            <locations>
+                                <location>filesystem:${project.basedir}/src/main/resources/db/migration</location>
+                            </locations>
+                            <defaultSchema>public</defaultSchema>
+                            <schemas><schema>public</schema></schemas>
+                            <target>76</target>
+                            <cleanDisabled>true</cleanDisabled>
+                            <baselineOnMigrate>false</baselineOnMigrate>
+                            <outOfOrder>false</outOfOrder>
+                            <createSchemas>false</createSchemas>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.flywaydb</groupId>
+                                <artifactId>flyway-database-postgresql</artifactId>
+                                <version>12.4.0</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.postgresql</groupId>
+                                <artifactId>postgresql</artifactId>
+                                <version>42.7.13</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
