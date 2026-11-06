@@ -16,8 +16,10 @@
 <form th:if="${result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
 <button type="submit">カード認証を開始する</button>
 </form>
-<form th:if="${result.canContinue}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><button type="submit">受付済み処理を継続する</button>
+<form id="result-continue" th:attr="data-receipt=${result.id}" th:if="${result.canContinue or result.autoContinueAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automatic" value="false"><button type="submit">受付済み処理を継続する</button>
 </form>
+<p id="result-continuation-status" role="status" aria-live="polite"></p>
+<noscript><p>自動確認は行いません。必要に応じて継続ボタンまたは保存済みの処理結果をご確認ください。</p></noscript>
 <section th:if="${pendingPreview != null}">
 <p>同じ確認内容で受付結果を照合します。受付が保存されていない場合のみ、同じ要求を再送します。</p>
 <p><a th:href="@{/orders/{id}/edit/result(id=${orderId},preview=${pendingPreview})}">受付結果を照会する</a></p>
@@ -27,4 +29,40 @@
 </section>
 </section>
 <p><a th:href="@{/orders/{id}(id=${orderId})}">注文詳細へ戻る</a></p>
-</main></body></html>
+</main>
+<script th:if="${result != null and result.autoContinueAllowed}" th:attr="nonce=${resultScriptNonce}">
+(() => {
+    const form = document.getElementById('result-continue');
+    if (!form) return;
+    const message = document.getElementById('result-continuation-status');
+    const automatic = form.querySelector('input[name="automatic"]');
+    const buttons = form.querySelectorAll('button[type="submit"]');
+    let submitting = false;
+    const manual = () => {
+        submitting = false;
+        automatic.value = 'false';
+        buttons.forEach(button => button.disabled = false);
+        message.textContent = '自動確認は停止しました。保存済みの結果または継続ボタンからご確認ください。';
+    };
+    form.addEventListener('submit', event => {
+        if (submitting) { event.preventDefault(); return; }
+        submitting = true;
+        automatic.value = 'false';
+        buttons.forEach(button => button.disabled = true);
+    });
+    window.addEventListener('pageshow', event => { if (event.persisted) manual(); });
+    // One attempt per receipt/tab, including unchanged redirects/reloads. Storage failure stays manual.
+    try {
+        const key = 'feature125:initial-result:' + form.dataset.receipt;
+        if (window.sessionStorage.getItem(key)) { manual(); return; }
+        window.sessionStorage.setItem(key, 'attempted');
+    } catch (_) { manual(); return; }
+    submitting = true;
+    automatic.value = 'true';
+    buttons.forEach(button => button.disabled = true);
+    message.textContent = '受付済みの処理を確認しています。注文変更はまだ完了していません。';
+    try { HTMLFormElement.prototype.submit.call(form); }
+    catch (_) { manual(); }
+})();
+</script>
+</body></html>

@@ -108,4 +108,11 @@ class OrderEditPaymentControllerTest {
         mvc.perform(get(url()+"/return").with(user(customer))).andExpect(status().isNotFound());
         mvc.perform(post(url()+"/continue").with(user(customer)).with(csrf())).andExpect(status().isNotFound());
     }
+
+    @Test void automaticResultPostUsesSeparateFailClosedPathAndStillRequiresCsrf()throws Exception{
+        mvc.perform(post(url()+"/continue").param("automatic","true").with(user(customer))).andExpect(status().isForbidden());verifyNoInteractions(browser);
+        mvc.perform(post(url()+"/continue").param("automatic","true").with(user(customer)).with(csrf()))
+            .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt));
+        verify(browser).continueAutomatically(1,receipt);verify(browser,never()).continueAdmission(anyLong(),any());
+    }
 }

@@ -23,8 +23,14 @@ public class OrderEditBrowserService {
     private final ObjectProvider<OrderEditAdmissionService> admissions;
     private final ObjectProvider<OrderEditExecutionService> executions;
     private final ObjectProvider<OrderEditCardService> cards;
-    public record BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate){
+    public enum NextAction { DISPLAY_ONLY, AUTO_CONTINUE_ALLOWED, OBSERVE_ONLY, MANUAL_REVIEW_REQUIRED }
+    public record NextStep(NextAction action,String reason) {}
+    public record BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate,NextStep nextStep){
+        public BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate){
+            this(id,label,canContinue,canAuthenticate,new NextStep(NextAction.DISPLAY_ONLY,"UNCLASSIFIED"));
+        }
         public BrowserResult(UUID id,String label,boolean canContinue){this(id,label,canContinue,false);}
+        public boolean autoContinueAllowed(){return nextStep!=null&&nextStep.action()==NextAction.AUTO_CONTINUE_ALLOWED;}
     }
     public OrderEditBrowserService(OrderEditPreviewService previews,ObjectProvider<LegacyOrderEvidenceEnrollment> enrollment,JdbcTemplate jdbc,ObjectProvider<OrderEditAdmissionService> admissions,ObjectProvider<OrderEditExecutionService> executions,ObjectProvider<OrderEditCardService> cards){this.previews=previews;this.enrollment=enrollment;this.jdbc=jdbc;this.admissions=admissions;this.executions=executions;this.cards=cards;}
     public OrderEditPreviewService.PageContext load(long order){return previews.load(order,customer());}
@@ -91,11 +97,20 @@ public class OrderEditBrowserService {
         }
         return result;
     }
-    private void executeAccepted(long order,OrderEditAdmissionService.Result result){
+    /** Automatic requests never enter recovery reconciliation. Every POST rechecks the read-only hint,
+     * then the existing independent receipt verification and fenced claim/application revalidate again. */
+    public void continueAutomatically(long order,UUID id){
+        outside();if(!result(order,id).autoContinueAllowed())return;
+        var row=receipt(order,id);
+        var verified=admissions.getObject().recover(customer(),order,(UUID)row.get("submission_key"));
+        executeAccepted(order,verified,true);
+    }
+    private void executeAccepted(long order,OrderEditAdmissionService.Result result){executeAccepted(order,result,false);}
+    private void executeAccepted(long order,OrderEditAdmissionService.Result result,boolean automatic){
         if(result.outcome()!=OrderEditAdmissionService.Outcome.ACCEPTED||result.admissionId()==null||!submissionAvailable())return;
         var row=receipt(order,result.admissionId());
         if(!"ACCEPTED".equals(row.get("admission_state"))||!"QUEUED".equals(row.get("execution_state")))return;
-        try{executions.getObject().execute(result.admissionId());}
+        try{if(automatic)executions.getObject().executeInitial(result.admissionId());else executions.getObject().execute(result.admissionId());}
         catch(RuntimeException unconfirmed){/* Saved receipt stays unresolved. No guessed rollback or automatic retry. */}
     }
     /** All receipt access binds order/customer/id in a single read; GET never calls recover or execute. */
@@ -120,15 +135,60 @@ public class OrderEditBrowserService {
         else if(Set.of("RECORDED_UNVERIFIED","UNPROVEN").contains(a==null?"":a))retry=true;
         if("ACCEPTED".equals(a)&&"REAUTHORIZE".equals(row.get("route"))&&Set.of("RECOVERY_PENDING","REVIEW_REQUIRED").contains(x==null?"":x))retry=true;
         boolean available=(retry||Boolean.TRUE.equals(row.get("auth_available")))&&submissionAvailable();
-        return new BrowserResult(id,label,retry&&available,Boolean.TRUE.equals(row.get("auth_available"))&&available);
+        return new BrowserResult(id,label,retry&&available,Boolean.TRUE.equals(row.get("auth_available"))&&available,nextStep(row,available));
+    }
+    private NextStep nextStep(Map<String,Object> row,boolean available){
+        String state=(String)row.get("execution_state");
+        if(row.get("closed_at")!=null)return new NextStep(NextAction.DISPLAY_ONLY,"TERMINAL");
+        if(Set.of("RECOVERY_PENDING","REVIEW_REQUIRED").contains(state==null?"":state))
+            return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"RECOVERY_REQUIRES_EXPLICIT_CONFIRMATION");
+        if(Boolean.TRUE.equals(row.get("auth_waiting")))return new NextStep(NextAction.DISPLAY_ONLY,"CARD_AUTHENTICATION_REQUIRED");
+        if(Set.of("OBSERVING","APPLYING").contains(state==null?"":state))return new NextStep(NextAction.OBSERVE_ONLY,"EXECUTION_IN_PROGRESS");
+        if(!"ACCEPTED".equals(row.get("admission_state"))||!"QUEUED".equals(state))return new NextStep(NextAction.DISPLAY_ONLY,"RECEIPT_NOT_READY");
+        if(!available||!Boolean.TRUE.equals(row.get("runtime_matches")))return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"RUNTIME_UNAVAILABLE_OR_GENERATION_CHANGED");
+        if(!Set.of("RETAIN_AUTH","REAUTHORIZE").contains(Objects.toString(row.get("route"),"")))return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"UNKNOWN_ROUTE");
+        for(String fact:List.of("proof_ready","initial_execution","finance_clear","basis_matches"))
+            if(!Boolean.TRUE.equals(row.get(fact)))return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"UNPROVEN_"+fact.toUpperCase(Locale.ROOT));
+        return new NextStep(NextAction.AUTO_CONTINUE_ALLOWED,"VERIFIED_INITIAL_QUEUE_WITHOUT_PRIOR_EXECUTION_OR_FINANCIAL_WORK");
     }
     private void requireOwner(long order,long customer){
         if(jdbc.queryForList("select id from orders where id=? and user_id=?",order,customer).size()!=1)throw new OrderNotFoundException(order);
     }
+    // The current financial document is compared only; it never replaces the immutable Tx-A baseline.
+    // These unlocked facts are display hints, not permission to bypass the POST's proof/claim checks.
     private Map<String,Object> receipt(long order,UUID id){
         outside();long customer=customer();if(id==null)throw new OrderNotFoundException(order);
         var rows=jdbc.queryForList("""
             select a.id,a.submission_key,a.admission_state,a.execution_state,a.closed_at,a.applied_operation_id,a.route,
+              exists(select 1 from order_edit_runtime_control rc where rc.id=1 and rc.generation_id=a.db_generation_id
+                and rc.state in ('RUNNING','ISOLATED_TEST')) as runtime_matches,
+              exists(select 1 from order_edit_admission_evidences e where e.admission_id=a.id and e.decision='ACCEPTED'
+                and e.original_xid=a.original_xid and e.db_generation_id=a.db_generation_id and e.deadline_at=a.deadline_at
+                and e.request_digest=a.request_digest and e.candidate_digest=a.candidate_digest
+                and e.original_commit_at<a.deadline_at and e.status_before='committed' and e.status_after='committed'
+                and a.financial_snapshot_version=1 and a.financial_canonical=f125_financial_encode(a.financial_snapshot)
+                and a.financial_digest=sha256(a.financial_canonical)
+                and e.financial_binding=f125_financial_binding_build(a,e)
+                and e.financial_binding_canonical=f125_financial_encode(e.financial_binding,'binding')
+                and e.financial_binding_digest=sha256(e.financial_binding_canonical)) as proof_ready,
+              (not exists(select 1 from order_edit_execution_controls c where c.admission_id=a.id)
+                and not exists(select 1 from order_edit_execution_attempts t where t.admission_id=a.id)
+                and not exists(select 1 from order_edit_execution_attempt_results t where t.admission_id=a.id)
+                and not exists(select 1 from order_edit_admission_events v where v.admission_id=a.id
+                  and v.after_execution in ('OBSERVING','APPLYING','RECOVERY_PENDING','REVIEW_REQUIRED'))) as initial_execution,
+              (not exists(select 1 from order_change_operations op where op.order_id=a.order_id
+                  and (op.submission_key=a.submission_key or op.state not in ('COMPLETED','ABORTED')))
+                and not exists(select 1 from payments p join payment_transactions t on t.payment_id=p.id
+                  where p.order_id=a.order_id and t.status='PENDING')
+                and not exists(select 1 from order_change_financial_requests q
+                  left join order_change_request_dispatches d on d.request_id=q.id
+                  where q.order_id=a.order_id and d.state is distinct from 'OBSERVED')
+                and not exists(select 1 from capture_requests q join payments p on p.id=q.payment_id where p.order_id=a.order_id)) as finance_clear,
+              (o.status='ORDERED' and o.shipping_preparation_started_at is null and o.shipment_capture_payment_id is null
+                and o.content_revision=a.base_content_revision and o.total_amount=a.before_amount
+                and o.active_payment_id=a.base_payment_id and o.current_evidence_epoch_id=a.base_evidence_epoch_id
+                and o.evidence_head_history_id is not distinct from a.base_evidence_history_id
+                and a.financial_snapshot=f125_financial_build(a)) as basis_matches,
               exists(select 1 from order_change_operations op join payments p on p.id=op.new_payment_id and p.order_id=a.order_id
                 where op.order_id=a.order_id and op.submission_key=a.submission_key and f125_reauth_is_owned(a.order_id,op.id)
                   and op.state in ('AUTHORIZING','REQUIRES_ACTION') and p.provider_payment_id is not null) as auth_waiting,

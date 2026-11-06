@@ -258,4 +258,25 @@ class OrderEditControllerTest {
         assertThat(((OrderEditForm)back.getModelAndView().getModel().get("editForm")).getLines().getFirst().getQuantity()).isEqualTo(2);
     }
 
+
+    @Test void eligibleResultRendersNonceProtectedAutomaticFormWithoutExecutingOnGet()throws Exception{
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"受付済み",false,false,
+            new OrderEditBrowserService.NextStep(OrderEditBrowserService.NextAction.AUTO_CONTINUE_ALLOWED,"VERIFIED_INITIAL_QUEUE")));
+        var response=mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer)))
+            .andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
+            .andExpect(content().string(containsString("sessionStorage")))
+            .andExpect(content().string(containsString("name=\"_csrf\"")))
+            .andExpect(content().string(containsString("name=\"automatic\" value=\"false\"")))
+            .andExpect(content().string(containsString("受付済み処理を継続する"))).andReturn().getResponse();
+        String nonce=response.getContentAsString().split("nonce=\"")[1].split("\"")[0];
+        assertThat(response.getHeader("Content-Security-Policy")).contains("'nonce-"+nonce+"'");
+        verify(browser,never()).continueAutomatically(anyLong(),any());verify(browser,never()).continueAdmission(anyLong(),any());
+    }
+    @ParameterizedTest @ValueSource(strings={"DISPLAY_ONLY","OBSERVE_ONLY","MANUAL_REVIEW_REQUIRED"})
+    void nonAutomaticActionsNeverRenderAutoScriptEvenWhenManualContinuationIsAllowed(String action)throws Exception{
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"確認待ち",true,false,
+            new OrderEditBrowserService.NextStep(OrderEditBrowserService.NextAction.valueOf(action),"SAVED_STATE")));
+        var response=mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer))).andExpect(status().isOk()).andReturn().getResponse();
+        assertThat(response.getContentAsString()).doesNotContain("sessionStorage").contains("受付済み処理を継続する");
+    }
 }

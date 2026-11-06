@@ -116,7 +116,11 @@ public class OrderEditController {
     }
     @GetMapping("/result")
     public String result(@PathVariable long id,@RequestParam(required=false) UUID admission,@RequestParam(required=false) UUID preview,
-            @AuthenticationPrincipal CustomUserDetails user,HttpSession session,Model model){
+            @AuthenticationPrincipal CustomUserDetails user,HttpSession session,Model model,HttpServletResponse response){
+        String nonce=Base64.getEncoder().encodeToString(UUID.randomUUID().toString().getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        model.addAttribute("resultScriptNonce",nonce);
+        response.setHeader("Cache-Control","no-store");response.setHeader("Referrer-Policy","no-referrer");
+        response.setHeader("Content-Security-Policy","default-src 'self'; script-src 'nonce-"+nonce+"'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
         if(admission!=null){model.addAttribute("result",service.result(id,admission));return "orders/edit-result";}
         if(preview==null||quote(session,preview,id,user.getId())==null)throw new IllegalArgumentException("保存済みの確認内容が必要です。");
         var found=service.findAdmission(id,preview);

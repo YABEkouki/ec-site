@@ -166,4 +166,53 @@ class OrderEditBrowserServiceTest {
         var id=UUID.randomUUID();when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of());
         assertThatThrownBy(()->service.admission(1,id)).isInstanceOf(OrderNotFoundException.class);verifyNoInteractions(provider,legacy,preview);
     }
+
+    Map<String,Object> initialAutoReceipt(UUID id){
+        var row=new HashMap<>(receipt(id,"QUEUED"));row.put("route","RETAIN_AUTH");
+        for(String fact:List.of("runtime_matches","proof_ready","initial_execution","finance_clear","basis_matches"))row.put(fact,true);
+        return row;
+    }
+    @Test void nextActionIsIndependentOfManualCanContinueAndGetHasNoSideEffects(){
+        var id=UUID.randomUUID();var row=initialAutoReceipt(id);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        assertThat(service.result(1,id).nextStep().action()).isEqualTo(OrderEditBrowserService.NextAction.AUTO_CONTINUE_ALLOWED);
+        row.put("execution_state","REVIEW_REQUIRED");row.put("route","REAUTHORIZE");
+        assertThat(service.result(1,id).canContinue()).isTrue();
+        assertThat(service.result(1,id).autoContinueAllowed()).isFalse();verifyNoInteractions(admissions,executions);
+    }
+    @ParameterizedTest @ValueSource(strings={"runtime_matches","proof_ready","initial_execution","finance_clear","basis_matches"})
+    void missingOrConflictingAutoEvidenceIsFailClosed(String fact){
+        var id=UUID.randomUUID();var row=initialAutoReceipt(id);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        row.remove(fact);assertThat(service.result(1,id).autoContinueAllowed()).isFalse();
+        row.put(fact,false);service.continueAutomatically(1,id);verifyNoInteractions(admissions,executions);
+    }
+    @ParameterizedTest @ValueSource(strings={"NOT_READY","OBSERVING","APPLYING","COMPLETED","CLOSED_UNAPPLIED","FAILED_UNAPPLIED","RECOVERY_PENDING","REVIEW_REQUIRED","UNKNOWN"})
+    void onlyInitialQueuedStateCanAutomaticallyContinue(String state){
+        var id=UUID.randomUUID();var row=initialAutoReceipt(id);row.put("execution_state",state);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        assertThat(service.result(1,id).autoContinueAllowed()).isFalse();service.continueAutomatically(1,id);verifyNoInteractions(admissions,executions);
+    }
+    @Test void runtimeStoppedOrAuthenticationWaitingPreventsAutomaticContinuation(){
+        var id=UUID.randomUUID();var row=initialAutoReceipt(id);when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        assertThat(service.result(1,id).autoContinueAllowed()).isFalse();
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);row.put("auth_waiting",true);
+        assertThat(service.result(1,id).autoContinueAllowed()).isFalse();
+    }
+    @Test void automaticPostRechecksSavedStateAndUsesCommitRecoveryButNeverReconciles(){
+        var id=UUID.randomUUID();var row=initialAutoReceipt(id);when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);when(admissions.getObject()).thenReturn(admissionService);when(executions.getObject()).thenReturn(executionService);
+        when(admissionService.recover(2,1,(UUID)row.get("submission_key"))).thenAnswer(call->{row.put("execution_state","REVIEW_REQUIRED");return new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","saved");});
+        service.continueAutomatically(1,id);verify(admissionService).recover(2,1,(UUID)row.get("submission_key"));verifyNoInteractions(executionService);
+    }
+
+    @Test void automaticContinuationUsesAcceptedCommitProofAfterThePreviewDeadline(){
+        when(preview.load(1,2)).thenReturn(page("ORDERED",now.minusHours(1),null));
+        var id=UUID.randomUUID();var row=initialAutoReceipt(id);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        when(admissions.getObject()).thenReturn(admissionService);when(executions.getObject()).thenReturn(executionService);
+        when(admissionService.recover(2,1,(UUID)row.get("submission_key"))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","saved"));
+        service.continueAutomatically(1,id);verify(executionService).executeInitial(id);verify(executionService,never()).execute(any());verify(executionService,never()).reconcile(any());verifyNoInteractions(preview);
+    }
 }

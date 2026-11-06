@@ -24,8 +24,8 @@ public class OrderEditPaymentController {
     @GetMapping("/return") public String returned(@PathVariable long id,@PathVariable UUID admission,Model model){
         browser.admission(id,admission);urls(id,admission,model);return "orders/increase-payment-return";
     }
-    @PostMapping("/continue") public String continuePayment(@PathVariable long id,@PathVariable UUID admission){
-        browser.continueAdmission(id,admission);return status(id,admission);
+    @PostMapping("/continue") public String continuePayment(@PathVariable long id,@PathVariable UUID admission,@RequestParam(defaultValue="false") boolean automatic){
+        if(automatic)browser.continueAutomatically(id,admission);else browser.continueAdmission(id,admission);return status(id,admission);
     }
     private void urls(long id,UUID admission,Model model){
         model.addAttribute("feature125AutoContinue",true);

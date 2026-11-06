@@ -61,7 +61,7 @@ class OrderEditCardPostgresTest {
             if(id.equals(flow))return observation(id,state.get(),amount,Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",operation.toString()));
             return observation(id,cancelled.get()?"canceled":"requires_capture",6000,Map.of());
         });
-        assertThat(execution.execute(receipt).status()).isEqualTo(OrderEditExecutionService.Status.HELD);
+        assertThat(execution.executeInitial(receipt).status()).isEqualTo(OrderEditExecutionService.Status.HELD);
         when(gateway.retrieveAuthorization(flow)).thenAnswer(a->{outside();return new AuthorizationRecovery(new AuthorizationResult(AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,null,null,null),"secret_for_widget_only");});
     }
     void configureRuntime(TestInfo info){new OrderEditAdmissionFoundationPostgresTest().runtime(info);}
@@ -94,6 +94,7 @@ class OrderEditCardPostgresTest {
         // Honor the existing retry backoff instead of treating an early explicit continuation as failure.
         jdbc.queryForObject("select pg_sleep(greatest(0,extract(epoch from (next_attempt_at-clock_timestamp())))+0.02) from order_edit_execution_controls where admission_id=?",Object.class,receipt);
         browser.continueAdmission(f.order(),receipt);assertThat(browser.result(f.order(),receipt).label()).isEqualTo("変更完了");
+        assertThat(browser.result(f.order(),receipt).autoContinueAllowed()).isFalse();browser.continueAutomatically(f.order(),receipt);
         browser.continueAdmission(f.order(),receipt);assertThat(browser.result(f.order(),receipt).label()).isEqualTo("変更完了");
         verify(gateway,times(2)).sendOrderChangeRequest(any());
         assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isEqualTo(1);
@@ -104,6 +105,7 @@ class OrderEditCardPostgresTest {
         actor();assertThat(browser.startCard(f.order(),receipt)).isPresent();state.set(status);clearInvocations(gateway);
         browser.continueAdmission(f.order(),receipt);
         assertThat(browser.result(f.order(),receipt).label()).isNotEqualTo("変更完了");
+        assertThat(browser.result(f.order(),receipt).autoContinueAllowed()).isFalse();browser.continueAutomatically(f.order(),receipt);
         assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
         verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).retrieveAuthorization(anyString());
     }
@@ -112,6 +114,7 @@ class OrderEditCardPostgresTest {
         when(gateway.observeOrderChangeFlow(anyString())).thenThrow(new IllegalStateException("mock transport unknown"));
         browser.continueAdmission(f.order(),receipt);
         assertThat(browser.result(f.order(),receipt).label()).isNotEqualTo("変更完了");
+        assertThat(browser.result(f.order(),receipt).autoContinueAllowed()).isFalse();browser.continueAutomatically(f.order(),receipt);
         assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
         verify(gateway,never()).sendOrderChangeRequest(any());verify(gateway,never()).retrieveAuthorization(anyString());
     }
@@ -147,6 +150,7 @@ class OrderEditCardPostgresTest {
         actor();state.set("requires_capture");stopRuntime();clearInvocations(gateway);
         assertThatThrownBy(()->webhooks.synchronize("payment_flow.amount_capturable_updated",flow)).isInstanceOf(RuntimeException.class);
         browser.continueAdmission(f.order(),receipt);assertThat(browser.result(f.order(),receipt).label()).isNotEqualTo("変更完了");
+        assertThat(browser.result(f.order(),receipt).autoContinueAllowed()).isFalse();browser.continueAutomatically(f.order(),receipt);
         verifyNoInteractions(gateway);assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isZero();
         resumeTestRuntime();execution.reconcile(receipt);waitForBackoff();assertThat(execution.reconcile(receipt).status()).isEqualTo(OrderEditExecutionService.Status.COMPLETED);
         verify(gateway,times(1)).sendOrderChangeRequest(any()); // Only OLD_CANCEL; CREATE happened before invocations were cleared.

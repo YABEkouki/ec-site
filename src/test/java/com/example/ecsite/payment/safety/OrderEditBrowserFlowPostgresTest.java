@@ -77,4 +77,47 @@ class OrderEditBrowserFlowPostgresTest {
         assertThat(r.outcome()).isEqualTo(OrderEditAdmissionService.Outcome.REJECTED_LATE);
         assertThat(browser.result(f.order(),r.admissionId()).label()).isEqualTo("未適用終了");verifyNoInteractions(g);
     }
+
+    @Test void initialQueuedReceiptAutoContinuationIsOwnerBoundReadOnlyAndIdempotent(){
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);var c=OrderEditAdmissionServicePostgresTest.command(f);
+        var r=new OrderEditAdmissionService(db.source).submit(c);customer(f.customer());var g=gateway();var browser=browser(g);
+        var before=OrderEditAdmissionServicePostgresTest.business(f);
+        assertThat(browser.result(f.order(),r.admissionId()).nextStep().action()).isEqualTo(OrderEditBrowserService.NextAction.AUTO_CONTINUE_ALLOWED);
+        assertThat(OrderEditAdmissionServicePostgresTest.business(f)).isEqualTo(before);verifyNoInteractions(g);
+        browser.continueAutomatically(f.order(),r.admissionId());
+        assertThat(browser.result(f.order(),r.admissionId()).label()).isEqualTo("変更完了");
+        assertThat(browser.result(f.order(),r.admissionId()).autoContinueAllowed()).isFalse();
+        browser.continueAutomatically(f.order(),r.admissionId());verify(g,times(1)).observeOrderAuthorization(any());verifyNoMoreInteractions(g);
+        assertThat(db.jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isOne();
+    }
+    @Test void initializedControlAndRuntimeStopDisableAutomaticExecution(){
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);var c=OrderEditAdmissionServicePostgresTest.command(f);
+        var r=new OrderEditAdmissionService(db.source).submit(c);customer(f.customer());var g=gateway();var browser=browser(g);
+        new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(db.source)).execute(s->{
+            db.jdbc.queryForObject("select f125_execution_initialize(?)",Object.class,r.admissionId());return null;
+        });
+        assertThat(browser.result(f.order(),r.admissionId()).autoContinueAllowed()).isFalse();
+        var claim=new OrderEditExecutionCoordinator(db.source).claim(new OrderEditExecution.Claim(r.admissionId(),UUID.randomUUID(),0));
+        assertThat(claim.outcome()).isEqualTo(OrderEditExecution.Outcome.RECORDED);
+        assertThat(claim.view().activeAttemptId()).isNotNull();
+        assertThat(browser.result(f.order(),r.admissionId()).nextStep().action()).isEqualTo(OrderEditBrowserService.NextAction.OBSERVE_ONLY);
+        browser.continueAutomatically(f.order(),r.admissionId());verifyNoInteractions(g);
+        var resolved=new OrderEditExecutionCoordinator(db.source).resolve(new OrderEditExecution.Resolution(r.admissionId(),UUID.randomUUID(),
+            claim.view().activeAttemptId(),claim.view().token(),claim.view().version(),OrderEditExecution.Disposition.REQUEUE,"AUTO_GUARD_REQUEUE"));
+        assertThat(resolved.outcome()).isEqualTo(OrderEditExecution.Outcome.RECORDED);
+        assertThat(new OrderEditExecutionService(db.source,g,LegacyOrderEvidenceEnrollmentPostgresTest.C).executeInitial(r.admissionId()).status())
+            .isEqualTo(OrderEditExecutionService.Status.BLOCKED);verifyNoInteractions(g);
+        db.jdbc.update("update order_edit_runtime_control set state='STOPPED',generation_id=null,version=version+1 where id=1");
+        assertThat(browser.result(f.order(),r.admissionId()).autoContinueAllowed()).isFalse();
+    }
+
+    @Test void financialSnapshotChangeDisablesAutomaticExecutionWithoutRebaselining(){
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);var c=OrderEditAdmissionServicePostgresTest.command(f);
+        var r=new OrderEditAdmissionService(db.source).submit(c);customer(f.customer());var g=gateway();var browser=browser(g);
+        var original=db.jdbc.queryForObject("select encode(financial_digest,'hex') from order_edit_admissions where id=?",String.class,r.admissionId());
+        db.jdbc.update("update payments set status='CANCELLED' where id=?",f.payment());
+        assertThat(browser.result(f.order(),r.admissionId()).autoContinueAllowed()).isFalse();
+        browser.continueAutomatically(f.order(),r.admissionId());verifyNoInteractions(g);
+        assertThat(db.jdbc.queryForObject("select encode(financial_digest,'hex') from order_edit_admissions where id=?",String.class,r.admissionId())).isEqualTo(original);
+    }
 }

@@ -32,13 +32,17 @@ public final class OrderEditExecutionService {
         control=new OrderEditExecutionCoordinator(source);applications=new OrderEditApplicationTransactions(source,connection,manager);
         read=new TransactionTemplate(new DataSourceTransactionManager(source));read.setReadOnly(true);read.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
-    public Result execute(UUID id){
+    public Result execute(UUID id){return execute(id,false);}
+    /** Browser automation may claim only version zero. A concurrent earlier attempt makes CAS fail. */
+    public Result executeInitial(UUID id){return execute(id,true);}
+    private Result execute(UUID id,boolean initialOnly){
         outside();Objects.requireNonNull(id);var previous=recover(id);if(previous.status()==Status.COMPLETED)return previous;
         final Info info;
         try{info=read.execute(s->{var rows=jdbc.queryForList("select a.admission_state,a.execution_state,coalesce(c.version,0) as version from order_edit_admissions a left join order_edit_execution_controls c on c.admission_id=a.id where a.id=?",id);
             if(rows.size()!=1||!"ACCEPTED".equals(rows.getFirst().get("admission_state"))||!"QUEUED".equals(rows.getFirst().get("execution_state")))throw new IllegalStateException("Not queued");var row=jdbc.queryForMap("select order_id,route from order_edit_admissions where id=?",id);
             return new Info(((Number)row.get("order_id")).longValue(),(String)row.get("route"),((Number)rows.getFirst().get("version")).longValue());});}
         catch(RuntimeException unavailable){return result(Status.BLOCKED,id);}
+        if(initialOnly&&info.version()!=0)return result(Status.BLOCKED,id);
         if("REAUTHORIZE".equals(info.route())&&reauthorization==null)return result(Status.BLOCKED,id);
         var claim=new Claim(id,UUID.randomUUID(),info.version());var claimed=control.claim(claim);
         if(claimed.outcome()!=Outcome.RECORDED||claimed.view()==null||!claim.attemptId().equals(claimed.view().activeAttemptId()))return result(claimed.outcome()==Outcome.COMMIT_UNKNOWN?Status.COMMIT_UNKNOWN:Status.BLOCKED,id);
