@@ -5,7 +5,17 @@
 <title>カード認証後の確認</title></head>
 <body>
 <h1>カード認証後の確認</h1>
-<p>ブラウザの戻り先だけでは与信の成否は確定しません。サーバーで結果を確認してください。</p>
+<p>ブラウザの戻り先だけでは与信の成否は確定しません。サーバーの保存結果で確認します。</p>
+<p th:if="${errorMessage}" th:text="${errorMessage}" role="alert"></p>
+<p th:if="${!autoCheckAllowed}">自動確認は行いません。結果が不明な場合は、新しい注文やカード認証を繰り返さず、保存済みの注文をご確認ください。</p>
 <noscript><p>一時的な認証情報をURLから除去するためJavaScriptを有効にしてください。URLを共有しないでください。</p></noscript>
-<form th:action="@{/checkout/payment/continue}" method="post"><button type="submit">サーバーで結果を確認する</button></form>
+<form id="checkout-continue" th:if="${confirmationTarget != null}" th:attr="data-key=${confirmationTarget.key()},data-auto=${autoCheckAllowed}" th:action="@{/checkout/payment/continue}" method="post">
+<input type="hidden" name="expectedOrderId" th:value="${confirmationTarget.orderId}">
+<input type="hidden" name="expectedPaymentId" th:value="${confirmationTarget.paymentId}">
+<input type="hidden" name="expectedTransactionId" th:value="${confirmationTarget.transactionId}">
+<button type="submit">サーバーで結果を確認する</button></form>
+<p id="checkout-confirmation-status" role="status" aria-live="polite"></p>
+<noscript><p>自動確認は行いません。上のボタンで結果をご確認ください。</p></noscript>
+<p th:if="${orderId != null}"><a th:href="@{/orders/{id}(id=${orderId})}">保存済みの注文を確認する</a></p>
+<th:block th:replace="~{fragments/checkout-payment-continuation :: confirmation}"></th:block>
 </body></html>

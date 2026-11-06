@@ -50,6 +50,10 @@
 </script>
 </section>
 <p th:if="${card == null}">カード決済の状態を確認中です。認証の中断・通信断後の再認証は自動実行しません。</p>
-<form th:action="@{/checkout/payment/continue}" method="post"><button type="submit">サーバーで結果を確認する</button></form>
+<form th:if="${confirmationTarget != null}" th:action="@{/checkout/payment/continue}" method="post">
+<input type="hidden" name="expectedOrderId" th:value="${confirmationTarget.orderId}">
+<input type="hidden" name="expectedPaymentId" th:value="${confirmationTarget.paymentId}">
+<input type="hidden" name="expectedTransactionId" th:value="${confirmationTarget.transactionId}">
+<button type="submit">サーバーで結果を確認する</button></form>
 <p><a th:href="@{/orders/{id}(id=${orderId})}">注文詳細へ戻る</a></p>
 </body></html>

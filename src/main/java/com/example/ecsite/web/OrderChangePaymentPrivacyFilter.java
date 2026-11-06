@@ -20,10 +20,10 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
         boolean edit=path.matches("/orders/[^/]+/edit/[^/]+/payment(?:/return|/continue)?");
         boolean editContinue=path.matches("/orders/[^/]+/edit/continue");
         if(!edit&&!editContinue&&!path.matches("/orders/[^/]+/increase/[^/]+/payment(?:/return|/continue)?")
-                && !path.matches("/checkout/payment(?:/return|/continue)?")){
+                && !path.matches("/checkout/payment(?:/return|/continue|/wait)?")){
             chain.doFilter(request,response);return;
         }
-        boolean returned=path.endsWith("/return");
+        boolean returned=path.endsWith("/return")||path.equals("/checkout/payment/wait");
         String nonce=Base64.getEncoder().encodeToString(UUID.randomUUID().toString().getBytes(java.nio.charset.StandardCharsets.US_ASCII));
         request.setAttribute("paymentScriptNonce",nonce);
         response.setHeader("Cache-Control","no-store");

@@ -76,6 +76,11 @@ public class PaymentAuthorizationService {
                 preparation.clientSecret());
     }
 
+    public java.util.Optional<PaymentOperationSnapshotService.CheckoutTarget> checkoutTarget(long orderId,long paymentId,long customerId) {
+        try{return snapshots.checkoutTarget(orderId,paymentId,customerId);}
+        catch(org.springframework.dao.DataAccessException | IllegalStateException unavailable){return java.util.Optional.empty();}
+    }
+
     public AuthorizationResult refreshAuthorization(Long orderId, Long paymentId) {
 
         PaymentOperationSnapshot snapshot = snapshots.authorization(orderId, paymentId);

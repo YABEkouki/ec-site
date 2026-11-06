@@ -58,13 +58,13 @@ class CheckoutPaymentPrivacyPostgresTest {
         var customer=new User();customer.setUsername("privacy-"+key);customer.setPassword("unused");customer.setEnabled(true);customer.setCreatedAt(now);customer.setUpdatedAt(now);users.saveAndFlush(customer);
         var order=new Order(customer.getId(),750,now,now.plusHours(1));orders.saveAndFlush(order);
         histories.record(order,null,OrderStatus.ORDERED,OrderStatusHistoryActorType.USER,customer.getId(),customer.getUsername(),null);
-        var payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,750,now);payment.setProviderPaymentId("pfw_"+key,now);payments.saveAndFlush(payment);
+        var payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,750,now);payment.setProviderPaymentId("pfw_"+key,now);payments.saveAndFlush(payment);order.bindActivePayment(payment);orders.flush();
         var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,750,0,key,now,PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);transactions.saveAndFlush(auth);
         return new Fixture(order.getId(),customer.getId(),payment.getId(),payment.getProviderPaymentId());
     });}
     MockHttpSession session(Fixture f){var session=new MockHttpSession();session.setAttribute("checkoutOrderId",f.order());session.setAttribute("checkoutPaymentId",f.payment());return session;}
     org.springframework.test.web.servlet.request.RequestPostProcessor customer(long id){return user(new CustomUserDetails(id,"fixture","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))));}
-    void observe(Fixture f,AuthorizationResultStatus status){when(gateway.retrieveAuthorization(f.flow())).thenReturn(new AuthorizationRecovery(new AuthorizationResult(status,f.flow(),null,null),SECRET));}
+    void observe(Fixture f,AuthorizationResultStatus status){doReturn(new AuthorizationRecovery(new AuthorizationResult(status,f.flow(),null,null),SECRET)).when(gateway).retrieveAuthorization(f.flow());}
 
     @Autowired org.springframework.context.ApplicationContext context;
     @Test void maintenanceFlagsStopEveryPaymentScheduler() {
@@ -136,14 +136,110 @@ class CheckoutPaymentPrivacyPostgresTest {
 
     @Test void serverObservationDeterminesSuccessNotForgedReturnParameters() throws Exception {
         var f=fixture();observe(f,AuthorizationResultStatus.PENDING);var session=session(f);
-        mvc.perform(post("/checkout/payment/continue").session(session).with(customer(f.user())).with(csrf()).param("status","succeeded"))
-            .andExpect(status().isFound()).andExpect(redirectedUrl("/checkout/payment"));
+        fixedPost(f,session)
+            .andExpect(status().isFound()).andExpect(redirectedUrl("/checkout/payment/wait"));
         assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.order())).isEqualTo("ORDERED");
         observe(f,AuthorizationResultStatus.AUTHORIZED);
-        mvc.perform(post("/checkout/payment/continue").session(session).with(customer(f.user())).with(csrf()))
+        fixedPost(f,session)
             .andExpect(status().isFound()).andExpect(redirectedUrl("/checkout/complete"));
         assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.payment())).isEqualTo("AUTHORIZED");
-        mvc.perform(post("/checkout/payment/continue").session(session).with(customer(f.user())).with(csrf())).andExpect(redirectedUrl("/"));
+        fixedPost(f,session).andExpect(redirectedUrl("/"));
         verify(gateway,times(2)).retrieveAuthorization(f.flow());
     }
+    @Test void returnPinsTargetAndAutomaticPostCompletesWithoutGetSideEffects() throws Exception {
+        var f=fixture();var session=session(f);
+        var page=mvc.perform(get("/checkout/payment/return").session(session).with(customer(f.user())))
+            .andExpect(status().isOk()).andReturn();
+        assertThat(page.getModelAndView().getModel().get("autoCheckAllowed")).isEqualTo(true);
+        assertThat(page.getResponse().getContentAsString()).contains("expectedOrderId","expectedPaymentId","expectedTransactionId","data-auto=\"true\"","nonce=","_csrf");
+        verifyNoInteractions(gateway);
+        observe(f,AuthorizationResultStatus.AUTHORIZED);
+        fixedPost(f,session).andExpect(redirectedUrl("/checkout/complete"));
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.payment())).isEqualTo("AUTHORIZED");
+        verify(gateway,times(1)).retrieveAuthorization(f.flow());verify(gateway,never()).prepareAuthorization(any());
+        fixedPost(f,session).andExpect(redirectedUrl("/"));
+    }
+    @Test void waitingGetAndUnknownPostNeverAutomaticallyReobserve() throws Exception {
+        var f=fixture();var session=session(f);observe(f,AuthorizationResultStatus.PENDING);
+        fixedPost(f,session).andExpect(redirectedUrl("/checkout/payment/wait"));
+        clearInvocations(gateway);
+        for(int i=0;i<2;i++)mvc.perform(get("/checkout/payment/wait").session(session).with(customer(f.user())))
+            .andExpect(status().isOk()).andExpect(model().attribute("autoCheckAllowed",false));
+        verifyNoInteractions(gateway);
+    }
+    @Test void replacedTargetAndMissingTargetNeverReachGateway() throws Exception {
+        var first=fixture();var second=fixture();var session=session(second);
+        fixedPost(first,session).andExpect(redirectedUrl("/checkout/payment/wait"));
+        mvc.perform(post("/checkout/payment/continue").session(session).with(customer(second.user())).with(csrf()))
+            .andExpect(redirectedUrl("/checkout/payment/wait"));
+        verifyNoInteractions(gateway);
+    }
+
+    @Test void failedObservationKeepsUnknownAndWaitGetNeverCallsProvider()throws Exception {
+        var f=fixture();var session=session(f);when(gateway.retrieveAuthorization(f.flow())).thenThrow(new PaymentGatewayException("private-error"));
+        fixedPost(f,session).andExpect(redirectedUrl("/checkout/payment/wait"));
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.payment())).isEqualTo("PENDING");
+        clearInvocations(gateway);
+        mvc.perform(get("/checkout/payment/wait").session(session).with(customer(f.user())))
+            .andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store"))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("data-auto=\"false\"")))
+            .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-error"))));
+        verifyNoInteractions(gateway);
+    }
+    @Test void actionNotFinishedNeverCompletesOrReissuesAuthorization()throws Exception {
+        var f=fixture();observe(f,AuthorizationResultStatus.REQUIRES_ACTION);fixedPost(f,session(f)).andExpect(redirectedUrl("/checkout/payment/wait"));
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.payment())).isEqualTo("REQUIRES_ACTION");
+        verify(gateway,never()).prepareAuthorization(any());
+    }
+    @Test void concurrentTabsOnlyApplyAuthorizationOnce()throws Exception {
+        var f=fixture();observe(f,AuthorizationResultStatus.AUTHORIZED);var one=session(f);var two=session(f);
+        var pool=java.util.concurrent.Executors.newFixedThreadPool(2);
+        try{var a=pool.submit(()->fixedPost(f,one));var b=pool.submit(()->fixedPost(f,two));
+            a.get().andExpect(redirectedUrl("/checkout/complete"));b.get().andExpect(redirectedUrl("/checkout/complete"));
+        }finally{pool.shutdownNow();}
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=?",Integer.class,f.payment())).isOne();
+        assertThat(jdbc.queryForObject("select count(*) from stock_movements where order_id=?",Integer.class,f.order())).isZero();
+        verify(gateway,never()).prepareAuthorization(any());
+    }
+    @Test void staleTransactionCsrfAndForeignOwnerCannotRefresh()throws Exception {
+        var f=fixture();var session=session(f);
+        mvc.perform(post("/checkout/payment/continue").session(session).with(customer(f.user())).with(csrf())
+            .param("expectedOrderId",Long.toString(f.order())).param("expectedPaymentId",Long.toString(f.payment())).param("expectedTransactionId","-1"))
+            .andExpect(redirectedUrl("/checkout/payment/wait"));
+        mvc.perform(get("/checkout/payment/wait").session(session).with(customer(f.user()+999))).andExpect(status().isNotFound());
+        mvc.perform(get("/checkout/payment/return").session(session).with(anonymous())).andExpect(status().is3xxRedirection());
+        mvc.perform(get("/checkout/payment/return").session(new MockHttpSession()).with(customer(f.user()))).andExpect(redirectedUrl("/"));
+        mvc.perform(post("/checkout/payment/continue").session(session).with(customer(f.user()))).andExpect(status().isForbidden());
+        verifyNoInteractions(gateway);
+    }
+
+    @Test void responseLossAfterSavedSuccessWaitsAndExplicitRetryIsIdempotent()throws Exception {
+        var f=fixture();var session=session(f);
+        when(gateway.retrieveAuthorization(f.flow())).thenAnswer(call->{
+            new TransactionTemplate(manager).executeWithoutResult(tx->{var p=payments.findById(f.payment()).orElseThrow();p.markAuthorized(java.time.LocalDateTime.now());
+                var auth=transactions.findByPaymentIdOrderByCreatedAtAscIdAsc(f.payment()).getFirst();auth.markSucceeded(f.flow(),java.time.LocalDateTime.now());});
+            throw new PaymentGatewayException("synthetic-response-loss");
+        });
+        fixedPost(f,session).andExpect(redirectedUrl("/checkout/payment/wait"));
+        clearInvocations(gateway);
+        mvc.perform(get("/checkout/payment/wait").session(session).with(customer(f.user()))).andExpect(model().attribute("autoCheckAllowed",false));
+        verifyNoInteractions(gateway);observe(f,AuthorizationResultStatus.AUTHORIZED);
+        fixedPost(f,session).andExpect(redirectedUrl("/checkout/complete"));
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=?",Integer.class,f.payment())).isOne();
+        verify(gateway,never()).prepareAuthorization(any());
+    }
+    @Test void changedCheckoutDuringProviderObservationIsNotCleared()throws Exception {
+        var f=fixture();var next=fixture();var session=session(f);
+        when(gateway.retrieveAuthorization(f.flow())).thenAnswer(call->{session.setAttribute("checkoutOrderId",next.order());session.setAttribute("checkoutPaymentId",next.payment());
+            return new AuthorizationRecovery(new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED,f.flow(),null,null),SECRET);});
+        fixedPost(f,session).andExpect(redirectedUrl("/checkout/complete"));
+        assertThat(session.getAttribute("checkoutOrderId")).isEqualTo(next.order());assertThat(session.getAttribute("checkoutPaymentId")).isEqualTo(next.payment());
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,next.payment())).isEqualTo("PENDING");
+    }
+    org.springframework.test.web.servlet.ResultActions fixedPost(Fixture f,MockHttpSession session)throws Exception {
+        long tx=jdbc.queryForObject("select id from payment_transactions where payment_id=? and transaction_type='AUTHORIZE'",Long.class,f.payment());
+        return mvc.perform(post("/checkout/payment/continue").session(session).with(customer(f.user())).with(csrf())
+            .param("expectedOrderId",Long.toString(f.order())).param("expectedPaymentId",Long.toString(f.payment())).param("expectedTransactionId",Long.toString(tx)));
+    }
+
 }
