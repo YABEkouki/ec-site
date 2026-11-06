@@ -115,4 +115,10 @@ class OrderEditPaymentControllerTest {
             .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt));
         verify(browser).continueAutomatically(1,receipt);verify(browser,never()).continueAdmission(anyLong(),any());
     }
+
+    @Test void automaticRequeueVersionIsPreservedByPrivacyFilterAndBoundToExistingReceipt()throws Exception{
+        mvc.perform(post(url()+"/continue").param("automatic","true").param("automaticVersion","3").with(user(customer)).with(csrf()))
+            .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt));
+        verify(browser).continueAutomatically(1,receipt,3L);verify(browser,never()).continueAdmission(anyLong(),any());
+    }
 }

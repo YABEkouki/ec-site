@@ -16,7 +16,7 @@
 <form th:if="${result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
 <button type="submit">カード認証を開始する</button>
 </form>
-<form id="result-continue" th:attr="data-receipt=${result.id}" th:if="${result.canContinue or result.autoContinueAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automatic" value="false"><button type="submit">受付済み処理を継続する</button>
+<form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${result.canContinue or result.autoContinueAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit">受付済み処理を継続する</button>
 </form>
 <p id="result-continuation-status" role="status" aria-live="polite"></p>
 <noscript><p>自動確認は行いません。必要に応じて継続ボタンまたは保存済みの処理結果をご確認ください。</p></noscript>
@@ -37,8 +37,14 @@
     const message = document.getElementById('result-continuation-status');
     const automatic = form.querySelector('input[name="automatic"]');
     const buttons = form.querySelectorAll('button[type="submit"]');
-    let submitting = false;
+    const MAX_ACTIONS = 3, MAX_WAIT = 10000, MAX_TOTAL_WAIT = 30000;
+    const wait = Number(form.dataset.waitMs), remaining = Number(form.dataset.remainingMs);
+    const stage = form.dataset.stage;
+    const started = Date.now();
+    let submitting = false, timer = null, cancelled = false;
     const manual = () => {
+        cancelled = true;
+        if (timer !== null) clearTimeout(timer);
         submitting = false;
         automatic.value = 'false';
         buttons.forEach(button => button.disabled = false);
@@ -46,23 +52,43 @@
     };
     form.addEventListener('submit', event => {
         if (submitting) { event.preventDefault(); return; }
+        cancelled = true;
+        if (timer !== null) clearTimeout(timer);
         submitting = true;
         automatic.value = 'false';
         buttons.forEach(button => button.disabled = true);
     });
     window.addEventListener('pageshow', event => { if (event.persisted) manual(); });
-    // One attempt per receipt/tab, including unchanged redirects/reloads. Storage failure stays manual.
+    window.addEventListener('pagehide', manual);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) manual(); });
+    if (!Number.isFinite(wait) || !Number.isFinite(remaining) || wait < 0 || wait > MAX_WAIT || remaining <= wait || !stage) { manual(); return; }
+    // Count only automatic waiting, not time spent by the customer completing 3DS.
     try {
-        const key = 'feature125:initial-result:' + form.dataset.receipt;
-        if (window.sessionStorage.getItem(key)) { manual(); return; }
-        window.sessionStorage.setItem(key, 'attempted');
+        const key = 'feature125:result-budget:' + form.dataset.receipt;
+        const saved = window.sessionStorage.getItem(key);
+        const budget = saved ? JSON.parse(saved) : {count: 0, waited: 0, stages: {}};
+        if (!Number.isInteger(budget.count) || budget.count < 0 || !Number.isFinite(budget.waited) || budget.waited < 0
+            || !budget.stages || typeof budget.stages !== 'object' || budget.stages[stage]
+            || budget.count >= MAX_ACTIONS || budget.waited + wait > MAX_TOTAL_WAIT
+            || (stage === 'INITIAL:0' && window.sessionStorage.getItem('feature125:initial-result:' + form.dataset.receipt))) { manual(); return; }
+        budget.count++;
+        budget.waited += wait;
+        budget.stages[stage] = true;
+        window.sessionStorage.setItem(key, JSON.stringify(budget));
+        if (stage === 'INITIAL:0') window.sessionStorage.setItem('feature125:initial-result:' + form.dataset.receipt, 'attempted');
     } catch (_) { manual(); return; }
     submitting = true;
-    automatic.value = 'true';
     buttons.forEach(button => button.disabled = true);
-    message.textContent = '受付済みの処理を確認しています。注文変更はまだ完了していません。';
-    try { HTMLFormElement.prototype.submit.call(form); }
-    catch (_) { manual(); }
+    message.textContent = '処理を確認しています。注文変更はまだ完了していません。';
+    const send = () => {
+        if (cancelled) return;
+        if (document.hidden || Date.now() - started > MAX_WAIT || Date.now() - started >= remaining) { manual(); return; }
+        automatic.value = 'true';
+        try { HTMLFormElement.prototype.submit.call(form); }
+        catch (_) { manual(); }
+    };
+    if (wait > 0) timer = setTimeout(send, wait);
+    else send();
 })();
 </script>
 </body></html>

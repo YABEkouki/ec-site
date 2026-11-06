@@ -215,4 +215,22 @@ class OrderEditBrowserServiceTest {
         when(admissionService.recover(2,1,(UUID)row.get("submission_key"))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","saved"));
         service.continueAutomatically(1,id);verify(executionService).executeInitial(id);verify(executionService,never()).execute(any());verify(executionService,never()).reconcile(any());verifyNoInteractions(preview);
     }
+
+    @Test void conclusiveRequeueHasItsOwnActionAndVersionWhileBackoffPreventsEarlyPost(){
+        var id=UUID.randomUUID();var row=initialAutoReceipt(id);row.put("route","REAUTHORIZE");row.put("initial_execution",false);
+        row.put("finance_clear",false);row.put("basis_matches",false);
+        var ready=new HashMap<String,Object>(Map.of("version",3L,"operation_version",4L,"wait_millis",5000L,"remaining_millis",60000L));
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        when(jdbc.queryForList(contains("operation_version"),eq(id),eq(1L),eq(2L))).thenReturn(List.of(ready));
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        assertThat(service.result(1,id).nextStep().action()).isEqualTo(OrderEditBrowserService.NextAction.AUTO_RESUME_REAUTH_ALLOWED);
+        assertThat(service.result(1,id).nextStep().stage()).isEqualTo("REAUTH:3:4");
+        service.continueAutomatically(1,id,3L);verifyNoInteractions(admissions,executions);
+        ready.put("wait_millis",0L);service.continueAutomatically(1,id,2L);verifyNoInteractions(admissions,executions);
+        when(admissions.getObject()).thenReturn(admissionService);when(executions.getObject()).thenReturn(executionService);
+        when(admissionService.recover(2,1,(UUID)row.get("submission_key"))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","saved"));
+        service.continueAutomatically(1,id,3L);verify(executionService).executeRequeued(id,3L);
+        verify(executionService,never()).executeInitial(any());verify(executionService,never()).reconcile(any());
+        ready.put("remaining_millis",0L);assertThat(service.result(1,id).autoContinueAllowed()).isFalse();
+    }
 }

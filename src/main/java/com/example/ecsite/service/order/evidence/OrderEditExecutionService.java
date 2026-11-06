@@ -32,10 +32,14 @@ public final class OrderEditExecutionService {
         control=new OrderEditExecutionCoordinator(source);applications=new OrderEditApplicationTransactions(source,connection,manager);
         read=new TransactionTemplate(new DataSourceTransactionManager(source));read.setReadOnly(true);read.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
-    public Result execute(UUID id){return execute(id,false);}
+    public Result execute(UUID id){return execute(id,false,null);}
     /** Browser automation may claim only version zero. A concurrent earlier attempt makes CAS fail. */
-    public Result executeInitial(UUID id){return execute(id,true);}
-    private Result execute(UUID id,boolean initialOnly){
+    public Result executeInitial(UUID id){return execute(id,true,null);}
+    public Result executeRequeued(UUID id,long expectedVersion){
+        if(expectedVersion<=0)return result(Status.BLOCKED,id);
+        return execute(id,false,expectedVersion);
+    }
+    private Result execute(UUID id,boolean initialOnly,Long requeuedVersion){
         outside();Objects.requireNonNull(id);var previous=recover(id);if(previous.status()==Status.COMPLETED)return previous;
         final Info info;
         try{info=read.execute(s->{var rows=jdbc.queryForList("select a.admission_state,a.execution_state,coalesce(c.version,0) as version from order_edit_admissions a left join order_edit_execution_controls c on c.admission_id=a.id where a.id=?",id);
@@ -43,8 +47,9 @@ public final class OrderEditExecutionService {
             return new Info(((Number)row.get("order_id")).longValue(),(String)row.get("route"),((Number)rows.getFirst().get("version")).longValue());});}
         catch(RuntimeException unavailable){return result(Status.BLOCKED,id);}
         if(initialOnly&&info.version()!=0)return result(Status.BLOCKED,id);
+        if(requeuedVersion!=null&&(info.version()!=requeuedVersion||!"REAUTHORIZE".equals(info.route())))return result(Status.BLOCKED,id);
         if("REAUTHORIZE".equals(info.route())&&reauthorization==null)return result(Status.BLOCKED,id);
-        var claim=new Claim(id,UUID.randomUUID(),info.version());var claimed=control.claim(claim);
+        var claim=new Claim(id,UUID.randomUUID(),info.version());var claimed=requeuedVersion==null?control.claim(claim):control.claimRequeued(claim);
         if(claimed.outcome()!=Outcome.RECORDED||claimed.view()==null||!claim.attemptId().equals(claimed.view().activeAttemptId()))return result(claimed.outcome()==Outcome.COMMIT_UNKNOWN?Status.COMMIT_UNKNOWN:Status.BLOCKED,id);
         var owner=new Ownership(id,claim.attemptId(),claimed.view().token(),claimed.view().version());
         if("REAUTHORIZE".equals(info.route()))return executeReauthorization(owner,info.order());

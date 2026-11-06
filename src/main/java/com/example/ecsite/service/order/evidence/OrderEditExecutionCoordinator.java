@@ -28,6 +28,7 @@ public final class OrderEditExecutionCoordinator {
         tx.setReadOnly(read);tx.setTimeout(10);return tx;
     }
     public Result claim(Claim c){outside();Objects.requireNonNull(c);return write(c.admissionId(),()->store.claim(c));}
+    public Result claimRequeued(Claim c){outside();Objects.requireNonNull(c);return write(c.admissionId(),()->store.claimRequeued(c));}
     public Result resolve(Resolution c){outside();Objects.requireNonNull(c);return write(c.admissionId(),()->store.resolve(c));}
     /** An expired lease only causes fencing/suspension, never an automatic retry or gate release. */
     public Result recoverExpired(Expired c){outside();Objects.requireNonNull(c);return write(c.admissionId(),()->store.suspendExpired(c));}
@@ -74,7 +75,7 @@ public final class OrderEditExecutionCoordinator {
         catch(RuntimeException failure){
             var view=safeRead(admission);
             return result(sqlState(failure,"55000")?Outcome.RUNTIME_UNAVAILABLE:
-                sqlState(failure,"23514")||sqlState(failure,"23505")?Outcome.BLOCKED:Outcome.COMMIT_UNKNOWN,view,"COMMAND_NOT_CONFIRMED_NO_AUTOMATIC_RETRY");
+                failure instanceof OrderEditRequeuedAuthorization.NotEligible||sqlState(failure,"23514")||sqlState(failure,"23505")?Outcome.BLOCKED:Outcome.COMMIT_UNKNOWN,view,"COMMAND_NOT_CONFIRMED_NO_AUTOMATIC_RETRY");
         }
     }
     private Result observed(UUID admission,Supplier<Result> read){try{return readTx.execute(s->read.get());}catch(RuntimeException failure){return result(Outcome.COMMIT_UNKNOWN,null,"OBSERVATION_UNAVAILABLE");}}

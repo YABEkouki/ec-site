@@ -23,14 +23,16 @@ public class OrderEditBrowserService {
     private final ObjectProvider<OrderEditAdmissionService> admissions;
     private final ObjectProvider<OrderEditExecutionService> executions;
     private final ObjectProvider<OrderEditCardService> cards;
-    public enum NextAction { DISPLAY_ONLY, AUTO_CONTINUE_ALLOWED, OBSERVE_ONLY, MANUAL_REVIEW_REQUIRED }
-    public record NextStep(NextAction action,String reason) {}
+    public enum NextAction { DISPLAY_ONLY, AUTO_CONTINUE_ALLOWED, AUTO_RESUME_REAUTH_ALLOWED, OBSERVE_ONLY, MANUAL_REVIEW_REQUIRED }
+    public record NextStep(NextAction action,String reason,Long version,long waitMillis,long remainingMillis,String stage) {
+        public NextStep(NextAction action,String reason){this(action,reason,0L,0,30_000,"INITIAL:0");}
+    }
     public record BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate,NextStep nextStep){
         public BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate){
             this(id,label,canContinue,canAuthenticate,new NextStep(NextAction.DISPLAY_ONLY,"UNCLASSIFIED"));
         }
         public BrowserResult(UUID id,String label,boolean canContinue){this(id,label,canContinue,false);}
-        public boolean autoContinueAllowed(){return nextStep!=null&&nextStep.action()==NextAction.AUTO_CONTINUE_ALLOWED;}
+        public boolean autoContinueAllowed(){return nextStep!=null&&Set.of(NextAction.AUTO_CONTINUE_ALLOWED,NextAction.AUTO_RESUME_REAUTH_ALLOWED).contains(nextStep.action());}
     }
     public OrderEditBrowserService(OrderEditPreviewService previews,ObjectProvider<LegacyOrderEvidenceEnrollment> enrollment,JdbcTemplate jdbc,ObjectProvider<OrderEditAdmissionService> admissions,ObjectProvider<OrderEditExecutionService> executions,ObjectProvider<OrderEditCardService> cards){this.previews=previews;this.enrollment=enrollment;this.jdbc=jdbc;this.admissions=admissions;this.executions=executions;this.cards=cards;}
     public OrderEditPreviewService.PageContext load(long order){return previews.load(order,customer());}
@@ -99,11 +101,21 @@ public class OrderEditBrowserService {
     }
     /** Automatic requests never enter recovery reconciliation. Every POST rechecks the read-only hint,
      * then the existing independent receipt verification and fenced claim/application revalidate again. */
-    public void continueAutomatically(long order,UUID id){
-        outside();if(!result(order,id).autoContinueAllowed())return;
+    public void continueAutomatically(long order,UUID id){continueAutomatically(order,id,null);}
+    public void continueAutomatically(long order,UUID id,Long expectedVersion){
+        outside();var hint=result(order,id);if(!hint.autoContinueAllowed())return;
+        boolean resumed=hint.nextStep().action()==NextAction.AUTO_RESUME_REAUTH_ALLOWED;
+        if(resumed&&(expectedVersion==null||!expectedVersion.equals(hint.nextStep().version())||hint.nextStep().waitMillis()>0))return;
+        if(!resumed&&expectedVersion!=null&&expectedVersion!=0)return;
         var row=receipt(order,id);
         var verified=admissions.getObject().recover(customer(),order,(UUID)row.get("submission_key"));
-        executeAccepted(order,verified,true);
+        if(!resumed){executeAccepted(order,verified,true);return;}
+        if(verified.outcome()!=OrderEditAdmissionService.Outcome.ACCEPTED||!id.equals(verified.admissionId()))return;
+        var fresh=result(order,id);
+        if(fresh.nextStep().action()!=NextAction.AUTO_RESUME_REAUTH_ALLOWED||!expectedVersion.equals(fresh.nextStep().version())
+            ||fresh.nextStep().waitMillis()>0)return;
+        try{executions.getObject().executeRequeued(id,expectedVersion);}
+        catch(RuntimeException unconfirmed){/* Read saved state after response loss; never replay a financial request. */}
     }
     private void executeAccepted(long order,OrderEditAdmissionService.Result result){executeAccepted(order,result,false);}
     private void executeAccepted(long order,OrderEditAdmissionService.Result result,boolean automatic){
@@ -135,9 +147,9 @@ public class OrderEditBrowserService {
         else if(Set.of("RECORDED_UNVERIFIED","UNPROVEN").contains(a==null?"":a))retry=true;
         if("ACCEPTED".equals(a)&&"REAUTHORIZE".equals(row.get("route"))&&Set.of("RECOVERY_PENDING","REVIEW_REQUIRED").contains(x==null?"":x))retry=true;
         boolean available=(retry||Boolean.TRUE.equals(row.get("auth_available")))&&submissionAvailable();
-        return new BrowserResult(id,label,retry&&available,Boolean.TRUE.equals(row.get("auth_available"))&&available,nextStep(row,available));
+        return new BrowserResult(id,label,retry&&available,Boolean.TRUE.equals(row.get("auth_available"))&&available,nextStep(row,available,order,id));
     }
-    private NextStep nextStep(Map<String,Object> row,boolean available){
+    private NextStep nextStep(Map<String,Object> row,boolean available,long order,UUID id){
         String state=(String)row.get("execution_state");
         if(row.get("closed_at")!=null)return new NextStep(NextAction.DISPLAY_ONLY,"TERMINAL");
         if(Set.of("RECOVERY_PENDING","REVIEW_REQUIRED").contains(state==null?"":state))
@@ -147,6 +159,18 @@ public class OrderEditBrowserService {
         if(!"ACCEPTED".equals(row.get("admission_state"))||!"QUEUED".equals(state))return new NextStep(NextAction.DISPLAY_ONLY,"RECEIPT_NOT_READY");
         if(!available||!Boolean.TRUE.equals(row.get("runtime_matches")))return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"RUNTIME_UNAVAILABLE_OR_GENERATION_CHANGED");
         if(!Set.of("RETAIN_AUTH","REAUTHORIZE").contains(Objects.toString(row.get("route"),"")))return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"UNKNOWN_ROUTE");
+        if("REAUTHORIZE".equals(row.get("route"))&&!Boolean.TRUE.equals(row.get("initial_execution"))
+            &&Boolean.TRUE.equals(row.get("proof_ready"))){
+            var ready=jdbc.queryForList(OrderEditRequeuedAuthorization.FACTS+" and a.order_id=? and a.customer_id=?",id,order,customer());
+            if(ready.size()==1){
+                var r=ready.getFirst();long wait=((Number)r.get("wait_millis")).longValue(),remaining=((Number)r.get("remaining_millis")).longValue();
+                long version=((Number)r.get("version")).longValue();
+                if(version>0&&wait>=0&&wait<=OrderEditRequeuedAuthorization.MAX_WAIT_MILLIS&&remaining>wait+1000)
+                    return new NextStep(NextAction.AUTO_RESUME_REAUTH_ALLOWED,"CONCLUSIVE_OWNED_REAUTH_REQUEUED",version,wait,remaining,
+                        "REAUTH:"+version+":"+r.get("operation_version"));
+            }
+            return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"REQUEUED_REAUTH_NOT_PROVEN_OR_OUTSIDE_WINDOW");
+        }
         for(String fact:List.of("proof_ready","initial_execution","finance_clear","basis_matches"))
             if(!Boolean.TRUE.equals(row.get(fact)))return new NextStep(NextAction.MANUAL_REVIEW_REQUIRED,"UNPROVEN_"+fact.toUpperCase(Locale.ROOT));
         return new NextStep(NextAction.AUTO_CONTINUE_ALLOWED,"VERIFIED_INITIAL_QUEUE_WITHOUT_PRIOR_EXECUTION_OR_FINANCIAL_WORK");

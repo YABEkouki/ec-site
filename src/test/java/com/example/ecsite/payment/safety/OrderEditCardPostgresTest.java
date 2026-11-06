@@ -22,6 +22,7 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 /** Explicit guarded commit-tracking PG17 runtime. Every provider operation is mocked. */
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
 @com.example.ecsite.support.CaptureConnectionTest
 @Testcontainers
@@ -35,6 +36,7 @@ class OrderEditCardPostgresTest {
         r.add("spring.datasource.url",POSTGRES::getJdbcUrl);r.add("spring.datasource.username",POSTGRES::getUsername);r.add("spring.datasource.password",POSTGRES::getPassword);
         r.add("spring.flyway.url",POSTGRES::getJdbcUrl);r.add("spring.flyway.user",POSTGRES::getUsername);r.add("spring.flyway.password",POSTGRES::getPassword);
     }
+    @Autowired org.springframework.test.web.servlet.MockMvc mvc;
     @Autowired com.example.ecsite.service.payment.PayJpWebhookSyncService webhooks;
     @Autowired OrderEditBrowserService browser;
     @Autowired JdbcTemplate jdbc;@Autowired OrderEditExecutionService execution;@Autowired OrderEditCardService cards;
@@ -61,6 +63,9 @@ class OrderEditCardPostgresTest {
             if(id.equals(flow))return observation(id,state.get(),amount,Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",operation.toString()));
             return observation(id,cancelled.get()?"canceled":"requires_capture",6000,Map.of());
         });
+        if(info.getTestMethod().orElseThrow().getName().equals("expiredAutomaticWindowNeverPostsCancellation"))
+            new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource()))
+                .execute(s->jdbc.queryForObject("select f125_execution_initialize(?,interval '8 seconds')",Object.class,receipt));
         assertThat(execution.executeInitial(receipt).status()).isEqualTo(OrderEditExecutionService.Status.HELD);
         when(gateway.retrieveAuthorization(flow)).thenAnswer(a->{outside();return new AuthorizationRecovery(new AuthorizationResult(AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,null,null,null),"secret_for_widget_only");});
     }
@@ -176,4 +181,82 @@ class OrderEditCardPostgresTest {
         }finally{returned.countDown();pool.shutdownNow();}
     }
 
+
+    String paymentUrl(){return "/orders/"+f.order()+"/edit/"+receipt+"/payment";}
+    org.springframework.test.web.servlet.request.RequestPostProcessor customerRequest(){
+        return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
+            new com.example.ecsite.security.CustomUserDetails(f.customer(),"buyer","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))));
+    }
+    void authenticationReturnPost()throws Exception{
+        actor();assertThat(browser.startCard(f.order(),receipt)).isPresent();state.set("requires_capture");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(paymentUrl()+"/return").with(customerRequest()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("window.orderEditPaymentContinue();")));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(paymentUrl()+"/continue").with(customerRequest())
+            .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().is3xxRedirection());
+        actor(); // MockMvc clears its request SecurityContext; direct service checks need an explicit test actor.
+    }
+    @Test void authenticationReturnAndRequeueAutomaticallyCompleteWithoutManualContinuation()throws Exception{
+        var digest=jdbc.queryForObject("select encode(financial_digest,'hex') from order_edit_admissions where id=?",String.class,receipt);
+        authenticationReturnPost();
+        var response=mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/orders/"+f.order()+"/edit/result")
+            .param("admission",receipt.toString()).with(customerRequest())).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn();
+        var ready=(OrderEditBrowserService.BrowserResult)response.getModelAndView().getModel().get("result");
+        assertThat(ready.nextStep().action()).isEqualTo(OrderEditBrowserService.NextAction.AUTO_RESUME_REAUTH_ALLOWED);
+        assertThat(ready.nextStep().waitMillis()).isPositive().isLessThanOrEqualTo(5000);
+        assertThat(response.getResponse().getContentAsString()).contains("data-stage=\"REAUTH:","setTimeout(send, wait)");
+        actor();
+        browser.continueAutomatically(f.order(),receipt,ready.nextStep().version()); // Early POST cannot claim or cancel.
+        verify(gateway,times(1)).sendOrderChangeRequest(any());
+        waitForBackoff();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(paymentUrl()+"/continue").with(customerRequest())
+            .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+            .param("automatic","true").param("automaticVersion",ready.nextStep().version().toString()))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().is3xxRedirection());
+        // Treat that response as lost: reread saved completion, then replay the same version.
+        actor();
+        assertThat(browser.result(f.order(),receipt).label()).isEqualTo("変更完了");
+        browser.continueAutomatically(f.order(),receipt,ready.nextStep().version());
+        verify(gateway,times(2)).sendOrderChangeRequest(any());assertThat(cancelled).isTrue();
+        assertThat(jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select encode(financial_digest,'hex') from order_edit_admissions where id=?",String.class,receipt)).isEqualTo(digest);
+    }
+    @Test void requeuedVersionRaceAllowsOneApplicationAndNoDuplicateFinancialPost()throws Exception{
+        authenticationReturnPost();waitForBackoff();long version=browser.result(f.order(),receipt).nextStep().version();
+        assertThat(execution.executeRequeued(receipt,version-1).status()).isEqualTo(OrderEditExecutionService.Status.BLOCKED);
+        var pool=java.util.concurrent.Executors.newFixedThreadPool(2);var start=new java.util.concurrent.CountDownLatch(1);
+        try{
+            var one=pool.submit(()->{start.await();return execution.executeRequeued(receipt,version);});
+            var two=pool.submit(()->{start.await();return execution.executeRequeued(receipt,version);});start.countDown();
+            var outcomes=List.of(one.get(),two.get());assertThat(outcomes).anyMatch(x->x.status()==OrderEditExecutionService.Status.COMPLETED);
+        }finally{pool.shutdownNow();}
+        assertThat(browser.result(f.order(),receipt).label()).isEqualTo("変更完了");verify(gateway,times(2)).sendOrderChangeRequest(any());
+        assertThat(jdbc.queryForObject("select count(*) from order_edit_execution_attempt_results where admission_id=? and disposition='APPLIED'",Integer.class,receipt)).isOne();
+    }
+    @Test void expiredAutomaticWindowNeverPostsCancellation()throws Exception{
+        authenticationReturnPost();
+        jdbc.queryForObject("select pg_sleep(greatest(0,extract(epoch from automatic_until-clock_timestamp()))+0.02) from order_edit_execution_controls where admission_id=?",Object.class,receipt);
+        long version=jdbc.queryForObject("select version from order_edit_execution_controls where admission_id=?",Long.class,receipt);
+        assertThat(browser.result(f.order(),receipt).autoContinueAllowed()).isFalse();
+        browser.continueAutomatically(f.order(),receipt,version);
+        assertThat(execution.executeRequeued(receipt,version).status()).isNotEqualTo(OrderEditExecutionService.Status.COMPLETED);
+        verify(gateway,times(1)).sendOrderChangeRequest(any());assertThat(cancelled).isFalse();
+    }
+
+    @Test void lostRequeueClaimCommitResponseOnlyObservesSavedAttemptAndNeverReposts()throws Exception{
+        authenticationReturnPost();waitForBackoff();long version=browser.result(f.order(),receipt).nextStep().version();
+        var command=new OrderEditExecution.Claim(receipt,UUID.randomUUID(),version);
+        var source=OrderEditAdmissionServicePostgresTest.db.source;
+        var uncertain=new OrderEditExecutionCoordinator(source,OrderEditAdmissionServicePostgresTest.lostCommit(1,true)).claimRequeued(command);
+        assertThat(uncertain.outcome()).isEqualTo(OrderEditExecution.Outcome.COMMIT_UNKNOWN);
+        var coordinator=new OrderEditExecutionCoordinator(source);var saved=coordinator.recoverClaim(command);
+        assertThat(saved.outcome()).isEqualTo(OrderEditExecution.Outcome.OBSERVED);
+        assertThat(saved.view().activeAttemptId()).isEqualTo(command.attemptId());
+        assertThat(browser.result(f.order(),receipt).autoContinueAllowed()).isFalse();browser.continueAutomatically(f.order(),receipt,version);
+        verify(gateway,times(1)).sendOrderChangeRequest(any());
+        // Resolve the isolated fixture's active owner into safe hold, not a retry.
+        var owner=saved.view();assertThat(coordinator.resolve(new OrderEditExecution.Resolution(receipt,UUID.randomUUID(),command.attemptId(),
+            owner.token(),owner.version(),OrderEditExecution.Disposition.UNKNOWN,"TEST_RESPONSE_LOSS")).outcome()).isEqualTo(OrderEditExecution.Outcome.RECORDED);
+    }
 }

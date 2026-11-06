@@ -34,7 +34,11 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
         if(!returned&&!edit&&!editContinue){chain.doFilter(request,response);return;}
         Map<String,String[]> parameters=new LinkedHashMap<>();
         if(!returned&&"POST".equals(request.getMethod())){
-            if(edit&&path.endsWith("/continue")&&"true".equals(request.getParameter("automatic")))parameters.put("automatic",new String[]{"true"});
+            if(edit&&path.endsWith("/continue")&&"true".equals(request.getParameter("automatic"))){
+                parameters.put("automatic",new String[]{"true"});
+                String version=request.getParameter("automaticVersion");
+                if(version!=null&&version.matches("[0-9]{1,18}"))parameters.put("automaticVersion",new String[]{version});
+            }
             var csrf=request.getParameterValues("_csrf");if(csrf!=null)parameters.put("_csrf",csrf.clone());
             var admission=request.getParameter("admission");
             if(editContinue&&admission!=null&&admission.matches("[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))parameters.put("admission",new String[]{admission});

@@ -18,6 +18,17 @@ final class OrderEditExecutionRepository {
         jdbc.queryForObject("select f125_execution_initialize(?)",Object.class,c.admissionId());
         jdbc.queryForObject("select f125_execution_claim(?,?,?)",UUID.class,c.admissionId(),c.attemptId(),c.expectedVersion());
     }
+    void claimRequeued(Claim c){
+        writable();
+        // This is the first lock in the Tx: runtime -> Order -> operation -> Payment -> ... -> control.
+        jdbc.queryForObject("select f125_execution_lock(?)",Object.class,c.admissionId());
+        jdbc.queryForObject("select f125_financial_assert_saved(?)",Object.class,c.admissionId());
+        jdbc.queryForObject("select f125_reauth_assert_current(?)",Object.class,c.admissionId());
+        var ready=jdbc.queryForList(OrderEditRequeuedAuthorization.FACTS+" and c.version=? and c.next_attempt_at<=clock_timestamp()",
+            c.admissionId(),c.expectedVersion());
+        if(ready.size()!=1)throw new OrderEditRequeuedAuthorization.NotEligible();
+        claim(c);
+    }
     void resolve(Resolution c){
         writable();jdbc.queryForObject("select f125_execution_resolve(?,?,?,?,?,?,false,?)",Object.class,
             c.admissionId(),c.attemptId(),c.token(),c.expectedVersion(),c.disposition().name(),c.reason(),c.resultId());

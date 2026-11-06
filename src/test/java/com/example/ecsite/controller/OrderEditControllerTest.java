@@ -279,4 +279,14 @@ class OrderEditControllerTest {
         var response=mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer))).andExpect(status().isOk()).andReturn().getResponse();
         assertThat(response.getContentAsString()).doesNotContain("sessionStorage").contains("受付済み処理を継続する");
     }
+
+    @Test void requeueResultIncludesBoundedBackoffAndVersionWithoutGetSideEffects()throws Exception{
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"受付済み",true,false,
+            new OrderEditBrowserService.NextStep(OrderEditBrowserService.NextAction.AUTO_RESUME_REAUTH_ALLOWED,"OWNED",3L,5000,60000,"REAUTH:3:4")));
+        mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer))).andExpect(status().isOk())
+            .andExpect(content().string(containsString("data-wait-ms=\"5000\"")))
+            .andExpect(content().string(containsString("data-stage=\"REAUTH:3:4\"")))
+            .andExpect(content().string(containsString("name=\"automaticVersion\" value=\"3\"")));
+        verify(browser,never()).continueAutomatically(anyLong(),any(),any());
+    }
 }
