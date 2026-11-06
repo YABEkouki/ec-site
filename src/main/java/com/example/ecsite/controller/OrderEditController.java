@@ -39,9 +39,15 @@ public class OrderEditController {
             else model.addAttribute("errorMessage","確認画面の有効性を確認できません。入力し直してください。");}
         return edit(page,form,null,null,0,model);
     }
+    @PostMapping("/start")
+    public String start(@PathVariable long id,RedirectAttributes flash){
+        return enrollmentResult(id,service.startEditing(id),flash);
+    }
     @PostMapping("/enroll")
     public String enroll(@PathVariable long id,RedirectAttributes flash){
-        var result=service.enroll(id);
+        return enrollmentResult(id,service.enroll(id),flash);
+    }
+    private String enrollmentResult(long id,LegacyOrderEvidenceEnrollment.Result result,RedirectAttributes flash){
         switch(result.status()){
             case ENROLLED,ALREADY_ENROLLED -> flash.addFlashAttribute("successMessage","注文情報の確認が完了しました。編集内容をご確認ください。");
             case COMMIT_UNKNOWN -> flash.addFlashAttribute("errorMessage","確認結果を確定できません。注文詳細から状態を確認してください。");

@@ -52,6 +52,28 @@ class LegacyOrderEvidenceEnrollmentPostgresTest {
         var tx=new TransactionTemplate(new DataSourceTransactionManager(db.source));tx.setReadOnly(true);tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         return tx.execute(s->new JdbcOrderPaymentEvidenceReader(jdbc).read(order));
     }
+    @Test void browserEditStartEnrollsOnceAndRepeatedStartPreservesBusinessState(){
+        var f=fixture();long owner=jdbc.queryForObject("select user_id from orders where id=?",Long.class,f.order());
+        var before=jdbc.queryForMap("select content_revision,total_amount,status from orders where id=?",f.order());
+        var g=gateway(MockOrderAuthorizationTransport::observe);
+        var previews=mock(OrderEditPreviewService.class);
+        when(previews.load(f.order(),owner)).thenAnswer(call->{
+            var r=read(f.order());var now=jdbc.queryForObject("select timezone('Asia/Tokyo',clock_timestamp())",java.time.LocalDateTime.class);
+            return new OrderEditPreviewService.PageContext(OrderEditCandidateSources.context(r,owner,now),r.decision().locallyVerified()?null:"確認が必要です");
+        });
+        var beans=new org.springframework.beans.factory.support.StaticListableBeanFactory(Map.of("legacy",service(g)));
+        var browser=new OrderEditBrowserService(previews,beans.getBeanProvider(LegacyOrderEvidenceEnrollment.class),jdbc,
+            beans.getBeanProvider(OrderEditAdmissionService.class),beans.getBeanProvider(OrderEditExecutionService.class),beans.getBeanProvider(OrderEditCardService.class));
+        var principal=new com.example.ecsite.security.CustomUserDetails(owner,"buyer","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal,"unused",principal.getAuthorities()));
+        try{
+            assertThat(browser.startEditing(f.order()).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.ENROLLED);
+            assertThat(browser.startEditing(f.order()).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.ALREADY_ENROLLED);
+            verify(g,times(1)).observeOrderAuthorization(any());verifyNoMoreInteractions(g);
+            assertThat(jdbc.queryForObject("select count(*) from order_payment_evidence_epochs where order_id=?",Integer.class,f.order())).isOne();
+            assertThat(jdbc.queryForMap("select content_revision,total_amount,status from orders where id=?",f.order())).isEqualTo(before);
+        }finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}
+    }
     @Test void customerBoundEnrollmentRejectsForeignOwnerWithoutObservation(){
         var f=fixture();long owner=jdbc.queryForObject("select user_id from orders where id=?",Long.class,f.order());
         var g=gateway(MockOrderAuthorizationTransport::observe);

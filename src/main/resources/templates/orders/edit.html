@@ -5,7 +5,7 @@
 <header th:replace="~{fragments/header :: header}"></header>
 <main>
 <h1>注文内容の一括編集</h1>
-<p>この編集画面では注文・在庫・決済は変更されません。確定前に変更内容をご確認ください。</p>
+<p>商品と数量を編集し、次の画面で変更後の金額を確認できます。</p>
 <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error" role="alert"></p>
 <p th:if="${successMessage}" th:text="${successMessage}" class="message-success" role="status"></p>
 <section th:if="${page != null}">
@@ -18,7 +18,7 @@
     <p>変更期限（日本時間）：<strong th:text="${#temporals.format(page.deadline, 'yyyy/MM/dd HH:mm')}"></strong></p>
     <p th:unless="${page.editable}" th:text="${page.unavailableReason}" class="message-error" role="alert"></p>
     <section th:if="${page.editable and editForm != null}">
-    <p>数量0は削除です。商品の入れ替えは、元の商品を0にして新しい商品を追加してください。</p>
+    <p>数量を0にすると削除できます。入れ替える場合は、元の商品を0にして別の商品を追加してください。</p>
     <p>既存明細は注文時単価を維持します。追加する商品の価格・税区分は確認時に再計算します。</p>
     <form th:action="@{/orders/{id}/edit/confirm(id=${orderId})}" th:object="${editForm}" method="post">
         <input type="hidden" th:field="*{revision}">
@@ -33,12 +33,13 @@
             <td><label>変更後数量<input type="number" th:field="*{lines[__${stat.index}__].quantity}" min="0" max="2147483647" step="1" required th:attr="aria-label=${rows[stat.index].productName + 'の変更後数量'}"></label></td>
         </tr></tbody></table>
         <h2>商品を検索して追加</h2>
+        <p>追加した商品の数量は、上の編集欄で変更できます。</p>
         <label for="edit-keyword">商品名・キーワード</label><input type="search" id="edit-keyword" name="keyword" th:value="${keyword}" maxlength="100">
         <button type="submit" th:formaction="@{/orders/{id}/edit/search(id=${orderId})}">検索する</button>
         <section th:if="${productPage != null}">
             <p th:if="${productPage.empty}">該当する商品はありません。</p>
             <table th:unless="${productPage.empty}"><thead><tr><th>商品</th><th>現在価格（税込）</th><th>参考在庫</th><th>追加</th></tr></thead><tbody>
-            <tr th:each="product : ${productPage.content}"><td><a th:href="@{/products/{id}(id=${product.id})}" target="_blank" rel="noopener" th:text="${product.name}"></a></td><td th:text="${product.price + '円'}"></td><td th:text="${product.stock}"></td><td><button type="submit" name="addProductId" th:value="${product.id}" th:formaction="@{/orders/{id}/edit/add(id=${orderId})}">1個追加する</button></td></tr>
+            <tr th:each="product : ${productPage.content}"><td><a th:href="@{/products/{id}(id=${product.id})}" target="_blank" rel="noopener" th:text="${product.name}"></a></td><td th:text="${product.price + '円'}"></td><td th:text="${product.stock}"></td><td><button type="submit" name="addProductId" th:value="${product.id}" th:formaction="@{/orders/{id}/edit/add(id=${orderId})}">商品追加</button></td></tr>
             </tbody></table>
             <button th:if="${productPage.hasPrevious()}" type="submit" name="page" th:value="${productPage.number - 1}" th:formaction="@{/orders/{id}/edit/search(id=${orderId})}">前の検索結果</button>
             <button th:if="${productPage.hasNext()}" type="submit" name="page" th:value="${productPage.number + 1}" th:formaction="@{/orders/{id}/edit/search(id=${orderId})}">次の検索結果</button>

@@ -31,6 +31,26 @@ public class OrderEditBrowserService {
     public OrderEditPreviewService.Preview preview(long order,OrderEditCandidate.Request request){return previews.preview(order,customer(),request);}
     public OrderEditCandidate.Offer offer(long product){customer();return previews.offer(product);}
     public Page<Product> search(String keyword,int page){customer();return previews.search(keyword,page);}
+    /** Explicit edit-start command; display GETs never enroll or call the provider. */
+    public LegacyOrderEvidenceEnrollment.Result startEditing(long order){
+        outside();long customer=customer();var page=previews.load(order,customer);
+        String reason=OrderEditPreviewService.stateReason(page.context());
+        if(reason!=null)throw new InvalidOrderStatusException(reason);
+        if(page.context().facts().evidenceRequired()){
+            if(!page.editable())throw new InvalidOrderStatusException(page.unavailableReason());
+            return new LegacyOrderEvidenceEnrollment.Result(LegacyOrderEvidenceEnrollment.Status.ALREADY_ENROLLED,page.context().facts().epoch().id());
+        }
+        return enroll(order);
+    }
+    /** Owner-bound display link to a saved Feature124 operation, including recovery after the edit deadline. */
+    public UUID legacyChangeOperation(long order){
+        outside();long customer=customer();requireOwner(order,customer);
+        var ids=jdbc.queryForList("""
+            select id from order_change_operations where order_id=? and customer_id=? and execution_version is null
+            order by case when state in ('COMPLETED','ABORTED') then 1 else 0 end, created_at desc,id desc limit 1
+            """,UUID.class,order,customer);
+        return ids.isEmpty()?null:ids.getFirst();
+    }
     public LegacyOrderEvidenceEnrollment.Result enroll(long order){
         outside();long customer=customer();var page=previews.load(order,customer);
         String reason=OrderEditPreviewService.stateReason(page.context());

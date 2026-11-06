@@ -55,6 +55,26 @@ class OrderEditControllerTest {
         when(service.preview(eq(1L),eq(2L),any())).thenReturn(new OrderEditPreviewService.Preview(before,after,now.plusHours(1),OrderChangeRoutePolicy.Route.REAUTHORIZE));
         when(service.offer(8)).thenReturn(new OrderEditCandidate.Offer(8,"追加商品",4,"分類",1000,5,"STANDARD","標準",1000,true));
     }
+    @ParameterizedTest @ValueSource(strings={"ENROLLED","ALREADY_ENROLLED"})
+    void startEditingRedirectsWithoutSubmittingAnEdit(String statusName)throws Exception{
+        when(browser.startEditing(1)).thenReturn(new LegacyOrderEvidenceEnrollment.Result(LegacyOrderEvidenceEnrollment.Status.valueOf(statusName),UUID.randomUUID()));
+        for(int i=0;i<2;i++)mvc.perform(post(URL+"/start").with(user(customer)).with(csrf())).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl(URL));
+        verify(browser,never()).submit(anyLong(),any(),any(),any());
+    }
+    @Test void editStartRequiresCsrfAndGetIsReadOnly()throws Exception{
+        mvc.perform(post(URL+"/start").with(user(customer))).andExpect(status().isForbidden());
+        mvc.perform(get(URL).with(user(customer))).andExpect(status().isOk());verify(browser,never()).startEditing(anyLong());verify(browser,never()).enroll(anyLong());
+    }
+    @ParameterizedTest @ValueSource(strings={"OBSERVATION_UNAVAILABLE","COMMIT_UNKNOWN","REVIEW_REQUIRED"})
+    void editStartFailurePreservesManualFallback(String statusName)throws Exception{
+        when(browser.startEditing(1)).thenReturn(new LegacyOrderEvidenceEnrollment.Result(LegacyOrderEvidenceEnrollment.Status.valueOf(statusName),null));
+        mvc.perform(post(URL+"/start").with(user(customer)).with(csrf())).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl(URL)).andExpect(flash().attributeExists("errorMessage"));
+        verify(browser,times(1)).startEditing(1);verify(browser,never()).enroll(anyLong());
+    }
+    @Test void foreignEditStartIsNotFound()throws Exception{
+        when(browser.startEditing(1)).thenThrow(new OrderNotFoundException(1L));
+        mvc.perform(post(URL+"/start").with(user(customer)).with(csrf())).andExpect(status().isNotFound());
+    }
     @Test void submitReusesServerQuoteKeyAndRedirectsToOwnedResult()throws Exception{
         var candidate=mock(OrderEditCandidate.Candidate.class);
         when(service.preview(eq(1L),eq(2L),any())).thenReturn(new OrderEditPreviewService.Preview(before,after,now.plusHours(1),OrderChangeRoutePolicy.Route.RETAIN_AUTH,candidate));

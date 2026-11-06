@@ -103,6 +103,36 @@ class OrderEditBrowserServiceTest {
         assertThat(service.load(1)).isNotNull();verify(preview).load(1,2);verifyNoInteractions(provider,legacy,jdbc);
         assertThat(OrderEditBrowserService.class.getAnnotation(org.springframework.transaction.annotation.Transactional.class)).isNull();
     }
+    @Test void editStartSkipsLegacyForVerifiedOrderAndForRepeatedStart(){
+        for(int i=0;i<2;i++)assertThat(service.startEditing(1).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.ALREADY_ENROLLED);
+        verifyNoInteractions(provider,legacy);
+    }
+    @Test void editStartEnrollsOnlyUnregisteredOrder(){
+        var registered=page("ORDERED",now.plusHours(1),null);var f=registered.context().facts();
+        var old=new OrderPaymentEvidence.Facts(f.current(),f.activePaymentId(),f.payments(),f.authorizations(),false,null,List.of(),null,false,false);
+        when(preview.load(1,2)).thenReturn(new OrderEditPreviewService.PageContext(new OrderEditCandidate.Context(old,2,"ORDERED",now.minusDays(1),now.plusHours(1),null,null,null,now),"確認が必要です"));
+        when(legacy.enrollForCustomer(1,2)).thenReturn(new LegacyOrderEvidenceEnrollment.Result(LegacyOrderEvidenceEnrollment.Status.OBSERVATION_UNAVAILABLE,null));
+        assertThat(service.startEditing(1).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.OBSERVATION_UNAVAILABLE);
+        verify(legacy,times(1)).enrollForCustomer(1,2);
+    }
+    @ParameterizedTest @ValueSource(strings={"expired","preparing","cancelled"})
+    void editStartMaintainsStateChecks(String kind){
+        when(preview.load(1,2)).thenReturn(page(kind.equals("cancelled")?"CANCELLED":"ORDERED",kind.equals("expired")?now:now.plusHours(1),kind.equals("preparing")?now:null));
+        assertThatThrownBy(()->service.startEditing(1)).isInstanceOf(InvalidOrderStatusException.class);verifyNoInteractions(provider,legacy);
+    }
+    @Test void editStartRejectsForeignOrder(){
+        when(preview.load(99,2)).thenThrow(new OrderNotFoundException(99L));
+        assertThatThrownBy(()->service.startEditing(99)).isInstanceOf(OrderNotFoundException.class);verifyNoInteractions(provider,legacy);
+    }
+    @Test void registeredButBlockedOrderIsNotReenrolled(){
+        var p=page("ORDERED",now.plusHours(1),null);when(preview.load(1,2)).thenReturn(new OrderEditPreviewService.PageContext(p.context(),"確認中です"));
+        assertThatThrownBy(()->service.startEditing(1)).isInstanceOf(InvalidOrderStatusException.class);verifyNoInteractions(provider,legacy);
+    }
+    @Test void legacyResultLinkIsOwnerBoundAndSelectsOnlyLegacyOperations(){
+        owned();var id=UUID.randomUUID();when(jdbc.queryForList(contains("execution_version is null"),eq(UUID.class),eq(1L),eq(2L))).thenReturn(List.of(id));
+        assertThat(service.legacyChangeOperation(1)).isEqualTo(id);verifyNoInteractions(provider,legacy);
+        assertThatThrownBy(()->service.legacyChangeOperation(99)).isInstanceOf(OrderNotFoundException.class);
+    }
     @Test void explicitEnrollmentUsesServerCustomerAndDelegatesExistingLogic(){
         when(legacy.enrollForCustomer(1,2)).thenReturn(new LegacyOrderEvidenceEnrollment.Result(LegacyOrderEvidenceEnrollment.Status.ENROLLED,UUID.randomUUID()));
         assertThat(service.enroll(1).status()).isEqualTo(LegacyOrderEvidenceEnrollment.Status.ENROLLED);verify(preview).load(1,2);verify(legacy).enrollForCustomer(1,2);

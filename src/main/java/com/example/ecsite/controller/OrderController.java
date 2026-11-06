@@ -42,6 +42,7 @@ import jakarta.servlet.http.HttpSession;
 @RequestMapping("/orders")
 public class OrderController {
 
+    private final com.example.ecsite.service.order.evidence.OrderEditBrowserService editBrowser;
     private final OrderService orderService;
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final ShippingAddressService shippingAddressService;
@@ -61,7 +62,9 @@ public class OrderController {
             Validator validator,
             PaymentCancellationService paymentCancellationService,
             PaymentService paymentService,
-            PaymentAuthorizationService paymentAuthorizationService) {
+            PaymentAuthorizationService paymentAuthorizationService,
+            com.example.ecsite.service.order.evidence.OrderEditBrowserService editBrowser) {
+        this.editBrowser=editBrowser;
 
         this.orderService = orderService;
         this.orderStatusHistoryService = orderStatusHistoryService;
@@ -107,6 +110,8 @@ public class OrderController {
         Order order = orderService.findOrderByIdAndUserId(
                 id,
                 loginUser.getId());
+
+        model.addAttribute("legacyChangeOperationId",editBrowser.legacyChangeOperation(id));
 
         boolean canResumePayment = paymentService.canResumeAuthorization(order)
                 || paymentService.canRecoverAuthorization(order);
