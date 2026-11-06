@@ -28,6 +28,7 @@ public class OrderEditPaymentController {
         browser.continueAdmission(id,admission);return status(id,admission);
     }
     private void urls(long id,UUID admission,Model model){
+        model.addAttribute("feature125AutoContinue",true);
         model.addAttribute("orderId",id);model.addAttribute("paymentContinueUrl","/orders/"+id+"/edit/"+admission+"/payment/continue");
         model.addAttribute("paymentStatusUrl","/orders/"+id+"/edit/result?admission="+admission);
     }

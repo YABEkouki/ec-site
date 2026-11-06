@@ -21,10 +21,12 @@ import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-@WebMvcTest(OrderEditPaymentController.class)
+@WebMvcTest({OrderEditPaymentController.class,OrderChangePaymentController.class})
 @Import({SecurityConfig.class,OrderChangePaymentPrivacyFilter.class})
 class OrderEditPaymentControllerTest {
     @Autowired MockMvc mvc;@MockitoBean OrderEditBrowserService browser;
+    @MockitoBean com.example.ecsite.service.orderchange.OrderChangeBrowserService legacyBrowser;
+    @MockitoBean com.example.ecsite.service.orderchange.OrderIncreaseService increases;
     @MockitoBean AdminUserDetailsService adminUserDetailsService;@MockitoBean CustomUserDetailsService customUserDetailsService;
     @MockitoBean AdminAuthenticationSuccessHandler adminAuthenticationSuccessHandler;@MockitoBean CustomerAuthenticationSuccessHandler customerAuthenticationSuccessHandler;
     UUID receipt=UUID.randomUUID();String url(){return "/orders/1/edit/"+receipt+"/payment";}
@@ -34,7 +36,10 @@ class OrderEditPaymentControllerTest {
         mvc.perform(post(url()).with(user(customer)).with(csrf())).andExpect(status().isOk()).andExpect(view().name("orders/increase-payment"))
             .andExpect(header().string("Referrer-Policy","no-referrer")).andExpect(header().string("Cache-Control","no-store"))
             .andExpect(content().string(containsString("PayjpPayments"))).andExpect(content().string(containsString(url()+"/continue")))
-            .andExpect(content().string(not(containsString("/increase/"))));
+            .andExpect(content().string(not(containsString("/increase/"))))
+            .andExpect(model().attribute("feature125AutoContinue",true))
+            .andExpect(content().string(containsString("HTMLFormElement.prototype.submit.call(form)")))
+            .andExpect(content().string(containsString("name=\"_csrf\"")));
     }
     @Test void missingCsrfCannotStartOrContinue()throws Exception{
         mvc.perform(post(url()).with(user(customer))).andExpect(status().isForbidden());
@@ -70,5 +75,37 @@ class OrderEditPaymentControllerTest {
     @Test void foreignReceiptIsNotFound()throws Exception{
         when(browser.startCard(1,receipt)).thenThrow(new OrderNotFoundException(1L));
         mvc.perform(post(url()).with(user(customer)).with(csrf())).andExpect(status().isNotFound());
+    }
+    @Test void returnEnablesNonceProtectedAutomaticPostButGetRemainsReadOnly()throws Exception{
+        var response=mvc.perform(get(url()+"/return").with(user(customer)))
+            .andExpect(status().isOk()).andExpect(model().attribute("feature125AutoContinue",true))
+            .andExpect(content().string(containsString("window.orderEditPaymentContinue();")))
+            .andExpect(content().string(containsString("name=\"_csrf\"")))
+            .andReturn().getResponse();
+        String nonce=response.getContentAsString().split("nonce=\"")[1].split("\"")[0];
+        org.assertj.core.api.Assertions.assertThat(response.getHeader("Content-Security-Policy")).contains("'nonce-"+nonce+"'");
+        mvc.perform(get(url()+"/return").with(user(customer))).andExpect(status().isOk());
+        verify(browser,times(2)).admission(1,receipt);verify(browser,never()).continueAdmission(anyLong(),any());
+    }
+    @Test void feature124SharedScreensKeepManualContinuation()throws Exception{
+        String legacy="/orders/1/increase/"+receipt+"/payment";
+        when(legacyBrowser.start(1,2,receipt)).thenReturn(Optional.of(new Card("pk_test_dummy","dummy","http://localhost"+legacy+"/return")));
+        mvc.perform(post(legacy).with(user(customer)).with(csrf())).andExpect(status().isOk())
+            .andExpect(model().attributeDoesNotExist("feature125AutoContinue"))
+            .andExpect(content().string(not(containsString("HTMLFormElement.prototype.submit.call(form)"))));
+        mvc.perform(get(legacy+"/return").with(user(customer))).andExpect(status().isOk())
+            .andExpect(content().string(not(containsString("window.orderEditPaymentContinue"))));
+        verifyNoInteractions(browser);
+    }
+    @Test void repeatedContinuationUsesSameSavedAdmission()throws Exception{
+        for(int i=0;i<2;i++)mvc.perform(post(url()+"/continue").with(user(customer)).with(csrf()))
+            .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt));
+        verify(browser,times(2)).continueAdmission(1,receipt);verify(browser,never()).startCard(anyLong(),any());
+    }
+    @Test void foreignReturnAndContinuationAreRejected()throws Exception{
+        when(browser.admission(1,receipt)).thenThrow(new OrderNotFoundException(1L));
+        doThrow(new OrderNotFoundException(1L)).when(browser).continueAdmission(1,receipt);
+        mvc.perform(get(url()+"/return").with(user(customer))).andExpect(status().isNotFound());
+        mvc.perform(post(url()+"/continue").with(user(customer)).with(csrf())).andExpect(status().isNotFound());
     }
 }

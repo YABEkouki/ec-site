@@ -7,8 +7,11 @@
 <h1>カード認証後の確認</h1>
 <p>ブラウザの戻り先だけでは決済や注文変更の完了は確定しません。サーバーで結果を確認してください。</p>
 <noscript><p>URLから一時的な認証情報を除去するためJavaScriptを有効にしてください。URLを共有しないでください。</p></noscript>
-<form th:action="${paymentContinueUrl != null} ? @{${paymentContinueUrl}} : @{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operationId})}" method="post">
+<form id="payment-continue" th:action="${paymentContinueUrl != null} ? @{${paymentContinueUrl}} : @{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operationId})}" method="post">
     <button type="submit">サーバーで確認して注文変更を続ける</button>
 </form>
+<p id="payment-continuation-status" role="status" aria-live="polite"></p>
+<th:block th:replace="~{fragments/order-edit-payment-continuation :: automaticContinuation}"></th:block>
 <p><a th:href="${paymentStatusUrl != null} ? @{${paymentStatusUrl}} : @{/orders/{id}/increase/{op}(id=${orderId},op=${operationId})}">変更候補の状態を表示する</a></p>
+<script th:if="${feature125AutoContinue == true}" th:attr="nonce=${paymentScriptNonce}">window.orderEditPaymentContinue();</script>
 </body></html>
