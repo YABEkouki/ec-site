@@ -63,7 +63,7 @@ class OrderEditCardPostgresTest {
             if(id.equals(flow))return observation(id,state.get(),amount,Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",operation.toString()));
             return observation(id,cancelled.get()?"canceled":"requires_capture",6000,Map.of());
         });
-        if(info.getTestMethod().orElseThrow().getName().equals("expiredAutomaticWindowNeverPostsCancellation"))
+        if(Set.of("expiredAutomaticWindowNeverPostsCancellation","expiredAutomaticWindowNeverStartsCard").contains(info.getTestMethod().orElseThrow().getName()))
             new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource()))
                 .execute(s->jdbc.queryForObject("select f125_execution_initialize(?,interval '8 seconds')",Object.class,receipt));
         assertThat(execution.executeInitial(receipt).status()).isEqualTo(OrderEditExecutionService.Status.HELD);
@@ -79,6 +79,47 @@ class OrderEditCardPostgresTest {
     @AfterEach void clearActor(){org.springframework.security.core.context.SecurityContextHolder.clearContext();}
     void actor(){var p=new com.example.ecsite.security.CustomUserDetails(f.customer(),"buyer","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER")));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(p,"unused",p.getAuthorities()));}
+    @Test void authenticationStartHintIsReadOnlyAndOneTime() throws Exception {
+        actor();clearInvocations(gateway);
+        var principal=new com.example.ecsite.security.CustomUserDetails(f.customer(),"buyer","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER")));
+        String before=jdbc.queryForObject("select md5(row_to_json(op)::text) from order_change_operations op where id=?",String.class,operation);
+        var response=mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/orders/"+f.order()+"/edit/result").param("admission",receipt.toString())
+            .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(principal)))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn().getResponse();
+        assertThat(response.getContentAsString()).contains("id=\"result-auth-start-script\"");
+        assertThat(jdbc.queryForObject("select md5(row_to_json(op)::text) from order_change_operations op where id=?",String.class,operation)).isEqualTo(before);
+        verifyNoInteractions(gateway);
+        actor();assertThat(browser.startCard(f.order(),receipt)).isPresent();
+        assertThat(browser.result(f.order(),receipt).canAuthenticate()).isFalse();
+    }
+    @Test void autoStartDoesNotExposeSecretsAndUsesExistingIssueCas(){
+        actor();var hint=browser.result(f.order(),receipt);assertThat(hint.autoStartCardAllowed()).isTrue();
+        assertThat(hint.automaticCardTarget()).contains(receipt.toString(),operation.toString()).doesNotContain(flow,"secret");
+        assertThat(cards.start(f.order(),f.customer(),receipt)).isPresent();
+        assertThat(browser.result(f.order(),receipt).autoStartCardAllowed()).isFalse();
+        assertThat(cards.start(f.order(),f.customer(),receipt)).isEmpty();
+    }
+    @Test void stoppedRuntimeNeverAutomaticallyStartsAuthentication(){
+        actor();jdbc.update("update order_edit_runtime_control set state='STOPPED',generation_id=null,version=version+1 where id=1");
+        clearInvocations(gateway);assertThat(browser.result(f.order(),receipt).autoStartCardAllowed()).isFalse();verifyNoInteractions(gateway);
+    }
+    @Test void changedOwnerCannotReadAutomaticStartTarget(){
+        actor();assertThatThrownBy(()->browser.result(f.order(),UUID.randomUUID())).isInstanceOf(com.example.ecsite.exception.OrderNotFoundException.class);
+    }
+    @Test void expiredAutomaticWindowNeverStartsCard(){
+        actor();jdbc.queryForObject("select pg_sleep(greatest(0,extract(epoch from automatic_until-clock_timestamp()))+0.02) from order_edit_execution_controls where admission_id=?",Object.class,receipt);
+        clearInvocations(gateway);assertThat(browser.result(f.order(),receipt).autoStartCardAllowed()).isFalse();verifyNoInteractions(gateway);
+    }
+    @Test void simultaneousTabsOnlyIssueOneCardScreen()throws Exception{
+        var ready=new java.util.concurrent.CountDownLatch(2);
+        when(gateway.observeOrderChangeFlow(flow)).thenAnswer(a->{outside();ready.countDown();assertThat(ready.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();return observation(flow,"requires_payment_method",amount,Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",operation.toString()));});
+        try(var pool=java.util.concurrent.Executors.newFixedThreadPool(2)){
+            var a=pool.submit(()->cards.start(f.order(),f.customer(),receipt));var b=pool.submit(()->cards.start(f.order(),f.customer(),receipt));
+            int issued=(a.get(20,java.util.concurrent.TimeUnit.SECONDS).isPresent()?1:0)+(b.get(20,java.util.concurrent.TimeUnit.SECONDS).isPresent()?1:0);
+            assertThat(issued).isEqualTo(1);
+        }
+        actor();assertThat(browser.result(f.order(),receipt).autoStartCardAllowed()).isFalse();
+    }
     @Test void firstCardIssueIsOwnedOneTimeAndLegacyEntryStillRejects(){
         assertThat(transactions.issueBrowserConfirmation(f.order(),operation,observation(flow,"requires_payment_method",amount,Map.of()))).isFalse();
         var card=cards.start(f.order(),f.customer(),receipt);assertThat(card).isPresent();assertThat(card.get().toString()).doesNotContain("secret_for_widget_only");

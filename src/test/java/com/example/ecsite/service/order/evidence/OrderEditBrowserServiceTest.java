@@ -94,6 +94,30 @@ class OrderEditBrowserServiceTest {
         when(admissionService.recover(2,1,(UUID)row.get("submission_key"))).thenReturn(new OrderEditAdmissionService.Result(OrderEditAdmissionService.Outcome.ACCEPTED,id,"ACCEPTED","QUEUED","saved"));
         service.continueAdmission(1,id);verify(executionService).execute(id);verifyNoInteractions(preview);
     }
+    @Test void automaticCardStartUsesDedicatedProofCheckWithoutExecutingAnything(){
+        var check=mock(OrderEditCardStartEligibility.class);
+        var browser=new OrderEditBrowserService(preview,provider,jdbc,admissions,executions,cards,check);
+        var id=UUID.randomUUID();var row=new HashMap<>(receipt(id,"RECOVERY_PENDING"));
+        row.put("route","REAUTHORIZE");row.put("auth_available",true);row.put("proof_ready",true);row.put("runtime_matches",true);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(true);
+        when(check.target(1,2,id)).thenReturn(id+":target");
+        assertThat(browser.result(1,id).autoStartCardAllowed()).isTrue();
+        when(check.target(1,2,id)).thenThrow(new IllegalStateException("unproven"));
+        assertThat(browser.result(1,id).autoStartCardAllowed()).isFalse();
+        verifyNoInteractions(executions,admissions,cards,legacy);
+    }
+    @ParameterizedTest @ValueSource(strings={"auth_available","proof_ready","runtime_matches","runtime"})
+    void missingAutomaticCardProofNeverInvokesEligibility(String missing){
+        var check=mock(OrderEditCardStartEligibility.class);
+        var browser=new OrderEditBrowserService(preview,provider,jdbc,admissions,executions,cards,check);
+        var id=UUID.randomUUID();var row=new HashMap<>(receipt(id,"RECOVERY_PENDING"));
+        for(var key:List.of("auth_available","proof_ready","runtime_matches"))row.put(key,true);
+        row.put("route","REAUTHORIZE");if(!missing.equals("runtime"))row.put(missing,false);
+        when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));
+        when(jdbc.queryForObject(anyString(),eq(Boolean.class))).thenReturn(!missing.equals("runtime"));
+        assertThat(browser.result(1,id).autoStartCardAllowed()).isFalse();verifyNoInteractions(check,executions,admissions,cards);
+    }
     @Test void cardAuthenticationWaitIsDisplayOnly(){
         var id=UUID.randomUUID();var row=new HashMap<>(receipt(id,"RECOVERY_PENDING"));row.put("auth_waiting",true);
         when(jdbc.queryForList(anyString(),eq(1L),eq(2L),eq(id))).thenReturn(List.of(row));

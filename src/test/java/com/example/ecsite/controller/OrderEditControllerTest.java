@@ -272,6 +272,17 @@ class OrderEditControllerTest {
         assertThat(response.getHeader("Content-Security-Policy")).contains("'nonce-"+nonce+"'");
         verify(browser,never()).continueAutomatically(anyLong(),any());verify(browser,never()).continueAdmission(anyLong(),any());
     }
+    @Test void authenticationAutoStartUsesSeparateCsrfFormAndCspNonce()throws Exception{
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"カード認証待ち",true,true,
+            new OrderEditBrowserService.NextStep(OrderEditBrowserService.NextAction.MANUAL_REVIEW_REQUIRED,"CARD_WAIT"),id+":target"));
+        var response=mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer)))
+            .andExpect(status().isOk()).andReturn().getResponse();
+        assertThat(response.getContentAsString()).contains("id=\"result-auth-start-script\"","name=\"_csrf\"","カード認証を開始する","sessionStorage")
+            .doesNotContain("confirmPayment", "feature125:result-budget:");
+        String nonce=response.getContentAsString().split("nonce=\"")[1].split("\"")[0];
+        assertThat(response.getHeader("Content-Security-Policy")).contains("'nonce-"+nonce+"'");
+        verify(browser,never()).startCard(anyLong(),any());verify(browser,never()).continueAdmission(anyLong(),any());
+    }
     @ParameterizedTest @ValueSource(strings={"DISPLAY_ONLY","OBSERVE_ONLY","MANUAL_REVIEW_REQUIRED"})
     void nonAutomaticActionsNeverRenderAutoScriptEvenWhenManualContinuationIsAllowed(String action)throws Exception{
         UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"確認待ち",true,false,

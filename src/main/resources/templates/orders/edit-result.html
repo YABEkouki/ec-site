@@ -13,7 +13,7 @@
 <p th:if="${result.label == '未適用終了'}">この受付による注文変更は適用されずに終了しました。</p>
 <p th:if="${result.label == '変更完了'}">注文内容の変更が完了しました。</p>
 <p th:if="${result.id != null}"><a th:href="@{/orders/{id}/edit/result(id=${orderId},admission=${result.id})}">保存済みの処理結果を確認する</a></p>
-<form th:if="${result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
+<form id="result-auth-start" th:attr="data-target=${result.automaticCardTarget}" th:if="${result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
 <button type="submit">カード認証を開始する</button>
 </form>
 <form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${result.canContinue or result.autoContinueAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit">受付済み処理を継続する</button>
@@ -89,6 +89,37 @@
     };
     if (wait > 0) timer = setTimeout(send, wait);
     else send();
+})();
+</script>
+<script id="result-auth-start-script" th:if="${result != null and result.autoStartCardAllowed}" th:attr="nonce=${resultScriptNonce}">
+(() => {
+    const form = document.getElementById('result-auth-start');
+    if (!form) return;
+    const message = document.getElementById('result-continuation-status');
+    const buttons = form.querySelectorAll('button[type="submit"]');
+    let submitting = false;
+    const manual = () => {
+        submitting = false;
+        buttons.forEach(button => button.disabled = false);
+        message.textContent = '自動遷移は行いません。保存済みの結果を確認するか、認証開始ボタンをご利用ください。';
+    };
+    form.addEventListener('submit', event => {
+        if (submitting) { event.preventDefault(); return; }
+        submitting = true;
+        buttons.forEach(button => button.disabled = true);
+    });
+    window.addEventListener('pageshow', event => { if (event.persisted) manual(); });
+    if (document.hidden || !form.dataset.target || !form.querySelector('input[name="_csrf"]')) { manual(); return; }
+    try {
+        const key = 'feature125:auth-start:' + form.dataset.target;
+        if (window.sessionStorage.getItem(key)) { manual(); return; }
+        // This records an attempt to navigate, never successful issuance or a provider result.
+        window.sessionStorage.setItem(key, 'attempted');
+        submitting = true;
+        buttons.forEach(button => button.disabled = true);
+        message.textContent = 'カード認証画面へ移動しています。注文変更はまだ完了していません。';
+        HTMLFormElement.prototype.submit.call(form);
+    } catch (_) { manual(); }
 })();
 </script>
 </body></html>

@@ -23,18 +23,23 @@ public class OrderEditBrowserService {
     private final ObjectProvider<OrderEditAdmissionService> admissions;
     private final ObjectProvider<OrderEditExecutionService> executions;
     private final ObjectProvider<OrderEditCardService> cards;
+    private final OrderEditCardStartEligibility cardStartEligibility;
     public enum NextAction { DISPLAY_ONLY, AUTO_CONTINUE_ALLOWED, AUTO_RESUME_REAUTH_ALLOWED, OBSERVE_ONLY, MANUAL_REVIEW_REQUIRED }
     public record NextStep(NextAction action,String reason,Long version,long waitMillis,long remainingMillis,String stage) {
         public NextStep(NextAction action,String reason){this(action,reason,0L,0,30_000,"INITIAL:0");}
     }
-    public record BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate,NextStep nextStep){
+    public record BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate,NextStep nextStep,String automaticCardTarget){
+        public BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate,NextStep nextStep){this(id,label,canContinue,canAuthenticate,nextStep,null);}
+        public boolean autoStartCardAllowed(){return automaticCardTarget!=null;}
         public BrowserResult(UUID id,String label,boolean canContinue,boolean canAuthenticate){
             this(id,label,canContinue,canAuthenticate,new NextStep(NextAction.DISPLAY_ONLY,"UNCLASSIFIED"));
         }
         public BrowserResult(UUID id,String label,boolean canContinue){this(id,label,canContinue,false);}
         public boolean autoContinueAllowed(){return nextStep!=null&&Set.of(NextAction.AUTO_CONTINUE_ALLOWED,NextAction.AUTO_RESUME_REAUTH_ALLOWED).contains(nextStep.action());}
     }
-    public OrderEditBrowserService(OrderEditPreviewService previews,ObjectProvider<LegacyOrderEvidenceEnrollment> enrollment,JdbcTemplate jdbc,ObjectProvider<OrderEditAdmissionService> admissions,ObjectProvider<OrderEditExecutionService> executions,ObjectProvider<OrderEditCardService> cards){this.previews=previews;this.enrollment=enrollment;this.jdbc=jdbc;this.admissions=admissions;this.executions=executions;this.cards=cards;}
+    public OrderEditBrowserService(OrderEditPreviewService previews,ObjectProvider<LegacyOrderEvidenceEnrollment> enrollment,JdbcTemplate jdbc,ObjectProvider<OrderEditAdmissionService> admissions,ObjectProvider<OrderEditExecutionService> executions,ObjectProvider<OrderEditCardService> cards){this(previews,enrollment,jdbc,admissions,executions,cards,null);}
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderEditBrowserService(OrderEditPreviewService previews,ObjectProvider<LegacyOrderEvidenceEnrollment> enrollment,JdbcTemplate jdbc,ObjectProvider<OrderEditAdmissionService> admissions,ObjectProvider<OrderEditExecutionService> executions,ObjectProvider<OrderEditCardService> cards,OrderEditCardStartEligibility cardStartEligibility){this.previews=previews;this.enrollment=enrollment;this.jdbc=jdbc;this.admissions=admissions;this.executions=executions;this.cards=cards;this.cardStartEligibility=cardStartEligibility;}
     public OrderEditPreviewService.PageContext load(long order){return previews.load(order,customer());}
     public OrderEditPreviewService.Preview preview(long order,OrderEditCandidate.Request request){return previews.preview(order,customer(),request);}
     public OrderEditCandidate.Offer offer(long product){customer();return previews.offer(product);}
@@ -147,7 +152,11 @@ public class OrderEditBrowserService {
         else if(Set.of("RECORDED_UNVERIFIED","UNPROVEN").contains(a==null?"":a))retry=true;
         if("ACCEPTED".equals(a)&&"REAUTHORIZE".equals(row.get("route"))&&Set.of("RECOVERY_PENDING","REVIEW_REQUIRED").contains(x==null?"":x))retry=true;
         boolean available=(retry||Boolean.TRUE.equals(row.get("auth_available")))&&submissionAvailable();
-        return new BrowserResult(id,label,retry&&available,Boolean.TRUE.equals(row.get("auth_available"))&&available,nextStep(row,available,order,id));
+        String cardTarget=null;
+        if(cardStartEligibility!=null&&available&&Boolean.TRUE.equals(row.get("auth_available"))
+            &&Boolean.TRUE.equals(row.get("proof_ready"))&&Boolean.TRUE.equals(row.get("runtime_matches")))
+            try{cardTarget=cardStartEligibility.target(order,customer(),id);}catch(RuntimeException unproven){/* Display only; never recover from a GET. */}
+        return new BrowserResult(id,label,retry&&available,Boolean.TRUE.equals(row.get("auth_available"))&&available,nextStep(row,available,order,id),cardTarget);
     }
     private NextStep nextStep(Map<String,Object> row,boolean available,long order,UUID id){
         String state=(String)row.get("execution_state");
