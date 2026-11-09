@@ -127,7 +127,8 @@ class OrderChangePaymentCustomerPostgresTest {
     .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Referrer-Policy","no-referrer"))
     .andExpect(header().string("Content-Security-Policy",org.hamcrest.Matchers.containsString("default-src 'none'")))
     .andReturn().getResponse().getContentAsString();
-  assertThat(callback).contains("history.replaceState").doesNotContain(secret,"https://","<link","src=","evil");
+  assertThat(callback).contains("history.replaceState","<link rel=\"stylesheet\" href=\"/css/style.css\">");
+  assertThat(callback.replace("<link rel=\"stylesheet\" href=\"/css/style.css\">", "")).doesNotContain(secret,"https://","<link","src=","evil");
   verifyNoInteractions(gateway);
   mvc.perform(post(payment(f,op)+"/continue").with(customer(f.user())).with(csrf()).param("status","succeeded"))
     .andExpect(status().isFound());

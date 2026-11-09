@@ -1,34 +1,34 @@
 <!DOCTYPE html>
 <html lang="ja" xmlns:th="http://www.thymeleaf.org">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>注文変更の結果</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
-<body><header th:replace="~{fragments/header :: header}"></header><main>
+<body class="flow-page"><header th:replace="~{fragments/header :: header}"></header><main class="flow-main">
 <h1>注文変更の結果</h1>
-<p th:if="${errorMessage}" th:text="${errorMessage}" role="alert"></p>
-<section th:if="${result != null}">
-<h2 th:text="${result.label}" role="status"></h2>
-<p th:if="${result.label == '受付済み'}">受付が成立しました。注文変更はまだ完了していません。</p>
-<p th:if="${result.label == '処理中'}">注文変更を処理しています。処理結果をご確認ください。</p>
-<p th:if="${result.label == 'カード認証待ち'}">カード認証が必要です。認証後もサーバーで金融結果を確認するまで、注文変更は完了していません。</p>
-<p th:if="${result.label == '確認待ち'}">結果を確認中です。注文変更の完了は確定していません。新しい編集要求を作成せず、注文詳細をご確認ください。</p>
-<p th:if="${result.label == '未適用終了'}">この受付による注文変更は適用されずに終了しました。</p>
+<p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error" role="alert"></p>
+<section th:if="${result != null}" th:class="${result.label == '変更完了'} ? 'completion-card' : 'flow-card'">
+<h2 th:text="${result.autoContinueAllowed ? '注文変更を処理しています' : result.label}" role="status"></h2>
+<p class="flow-message-info" th:if="${result.label == '受付済み'}">受付が成立しました。注文変更はまだ完了していません。</p>
+<p class="flow-message-info" th:if="${result.label == '処理中'}">注文変更の結果を確認しています。完了はまだ確認できていません。</p>
+<p class="flow-message-info" th:if="${result.label == 'カード認証待ち'}">カード認証が必要です。認証後もサーバーで金融結果を確認するまで、注文変更は完了していません。</p>
+<p class="flow-message-warning" th:if="${result.label == '確認待ち'}">結果を確認中です。注文変更の完了は確定していません。新しい編集要求を作成せず、注文詳細をご確認ください。</p>
+<p class="flow-message-warning" th:if="${result.label == '未適用終了'}">この受付による注文変更は反映されていません。</p>
 <p th:if="${result.label == '変更完了'}">注文内容の変更が完了しました。</p>
 <p th:if="${result.id != null}"><a th:href="@{/orders/{id}/edit/result(id=${orderId},admission=${result.id})}">保存済みの処理結果を確認する</a></p>
 <form id="result-auth-start" th:attr="data-target=${result.automaticCardTarget}" th:if="${result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
-<button type="submit">カード認証を開始する</button>
+<button type="submit" class="button-primary">カード認証を開始する</button>
 </form>
-<form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${result.canContinue or result.autoContinueAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit">受付済み処理を継続する</button>
+<form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${result.canContinue or result.autoContinueAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit" class="button-secondary">受付済み処理を継続する</button>
 </form>
-<p id="result-continuation-status" role="status" aria-live="polite"></p>
+<p class="flow-message-info" id="result-continuation-status" role="status" aria-live="polite"></p>
 <noscript><p>自動確認は行いません。必要に応じて継続ボタンまたは保存済みの処理結果をご確認ください。</p></noscript>
 <section th:if="${pendingPreview != null}">
 <p>同じ確認内容で受付結果を照合します。受付が保存されていない場合のみ、同じ要求を再送します。</p>
-<p><a th:href="@{/orders/{id}/edit/result(id=${orderId},preview=${pendingPreview})}">受付結果を照会する</a></p>
+<p class="actions"><a th:href="@{/orders/{id}/edit/result(id=${orderId},preview=${pendingPreview})}" class="button button-secondary">受付結果を照会する</a></p>
 <form th:action="@{/orders/{id}/edit/submit(id=${orderId})}" method="post">
-<input type="hidden" name="preview" th:value="${pendingPreview}"><button type="submit" th:disabled="${!pendingRetryAvailable}">同じ確認内容で再送する</button>
+<input type="hidden" name="preview" th:value="${pendingPreview}"><button type="submit" th:disabled="${!pendingRetryAvailable}" class="button-secondary">同じ確認内容で再送する</button>
 </form>
 </section>
 </section>
-<p><a th:href="@{/orders/{id}(id=${orderId})}">注文詳細へ戻る</a></p>
+<p class="actions"><a th:href="@{/orders/{id}(id=${orderId})}" class="button button-secondary">注文詳細へ戻る</a></p>
 </main>
 <script th:if="${result != null and result.autoContinueAllowed}" th:attr="nonce=${resultScriptNonce}">
 (() => {

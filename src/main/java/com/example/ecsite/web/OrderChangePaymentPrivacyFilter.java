@@ -30,7 +30,7 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
         response.setHeader("Referrer-Policy","no-referrer");
         response.setHeader("Content-Security-Policy","default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; "
             +"script-src 'nonce-"+nonce+"'"+(returned?"":" https://js.pay.jp")+"; "
-            +(returned?"":"frame-src https://js.pay.jp; connect-src 'self' https://js.pay.jp https://api.pay.jp; style-src 'unsafe-inline';"));
+            +(returned?"style-src 'self';":"frame-src https://js.pay.jp; connect-src 'self' https://js.pay.jp https://api.pay.jp; style-src 'self' 'unsafe-inline';"));
         if(!returned&&!edit&&!editContinue){chain.doFilter(request,response);return;}
         Map<String,String[]> parameters=new LinkedHashMap<>();
         if(!returned&&"POST".equals(request.getMethod())){

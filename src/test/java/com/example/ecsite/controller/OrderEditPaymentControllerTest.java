@@ -41,6 +41,15 @@ class OrderEditPaymentControllerTest {
             .andExpect(content().string(containsString("HTMLFormElement.prototype.submit.call(form)")))
             .andExpect(content().string(containsString("name=\"_csrf\"")));
     }
+    @Test void widgetAndReturnUseSiteLayoutAndKeepPrivateHeaders()throws Exception{
+        when(browser.startCard(1,receipt)).thenReturn(Optional.of(new Card("pk_test_dummy","widget_secret","http://localhost:8080"+url()+"/return")));
+        for(var request:List.of(post(url()).with(user(customer)).with(csrf()),get(url()+"/return").with(user(customer)))){
+            var response=mvc.perform(request).andExpect(status().isOk()).andReturn().getResponse();
+            org.assertj.core.api.Assertions.assertThat(response.getContentAsString()).contains("name=\"viewport\"","site-header","/css/style.css","class=\"flow-main\"");
+            org.assertj.core.api.Assertions.assertThat(response.getHeader("Content-Security-Policy")).contains("style-src 'self'");
+            org.assertj.core.api.Assertions.assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+        }
+    }
     @Test void missingCsrfCannotStartOrContinue()throws Exception{
         mvc.perform(post(url()).with(user(customer))).andExpect(status().isForbidden());
         mvc.perform(post(url()+"/continue").with(user(customer))).andExpect(status().isForbidden());verifyNoInteractions(browser);

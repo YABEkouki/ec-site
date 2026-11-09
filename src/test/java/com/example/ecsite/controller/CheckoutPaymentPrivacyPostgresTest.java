@@ -105,7 +105,8 @@ class CheckoutPaymentPrivacyPostgresTest {
             .andExpect(header().string("Referrer-Policy","no-referrer"))
             .andExpect(header().string("Content-Security-Policy",org.hamcrest.Matchers.containsString("default-src 'none'")))
             .andReturn().getResponse().getContentAsString();
-        assertThat(html).contains("history.replaceState","/checkout/payment/continue","_csrf").doesNotContain(SECRET,"evil","https://","src=","<link");
+        assertThat(html).contains("history.replaceState","/checkout/payment/continue","_csrf","<link rel=\"stylesheet\" href=\"/css/style.css\">");
+        assertThat(html.replace("<link rel=\"stylesheet\" href=\"/css/style.css\">", "")).doesNotContain(SECRET,"evil","https://","src=","<link");
         verifyNoInteractions(gateway);
     }
 

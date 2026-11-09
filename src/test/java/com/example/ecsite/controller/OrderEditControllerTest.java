@@ -272,6 +272,17 @@ class OrderEditControllerTest {
         assertThat(response.getHeader("Content-Security-Policy")).contains("'nonce-"+nonce+"'");
         verify(browser,never()).continueAutomatically(anyLong(),any());verify(browser,never()).continueAdmission(anyLong(),any());
     }
+    @ParameterizedTest @ValueSource(strings={"変更完了","カード認証待ち","処理中","確認待ち","未適用終了","受付済み"})
+    void resultLayoutOnlyStylesProvenCompletionAsSuccess(String label)throws Exception{
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,label,false,false));
+        var html=mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer)))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("lang=\"ja\"","name=\"viewport\"","/css/style.css","site-header","class=\"flow-main\"");
+        if(label.equals("変更完了"))assertThat(html).contains("class=\"completion-card\"");
+        else assertThat(html).doesNotContain("class=\"completion-card\"");
+        assertThat(html).doesNotContain("売上確定","支払完了");
+        verify(browser,never()).continueAdmission(anyLong(),any());verify(browser,never()).startCard(anyLong(),any());
+    }
     @Test void authenticationAutoStartUsesSeparateCsrfFormAndCspNonce()throws Exception{
         UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"カード認証待ち",true,true,
             new OrderEditBrowserService.NextStep(OrderEditBrowserService.NextAction.MANUAL_REVIEW_REQUIRED,"CARD_WAIT"),id+":target"));

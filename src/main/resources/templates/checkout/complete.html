@@ -1,17 +1,18 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
 
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
     <title>注文完了</title>
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 
-<body>
+<body class="flow-page">
     <header th:replace="~{fragments/header :: header}">
     </header>
 
-    <h1>注文完了</h1>
+    <main class="flow-main">
+<h1>注文完了</h1>
 
     <section class="completion-card">
 
@@ -44,6 +45,7 @@
         </a>
 
     </div>
+</main>
 </body>
 
 </html>

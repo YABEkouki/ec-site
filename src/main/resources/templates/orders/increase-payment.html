@@ -1,19 +1,22 @@
 <!DOCTYPE html>
 <html lang="ja" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="UTF-8"><meta name="referrer" content="no-referrer"><title>数量増加のカード認証</title></head>
-<body>
-<h1>変更後の注文全額をカードで与信する</h1>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>注文変更のカード認証</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body class="flow-page">
+<header th:replace="~{fragments/header :: header}"></header>
+<main class="flow-main">
+<h1>注文変更のカード認証</h1>
+<p class="flow-message-info">変更後の注文全額についてカードの与信を確認します。カード情報を入力し、認証ボタンを押してください。</p>
 <p>新旧の全額与信が一時的に重なります。デビット・プリペイドカードでは一時的な二重引落しや解放の遅れが生じることがあります。</p>
 <p>新与信の成立と旧与信の取消を確認した後に注文を変更します。</p>
-<div id="payment-form"></div>
-<p id="payment-error" role="alert"></p>
-<button type="button" id="payment-submit">このカードで認証する</button>
+<div id="payment-form" class="flow-payment-form"></div>
+<p class="flow-message-warning" id="payment-error" role="alert"></p>
+<button type="button" id="payment-submit" class="button-primary">このカードで認証する</button>
 <form id="payment-continue" th:action="${paymentContinueUrl != null} ? @{${paymentContinueUrl}} : @{/orders/{id}/increase/{op}/payment/continue(id=${orderId},op=${operationId})}" method="post">
-    <button type="submit">サーバーで結果を確認して続行する</button>
+    <button type="submit" class="button-secondary">サーバーで結果を確認して続行する</button>
 </form>
-<p id="payment-continuation-status" role="status" aria-live="polite"></p>
+<p class="flow-message-info" id="payment-continuation-status" role="status" aria-live="polite"></p>
 <th:block th:replace="~{fragments/order-edit-payment-continuation :: automaticContinuation}"></th:block>
-<p><a th:href="${paymentStatusUrl != null} ? @{${paymentStatusUrl}} : @{/orders/{id}/increase/{op}(id=${orderId},op=${operationId})}">変更候補の状態へ戻る</a></p>
+<p class="actions"><a th:href="${paymentStatusUrl != null} ? @{${paymentStatusUrl}} : @{/orders/{id}/increase/{op}(id=${orderId},op=${operationId})}" class="button button-secondary">変更候補の状態へ戻る</a></p>
 <script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
 <script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
 (() => {
@@ -37,4 +40,5 @@
     });
 })();
 </script>
+</main>
 </body></html>
