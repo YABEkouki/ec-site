@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.ui.Model;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -73,6 +74,12 @@ public class GlobalExceptionHandler {
         // Spring derives Allow from the matching controller's supported methods.
         e.getHeaders().forEach((name, values) -> response.setHeader(name, String.join(", ", values)));
         return "error/method-not-allowed";
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public String handleResourceNotFound(NoResourceFoundException e) {
+        return "error/not_found";
     }
 
     @ExceptionHandler(Exception.class)
