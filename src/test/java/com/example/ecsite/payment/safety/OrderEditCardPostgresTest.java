@@ -9,8 +9,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.junit.jupiter.*;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import com.example.ecsite.payment.*;
 import com.example.ecsite.payment.payjp.*;
 import com.example.ecsite.payment.orderchange.OrderChangeRequestSender;
@@ -25,17 +23,9 @@ import static org.mockito.ArgumentMatchers.*;
 @org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
 @com.example.ecsite.support.CaptureConnectionTest
-@Testcontainers
 @org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class OrderEditCardPostgresTest {
-    @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17")
-        .withDatabaseName("isolated_f125_admission_"+UUID.randomUUID().toString().replace("-",""))
-        .withUsername("admission_test").withPassword(UUID.randomUUID().toString())
-        .withCommand("postgres","-c","track_commit_timestamp=on","-c","synchronous_commit=on","-c","fsync=on");
-    @DynamicPropertySource static void database(DynamicPropertyRegistry r){
-        r.add("spring.datasource.url",POSTGRES::getJdbcUrl);r.add("spring.datasource.username",POSTGRES::getUsername);r.add("spring.datasource.password",POSTGRES::getPassword);
-        r.add("spring.flyway.url",POSTGRES::getJdbcUrl);r.add("spring.flyway.user",POSTGRES::getUsername);r.add("spring.flyway.password",POSTGRES::getPassword);
-    }
+
     @Autowired org.springframework.test.web.servlet.MockMvc mvc;
     @Autowired com.example.ecsite.service.payment.PayJpWebhookSyncService webhooks;
     @Autowired OrderEditBrowserService browser;
@@ -45,7 +35,7 @@ class OrderEditCardPostgresTest {
     AtomicReference<String> state=new AtomicReference<>("requires_payment_method");AtomicBoolean cancelled=new AtomicBoolean();String flow;
     OrderEditAdmissionServicePostgresTest.Fixture f;UUID receipt,operation;int amount;
     @BeforeEach void fixture(TestInfo info){
-        var db=OrderEditAdmissionFoundationPostgresTest.open(POSTGRES);db.schema="public";db.source.setCurrentSchema("public");
+        var db=OrderEditAdmissionFoundationPostgresTest.open(null);db.schema="public";db.source.setCurrentSchema("public");
         OrderEditAdmissionServicePostgresTest.db=db;OrderEditAdmissionServicePostgresTest.jdbc=db.jdbc;
         LegacyOrderEvidenceEnrollmentPostgresTest.db=db;LegacyOrderEvidenceEnrollmentPostgresTest.jdbc=db.jdbc;
         OrderEditAdmissionFoundationPostgresTest.jdbc=jdbc;configureRuntime(info);
@@ -221,7 +211,6 @@ class OrderEditCardPostgresTest {
             verify(gateway,times(2)).sendOrderChangeRequest(any());
         }finally{returned.countDown();pool.shutdownNow();}
     }
-
 
     String paymentUrl(){return "/orders/"+f.order()+"/edit/"+receipt+"/payment";}
     org.springframework.test.web.servlet.request.RequestPostProcessor customerRequest(){

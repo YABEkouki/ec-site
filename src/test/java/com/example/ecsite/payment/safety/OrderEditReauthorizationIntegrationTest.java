@@ -16,7 +16,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import com.example.ecsite.payment.*;
 import com.example.ecsite.payment.capture.CaptureConnectionIdentity;
 import com.example.ecsite.payment.orderchange.OrderChangeRequestSender;
@@ -35,22 +34,11 @@ import static org.mockito.ArgumentMatchers.*;
 @CaptureConnectionTest
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 class OrderEditReauthorizationIntegrationTest {
-    static PostgreSQLContainer container;
     @DynamicPropertySource static void dedicatedCommitTrackingDatabase(DynamicPropertyRegistry properties){
         PaymentSafetyExpandPostgresTest.verifyContainerBeforeAnyDatabaseAccess();
-        container=new PostgreSQLContainer("postgres:17")
-            .withDatabaseName("isolated_f125_admission_"+UUID.randomUUID().toString().replace("-",""))
-            .withUsername("admission_test").withPassword(UUID.randomUUID().toString())
-            .withCommand("postgres","-c","track_commit_timestamp=on","-c","synchronous_commit=on","-c","fsync=on");
-        container.start();
-        properties.add("spring.datasource.url",container::getJdbcUrl);
-        properties.add("spring.datasource.username",container::getUsername);
-        properties.add("spring.datasource.password",container::getPassword);
-        properties.add("spring.flyway.url",container::getJdbcUrl);
-        properties.add("spring.flyway.user",container::getUsername);
-        properties.add("spring.flyway.password",container::getPassword);
+
     }
-    @AfterAll static void stopDedicatedDatabase(){if(container!=null)container.stop();}
+    @AfterAll static void stopDedicatedDatabase(){}
     static final CaptureConnectionIdentity CONNECTION=new CaptureConnectionIdentity("test-capture","test-account","TEST","https://api.pay.jp");
     @Autowired Environment environment;
     @Autowired JdbcTemplate applicationJdbc;

@@ -15,7 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import com.example.ecsite.support.isolation.IsolatedDatabaseGuard;
 import static org.assertj.core.api.Assertions.*;
 
-/** Real commits only, on a separately guarded container. Never uses development configuration. */
+/** Real commits on guarded ecsite_test; server-setting cases alone use disposable containers. */
 class OrderEditAdmissionFoundationPostgresTest {
     static PostgreSQLContainer container;
     static PaymentSafetyExpandPostgresTest db;
@@ -24,16 +24,26 @@ class OrderEditAdmissionFoundationPostgresTest {
     record Fixture(long order,long customer,long payment,long authorization,UUID epoch) {}
     @BeforeAll static void database() {
         PaymentSafetyExpandPostgresTest.verifyContainerBeforeAnyDatabaseAccess();
-        container=new PostgreSQLContainer("postgres:17")
-            .withDatabaseName("isolated_f125_admission_"+UUID.randomUUID().toString().replace("-",""))
-            .withUsername("admission_test").withPassword(UUID.randomUUID().toString())
-            .withCommand("postgres","-c","track_commit_timestamp=on","-c","synchronous_commit=on","-c","fsync=on");
-        container.start();
+        if(System.getProperty("ecsite.test.database-mode","shared").equals("testcontainers")) {
+            container=commitTrackingContainer();container.start();
+        }
         db=open(container);db.migrate("70");db.legacyFixture();var before=db.legacyRows();db.migrate("71");
         assertThat(db.legacyRows()).isEqualTo(before);jdbc=db.jdbc;
     }
+    static PostgreSQLContainer commitTrackingContainer() {
+        return new PostgreSQLContainer("postgres:17")
+            .withDatabaseName("isolated_f125_admission_"+UUID.randomUUID().toString().replace("-",""))
+            .withUsername("admission_test").withPassword(UUID.randomUUID().toString())
+            .withCommand("postgres","-c","track_commit_timestamp=on","-c","synchronous_commit=on","-c","fsync=on");
+    }
     static PaymentSafetyExpandPostgresTest open(PostgreSQLContainer c) {
+        if(c==null) {
+            PaymentSafetyExpandPostgresTest.verifyContainerBeforeAnyDatabaseAccess();
+            var result=new PaymentSafetyExpandPostgresTest();result.isolatedSchema();return result;
+        }
         var env=new MockEnvironment();
+        env.setActiveProfiles("test");
+        env.setProperty("ecsite.test.database-mode","testcontainers");
         for(String prefix:List.of("spring.datasource","spring.flyway")) {
             env.setProperty(prefix+".url",c.getJdbcUrl());
             env.setProperty(prefix+(prefix.endsWith("flyway")?".user":".username"),c.getUsername());

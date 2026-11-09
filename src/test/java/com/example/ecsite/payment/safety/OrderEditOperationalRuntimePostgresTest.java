@@ -11,16 +11,29 @@ import org.flywaydb.core.Flyway;
 import com.example.ecsite.service.order.evidence.*;
 import static org.assertj.core.api.Assertions.*;
 
-/** Only the existing guarded PostgreSQL 17 container. No provider HTTP or development datasource. */
+/** Guarded ecsite_test normally; only the boot-identity case owns a disposable PostgreSQL. */
 class OrderEditOperationalRuntimePostgresTest {
     static PaymentSafetyExpandPostgresTest db;static JdbcTemplate jdbc;
+    org.testcontainers.postgresql.PostgreSQLContainer restartContainer;
     @BeforeAll static void database(){OrderEditAdmissionFoundationPostgresTest.database();}
     @AfterAll static void cleanup(){OrderEditAdmissionFoundationPostgresTest.cleanup();}
-    @BeforeEach void schema(){
+    @BeforeEach void schema(TestInfo info){
+        if(info.getTestMethod().orElseThrow().getName().equals("actualDatabaseRestartRequiresExplicitSameGenerationApproval")
+                && OrderEditAdmissionFoundationPostgresTest.container==null) {
+            restartContainer=OrderEditAdmissionFoundationPostgresTest.commitTrackingContainer();
+            OrderEditAdmissionFoundationPostgresTest.container=restartContainer;
+            restartContainer.start();
+        }
         db=OrderEditAdmissionFoundationPostgresTest.open(OrderEditAdmissionFoundationPostgresTest.container);db.migrate("76");jdbc=db.jdbc;
         OrderEditAdmissionServicePostgresTest.db=db;OrderEditAdmissionServicePostgresTest.jdbc=jdbc;
         LegacyOrderEvidenceEnrollmentPostgresTest.db=db;LegacyOrderEvidenceEnrollmentPostgresTest.jdbc=jdbc;
         Flyway.configure().dataSource(db.source).defaultSchema(db.schema).target("76").load().validate();
+    }
+    @AfterEach void stopRestartContainer(){
+        if(restartContainer!=null) {
+            try{restartContainer.stop();}
+            finally{OrderEditAdmissionFoundationPostgresTest.container=null;restartContainer=null;}
+        }
     }
     static <T>T tx(Supplier<T> body){return new TransactionTemplate(new DataSourceTransactionManager(db.source)).execute(s->body.get());}
     long version(){return jdbc.queryForObject("select version from order_edit_runtime_control where id=1",Long.class);}
@@ -100,6 +113,7 @@ class OrderEditOperationalRuntimePostgresTest {
                 var port=inspected.getNetworkSettings().getPorts().getBindings().entrySet().stream().filter(e->e.getKey().getPort()==5432).findFirst().orElseThrow().getValue()[0].getHostPortSpec();
                 String url="jdbc:postgresql://"+container.getHost()+":"+port+"/"+container.getDatabaseName();
                 var env=new org.springframework.mock.env.MockEnvironment();
+                env.setActiveProfiles("test");env.setProperty("ecsite.test.database-mode","testcontainers");
                 for(String prefix:List.of("spring.datasource","spring.flyway")){
                     env.setProperty(prefix+".url",url);env.setProperty(prefix+(prefix.endsWith("flyway")?".user":".username"),container.getUsername());env.setProperty(prefix+".password",container.getPassword());
                 }

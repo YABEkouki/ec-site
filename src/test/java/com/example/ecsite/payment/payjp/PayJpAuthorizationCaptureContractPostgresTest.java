@@ -27,35 +27,20 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /** Uses the real HTTP response conversion and real persistence; HTTP is intercepted, never sent. */
 @SpringBootTest(properties={"logging.level.root=WARN", "spring.jpa.show-sql=false"})
 @ActiveProfiles("test")
-@Testcontainers
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 class PayJpAuthorizationCaptureContractPostgresTest {
     // Service calls commit intentionally. Keep their rows away from repository tests' global counts.
-    @Container static final PostgreSQLContainer POSTGRES=new PostgreSQLContainer("postgres:17")
-            .withDatabaseName("authorization_contract").withUsername("contract_user").withPassword(UUID.randomUUID().toString());
-    @DynamicPropertySource static void database(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url",POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username",POSTGRES::getUsername);
-        registry.add("spring.datasource.password",POSTGRES::getPassword);
-        registry.add("spring.flyway.url",POSTGRES::getJdbcUrl);
-        registry.add("spring.flyway.user",POSTGRES::getUsername);
-        registry.add("spring.flyway.password",POSTGRES::getPassword);
-    }
+
     @Autowired PaymentAuthorizationService authorization;
     @Autowired PayJpWebhookAuthorizationSyncService webhook;
     @Autowired PaymentReconciliationItemService reconciliation;

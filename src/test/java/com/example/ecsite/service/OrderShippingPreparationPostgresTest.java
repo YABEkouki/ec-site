@@ -46,8 +46,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -57,29 +55,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.hibernate.Session;
 import org.hibernate.stat.Statistics;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.*;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(properties = {"logging.level.root=WARN", "spring.jpa.show-sql=false"})
 @ActiveProfiles("test")
-@Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class OrderShippingPreparationPostgresTest {
-    @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
-            .withDatabaseName("shipping_preparation_start").withUsername("preparation_test")
-            .withPassword("preparation-test-only")
-            .withCommand("postgres", "-c", "lock_timeout=20000", "-c", "statement_timeout=25000");
-
-    @DynamicPropertySource
-    static void database(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.flyway.user", POSTGRES::getUsername);
-        registry.add("spring.flyway.password", POSTGRES::getPassword);
-    }
 
     @Autowired OrderShippingPreparationService preparation;
     @Autowired OrderService orderService;
@@ -138,7 +118,7 @@ class OrderShippingPreparationPostgresTest {
         assertThat(withoutPreparation(state(f))).isEqualTo(withoutPreparation(before));
         assertThat(orderRow(f)).containsEntry("status", card ? "ORDERED" : "PAID")
                 .containsEntry("shipment_capture_payment_id", null);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(75);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
         assertThat(jdbc.queryForObject("select count(*) from pg_constraint where conrelid='orders'::regclass "
                 + "and conname in ('chk_orders_shipping_preparation_metadata','chk_orders_shipment_metadata') "

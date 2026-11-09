@@ -37,7 +37,7 @@ The `f125-db-maintenance` Maven profile pins Flyway/its PostgreSQL module to 12.
 
 Use `bash scripts/run-f125-flyway.sh` as the maintenance entry. It rejects missing/empty/blank `FLYWAY_URL`, `FLYWAY_USER`, or `FLYWAY_PASSWORD` before starting Maven. There is no development-database default. The raw Flyway goals do not provide this shell preflight (in particular a password can be optional for some authentication methods); do not bypass the entry. It pins filesystem migrations, public schema and target 76, forbids clean and accepts only info/validate/migrate. It never proves environment approval or isolation by itself.
 
-Before exporting credentials, verify the intended host/port/database/user and cluster identity in a READ ONLY connection. For isolated tests use the existing `IsolatedDatabaseGuard` (Docker provenance, non-5432 mapped port, dedicated DB) and compare cluster identity obtained inside the owned container before host JDBC. Never treat a different schema in `ecsite` as an isolated database. For development maintenance obtain separate approval, stop writers, and verify backup/restoration first.
+Before exporting credentials, verify the intended host/port/database/user and cluster identity in a READ ONLY connection. For regression tests use the shared `ecsite_test` procedure below. The existing `IsolatedDatabaseGuard` keeps a separate Testcontainers path with Docker provenance checks; do not apply its non-5432/container requirements to the approved shared test database. Never treat a different schema in `ecsite` as an isolated database. For development maintenance obtain separate approval, stop writers, and verify backup/restoration first.
 
 In a dedicated shell, clear stale `FLYWAY_*` settings, Maven/system-property overrides and custom Flyway configuration files before configuring the reviewed connection. Set URL/user explicitly and enter the password without putting it into command history:
 
@@ -64,3 +64,32 @@ unset FLYWAY_URL FLYWAY_USER FLYWAY_PASSWORD
 STOP on unexpected identity, pending versions, checksum mismatch, missing credentials, failed backup or a nonzero goal result. Do not repair/clean/initialize/reverse DDL. Earlier successful migrations may already be committed; inspect history rather than assuming all eight roll back together. Migration does not enable runtime or authorize provider traffic.
 
 Compose declares `track_commit_timestamp=on` for future containers. Editing Compose does not restart the running server. Recreating/restarting PostgreSQL is a separate approved operation and must preserve the existing named volume.
+
+
+## Regression tests (test profile only)
+
+Use Java 21 and the existing runner. Normal integration tests use only `127.0.0.1:5432/ecsite_test` as `ecuser`; missing connection facts, another database/user, or mismatched DataSource/Flyway settings are rejected. Never use a schema in development `ecsite` as a test target. Do not source the application's `.env` or pass real PAY.JP credentials. In a dedicated shell:
+
+```bash
+export EC_TEST_DB_URL='jdbc:postgresql://127.0.0.1:5432/ecsite_test'
+export EC_TEST_DB_USER='ecuser'
+read -r -s -p 'Test DB password: ' EC_TEST_DB_PASSWORD
+export EC_TEST_DB_PASSWORD
+bash scripts/run-isolated-tests.sh --reset-test-db \
+  com.example.ecsite.support.isolation.IsolatedTestSmokeTest
+unset EC_TEST_DB_URL EC_TEST_DB_USER EC_TEST_DB_PASSWORD
+```
+
+Supply explicit fully qualified test class names. The runner makes an independent `/tmp/ecsite-tests.*` source copy, excludes `.env`, Compose and the original `target`, and builds/tests only in that copy. Maven is offline: dependencies and the wrapper distribution must already be cached. Reports and logs remain in the copy for review. Tests run one class at a time, with one fork and JUnit parallel execution disabled. Do not run concurrent runners or other consumers of `ecsite_test`.
+
+`--reset-test-db` is destructive: before **each** class it checks the actual database/user and rejects other sessions, then drops every non-system schema in `ecsite_test` and recreates `public`. Each schema drop commits separately to avoid exhausting shared locks. Failure can leave a partially reset test database; stop, inspect the reported remaining schemas, and do not automatically repair or retry. The session check is not a lock against new clients: exclusive test DB use is an operator prerequisite. Omitting the flag preserves existing test data and is appropriate only when the selected test explicitly supports that state.
+
+Normal tests use the shared server. Only the commit-tracking-off and actual database-restart cases in `OrderEditAdmissionFoundationPostgresTest` and `OrderEditOperationalRuntimePostgresTest` create disposable PostgreSQL 17 containers through existing fixtures. Use the default runner mode for these classes; the retained legacy `--testcontainers` option is not the normal regression procedure. Disposable containers are stopped by their test cleanup. The runner tracks its Maven process and observed descendants, with a 30-minute execution timeout per class. On interruption, exception or timeout it stops descendants first, waits for bounded grace periods, then forcibly terminates remaining owned processes and reports surviving PIDs. Short-process unit tests cover interruption, timeout, a SIGTERM-ignoring child and an unaffected unrelated process. SIGKILL or host failure cannot run shutdown hooks; after such termination, inspect Maven, test forks and owned containers before another reset or run.
+
+Keep `track_commit_timestamp`, `fsync` and `synchronous_commit` **on** on the existing server. Never switch commit tracking off or restart the development PostgreSQL server for these tests: disabling tracking can destroy existing commit timestamp evidence, and a restart invalidates approved runtime boot identity. Disposable cases must not change development runtime/generation or its saved receipt evidence.
+
+The test profile uses identical mandatory `EC_TEST_DB_*` values for DataSource and Flyway, JPA `validate`, four disabled payment/audit/notification scheduler flags, and exclusion of the generated-default-user auto-configuration. Existing test context guards reject real PAY.JP/mail operations; dummy provider/mail endpoints are not permission to contact external services. These controls are not a process-wide network sandbox.
+
+`V77__shared_test_database_name.sql` exists only under `src/test/resources/db/test-migration` and is included only by the test profile. It permits the exact shared test DB name while retaining PostgreSQL 17, primary, commit timestamp and durability checks. Full-profile tests migrate through V77. Historical-schema tests retain their original V71–V76 Flyway targets/history and apply the same DB-name compatibility SQL explicitly as a test fixture. Production migrations and checksums are unchanged; the maintenance entry above still targets V76 and excludes test migrations. Never add the test migration location to application or production maintenance settings.
+
+For display evidence and its limits, see [the existing display preview README](../../src/test/resources/display/README.md). JavaScript-disabled preview results do not certify JavaScript-enabled Chrome, runtime busy states, actual PAY.JP Widget appearance or real 3DS behavior.

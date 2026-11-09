@@ -7,7 +7,6 @@ import java.util.concurrent.TimeUnit;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.jupiter.api.*;
 import org.springframework.mock.env.MockEnvironment;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.w3c.dom.*;
 import static org.assertj.core.api.Assertions.*;
 
@@ -52,24 +51,15 @@ class FlywayMaintenanceProfilePostgresTest {
     }
 
     @Test void realPluginMigratesOnlyOwnedPostgresAndStopsAt76() throws Exception {
-        String run=UUID.randomUUID().toString().replace("-","");
-        try(var db=new PostgreSQLContainer("postgres:17").withDatabaseName("ecsite_it_f125_"+run)
-            .withUsername("isolated_user").withPassword(UUID.randomUUID().toString())
-            .withCommand("postgres","-c","track_commit_timestamp=on").withLabel("ecsite.isolated-test-run",run)) {
-            db.start();
-            var address=IsolatedDatabaseGuard.address(db.getJdbcUrl());
-            assertThat(address.database()).isEqualTo(db.getDatabaseName());assertThat(address.port()).isNotEqualTo(5432);
-            // Read identity inside the newly owned container before any host JDBC connection.
-            var identity=db.execInContainer("psql","-X","-At","-v","ON_ERROR_STOP=1","-U",db.getUsername(),"-d",db.getDatabaseName(),
-                "-c","BEGIN READ ONLY; SELECT system_identifier::text FROM pg_control_system(); COMMIT;");
-            assertThat(identity.getExitCode()).isZero();
-            String cluster=identity.getStdout().lines().filter(s->s.matches("[0-9]+")).findFirst().orElseThrow();
-            var environment=new MockEnvironment().withProperty("spring.datasource.url",db.getJdbcUrl()).withProperty("spring.flyway.url",db.getJdbcUrl())
-                .withProperty("spring.datasource.username",db.getUsername()).withProperty("spring.flyway.user",db.getUsername())
-                .withProperty("spring.datasource.password",db.getPassword()).withProperty("spring.flyway.password",db.getPassword());
-            IsolatedDatabaseGuard.verify(environment);
+        var db=IsolatedTestLauncher.sharedConnection(System.getenv());
+        var environment=IsolatedTestLauncher.environment(db,false);
+        IsolatedDatabaseGuard.verify(environment);
+        {
+            var address=IsolatedDatabaseGuard.address(db.url());
+            assertThat(address.database()).isEqualTo("ecsite_test");assertThat(address.port()).isEqualTo(5432);
+            String cluster=query(db,"select system_identifier::text from pg_control_system()");
             assertThat(query(db,"select system_identifier::text from pg_control_system()")).isEqualTo(cluster);
-            var env=Map.of("FLYWAY_URL",db.getJdbcUrl(),"FLYWAY_USER",db.getUsername(),"FLYWAY_PASSWORD",db.getPassword());
+            var env=Map.of("FLYWAY_URL",db.url(),"FLYWAY_USER",db.user(),"FLYWAY_PASSWORD",db.password());
             assertSuccess(run(List.of("bash","scripts/run-f125-flyway.sh","info"),env));
             var migrated=run(List.of("bash","scripts/run-f125-flyway.sh","migrate"),env);assertSuccess(migrated);
             assertThat(migrated.output()).contains("12.4.0").contains("76");
@@ -98,8 +88,8 @@ class FlywayMaintenanceProfilePostgresTest {
     }
 
     static String text(Element parent,String tag){return parent.getElementsByTagName(tag).item(0).getTextContent().trim();}
-    static String query(PostgreSQLContainer db,String sql)throws Exception {
-        try(var c=DriverManager.getConnection(db.getJdbcUrl(),db.getUsername(),db.getPassword())) {
+    static String query(IsolatedDatabaseGuard.Connection db,String sql)throws Exception {
+        try(var c=DriverManager.getConnection(db.url(),db.user(),db.password())) {
             c.setReadOnly(true);try(var s=c.createStatement();var r=s.executeQuery(sql)){assertThat(r.next()).isTrue();return r.getString(1);}
         }
     }
@@ -109,6 +99,8 @@ class FlywayMaintenanceProfilePostgresTest {
         pb.environment().keySet().removeIf(k->k.startsWith("FLYWAY_")||k.startsWith("SPRING_")
             ||Set.of("MAVEN_ARGS","MAVEN_OPTS","JAVA_TOOL_OPTIONS","JDK_JAVA_OPTIONS").contains(k));
         pb.environment().putAll(variables);
+        // The maintenance script also invokes Maven: keep nested invocations offline.
+        pb.environment().put("MAVEN_ARGS","-o -s "+System.getenv("EC_TEST_MAVEN_SETTINGS")+" -gs "+System.getenv("EC_TEST_MAVEN_SETTINGS"));
         var process=pb.start();
         var output=new StringBuilder();
         var reader=new Thread(()->{try(var in=process.inputReader()){String line;while((line=in.readLine())!=null){
