@@ -1,6 +1,8 @@
 package com.example.ecsite.controller;
 import java.util.*;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -24,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest({OrderEditPaymentController.class,OrderChangePaymentController.class})
 @Import({SecurityConfig.class,OrderChangePaymentPrivacyFilter.class})
 class OrderEditPaymentControllerTest {
+    @MockitoBean OrderEditFailureClosureService closures;
     @Autowired MockMvc mvc;@MockitoBean OrderEditBrowserService browser;
     @MockitoBean com.example.ecsite.service.orderchange.OrderChangeBrowserService legacyBrowser;
     @MockitoBean com.example.ecsite.service.orderchange.OrderIncreaseService increases;
@@ -130,4 +133,29 @@ class OrderEditPaymentControllerTest {
             .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt));
         verify(browser).continueAutomatically(1,receipt,3L);verify(browser,never()).continueAdmission(anyLong(),any());
     }
+    @Test void successfulFailureClosureUsesExistingServiceAndConfirmsOriginalOrder() throws Exception {
+        when(closures.terminate(receipt)).thenReturn(OrderEditFailureClosureService.Outcome.CLOSED_UNAPPLIED);
+        mvc.perform(post(url()+"/discard-failed").with(user(customer)).with(csrf()))
+            .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt))
+            .andExpect(flash().attribute("successMessage",containsString("元の注文は引き続き有効")));
+        verify(browser).admission(1,receipt);verify(closures).terminate(receipt);
+        verify(browser,never()).continueAdmission(anyLong(),any());
+    }
+    @ParameterizedTest @ValueSource(strings={"HELD","COMMIT_UNKNOWN"})
+    void unresolvedClosureRedirectsToDisplayOnlyResult(String outcome) throws Exception {
+        when(closures.terminate(receipt)).thenReturn(OrderEditFailureClosureService.Outcome.valueOf(outcome));
+        mvc.perform(post(url()+"/discard-failed").with(user(customer)).with(csrf()))
+            .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt+"&closurePending=true"))
+            .andExpect(flash().attribute("errorMessage",containsString("終了を確認できません")))
+            .andExpect(flash().attributeCount(1));
+    }
+    @Test void failureClosureKeepsCsrfAuthenticationAndOwnershipChecks() throws Exception {
+        mvc.perform(post(url()+"/discard-failed").with(user(customer))).andExpect(status().isForbidden());
+        mvc.perform(post(url()+"/discard-failed").with(csrf())).andExpect(status().is3xxRedirection());
+        mvc.perform(post(url()+"/discard-failed").with(user("operator").roles("ADMIN")).with(csrf())).andExpect(status().isForbidden());
+        when(browser.admission(1,receipt)).thenThrow(new OrderNotFoundException(1L));
+        mvc.perform(post(url()+"/discard-failed").with(user(customer)).with(csrf())).andExpect(status().isNotFound());
+        verifyNoInteractions(closures);
+    }
+
 }

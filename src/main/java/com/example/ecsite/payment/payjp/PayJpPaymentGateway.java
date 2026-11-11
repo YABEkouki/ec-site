@@ -127,6 +127,30 @@ public class PayJpPaymentGateway implements PaymentGateway {
     }
 
     @Override
+    public com.example.ecsite.payment.orderchange.ThreeDsFailureEvidence.Observation observeOrderEditFailure(
+            com.example.ecsite.payment.orderchange.ThreeDsFailureEvidence.Context context,
+            com.example.ecsite.payment.orderchange.ThreeDsFailureEvidence.LocalFacts local) {
+        if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Failure observation requires no database transaction");
+        if(context==null||captureConnection==null||!context.ownership().connection().equals(captureConnection.requireIdentity(activeConnection)))
+            throw new IllegalStateException("Failure observation connection mismatch");
+        try {
+            var started=abortObservationClock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+            long tick=abortObservationTicker.getAsLong();
+            // Keep raw field presence/types: the nullable DTO cannot distinguish missing from JSON null.
+            var raw=restClient.get().uri("/v2/payment_flows/{id}",context.ownership().flowId()).retrieve().body(String.class);
+            var finished=abortObservationClock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+            long elapsed=abortObservationTicker.getAsLong()-tick;
+            if(elapsed<0||elapsed>java.time.Duration.ofSeconds(5).toNanos())throw new IllegalStateException("Failure observation expired");
+            return new com.example.ecsite.payment.orderchange.ThreeDsFailureEvidenceVerifier().failure(context,local,
+                context.ownership().connection(),raw,
+                new com.example.ecsite.payment.orderchange.ThreeDsFailureEvidence.Window(started,finished),finished);
+        }catch(RestClientException failure){throw classify(failure);}
+        catch(IllegalArgumentException|IllegalStateException failure){
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+        }
+    }
+
+    @Override
     public RequestedAbortObservation observeRequestedAbort(RequestedAbortObservation.Expected expected){
         if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Abort GET requires no database transaction");
         if(expected==null||captureConnection==null||!expected.flow().connection().equals(captureConnection.requireIdentity(activeConnection)))

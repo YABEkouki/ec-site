@@ -116,12 +116,20 @@ public class OrderEditController {
     }
     @GetMapping("/result")
     public String result(@PathVariable long id,@RequestParam(required=false) UUID admission,@RequestParam(required=false) UUID preview,
+            @RequestParam(defaultValue="false") boolean closurePending,
             @AuthenticationPrincipal CustomUserDetails user,HttpSession session,Model model,HttpServletResponse response){
         String nonce=Base64.getEncoder().encodeToString(UUID.randomUUID().toString().getBytes(java.nio.charset.StandardCharsets.US_ASCII));
         model.addAttribute("resultScriptNonce",nonce);
         response.setHeader("Cache-Control","no-store");response.setHeader("Referrer-Policy","no-referrer");
         response.setHeader("Content-Security-Policy","default-src 'self'; script-src 'nonce-"+nonce+"'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
-        if(admission!=null){model.addAttribute("result",service.result(id,admission));return "orders/edit-result";}
+        if(admission!=null){
+            var result=service.result(id,admission);model.addAttribute("result",result);
+            // Display-only suppression, never evidence of a financial or business outcome.
+            // A subsequently proven terminal result takes precedence over this URL hint.
+            model.addAttribute("failureClosurePending",closurePending&&result!=null
+                &&!Set.of("未適用終了","変更完了").contains(result.label()));
+            return "orders/edit-result";
+        }
         if(preview==null||quote(session,preview,id,user.getId())==null)throw new IllegalArgumentException("保存済みの確認内容が必要です。");
         var found=service.findAdmission(id,preview);
         if(found!=null)return "redirect:/orders/"+id+"/edit/result?admission="+found;

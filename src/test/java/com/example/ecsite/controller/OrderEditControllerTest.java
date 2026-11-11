@@ -311,4 +311,34 @@ class OrderEditControllerTest {
             .andExpect(content().string(containsString("name=\"automaticVersion\" value=\"3\"")));
         verify(browser,never()).continueAutomatically(anyLong(),any(),any());
     }
+    @Test void failedAuthenticationOffersExistingOwnerBoundClosurePost() throws Exception {
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"カード認証待ち",true,false));
+        mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer)))
+            .andExpect(content().string(containsString("id=\"result-discard-failed\"")))
+            .andExpect(content().string(containsString("/orders/1/edit/"+id+"/payment/discard-failed")))
+            .andExpect(content().string(containsString("name=\"_csrf\"")));
+        verify(browser,never()).continueAdmission(anyLong(),any());
+    }
+    @ParameterizedTest @ValueSource(strings={"カード認証待ち","受付済み"})
+    void closurePendingIsDisplayOnlyAcrossReloadAndResultLink(String label) throws Exception {
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,label,true,true,
+            new OrderEditBrowserService.NextStep(OrderEditBrowserService.NextAction.AUTO_CONTINUE_ALLOWED,"test"),"target"));
+        for(int i=0;i<2;i++){
+            var html=mvc.perform(get(URL+"/result").param("admission",id.toString()).param("closurePending","true").with(user(customer)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            assertThat(html).contains("終了確認待ち","closurePending=true","終了は確認できていません")
+                .doesNotContain("id=\"result-discard-failed\"","id=\"result-auth-start\"","id=\"result-continue\"",
+                    "result-auth-start-script","HTMLFormElement.prototype.submit.call(form)","注文内容の変更が完了しました");
+        }
+        verify(browser,never()).continueAdmission(anyLong(),any());
+    }
+    @Test void completedFailureClosureShowsOriginalOrderAndNoFurtherActions() throws Exception {
+        UUID id=UUID.randomUUID();when(browser.result(1,id)).thenReturn(new OrderEditBrowserService.BrowserResult(id,"未適用終了",false,false));
+        var html=mvc.perform(get(URL+"/result").param("admission",id.toString()).with(user(customer))
+            .flashAttr("successMessage","今回の変更を取りやめました。元の注文は引き続き有効です。"))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("元の注文は引き続き有効","元の注文内容と金額は、この変更によって変更されていません")
+            .doesNotContain("id=\"result-discard-failed\"","id=\"result-auth-start\"","id=\"result-continue\"");
+    }
+
 }

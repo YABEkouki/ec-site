@@ -12,7 +12,21 @@ import com.example.ecsite.service.order.evidence.OrderEditBrowserService;
 @RequestMapping("/orders/{id}/edit/{admission}/payment")
 public class OrderEditPaymentController {
     private final OrderEditBrowserService browser;
-    public OrderEditPaymentController(OrderEditBrowserService browser){this.browser=browser;}
+    private final org.springframework.beans.factory.ObjectProvider<com.example.ecsite.service.order.evidence.OrderEditFailureClosureService> closures;
+    public OrderEditPaymentController(OrderEditBrowserService browser){this(browser,null);}
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderEditPaymentController(OrderEditBrowserService browser,org.springframework.beans.factory.ObjectProvider<com.example.ecsite.service.order.evidence.OrderEditFailureClosureService> closures){this.browser=browser;this.closures=closures;}
+    /** Explicit owner-bound CSRF POST; provider GET and local failure closure only. */
+    @PostMapping("/discard-failed") public String discardFailed(@PathVariable long id,@PathVariable UUID admission,RedirectAttributes flash){
+        browser.admission(id,admission);
+        var outcome=closures.getObject().terminate(admission);
+        if(outcome!=com.example.ecsite.service.order.evidence.OrderEditFailureClosureService.Outcome.CLOSED_UNAPPLIED){
+            flash.addFlashAttribute("errorMessage","この変更の終了を確認できません。再認証や新しい変更をせず、保存済みの結果をご確認ください。");
+            return status(id,admission)+"&closurePending=true";
+        }
+        flash.addFlashAttribute("successMessage","今回の変更を取りやめました。元の注文は引き続き有効で、注文内容と金額は変更していません。");
+        return status(id,admission);
+    }
     @PostMapping public String start(@PathVariable long id,@PathVariable UUID admission,Model model,RedirectAttributes flash){
         var card=browser.startCard(id,admission);
         if(card.isEmpty()){

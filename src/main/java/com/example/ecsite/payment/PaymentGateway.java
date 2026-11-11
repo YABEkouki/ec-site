@@ -1,6 +1,12 @@
 package com.example.ecsite.payment;
 
 public interface PaymentGateway {
+    /** GET-only strict 3DS failure proof; never an authorization to cancel or Capture. */
+    default com.example.ecsite.payment.orderchange.ThreeDsFailureEvidence.Observation observeOrderEditFailure(
+            com.example.ecsite.payment.orderchange.ThreeDsFailureEvidence.Context context,
+            com.example.ecsite.payment.orderchange.ThreeDsFailureEvidence.LocalFacts local) {
+        throw new UnsupportedOperationException("Order edit failure observation is not supported");
+    }
     /** Internal Feature125 enrollment GET only; no financial execution permission. */
     default com.example.ecsite.payment.payjp.OrderAuthorizationObservation observeOrderAuthorization(
             com.example.ecsite.payment.payjp.OrderAuthorizationObservation.Expected expected) {

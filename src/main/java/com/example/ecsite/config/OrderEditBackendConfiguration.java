@@ -11,6 +11,9 @@ import com.example.ecsite.service.orderchange.OrderReauthorizationService;
 public class OrderEditBackendConfiguration {
     @Bean public OrderEditCandidateCalculator orderEditCandidateCalculator(){return new OrderEditCandidateCalculator();}
     @Bean @Lazy public OrderEditAdmissionService orderEditAdmissionService(DataSource source){return new OrderEditAdmissionService(source);}
+    @Bean @Lazy public OrderEditFailureClosureService orderEditFailureClosureService(DataSource source,PaymentGateway gateway){
+        return new OrderEditFailureClosureService(source,gateway);
+    }
     @Bean @Lazy public LegacyOrderEvidenceEnrollment legacyOrderEvidenceEnrollment(DataSource source,PaymentGateway gateway,
             CaptureConnectionProperties capture,PayJpProperties provider){
         return new LegacyOrderEvidenceEnrollment(source,gateway,capture.requireIdentity(provider));

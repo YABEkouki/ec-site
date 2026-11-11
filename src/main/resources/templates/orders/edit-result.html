@@ -5,21 +5,27 @@
 <h1>注文変更の結果</h1>
 <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error" role="alert"></p>
 <section th:if="${result != null}" th:class="${result.label == '変更完了'} ? 'completion-card' : 'flow-card'">
-<h2 th:text="${result.autoContinueAllowed ? '注文変更を処理しています' : result.label}" role="status"></h2>
-<p class="flow-message-info" th:if="${result.label == '受付済み'}">受付が成立しました。注文変更はまだ完了していません。</p>
+<h2 th:text="${failureClosurePending == true ? '終了確認待ち' : (result.autoContinueAllowed ? '注文変更を処理しています' : result.label)}" role="status"></h2>
+<p class="flow-message-info" th:if="${failureClosurePending != true and result.label == '受付済み'}">受付が成立しました。注文変更はまだ完了していません。</p>
 <p class="flow-message-info" th:if="${result.label == '処理中'}">注文変更の結果を確認しています。完了はまだ確認できていません。</p>
-<p class="flow-message-info" th:if="${result.label == 'カード認証待ち'}">カード認証が必要です。認証後もサーバーで金融結果を確認するまで、注文変更は完了していません。</p>
+<p class="flow-message-info" th:if="${failureClosurePending != true and result.label == 'カード認証待ち'}">カード認証が必要です。認証後もサーバーで金融結果を確認するまで、注文変更は完了していません。</p>
 <p class="flow-message-warning" th:if="${result.label == '確認待ち'}">結果を確認中です。注文変更の完了は確定していません。新しい編集要求を作成せず、注文詳細をご確認ください。</p>
-<p class="flow-message-warning" th:if="${result.label == '未適用終了'}">この受付による注文変更は反映されていません。</p>
+<p class="flow-message-warning" th:if="${result.label == '未適用終了'}">この受付による注文変更は反映されていません。元の注文内容と金額は、この変更によって変更されていません。</p>
+<p class="message-success" role="status" th:if="${successMessage != null and result.label == '未適用終了'}" th:text="${successMessage}"></p>
+<p class="flow-message-warning" role="status" th:if="${failureClosurePending == true}">注文変更の終了は確認できていません。再認証・継続・終了操作を繰り返さず、保存済みの結果をご確認ください。</p>
 <p th:if="${result.label == '変更完了'}">注文内容の変更が完了しました。</p>
-<p th:if="${result.id != null}"><a th:href="@{/orders/{id}/edit/result(id=${orderId},admission=${result.id})}">保存済みの処理結果を確認する</a></p>
-<form id="result-auth-start" th:attr="data-target=${result.automaticCardTarget}" th:if="${result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
+<p th:if="${result.id != null}"><a th:href="@{/orders/{id}/edit/result(id=${orderId},admission=${result.id},closurePending=${failureClosurePending == true ? true : null})}">保存済みの処理結果を確認する</a></p>
+<form id="result-auth-start" th:attr="data-target=${result.automaticCardTarget}" th:if="${failureClosurePending != true and result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
 <button type="submit" class="button-primary">カード認証を開始する</button>
 </form>
-<form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${result.canContinue or result.autoContinueAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit" class="button-secondary">受付済み処理を継続する</button>
+<form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${failureClosurePending != true and (result.canContinue or result.autoContinueAllowed)}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit" class="button-secondary">受付済み処理を継続する</button>
+</form>
+<form id="result-discard-failed" th:if="${failureClosurePending != true and result.label == 'カード認証待ち' and !result.autoStartCardAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/discard-failed(id=${orderId},receipt=${result.id})}" method="post">
+<p>3DS認証に失敗した場合は、この変更を取りやめられます。決済結果が不明な場合は終了せず、確認待ちになります。元の注文と旧与信は維持します。</p>
+<button type="submit" class="button-secondary">変更を取りやめる</button>
 </form>
 <p class="flow-message-info" id="result-continuation-status" role="status" aria-live="polite"></p>
-<noscript><p>自動確認は行いません。必要に応じて継続ボタンまたは保存済みの処理結果をご確認ください。</p></noscript>
+<noscript th:if="${failureClosurePending != true}"><p>自動確認は行いません。必要に応じて継続ボタンまたは保存済みの処理結果をご確認ください。</p></noscript>
 <section th:if="${pendingPreview != null}">
 <p>同じ確認内容で受付結果を照合します。受付が保存されていない場合のみ、同じ要求を再送します。</p>
 <p class="actions"><a th:href="@{/orders/{id}/edit/result(id=${orderId},preview=${pendingPreview})}" class="button button-secondary">受付結果を照会する</a></p>
@@ -30,7 +36,7 @@
 </section>
 <p class="actions"><a th:href="@{/orders/{id}(id=${orderId})}" class="button button-secondary">注文詳細へ戻る</a></p>
 </main>
-<script th:if="${result != null and result.autoContinueAllowed}" th:attr="nonce=${resultScriptNonce}">
+<script th:if="${failureClosurePending != true and result != null and result.autoContinueAllowed}" th:attr="nonce=${resultScriptNonce}">
 (() => {
     const form = document.getElementById('result-continue');
     if (!form) return;
@@ -91,7 +97,7 @@
     else send();
 })();
 </script>
-<script id="result-auth-start-script" th:if="${result != null and result.autoStartCardAllowed}" th:attr="nonce=${resultScriptNonce}">
+<script id="result-auth-start-script" th:if="${failureClosurePending != true and result != null and result.autoStartCardAllowed}" th:attr="nonce=${resultScriptNonce}">
 (() => {
     const form = document.getElementById('result-auth-start');
     if (!form) return;
