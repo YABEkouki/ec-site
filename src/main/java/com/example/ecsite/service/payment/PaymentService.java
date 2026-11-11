@@ -1,5 +1,8 @@
 package com.example.ecsite.service.payment;
 
+import com.example.ecsite.payment.PaymentContentEvidence;
+
+
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -530,7 +533,8 @@ public class PaymentService {
         // Current-state eligibility is retained separately and required before every mutation.
         var resolver = new PaymentPurposeResolver();
         boolean currentPurposeMatches = resolver.matches(order, payment, transaction, snapshot, lockedPayments, history,
-                orderPaymentGuard.completedOrderChanges(order), orderPaymentGuard.abortedOrderChanges(order));
+                orderPaymentGuard.completedOrderChanges(order), orderPaymentGuard.abortedOrderChanges(order),
+                orderPaymentGuard.paymentContentEvidence(order));
         if (!currentPurposeMatches && !resolver.matchesResultIdentity(order, payment, transaction, snapshot, history)) return null;
         return new ResultTarget(payment, transaction, currentPurposeMatches);
     }
@@ -562,7 +566,7 @@ public class PaymentService {
                 transaction.getInitiatorUsername(), transaction.getInternalNote());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public boolean canCaptureForShipment(Long orderId) {
 
         List<Payment> payments = paymentRepository
@@ -585,7 +589,8 @@ public class PaymentService {
 
         Order order = payment.getOrder();
 
-        return isCaptureConsistent(order, payment);
+        return findCaptureConsistency(order, payment, orderPaymentGuard.paymentContentEvidenceAdvisory(order))
+                .map(PaymentConsistency::canCapture).orElse(false);
     }
 
     @Transactional(readOnly = true)
@@ -663,7 +668,7 @@ public class PaymentService {
             Order order,
             Payment payment) {
 
-        PaymentConsistency consistency = findCaptureConsistency(order, payment)
+        PaymentConsistency consistency = findCaptureConsistency(order, payment, orderPaymentGuard.paymentContentEvidence(order))
                 .orElseThrow(() -> new IllegalStateException(
                         "成功した与信情報が見つからないため、売上確定できません。"));
 
@@ -685,7 +690,11 @@ public class PaymentService {
     private Optional<PaymentConsistency> findCaptureConsistency(
             Order order,
             Payment payment) {
+        return findCaptureConsistency(order, payment, null);
+    }
 
+    private Optional<PaymentConsistency> findCaptureConsistency(
+            Order order, Payment payment, PaymentContentEvidence contentEvidence) {
         return paymentTransactionRepository
                 .findByPaymentIdAndTransactionTypeAndStatus(
                         payment.getId(),
@@ -700,7 +709,7 @@ public class PaymentService {
                 .map(transaction -> paymentConsistencyEvaluator.evaluate(
                         order,
                         payment,
-                        transaction));
+                        transaction, contentEvidence));
     }
 
 }

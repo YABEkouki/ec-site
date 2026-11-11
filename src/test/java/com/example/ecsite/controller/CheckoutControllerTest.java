@@ -430,14 +430,16 @@ class CheckoutControllerTest {
                 paymentId))
                 .thenReturn(result);
 
+        when(paymentAuthorizationService.checkoutTarget(orderId,paymentId,USER_ID)).thenReturn(Optional.of(
+                new com.example.ecsite.service.payment.PaymentOperationSnapshotService.CheckoutTarget(orderId,paymentId,1000L)));
         String viewName = controller.paymentContinue(
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,orderId,paymentId,1000L);
 
         assertEquals(
-                "redirect:/checkout/payment",
+                "redirect:/checkout/payment/wait",
                 viewName);
 
         verify(redirectAttributes)
@@ -477,14 +479,16 @@ class CheckoutControllerTest {
                 paymentId))
                 .thenReturn(result);
 
+        when(paymentAuthorizationService.checkoutTarget(orderId,paymentId,USER_ID)).thenReturn(Optional.of(
+                new com.example.ecsite.service.payment.PaymentOperationSnapshotService.CheckoutTarget(orderId,paymentId,1000L)));
         String viewName = controller.paymentContinue(
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,orderId,paymentId,1000L);
 
         assertEquals(
-                "redirect:/checkout/payment",
+                "redirect:/checkout/payment/wait",
                 viewName);
 
         verify(redirectAttributes)
@@ -1281,11 +1285,13 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
+        when(paymentAuthorizationService.checkoutTarget(orderId,paymentId,USER_ID)).thenReturn(Optional.of(
+                new com.example.ecsite.service.payment.PaymentOperationSnapshotService.CheckoutTarget(orderId,paymentId,1000L)));
         String view = controller.paymentContinue(
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,orderId,paymentId,1000L);
 
         assertEquals(
                 "redirect:/checkout/complete",
@@ -1344,11 +1350,13 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
+        when(paymentAuthorizationService.checkoutTarget(orderId,paymentId,USER_ID)).thenReturn(Optional.of(
+                new com.example.ecsite.service.payment.PaymentOperationSnapshotService.CheckoutTarget(orderId,paymentId,1000L)));
         String view = controller.paymentContinue(
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,orderId,paymentId,1000L);
 
         assertEquals(
                 "redirect:/cart",
@@ -1401,14 +1409,16 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
+        when(paymentAuthorizationService.checkoutTarget(orderId,paymentId,USER_ID)).thenReturn(Optional.of(
+                new com.example.ecsite.service.payment.PaymentOperationSnapshotService.CheckoutTarget(orderId,paymentId,1000L)));
         String view = controller.paymentContinue(
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,orderId,paymentId,1000L);
 
         assertEquals(
-                "redirect:/checkout/payment",
+                "redirect:/checkout/payment/wait",
                 view);
 
         verify(session, never())
@@ -1453,14 +1463,16 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
+        when(paymentAuthorizationService.checkoutTarget(orderId,paymentId,USER_ID)).thenReturn(Optional.of(
+                new com.example.ecsite.service.payment.PaymentOperationSnapshotService.CheckoutTarget(orderId,paymentId,1000L)));
         String view = controller.paymentContinue(
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,orderId,paymentId,1000L);
 
         assertEquals(
-                "redirect:/checkout/payment",
+                "redirect:/checkout/payment/wait",
                 view);
 
         verify(session, never())
@@ -1493,14 +1505,16 @@ class CheckoutControllerTest {
 
         RedirectAttributes redirectAttributes = new RedirectAttributesModelMap();
 
+        when(paymentAuthorizationService.checkoutTarget(orderId,paymentId,USER_ID)).thenReturn(Optional.of(
+                new com.example.ecsite.service.payment.PaymentOperationSnapshotService.CheckoutTarget(orderId,paymentId,1000L)));
         String view = controller.paymentContinue(
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,orderId,paymentId,1000L);
 
         assertEquals(
-                "redirect:/checkout/payment",
+                "redirect:/checkout/payment/wait",
                 view);
 
         assertTrue(
@@ -1535,7 +1549,7 @@ class CheckoutControllerTest {
                 loginUser,
                 session,
                 sessionStatus,
-                redirectAttributes);
+                redirectAttributes,null,null,null);
 
         assertEquals(
                 "redirect:/",

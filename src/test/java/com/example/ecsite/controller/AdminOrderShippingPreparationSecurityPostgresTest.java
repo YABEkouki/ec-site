@@ -45,18 +45,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @com.example.ecsite.support.CaptureConnectionTest
-@org.testcontainers.junit.jupiter.Testcontainers
 @org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class AdminOrderShippingPreparationSecurityPostgresTest {
-    @org.testcontainers.junit.jupiter.Container
-    static final org.testcontainers.postgresql.PostgreSQLContainer POSTGRES = new org.testcontainers.postgresql.PostgreSQLContainer("postgres:17")
-            .withDatabaseName("shipping_security").withUsername("shipping_security").withPassword(UUID.randomUUID().toString());
-    @org.springframework.test.context.DynamicPropertySource
-    static void database(org.springframework.test.context.DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", POSTGRES::getJdbcUrl); r.add("spring.datasource.username", POSTGRES::getUsername);
-        r.add("spring.datasource.password", POSTGRES::getPassword); r.add("spring.flyway.url", POSTGRES::getJdbcUrl);
-        r.add("spring.flyway.user", POSTGRES::getUsername); r.add("spring.flyway.password", POSTGRES::getPassword);
-    }
+
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired OrderRepository orders;
@@ -199,7 +190,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 .andExpect(flash().attribute("successMessage", "この注文は既に発送準備を開始しています。"));
         assertThat(row(id)).isEqualTo(saved);
         verify(preparation, times(2)).start(id);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(68);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
     }
 
     @ParameterizedTest

@@ -328,6 +328,15 @@ public class Order {
     @Column(name = "active_payment_id")
     private Long activePaymentId;
 
+    @Column(name = "current_evidence_epoch_id", insertable = false, updatable = false)
+    private java.util.UUID currentEvidenceEpochId;
+
+    @Column(name = "evidence_head_history_id", insertable = false, updatable = false)
+    private Long evidenceHeadHistoryId;
+
+    public java.util.UUID getCurrentEvidenceEpochId() { return currentEvidenceEpochId; }
+    public Long getEvidenceHeadHistoryId() { return evidenceHeadHistoryId; }
+
     public Long getActivePaymentId() { return activePaymentId; }
 
     /** Only the order-change commit path calls this after old Cancel proof under Order/Payment locks. */

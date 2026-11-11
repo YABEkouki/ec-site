@@ -33,29 +33,17 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.*;
-import org.testcontainers.junit.jupiter.*;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(properties = {"logging.level.root=WARN", "spring.jpa.show-sql=false"})
 @ActiveProfiles("test")
-@Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @com.example.ecsite.support.CaptureConnectionTest
 class PaymentSynchronizationPostgresTest {
-    @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
-            .withDatabaseName("feature120_sync").withUsername("feature120").withPassword("feature120-test")
-            .withCommand("postgres", "-c", "lock_timeout=10000", "-c", "statement_timeout=15000");
-    @DynamicPropertySource static void database(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", POSTGRES::getJdbcUrl); r.add("spring.datasource.username", POSTGRES::getUsername);
-        r.add("spring.datasource.password", POSTGRES::getPassword); r.add("spring.flyway.url", POSTGRES::getJdbcUrl);
-        r.add("spring.flyway.user", POSTGRES::getUsername); r.add("spring.flyway.password", POSTGRES::getPassword);
-    }
+
     @Autowired OrderService orderService;
     @Autowired OrderDeadlineCalculator deadlines;
     @Autowired PaymentAuthorizationStartService authorizationStart;

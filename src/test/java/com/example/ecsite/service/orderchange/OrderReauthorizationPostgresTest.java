@@ -3018,4 +3018,14 @@ class OrderReauthorizationPostgresTest {
         assertThatThrownBy(()->withdrawals.withdraw(f.order(),stranger.user(),op.id(),UUID.randomUUID(),version(op.id()))).isInstanceOf(com.example.ecsite.exception.OrderNotFoundException.class);
         assertThat(closureDatabaseSnapshot()).isEqualTo(before);verifyNoInteractions(gateway);
     }
+    @Test void feature125CheckpointEnrollsCompletedFeature124GenerationWithoutChangingHistory() {
+        var f=fixture();var op=accept(f,3);mockFlow(f,op);
+        assertThat(service.advance(f.order(),op.id()).state()).isEqualTo("COMPLETED");
+        var before=jdbc.queryForList("select to_jsonb(h)::text from order_content_change_histories h where order_id=? order by id",String.class,f.order());
+        when(gateway.observeOrderAuthorization(any())).thenAnswer(call->com.example.ecsite.payment.payjp.MockOrderAuthorizationTransport.observe(call.getArgument(0)));
+        var registration=new com.example.ecsite.service.order.evidence.LegacyOrderEvidenceEnrollment(jdbc.getDataSource(),gateway,
+            new com.example.ecsite.payment.capture.CaptureConnectionIdentity("test-capture","test-account","TEST","https://api.pay.jp"));
+        assertThat(registration.enroll(f.order()).status()).isEqualTo(com.example.ecsite.service.order.evidence.LegacyOrderEvidenceEnrollment.Status.ENROLLED);
+        assertThat(jdbc.queryForList("select to_jsonb(h)::text from order_content_change_histories h where order_id=? order by id",String.class,f.order())).isEqualTo(before);
+    }
 }

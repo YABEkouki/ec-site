@@ -1,5 +1,9 @@
 package com.example.ecsite.service.payment;
 
+import com.example.ecsite.payment.PaymentContentEvidence;
+import com.example.ecsite.payment.OrderPaymentEvidenceGuard;
+
+
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -14,14 +18,35 @@ import com.example.ecsite.repository.PaymentTransactionRepository;
 @Transactional(propagation = Propagation.MANDATORY)
 public class OrderPaymentGuard {
     private final com.example.ecsite.service.orderchange.OrderChangeStore changes;
+    private final com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard admissions;
     private final PaymentRepository payments;
     private final PaymentTransactionRepository transactions;
 
     public OrderPaymentGuard(PaymentRepository payments, PaymentTransactionRepository transactions,
-            com.example.ecsite.service.orderchange.OrderChangeStore changes) {
+            com.example.ecsite.service.orderchange.OrderChangeStore changes,
+            com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard admissions) {
+        this.admissions = admissions;
         this.changes = changes;
         this.payments = payments;
         this.transactions = transactions;
+    }
+
+    private OrderPaymentEvidenceGuard contentEvidence;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setContentEvidence(OrderPaymentEvidenceGuard contentEvidence) {
+        this.contentEvidence = contentEvidence;
+    }
+
+    /** Re-read saved content evidence under the caller's Order lock; never an external payment permit. */
+    public PaymentContentEvidence paymentContentEvidence(Order order) {
+        // Manually constructed legacy unit fixtures retain the old signature. The evaluator fails
+        // closed for enrolled orders without a proof; Spring always injects the real reader.
+        return contentEvidence == null ? null : contentEvidence.inspect(order);
+    }
+
+    public PaymentContentEvidence paymentContentEvidenceAdvisory(Order order) {
+        return contentEvidence == null ? null : contentEvidence.inspectAdvisory(order);
     }
 
     public void validateItemChange(Order order) {
@@ -82,7 +107,12 @@ public class OrderPaymentGuard {
         return changes.abortedOperationIds(order.getId());
     }
 
+    public void requireNoEditAdmission(Order order) {
+        admissions.requireClear(order.getId());
+    }
+
     public void requireNoOrderChange(Order order) {
+        requireNoEditAdmission(order);
         if (changes.unresolved(order.getId())) reject("未解決の注文変更があるため、この操作を開始できません。");
     }
 

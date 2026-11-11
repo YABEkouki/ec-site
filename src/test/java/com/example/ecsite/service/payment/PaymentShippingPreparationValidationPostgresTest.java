@@ -24,36 +24,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(properties = {"logging.level.root=WARN", "spring.jpa.show-sql=false"})
 @ActiveProfiles("test")
-@Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PaymentShippingPreparationValidationPostgresTest {
-    @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17")
-            .withDatabaseName("shipping_preparation_validation")
-            .withUsername("shipping_validation").withPassword("shipping-validation-test")
-            .withCommand("postgres", "-c", "lock_timeout=10000", "-c", "statement_timeout=15000");
-
-    @DynamicPropertySource
-    static void database(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.flyway.user", POSTGRES::getUsername);
-        registry.add("spring.flyway.password", POSTGRES::getPassword);
-    }
 
     @Autowired PaymentService paymentService;
     @Autowired OrderRepository orders;

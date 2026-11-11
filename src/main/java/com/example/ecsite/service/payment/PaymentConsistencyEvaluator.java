@@ -23,7 +23,9 @@ public class PaymentConsistencyEvaluator {
 
         PaymentConsistencyStatus status;
 
-        if (paymentAmount != authorizationAmount) {
+        if (order.getCurrentEvidenceEpochId()!=null||order.getEvidenceHeadHistoryId()!=null) {
+            status=PaymentConsistencyStatus.EVIDENCE_REQUIRED;
+        } else if (paymentAmount != authorizationAmount) {
             status = PaymentConsistencyStatus.AUTHORIZATION_MISMATCH;
         } else if (orderAmount < paymentAmount) {
             status = PaymentConsistencyStatus.AMOUNT_DECREASED;
@@ -43,4 +45,15 @@ public class PaymentConsistencyEvaluator {
                 orderContentRevision,
                 authorizationContentRevision);
     }
+    public PaymentConsistency evaluate(Order order,Payment payment,PaymentTransaction authorization,
+            com.example.ecsite.payment.PaymentContentEvidence proof){
+        if(proof==null)return evaluate(order,payment,authorization);
+        if(proof!=null&&proof.state()==com.example.ecsite.payment.PaymentContentEvidence.State.LEGACY)
+            return evaluate(order,payment,authorization);
+        PaymentConsistencyStatus status=proof!=null&&proof.matches(order,payment,authorization)
+            ?PaymentConsistencyStatus.EVIDENCE_VERIFIED:PaymentConsistencyStatus.EVIDENCE_REQUIRED;
+        return new PaymentConsistency(status,order.getTotalAmount(),payment.getAmount(),authorization.getAmount(),
+            order.getContentRevision(),authorization.getOrderContentRevision());
+    }
+
 }

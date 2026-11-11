@@ -22,12 +22,16 @@ public class OrderReauthorizationService {
             OrderChangeFinancialRequestStore requests,PlatformTransactionManager manager){
         this.results=results;this.gateway=gateway;this.sender=new OrderChangeRequestSender(requests,gateway,manager);
     }
-    public OrderReauthorizationTransactions.View advance(long orderId,UUID operationId){
-        var view=results.prepare(orderId,operationId);
+    public OrderReauthorizationTransactions.View advance(long orderId,UUID operationId){return advanceInternal(orderId,operationId,null);}
+    public OrderReauthorizationTransactions.View advanceForOrderEdit(long orderId,UUID operationId,com.example.ecsite.service.order.evidence.OrderEditApplicationPlan.Ownership owner){
+        return advanceInternal(orderId,operationId,Objects.requireNonNull(owner));
+    }
+    private OrderReauthorizationTransactions.View advanceInternal(long orderId,UUID operationId,com.example.ecsite.service.order.evidence.OrderEditApplicationPlan.Ownership owner){
+        var view=owner==null?results.prepare(orderId,operationId):results.prepareForOrderEdit(orderId,operationId,owner);
         if(stopped(view)||view.abortRequested())return view;
         if(view.newFlow()==null){
             try{
-                var created=sender.send(Objects.requireNonNull(view.createRequest()));
+                var created=sender.send(Objects.requireNonNull(view.createRequest()),owner);
                 view=results.attachFlow(orderId,operationId,created==null?null:created.id());
             }catch(OrderChangeFinancialRequestStore.DispatchUnavailable consumed){
                 return results.createDispatchUnavailable(orderId,operationId);
@@ -44,7 +48,7 @@ public class OrderReauthorizationService {
                 view=results.authorization(orderId,operationId,observed);
                 if(!view.abortRequested()&&"AUTHORIZED".equals(view.state())){
                     var old=gateway.observeOrderChangeFlow(view.oldFlow());
-                    view=results.decide(orderId,operationId,observed,old);
+                    view=owner==null?results.decide(orderId,operationId,observed,old):results.decideForOrderEdit(orderId,operationId,observed,old,owner);
                 }
             }catch(PaymentGatewayException failure){return results.describe(orderId,operationId);}
         }
@@ -52,7 +56,7 @@ public class OrderReauthorizationService {
         if(List.of("OLD_CANCEL_PENDING","OLD_CANCEL_UNKNOWN","ABORTING","ABORT_UNKNOWN").contains(view.state())){
             boolean abort=view.state().startsWith("ABORT");
             // UNKNOWN is GET-only, including requests predating dispatch tracking.
-            try{if(!view.state().endsWith("UNKNOWN"))sender.send(Objects.requireNonNull(abort?view.abortRequest():view.oldCancelRequest()));
+            try{if(!view.state().endsWith("UNKNOWN"))sender.send(Objects.requireNonNull(abort?view.abortRequest():view.oldCancelRequest()),owner);
             }catch(OrderChangeFinancialRequestStore.DispatchUnavailable consumed){
                 // Another worker or an earlier process consumed the only send permit. Observe below.
             }catch(PaymentGatewayException unknown){
@@ -65,7 +69,7 @@ public class OrderReauthorizationService {
             try{view=results.cancellation(orderId,operationId,abort,gateway.observeOrderChangeFlow(abort?view.newFlow():view.oldFlow()));
             }catch(PaymentGatewayException unknown){return results.describe(orderId,operationId);}
         }
-        if("COMMIT_PENDING".equals(view.state()))return commitObserved(view);
+        if(owner==null&&"COMMIT_PENDING".equals(view.state()))return commitObserved(view);
         return view;
     }
     private OrderReauthorizationTransactions.View commitObserved(OrderReauthorizationTransactions.View view){
@@ -98,6 +102,7 @@ public class OrderReauthorizationService {
     public OrderReauthorizationTransactions.View reconcile(long orderId,UUID operationId){
         var view=results.describe(orderId,operationId);
         if(stopped(view)||view.flowClosed()||view.newFlow()==null)return view;
+        if(view.oldCancelRequest()!=null&&results.hasUnstartedOrderEditOldCancellation(orderId,operationId))return view;
         if(view.abortRequest()!=null)view=results.cancellation(orderId,operationId,true,gateway.observeOrderChangeFlow(view.newFlow()));
         else if(view.oldCancelRequest()!=null)view=results.cancellation(orderId,operationId,false,gateway.observeOrderChangeFlow(view.oldFlow()));
         else view=results.authorization(orderId,operationId,gateway.observeOrderChangeFlow(view.newFlow()));

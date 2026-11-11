@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>注文変更の結果</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body class="flow-page"><header th:replace="~{fragments/header :: header}"></header><main class="flow-main">
+<h1>注文変更の結果</h1>
+<p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error" role="alert"></p>
+<section th:if="${result != null}" th:class="${result.label == '変更完了'} ? 'completion-card' : 'flow-card'">
+<h2 th:text="${failureClosurePending == true ? '終了確認待ち' : (result.autoContinueAllowed ? '注文変更を処理しています' : result.label)}" role="status"></h2>
+<p class="flow-message-info" th:if="${failureClosurePending != true and result.label == '受付済み'}">受付が成立しました。注文変更はまだ完了していません。</p>
+<p class="flow-message-info" th:if="${result.label == '処理中'}">注文変更の結果を確認しています。完了はまだ確認できていません。</p>
+<p class="flow-message-info" th:if="${failureClosurePending != true and result.label == 'カード認証待ち'}">カード認証が必要です。認証後もサーバーで金融結果を確認するまで、注文変更は完了していません。</p>
+<p class="flow-message-warning" th:if="${result.label == '確認待ち'}">結果を確認中です。注文変更の完了は確定していません。新しい編集要求を作成せず、注文詳細をご確認ください。</p>
+<p class="flow-message-warning" th:if="${result.label == '未適用終了'}">この受付による注文変更は反映されていません。元の注文内容と金額は、この変更によって変更されていません。</p>
+<p class="message-success" role="status" th:if="${successMessage != null and result.label == '未適用終了'}" th:text="${successMessage}"></p>
+<p class="flow-message-warning" role="status" th:if="${failureClosurePending == true}">注文変更の終了は確認できていません。再認証・継続・終了操作を繰り返さず、保存済みの結果をご確認ください。</p>
+<p th:if="${result.label == '変更完了'}">注文内容の変更が完了しました。</p>
+<p th:if="${result.id != null}"><a th:href="@{/orders/{id}/edit/result(id=${orderId},admission=${result.id},closurePending=${failureClosurePending == true ? true : null})}">保存済みの処理結果を確認する</a></p>
+<form id="result-auth-start" th:attr="data-target=${result.automaticCardTarget}" th:if="${failureClosurePending != true and result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
+<button type="submit" class="button-primary">カード認証を開始する</button>
+</form>
+<form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${failureClosurePending != true and (result.canContinue or result.autoContinueAllowed)}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit" class="button-secondary">受付済み処理を継続する</button>
+</form>
+<form id="result-discard-failed" th:if="${failureClosurePending != true and result.label == 'カード認証待ち' and !result.autoStartCardAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/discard-failed(id=${orderId},receipt=${result.id})}" method="post">
+<p>3DS認証に失敗した場合は、この変更を取りやめられます。決済結果が不明な場合は終了せず、確認待ちになります。元の注文と旧与信は維持します。</p>
+<button type="submit" class="button-secondary">変更を取りやめる</button>
+</form>
+<p class="flow-message-info" id="result-continuation-status" role="status" aria-live="polite"></p>
+<noscript th:if="${failureClosurePending != true}"><p>自動確認は行いません。必要に応じて継続ボタンまたは保存済みの処理結果をご確認ください。</p></noscript>
+<section th:if="${pendingPreview != null}">
+<p>同じ確認内容で受付結果を照合します。受付が保存されていない場合のみ、同じ要求を再送します。</p>
+<p class="actions"><a th:href="@{/orders/{id}/edit/result(id=${orderId},preview=${pendingPreview})}" class="button button-secondary">受付結果を照会する</a></p>
+<form th:action="@{/orders/{id}/edit/submit(id=${orderId})}" method="post">
+<input type="hidden" name="preview" th:value="${pendingPreview}"><button type="submit" th:disabled="${!pendingRetryAvailable}" class="button-secondary">同じ確認内容で再送する</button>
+</form>
+</section>
+</section>
+<p class="actions"><a th:href="@{/orders/{id}(id=${orderId})}" class="button button-secondary">注文詳細へ戻る</a></p>
+</main>
+<script th:if="${failureClosurePending != true and result != null and result.autoContinueAllowed}" th:attr="nonce=${resultScriptNonce}">
+(() => {
+    const form = document.getElementById('result-continue');
+    if (!form) return;
+    const message = document.getElementById('result-continuation-status');
+    const automatic = form.querySelector('input[name="automatic"]');
+    const buttons = form.querySelectorAll('button[type="submit"]');
+    const MAX_ACTIONS = 3, MAX_WAIT = 10000, MAX_TOTAL_WAIT = 30000;
+    const wait = Number(form.dataset.waitMs), remaining = Number(form.dataset.remainingMs);
+    const stage = form.dataset.stage;
+    const started = Date.now();
+    let submitting = false, timer = null, cancelled = false;
+    const manual = () => {
+        cancelled = true;
+        if (timer !== null) clearTimeout(timer);
+        submitting = false;
+        automatic.value = 'false';
+        buttons.forEach(button => button.disabled = false);
+        message.textContent = '自動確認は停止しました。保存済みの結果または継続ボタンからご確認ください。';
+    };
+    form.addEventListener('submit', event => {
+        if (submitting) { event.preventDefault(); return; }
+        cancelled = true;
+        if (timer !== null) clearTimeout(timer);
+        submitting = true;
+        automatic.value = 'false';
+        buttons.forEach(button => button.disabled = true);
+    });
+    window.addEventListener('pageshow', event => { if (event.persisted) manual(); });
+    window.addEventListener('pagehide', manual);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) manual(); });
+    if (!Number.isFinite(wait) || !Number.isFinite(remaining) || wait < 0 || wait > MAX_WAIT || remaining <= wait || !stage) { manual(); return; }
+    // Count only automatic waiting, not time spent by the customer completing 3DS.
+    try {
+        const key = 'feature125:result-budget:' + form.dataset.receipt;
+        const saved = window.sessionStorage.getItem(key);
+        const budget = saved ? JSON.parse(saved) : {count: 0, waited: 0, stages: {}};
+        if (!Number.isInteger(budget.count) || budget.count < 0 || !Number.isFinite(budget.waited) || budget.waited < 0
+            || !budget.stages || typeof budget.stages !== 'object' || budget.stages[stage]
+            || budget.count >= MAX_ACTIONS || budget.waited + wait > MAX_TOTAL_WAIT
+            || (stage === 'INITIAL:0' && window.sessionStorage.getItem('feature125:initial-result:' + form.dataset.receipt))) { manual(); return; }
+        budget.count++;
+        budget.waited += wait;
+        budget.stages[stage] = true;
+        window.sessionStorage.setItem(key, JSON.stringify(budget));
+        if (stage === 'INITIAL:0') window.sessionStorage.setItem('feature125:initial-result:' + form.dataset.receipt, 'attempted');
+    } catch (_) { manual(); return; }
+    submitting = true;
+    buttons.forEach(button => button.disabled = true);
+    message.textContent = '処理を確認しています。注文変更はまだ完了していません。';
+    const send = () => {
+        if (cancelled) return;
+        if (document.hidden || Date.now() - started > MAX_WAIT || Date.now() - started >= remaining) { manual(); return; }
+        automatic.value = 'true';
+        try { HTMLFormElement.prototype.submit.call(form); }
+        catch (_) { manual(); }
+    };
+    if (wait > 0) timer = setTimeout(send, wait);
+    else send();
+})();
+</script>
+<script id="result-auth-start-script" th:if="${failureClosurePending != true and result != null and result.autoStartCardAllowed}" th:attr="nonce=${resultScriptNonce}">
+(() => {
+    const form = document.getElementById('result-auth-start');
+    if (!form) return;
+    const message = document.getElementById('result-continuation-status');
+    const buttons = form.querySelectorAll('button[type="submit"]');
+    let submitting = false;
+    const manual = () => {
+        submitting = false;
+        buttons.forEach(button => button.disabled = false);
+        message.textContent = '自動遷移は行いません。保存済みの結果を確認するか、認証開始ボタンをご利用ください。';
+    };
+    form.addEventListener('submit', event => {
+        if (submitting) { event.preventDefault(); return; }
+        submitting = true;
+        buttons.forEach(button => button.disabled = true);
+    });
+    window.addEventListener('pageshow', event => { if (event.persisted) manual(); });
+    if (document.hidden || !form.dataset.target || !form.querySelector('input[name="_csrf"]')) { manual(); return; }
+    try {
+        const key = 'feature125:auth-start:' + form.dataset.target;
+        if (window.sessionStorage.getItem(key)) { manual(); return; }
+        // This records an attempt to navigate, never successful issuance or a provider result.
+        window.sessionStorage.setItem(key, 'attempted');
+        submitting = true;
+        buttons.forEach(button => button.disabled = true);
+        message.textContent = 'カード認証画面へ移動しています。注文変更はまだ完了していません。';
+        HTMLFormElement.prototype.submit.call(form);
+    } catch (_) { manual(); }
+})();
+</script>
+</body></html>

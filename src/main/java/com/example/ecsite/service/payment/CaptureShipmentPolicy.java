@@ -1,5 +1,8 @@
 package com.example.ecsite.service.payment;
 
+import com.example.ecsite.payment.PaymentContentEvidence;
+
+
 import java.util.*;
 import org.springframework.stereotype.Component;
 import com.example.ecsite.entity.*;
@@ -31,6 +34,11 @@ public class CaptureShipmentPolicy {
     }
     public Decision classify(Order order, List<Payment> payments, List<PaymentTransaction> history,
             PaymentOperationSnapshot expected, Set<UUID> completedChanges, Set<UUID> abortedChanges) {
+        return classify(order,payments,history,expected,completedChanges,abortedChanges,null);
+    }
+    public Decision classify(Order order, List<Payment> payments, List<PaymentTransaction> history,
+            PaymentOperationSnapshot expected, Set<UUID> completedChanges, Set<UUID> abortedChanges,
+            PaymentContentEvidence contentEvidence) {
         if(!validInput(order,payments,history)) return recovery(Reason.INVALID_INPUT);
         if(!PaymentPurposeResolver.usableHistory(order,payments,history,completedChanges,abortedChanges)) return recovery(Reason.INVALID_INPUT);
         if(!order.hasCompleteShippingPreparation()) return recovery(Reason.INVALID_PREPARATION);
@@ -49,7 +57,7 @@ public class CaptureShipmentPolicy {
             if(history.stream().anyMatch(t -> t.getTransactionType()==PaymentTransactionType.CAPTURE)) return recovery(Reason.CAPTURE_HISTORY);
             if(history.stream().anyMatch(t -> t.getStatus()==PaymentTransactionStatus.PENDING)) return recovery(Reason.PENDING_CONFLICT);
             if(payment.getStatus()!=PaymentStatus.AUTHORIZED) return recovery(Reason.INVALID_PAYMENT);
-            if(!captureConsistent(order,payment,history)) return recovery(Reason.AUTHORIZATION_MISMATCH);
+            if(!captureConsistent(order,payment,history,contentEvidence)) return recovery(Reason.AUTHORIZATION_MISMATCH);
             return new Decision(Disposition.NEW,Reason.NONE,payment.getId(),null);
         }
         if(!Objects.equals(order.getShipmentCapturePaymentId(),payment.getId()) || order.getShippedAt()==null
@@ -63,7 +71,7 @@ public class CaptureShipmentPolicy {
         if(!matcher.matches(order,payment,capture,expected)) return recovery(Reason.SNAPSHOT_MISMATCH);
         if(history.stream().anyMatch(t -> t.getStatus()==PaymentTransactionStatus.PENDING && !Objects.equals(t.getId(),capture.getId())))
             return recovery(Reason.PENDING_CONFLICT);
-        if(!captureConsistent(order,payment,history)) return recovery(Reason.AUTHORIZATION_MISMATCH);
+        if(!captureConsistent(order,payment,history,contentEvidence)) return recovery(Reason.AUTHORIZATION_MISMATCH);
         if(capture.getStatus()==PaymentTransactionStatus.PENDING && payment.getStatus()==PaymentStatus.AUTHORIZED
                 && order.getPaidAt()==null && capture.getCompletedAt()==null
                 && (capture.getProviderTransactionId()==null || capture.getProviderTransactionId().equals(payment.getProviderPaymentId()))) {
@@ -77,13 +85,13 @@ public class CaptureShipmentPolicy {
         }
         return recovery(Reason.INCONSISTENT_STATE);
     }
-    private boolean captureConsistent(Order order, Payment payment, List<PaymentTransaction> history) {
+    private boolean captureConsistent(Order order, Payment payment, List<PaymentTransaction> history, PaymentContentEvidence contentEvidence) {
         var authorizations=history.stream().filter(t -> Objects.equals(t.getPayment().getId(),payment.getId())
                 && t.getTransactionType()==PaymentTransactionType.AUTHORIZE && t.getStatus()==PaymentTransactionStatus.SUCCEEDED).toList();
         if(authorizations.size()!=1) return false;
         var authorization=authorizations.getFirst();
         return Objects.equals(authorization.getProviderTransactionId(),payment.getProviderPaymentId())
-                && evaluator.evaluate(order,payment,authorization).canCapture();
+                && evaluator.evaluate(order,payment,authorization,contentEvidence).canCapture();
     }
     static boolean validInput(Order order,List<Payment> payments,List<PaymentTransaction> history) {
         if(order==null || !positive(order.getId()) || order.getTotalAmount()<=0 || order.getContentRevision()<0 || payments==null || history==null) return false;

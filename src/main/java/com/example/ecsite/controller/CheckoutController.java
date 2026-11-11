@@ -296,6 +296,7 @@ public class CheckoutController {
         } catch(PaymentGatewayException | IllegalStateException stopped) {
             // Static pending display. Do not expose provider exceptions or credentials.
         }
+        model.addAttribute("confirmationTarget",paymentAuthorizationService.checkoutTarget(orderId,paymentId,loginUser.getId()).orElse(null));
         return "checkout/payment";
     }
 
@@ -304,13 +305,28 @@ public class CheckoutController {
     }
 
     @GetMapping("/payment/return")
-    public String paymentReturn(@AuthenticationPrincipal CustomUserDetails loginUser,HttpSession session) {
+    public String paymentReturn(@AuthenticationPrincipal CustomUserDetails loginUser,HttpSession session,Model model) {
+        return confirmationPage(loginUser,session,model,true);
+    }
+    @GetMapping("/payment/wait")
+    public String paymentWait(@AuthenticationPrincipal CustomUserDetails loginUser,HttpSession session,Model model) {
+        return confirmationPage(loginUser,session,model,false);
+    }
+    private String confirmationPage(CustomUserDetails user,HttpSession session,Model model,boolean automatic) {
         session.removeAttribute("checkoutPaymentClientSecret");
-        Object order=session.getAttribute("checkoutOrderId");
-        Object payment=session.getAttribute("checkoutPaymentId");
-        if(!(order instanceof Long orderId) || !(payment instanceof Long))return "redirect:/";
-        orderService.findOrderByIdAndUserId(orderId,loginUser.getId());
+        var pair=checkoutPair(session);if(pair==null)return "redirect:/";
+        orderService.findOrderByIdAndUserId(pair.order(),user.getId());
+        var target=paymentAuthorizationService.checkoutTarget(pair.order(),pair.payment(),user.getId()).orElse(null);
+        model.addAttribute("orderId",pair.order());model.addAttribute("confirmationTarget",target);
+        model.addAttribute("autoCheckAllowed",automatic&&target!=null);
         return "checkout/payment-return";
+    }
+    private record CheckoutPair(long order,long payment){}
+    private CheckoutPair checkoutPair(HttpSession session){
+        synchronized(session){
+            Object order=session.getAttribute("checkoutOrderId"),payment=session.getAttribute("checkoutPaymentId");
+            return order instanceof Long o&&payment instanceof Long p?new CheckoutPair(o,p):null;
+        }
     }
 
     @PostMapping("/payment/continue")
@@ -318,22 +334,22 @@ public class CheckoutController {
             @AuthenticationPrincipal CustomUserDetails loginUser,
             HttpSession session,
             SessionStatus sessionStatus,
-            RedirectAttributes redirectAttributes) {
+            RedirectAttributes redirectAttributes,
+            @RequestParam(required=false) Long expectedOrderId,
+            @RequestParam(required=false) Long expectedPaymentId,
+            @RequestParam(required=false) Long expectedTransactionId) {
 
-        Object orderIdValue = session.getAttribute(
-                "checkoutOrderId");
-
-        Object paymentIdValue = session.getAttribute(
-                "checkoutPaymentId");
-
-        if (!(orderIdValue instanceof Long orderId)
-                || !(paymentIdValue instanceof Long paymentId)) {
-
-            return "redirect:/";
-        }
+        var pair=checkoutPair(session);
+        if(pair==null)return "redirect:/";
+        if(!java.util.Objects.equals(expectedOrderId,pair.order())||!java.util.Objects.equals(expectedPaymentId,pair.payment()))
+            return "redirect:/checkout/payment/wait";
+        orderService.findOrderByIdAndUserId(pair.order(),loginUser.getId());
+        var target=paymentAuthorizationService.checkoutTarget(pair.order(),pair.payment(),loginUser.getId()).orElse(null);
+        if(target==null||!java.util.Objects.equals(expectedTransactionId,target.transactionId()))
+            return "redirect:/checkout/payment/wait";
+        long orderId=pair.order(),paymentId=pair.payment();
 
         session.removeAttribute("checkoutPaymentClientSecret");
-        orderService.findOrderByIdAndUserId(orderId,loginUser.getId());
 
         final AuthorizationResult result;
 
@@ -349,14 +365,12 @@ public class CheckoutController {
                     "errorMessage",
                     PaymentSafetyMessages.customer(orderId, e));
 
-            return "redirect:/checkout/payment";
+            return "redirect:/checkout/payment/wait";
         }
 
         if (result.status() == AuthorizationResultStatus.AUTHORIZED) {
 
-            clearCheckoutPaymentSession(session);
-
-            sessionStatus.setComplete();
+            if(clearCheckoutPaymentSession(session,pair))sessionStatus.setComplete();
 
             redirectAttributes.addFlashAttribute(
                     "orderId",
@@ -367,7 +381,7 @@ public class CheckoutController {
 
         if (result.status() == AuthorizationResultStatus.FAILED) {
 
-            clearCheckoutPaymentSession(session);
+            clearCheckoutPaymentSession(session,pair);
 
             redirectAttributes.addFlashAttribute(
                     "errorMessage",
@@ -384,7 +398,7 @@ public class CheckoutController {
                     "errorMessage",
                     "カード情報を確認して、もう一度お試しください。");
 
-            return "redirect:/checkout/payment";
+            return "redirect:/checkout/payment/wait";
         }
 
         if (result.status() == AuthorizationResultStatus.REQUIRES_CONFIRMATION) {
@@ -393,7 +407,7 @@ public class CheckoutController {
                     "errorMessage",
                     "カード決済を続けてください。");
 
-            return "redirect:/checkout/payment";
+            return "redirect:/checkout/payment/wait";
         }
 
         if (result.status() == AuthorizationResultStatus.REQUIRES_ACTION) {
@@ -403,7 +417,7 @@ public class CheckoutController {
                     "カード認証が完了していません。"
                             + "認証を完了してください。");
 
-            return "redirect:/checkout/payment";
+            return "redirect:/checkout/payment/wait";
         }
 
         redirectAttributes.addFlashAttribute(
@@ -411,7 +425,7 @@ public class CheckoutController {
                 "決済処理を確認中です。"
                         + "しばらくしてからもう一度お試しください。");
 
-        return "redirect:/checkout/payment";
+        return "redirect:/checkout/payment/wait";
     }
 
     @GetMapping("/complete")
@@ -534,17 +548,12 @@ public class CheckoutController {
         checkoutForm.setShippingPhone(null);
     }
 
-    private void clearCheckoutPaymentSession(
-            HttpSession session) {
-
-        session.removeAttribute(
-                "checkoutOrderId");
-
-        session.removeAttribute(
-                "checkoutPaymentId");
-
-        session.removeAttribute(
-                "checkoutPaymentClientSecret");
+    private boolean clearCheckoutPaymentSession(HttpSession session,CheckoutPair expected) {
+        synchronized(session){
+            if(!expected.equals(checkoutPair(session)))return false;
+            session.removeAttribute("checkoutOrderId");session.removeAttribute("checkoutPaymentId");
+            session.removeAttribute("checkoutPaymentClientSecret");return true;
+        }
     }
 
 }

@@ -1,14 +1,16 @@
 <!DOCTYPE html>
 <html lang="ja" xmlns:th="http://www.thymeleaf.org">
-<head><meta charset="UTF-8"><meta name="referrer" content="no-referrer"><title>お支払い</title></head>
-<body>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>お支払い</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body class="flow-page">
+<header th:replace="~{fragments/header :: header}"></header>
+<main class="flow-main">
 <h1>お支払い</h1>
 <p>注文番号：<strong th:text="${orderId}"></strong></p>
 <section th:if="${card != null}">
 <p>カード情報を入力してください。</p>
-<div id="payment-form"></div>
-<p id="payment-error" role="alert"></p>
-<button type="button" id="payment-submit">カードで支払う</button>
+<div id="payment-form" class="flow-payment-form"></div>
+<p class="flow-message-warning" id="payment-error" role="alert"></p>
+<button type="button" id="payment-submit" class="button-primary">カードで支払う</button>
 <script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
 <script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
 (() => {
@@ -49,7 +51,12 @@
 })();
 </script>
 </section>
-<p th:if="${card == null}">カード決済の状態を確認中です。認証の中断・通信断後の再認証は自動実行しません。</p>
-<form th:action="@{/checkout/payment/continue}" method="post"><button type="submit">サーバーで結果を確認する</button></form>
-<p><a th:href="@{/orders/{id}(id=${orderId})}">注文詳細へ戻る</a></p>
+<p class="flow-message-warning" th:if="${card == null}">カード決済の状態を確認中です。認証の中断・通信断後の再認証は自動実行しません。</p>
+<form th:if="${confirmationTarget != null}" th:action="@{/checkout/payment/continue}" method="post">
+<input type="hidden" name="expectedOrderId" th:value="${confirmationTarget.orderId}">
+<input type="hidden" name="expectedPaymentId" th:value="${confirmationTarget.paymentId}">
+<input type="hidden" name="expectedTransactionId" th:value="${confirmationTarget.transactionId}">
+<button type="submit" class="button-secondary">サーバーで結果を確認する</button></form>
+<p class="actions"><a th:href="@{/orders/{id}(id=${orderId})}" class="button button-secondary">注文詳細へ戻る</a></p>
+</main>
 </body></html>

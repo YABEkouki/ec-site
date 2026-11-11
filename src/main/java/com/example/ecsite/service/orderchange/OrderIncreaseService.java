@@ -60,6 +60,10 @@ public class OrderIncreaseService {
         Objects.requireNonNull(request);
         context.requireCleanWritableReadCommitted();
         var order=lockedOrder(request.orderId(),request.customerId());
+        // Both legacy accept entrances stop here, before replay, Payment initialization or stock reservation.
+        if(store.hasContentEvidence(order.getId()))
+            throw new com.example.ecsite.exception.InvalidOrderStatusException(
+                "この注文は一括編集で変更してください。従来の数量増加では変更できません。");
         String digest=request.digest();
         var replay=store.submission(order.getId(),request.submissionKey());
         if(replay.isPresent()){

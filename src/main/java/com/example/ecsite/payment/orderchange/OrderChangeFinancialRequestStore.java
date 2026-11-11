@@ -28,6 +28,8 @@ public class OrderChangeFinancialRequestStore {
     private StoredOrderChangeRequest save(long paymentId,long transactionId,OrderChangeHttpRequest request,boolean requestedAbort){
         requireTransaction();
         if(TransactionSynchronizationManager.isCurrentTransactionReadOnly())throw new IllegalStateException("Writable transaction required");
+        var bridge=new com.example.ecsite.service.order.evidence.OrderEditReauthorizationBridge(jdbc);
+        if(bridge.isOwned(request.orderId(),request.operationId()))bridge.canonicalLock(request.orderId(),request.operationId());
         // Order -> operation -> Payment ascending -> Transaction, including calls outside Spring proxies.
         jdbc.queryForObject("select id from orders where id=? for update",Long.class,request.orderId());
         var operation=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=? for update",request.operationId(),request.orderId());
@@ -101,10 +103,20 @@ public class OrderChangeFinancialRequestStore {
             """,operationId,kind);
     }
     /** Atomically consume eligibility before minting a token. Caller must commit before POST. */
-    public StoredOrderChangeRequest findForDispatch(long id){
+    public StoredOrderChangeRequest findForDispatch(long id){return findForDispatch(id,null);}
+    public StoredOrderChangeRequest findForDispatch(long id,com.example.ecsite.service.order.evidence.OrderEditApplicationPlan.Ownership owner){
         requireTransaction();
         var saved=find(id);var request=saved.httpRequest();
+        var bridge=new com.example.ecsite.service.order.evidence.OrderEditReauthorizationBridge(jdbc);
+        boolean orderEdit=bridge.isOwned(request.orderId(),request.operationId());
+        if(orderEdit){
+            if(owner==null)throw new IllegalStateException("Order edit ownership required");
+            bridge.canonicalLock(request.orderId(),request.operationId());
+            bridge.requireOwner(request.orderId(),request.operationId(),owner);
+        }else if(owner!=null)throw new IllegalStateException("Not an owned order edit request");
         jdbc.queryForObject("select id from orders where id=? for update",Long.class,request.orderId());
+        if("CREATE".equals(request.kind())&&!orderEdit)
+            new com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard(jdbc).requireClear(request.orderId());
         var op=jdbc.queryForMap("select * from order_change_operations where id=? and order_id=? for update",request.operationId(),request.orderId());
         jdbc.queryForList("select id from payments where order_id=? order by id for update",request.orderId());
         if(op.get("abort_request_id")!=null)throw new DispatchUnavailable();
@@ -120,6 +132,10 @@ public class OrderChangeFinancialRequestStore {
         };
         if(!eligible)throw new IllegalStateException("Order change is not eligible for request dispatch");
         saved.requireReplayAt(jdbc.queryForObject("select clock_timestamp()",OffsetDateTime.class).toInstant());
+        if(orderEdit){
+            bridge.validateBase(request.orderId(),request.operationId());
+            bridge.requireOwner(request.orderId(),request.operationId(),owner);
+        }
         if(jdbc.update("""
             update order_change_request_dispatches set state='STARTED',started_at=clock_timestamp()
             where request_id=? and state='READY'

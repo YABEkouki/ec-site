@@ -75,6 +75,7 @@ public class SecurityConfig {
                                 "/password/reset",
                                 "/403",
                                 "/css/**",
+                                "/favicon.ico",
                                 "/product-images/**",
                                 "/webhooks/payjp")
                         .permitAll()

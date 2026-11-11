@@ -19,7 +19,15 @@ class OrderChangeFinancialRequestsPostgresTest {
     Map<String,List<String>> before;
     final CaptureConnectionIdentity identity=new CaptureConnectionIdentity("primary","merchant","TEST","https://api.pay.jp");
     @BeforeAll static void guard(){PaymentSafetyExpandPostgresTest.verifyContainerBeforeAnyDatabaseAccess();}
-    @BeforeEach void setup(){initialize(true);}
+    @BeforeEach void setup(TestInfo info){
+        initialize(true);
+        // Historical DDL tests keep their original targets. Current dispatch code requires V71.
+        if(Set.of("senderLoadsOnlyCommittedRequestAndPostsOutsideTransaction","aNewSenderCannotPostAnAlreadyStartedRequest",
+            "transportFailureConsumesPermitWithoutChangingBusinessData","startRollbackDoesNotConsumePermit",
+            "crashAfterStartCommitLeavesNoRetryPermit","lostCommitResponseNeverEntersTransport",
+            "concurrentSendCanEnterTransportOnlyOnce","abortedOperationCannotSendStoredCreate",
+            "settledTransactionIsObservationOnly").contains(info.getTestMethod().orElseThrow().getName()))db.migrate("71");
+    }
     void initialize(boolean tracking){
         db=new PaymentSafetyExpandPostgresTest();db.isolatedSchema();db.migrate("57");jdbc=db.jdbc;
         order=db.order();payment=db.payment(order);operation=UUID.randomUUID();
@@ -139,7 +147,7 @@ class OrderChangeFinancialRequestsPostgresTest {
         org.mockito.Mockito.verify(gateway,org.mockito.Mockito.times(1)).sendOrderChangeRequest(org.mockito.ArgumentMatchers.any());
     }
     @Test void legacyRequestIsNotBackfilledOrPosted(){
-        initialize(false);var saved=save();db.migrate("61");
+        initialize(false);var saved=save();db.migrate("71");
         assertThat(save().id()).isEqualTo(saved.id()); // Reusing legacy bytes never repairs eligibility.
         assertThat(jdbc.queryForObject("select count(*) from order_change_request_dispatches",Integer.class)).isZero();
         var gateway=org.mockito.Mockito.mock(com.example.ecsite.payment.PaymentGateway.class);

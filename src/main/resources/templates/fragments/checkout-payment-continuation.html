@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org"><body>
+<script th:fragment="confirmation" th:attr="nonce=${paymentScriptNonce}">
+(() => {
+    const form = document.getElementById('checkout-continue');
+    if (!form) return;
+    const message = document.getElementById('checkout-confirmation-status');
+    const buttons = form.querySelectorAll('button[type="submit"]');
+    let submitting = false;
+    const manual = () => {
+        submitting = false;
+        buttons.forEach(button => button.disabled = false);
+        message.textContent = '自動確認は行いません。ボタンから保存済みの決済結果を確認してください。';
+    };
+    const pending = () => {
+        submitting = true;
+        buttons.forEach(button => button.disabled = true);
+        message.textContent = 'サーバーで決済結果を確認しています。注文の完了はまだ確認できていません。';
+    };
+    form.addEventListener('submit', event => {
+        if (submitting) { event.preventDefault(); return; }
+        pending();
+    });
+    window.addEventListener('pageshow', event => { if (event.persisted) manual(); });
+    if (form.dataset.auto !== 'true' || !form.dataset.key) return;
+    try {
+        const key = 'checkout:result-confirmation:' + form.dataset.key;
+        if (window.sessionStorage.getItem(key)) { manual(); return; }
+        window.sessionStorage.setItem(key, 'attempted');
+    } catch (_) { manual(); return; }
+    pending();
+    try { HTMLFormElement.prototype.submit.call(form); }
+    catch (_) { manual(); }
+})();
+</script>
+</body></html>

@@ -91,6 +91,8 @@ class OrderControllerTest {
     @Mock
     private PaymentAuthorizationService paymentAuthorizationService;
 
+    @Mock private com.example.ecsite.service.order.evidence.OrderEditBrowserService editBrowser;
+
     private OrderController orderController;
 
     @BeforeEach
@@ -104,7 +106,7 @@ class OrderControllerTest {
                 validator,
                 paymentCancellationService,
                 paymentService,
-                paymentAuthorizationService);
+                paymentAuthorizationService, editBrowser);
     }
 
     @Test
@@ -201,10 +203,15 @@ class OrderControllerTest {
         when(paymentService.canResumeAuthorization(order))
                 .thenReturn(true);
 
+        java.util.UUID legacy = java.util.UUID.randomUUID();
+        when(editBrowser.legacyChangeOperation(orderId)).thenReturn(legacy);
+
         String viewName = orderController.detail(
                 orderId,
                 loginUser,
                 model);
+
+        verify(model).addAttribute("legacyChangeOperationId", legacy);
 
         assertEquals("orders/detail", viewName);
 

@@ -27,6 +27,8 @@ class PaymentSafetyExpandPostgresTest {
         user = System.getenv("EC_TEST_DB_USER");
         password = System.getenv("EC_TEST_DB_PASSWORD");
         var env = new MockEnvironment();
+        env.setActiveProfiles("test");
+        env.setProperty("ecsite.test.database-mode", System.getProperty("ecsite.test.database-mode", "shared"));
         for (String prefix : List.of("spring.datasource", "spring.flyway")) {
             env.setProperty(prefix + (prefix.endsWith("flyway") ? ".user" : ".username"), Objects.toString(user, ""));
             env.setProperty(prefix + ".url", Objects.toString(url, ""));
@@ -45,6 +47,15 @@ class PaymentSafetyExpandPostgresTest {
 
     void migrate(String target) {
         Flyway.configure().dataSource(source).defaultSchema(schema).target(target).load().migrate();
+        if(Integer.parseInt(target)>=71 && "ecsite_test".equals(source.getDatabaseName())) {
+            // Historical-schema tests keep their original Flyway target/history. Only the
+            // explicitly approved test database name is adapted by this fixture; V71-V76
+            // business functions, triggers and constraints remain the original migrations.
+            verifyContainerBeforeAnyDatabaseAccess();
+            try(var input=new org.springframework.core.io.ClassPathResource("db/test-migration/V77__shared_test_database_name.sql").getInputStream()) {
+                jdbc.execute(new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));
+            } catch(java.io.IOException failure) {throw new IllegalStateException("Test database compatibility fixture unavailable",failure);}
+        }
     }
 
     long order() {
