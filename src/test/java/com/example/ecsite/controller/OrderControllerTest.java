@@ -27,7 +27,6 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.example.ecsite.dto.OrderItemChangePreview;
 import com.example.ecsite.entity.Order;
-import com.example.ecsite.entity.OrderContentChangeHistory;
 import com.example.ecsite.entity.OrderItem;
 import com.example.ecsite.entity.OrderShippingAddressHistory;
 import com.example.ecsite.entity.OrderStatusHistory;
@@ -41,7 +40,8 @@ import com.example.ecsite.payment.CancellationResult;
 import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.security.CustomUserDetails;
-import com.example.ecsite.service.OrderContentChangeHistoryService;
+import com.example.ecsite.service.order.history.CustomerOrderChangeHistoryViewService;
+import com.example.ecsite.service.order.history.CustomerOrderChangeHistoryPage;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
@@ -77,7 +77,7 @@ class OrderControllerTest {
     private OrderShippingAddressHistoryService orderShippingAddressHistoryService;
 
     @Mock
-    private OrderContentChangeHistoryService orderContentChangeHistoryService;
+    private CustomerOrderChangeHistoryViewService customerHistory;
 
     @Mock
     private Validator validator;
@@ -102,7 +102,7 @@ class OrderControllerTest {
                 orderStatusHistoryService,
                 shippingAddressService,
                 orderShippingAddressHistoryService,
-                orderContentChangeHistoryService,
+                customerHistory,
                 validator,
                 paymentCancellationService,
                 paymentService,
@@ -275,59 +275,16 @@ class OrderControllerTest {
     }
 
     @Test
-    void contentChangeHistoryDisplaysHistoriesForOwnedOrder() {
-
-        Long orderId = 1L;
-        Long userId = 10L;
-
-        Order order = new Order(
-                userId,
-                4000,
-                LocalDateTime.of(2026, 9, 30, 10, 0),
-                LocalDateTime.of(2026, 9, 30, 14, 0));
-
-        OrderContentChangeHistory history = mock(OrderContentChangeHistory.class);
-
-        List<OrderContentChangeHistory> histories = List.of(history);
-
-        when(loginUser.getId())
-                .thenReturn(userId);
-
-        when(orderService.findOrderByIdAndUserId(
-                orderId,
-                userId))
-                .thenReturn(order);
-
-        when(orderContentChangeHistoryService.findByOrderId(
-                orderId))
-                .thenReturn(histories);
-
-        String viewName = orderController.contentChangeHistory(
-                orderId,
-                loginUser,
-                model);
-
-        assertEquals(
-                "orders/content-change-history",
-                viewName);
-
-        verify(orderService)
-                .findOrderByIdAndUserId(
-                        orderId,
-                        userId);
-
-        verify(orderContentChangeHistoryService)
-                .findByOrderId(orderId);
-
-        verify(model)
-                .addAttribute(
-                        "order",
-                        order);
-
-        verify(model)
-                .addAttribute(
-                        "contentChangeHistories",
-                        histories);
+    void contentChangeHistoryDisplaysCustomerDtoOnly() {
+        var page = new CustomerOrderChangeHistoryPage(1L, CustomerOrderChangeHistoryPage.State.ALL,
+                List.of(), List.of(), 1, 20, 0, 1);
+        when(customerHistory.load(1L, 1)).thenReturn(page);
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        assertEquals("orders/content-change-history", orderController.contentChangeHistory(1L, "1", model, response));
+        verify(customerHistory).load(1L, 1);
+        verify(model).addAttribute("historyPage", page);
+        verifyNoInteractions(orderService, loginUser);
+        assertEquals(200, response.getStatus());
     }
 
     @Test
