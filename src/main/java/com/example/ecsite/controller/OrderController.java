@@ -25,7 +25,7 @@ import com.example.ecsite.payment.CancellationResultStatus;
 import com.example.ecsite.payment.PaymentGatewayException;
 import com.example.ecsite.payment.PaymentSafetyMessages;
 import com.example.ecsite.security.CustomUserDetails;
-import com.example.ecsite.service.OrderContentChangeHistoryService;
+import com.example.ecsite.service.order.history.CustomerOrderChangeHistoryViewService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.OrderShippingAddressHistoryService;
 import com.example.ecsite.service.OrderStatusHistoryService;
@@ -47,7 +47,7 @@ public class OrderController {
     private final OrderStatusHistoryService orderStatusHistoryService;
     private final ShippingAddressService shippingAddressService;
     private final OrderShippingAddressHistoryService orderShippingAddressHistoryService;
-    private final OrderContentChangeHistoryService orderContentChangeHistoryService;
+    private final CustomerOrderChangeHistoryViewService customerHistory;
     private final Validator validator;
     private final PaymentCancellationService paymentCancellationService;
     private final PaymentService paymentService;
@@ -58,7 +58,7 @@ public class OrderController {
             OrderStatusHistoryService orderStatusHistoryService,
             ShippingAddressService shippingAddressService,
             OrderShippingAddressHistoryService orderShippingAddressHistoryService,
-            OrderContentChangeHistoryService orderContentChangeHistoryService,
+            CustomerOrderChangeHistoryViewService customerHistory,
             Validator validator,
             PaymentCancellationService paymentCancellationService,
             PaymentService paymentService,
@@ -70,7 +70,7 @@ public class OrderController {
         this.orderStatusHistoryService = orderStatusHistoryService;
         this.shippingAddressService = shippingAddressService;
         this.orderShippingAddressHistoryService = orderShippingAddressHistoryService;
-        this.orderContentChangeHistoryService = orderContentChangeHistoryService;
+        this.customerHistory = customerHistory;
         this.validator = validator;
         this.paymentCancellationService = paymentCancellationService;
         this.paymentService = paymentService;
@@ -154,22 +154,50 @@ public class OrderController {
     @GetMapping("/{id}/content-changes")
     public String contentChangeHistory(
             @PathVariable Long id,
-            @AuthenticationPrincipal CustomUserDetails loginUser,
-            Model model) {
+            @RequestParam(defaultValue = "1") String page,
+            Model model,
+            jakarta.servlet.http.HttpServletResponse response) {
+        int requestedPage;
+        try {
+            requestedPage = Integer.parseInt(page);
+            if (requestedPage < 1) throw new NumberFormatException();
+        } catch (NumberFormatException invalidPage) {
+            throw new HistoryRequestException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "ページ番号を確認してください。");
+        }
+        try {
+            var historyPage = customerHistory.load(id, requestedPage);
+            model.addAttribute("historyPage", historyPage);
+            if (historyPage.state() == com.example.ecsite.service.order.history.CustomerOrderChangeHistoryPage.State.UNAVAILABLE)
+                response.setStatus(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE.value());
+            return "orders/content-change-history";
+        } catch (com.example.ecsite.exception.OrderNotFoundException notFound) {
+            throw new HistoryRequestException(org.springframework.http.HttpStatus.NOT_FOUND,
+                    "指定された注文は見つかりません。");
+        } catch (org.springframework.security.access.AccessDeniedException denied) {
+            throw new HistoryRequestException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    "このページを表示する権限がありません。");
+        }
+    }
 
-        Order order = orderService.findOrderByIdAndUserId(
-                id,
-                loginUser.getId());
+    /** Safe customer error data only; deliberately scoped to the history route's wrapper. */
+    public record HistoryRequestError(int status, String message) {}
 
-        model.addAttribute(
-                "order",
-                order);
+    private static final class HistoryRequestException extends RuntimeException {
+        final org.springframework.http.HttpStatus status;
+        final String safeMessage;
+        HistoryRequestException(org.springframework.http.HttpStatus status, String safeMessage) {
+            this.status = status;
+            this.safeMessage = safeMessage;
+        }
+    }
 
-        model.addAttribute(
-                "contentChangeHistories",
-                orderContentChangeHistoryService.findByOrderId(id));
-
-        return "orders/content-change-history";
+    @org.springframework.web.bind.annotation.ExceptionHandler(HistoryRequestException.class)
+    public org.springframework.web.servlet.ModelAndView historyRequestError(HistoryRequestException error) {
+        var view = new org.springframework.web.servlet.ModelAndView("orders/content-change-history-error",
+                "historyError", new HistoryRequestError(error.status.value(), error.safeMessage));
+        view.setStatus(error.status);
+        return view;
     }
 
     @GetMapping("/{id}/cancel")

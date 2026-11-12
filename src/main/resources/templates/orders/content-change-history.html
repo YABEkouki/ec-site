@@ -1,315 +1,71 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
     <title>注文内容変更履歴</title>
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
-
 <body>
-    <header th:replace="~{fragments/header :: header}">
-    </header>
-
+    <header th:replace="~{fragments/header :: header}"></header>
     <h1>注文内容変更履歴</h1>
+    <p>注文番号：<span th:text="${historyPage.orderNumber}"></span></p>
+    <p>日時は日本時間で表示しています。</p>
 
-    <h2>注文情報</h2>
+    <div th:switch="${historyPage.state.name()}">
+        <p th:case="'PARTIAL'" class="alert alert-warning" role="status">一部の注文変更履歴を表示できません</p>
+        <p th:case="'NONE'" class="alert alert-warning" role="status">注文変更履歴を表示できません</p>
+        <p th:case="'LIMIT_EXCEEDED'" class="alert alert-warning" role="status">注文変更履歴の件数またはデータ量が多いため、現在表示できません</p>
+        <p th:case="'UNAVAILABLE'" class="alert alert-warning" role="status">注文変更履歴を取得できません。しばらくしてから再度お試しください。</p>
+    </div>
+    <p th:if="${historyPage.state.name() == 'ALL' and historyPage.totalEntries == 0}">確定した注文変更履歴はありません</p>
 
-    <table>
-        <tbody>
-            <tr>
-                <th>注文番号</th>
-                <td th:text="${order.id}"></td>
-            </tr>
-
-            <tr>
-                <th>注文日時</th>
-                <td th:text="${#temporals.format(
-                    order.orderedAt,
-                    'yyyy/MM/dd HH:mm')}">
-                </td>
-            </tr>
-
-            <tr>
-                <th>注文状態</th>
-                <td>
-                    <span class="status-badge"
-                        th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
-                        th:text="${order.status.displayName}">
-                    </span>
-                </td>
-            </tr>
-        </tbody>
-    </table>
-
-    <p th:if="${#lists.isEmpty(contentChangeHistories)}">
-        注文内容の変更履歴はありません。
-    </p>
-
-    <section th:each="history : ${contentChangeHistories}">
-
-        <h2>
-            <span th:text="${#temporals.format(
-                history.changedAt,
-                'yyyy/MM/dd HH:mm')}">
-            </span>
-            の変更
-        </h2>
-
-        <p>
-            変更元：
-            <span th:text="${history.changeSource.displayName}"></span>
-        </p>
-
-        <h3>商品変更</h3>
-
-        <table th:unless="${#lists.isEmpty(history.items)}">
-            <thead>
-                <tr>
-                    <th>商品名</th>
-                    <th>変更内容</th>
-                    <th>変更前数量</th>
-                    <th>変更後数量</th>
-                    <th>変更前小計（税込）</th>
-                    <th>変更後小計（税込）</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                <tr th:each="item : ${history.items}">
-                    <td th:text="${item.productName}"></td>
-
-                    <td th:text="${item.changeType.displayName}"></td>
-
-                    <td th:text="${item.oldQuantity != null
-                        ? item.oldQuantity
-                        : '-'}">
-                    </td>
-
-                    <td th:text="${item.changeType
-                            == T(com.example.ecsite.entity.OrderContentChangeType).REMOVED
-                        ? '0（削除）'
-                        : (item.newQuantity != null
-                            ? item.newQuantity
-                            : '-')}">
-                    </td>
-
-                    <td>
-                        <span th:if="${item.oldSubtotal != null}">
-                            <span th:text="${#numbers.formatInteger(
-                                item.oldSubtotal,
-                                1,
-                                'COMMA')}">
-                            </span>
-                            円
-                        </span>
-
-                        <span th:unless="${item.oldSubtotal != null}">
-                            -
-                        </span>
-                    </td>
-
-                    <td>
-                        <span th:if="${item.changeType
-                            == T(com.example.ecsite.entity.OrderContentChangeType).REMOVED}">
-                            0円（削除）
-                        </span>
-
-                        <span th:if="${item.changeType
-                                != T(com.example.ecsite.entity.OrderContentChangeType).REMOVED
-                                and item.newSubtotal != null}">
-                            <span th:text="${#numbers.formatInteger(
-                                item.newSubtotal,
-                                1,
-                                'COMMA')}">
-                            </span>
-                            円
-                        </span>
-
-                        <span th:if="${item.changeType
-                                != T(com.example.ecsite.entity.OrderContentChangeType).REMOVED
-                                and item.newSubtotal == null}">
-                            -
-                        </span>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-
-        <p th:if="${#lists.isEmpty(history.items)}">
-            商品の変更はありません。
-        </p>
-
-        <h3>付帯料金変更</h3>
-
-        <table th:unless="${#lists.isEmpty(history.charges)}">
-            <thead>
-                <tr>
-                    <th>項目</th>
-                    <th>変更内容</th>
-                    <th>変更前（税込）</th>
-                    <th>変更後（税込）</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                <tr th:each="charge : ${history.charges}">
-                    <td th:text="${charge.newName != null
-                        ? charge.newName
-                        : charge.oldName}">
-                    </td>
-
-                    <td th:text="${charge.changeType.displayName}"></td>
-
-                    <td>
-                        <span th:if="${charge.oldAmount != null}">
-                            <span th:text="${#numbers.formatInteger(
-                                charge.oldAmount,
-                                1,
-                                'COMMA')}">
-                            </span>
-                            円
-                        </span>
-
-                        <span th:unless="${charge.oldAmount != null}">
-                            -
-                        </span>
-                    </td>
-
-                    <td>
-                        <span th:if="${charge.newAmount != null}">
-                            <span th:text="${#numbers.formatInteger(
-                                charge.newAmount,
-                                1,
-                                'COMMA')}">
-                            </span>
-                            円
-                        </span>
-
-                        <span th:unless="${charge.newAmount != null}">
-                            -
-                        </span>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-
-        <p th:if="${#lists.isEmpty(history.charges)}">
-            付帯料金の変更はありません。
-        </p>
-
-        <h3>金額変更</h3>
-
-        <table>
-            <thead>
-                <tr>
-                    <th>項目</th>
-                    <th>変更前</th>
-                    <th>変更後</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                <tr>
-                    <th>商品小計（税込）</th>
-                    <td>
-                        <span th:text="${#numbers.formatInteger(
-                            history.oldItemSubtotal,
-                            1,
-                            'COMMA')}">
-                        </span>
-                        円
-                    </td>
-                    <td>
-                        <span th:text="${#numbers.formatInteger(
-                            history.newItemSubtotal,
-                            1,
-                            'COMMA')}">
-                        </span>
-                        円
-                    </td>
-                </tr>
-
-                <tr>
-                    <th>付帯料金（税込）</th>
-                    <td>
-                        <span th:text="${#numbers.formatInteger(
-                            history.oldChargeTotal,
-                            1,
-                            'COMMA')}">
-                        </span>
-                        円
-                    </td>
-                    <td>
-                        <span th:text="${#numbers.formatInteger(
-                            history.newChargeTotal,
-                            1,
-                            'COMMA')}">
-                        </span>
-                        円
-                    </td>
-                </tr>
-
-                <tr>
-                    <th>うち消費税</th>
-                    <td>
-                        <span th:text="${#numbers.formatInteger(
-                            history.oldTaxAmount,
-                            1,
-                            'COMMA')}">
-                        </span>
-                        円
-                    </td>
-                    <td>
-                        <span th:text="${#numbers.formatInteger(
-                            history.newTaxAmount,
-                            1,
-                            'COMMA')}">
-                        </span>
-                        円
-                    </td>
-                </tr>
-
-                <tr>
-                    <th>注文合計（税込）</th>
-                    <td>
-                        <strong>
-                            <span th:text="${#numbers.formatInteger(
-                                history.oldTotalAmount,
-                                1,
-                                'COMMA')}">
-                            </span>
-                            円
-                        </strong>
-                    </td>
-                    <td>
-                        <strong>
-                            <span th:text="${#numbers.formatInteger(
-                                history.newTotalAmount,
-                                1,
-                                'COMMA')}">
-                            </span>
-                            円
-                        </strong>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-
-    </section>
-
-    <p>
-        <a th:href="@{/orders/{id}(id=${order.id})}" class="button button-secondary">
-            注文詳細へ戻る
-        </a>
-    </p>
-
-    <p>
-        <a th:href="@{/orders}" class="button button-secondary">
-            注文履歴へ戻る
-        </a>
-    </p>
-
+    <div th:if="${historyPage.state.name() == 'ALL' or historyPage.state.name() == 'PARTIAL'}">
+        <section class="change-entry" th:each="history : ${historyPage.entries}">
+            <h2><span th:text="${#temporals.format(history.changedAt, 'yyyy/MM/dd HH:mm')}"></span> の変更</h2>
+            <p th:switch="${history.kind.name()}">
+                <span th:case="'CONTENT_CHANGE'">注文内容の変更</span>
+                <span th:case="'QUANTITY_DECREASE'">数量減少・商品削除</span>
+                <span th:case="'QUANTITY_INCREASE'">数量増加</span>
+            </p>
+            <h3>商品変更</h3>
+            <table th:unless="${#lists.isEmpty(history.items)}">
+                <thead><tr>
+                    <th>変更内容</th><th>変更前商品名</th><th>変更後商品名</th>
+                    <th>変更前数量</th><th>変更後数量</th>
+                    <th>変更前単価（税込）</th><th>変更後単価（税込）</th>
+                    <th>変更前小計（税込）</th><th>変更後小計（税込）</th>
+                </tr></thead>
+                <tbody><tr th:each="item : ${history.items}">
+                    <td th:switch="${item.kind.name()}"><span th:case="'ADDED'">追加</span><span th:case="'REMOVED'">削除</span><span th:case="'UPDATED'">変更</span></td>
+                    <td th:text="${item.before == null ? '—' : item.before.productName}"></td>
+                    <td th:text="${item.after == null ? '—' : item.after.productName}"></td>
+                    <td th:text="${item.before == null ? '—' : item.before.quantity}"></td>
+                    <td th:text="${item.after == null ? '—' : item.after.quantity}"></td>
+                    <td th:text="${item.before == null ? '—' : #numbers.formatInteger(item.before.unitPrice, 1, 'COMMA') + '円'}"></td>
+                    <td th:text="${item.after == null ? '—' : #numbers.formatInteger(item.after.unitPrice, 1, 'COMMA') + '円'}"></td>
+                    <td th:text="${item.before == null ? '—' : #numbers.formatInteger(item.before.subtotal, 1, 'COMMA') + '円'}"></td>
+                    <td th:text="${item.after == null ? '—' : #numbers.formatInteger(item.after.subtotal, 1, 'COMMA') + '円'}"></td>
+                </tr></tbody>
+            </table>
+            <p th:if="${#lists.isEmpty(history.items)}">商品の変更はありません。</p>
+            <h3>金額変更</h3>
+            <table>
+                <thead><tr><th>項目</th><th>変更前</th><th>変更後</th></tr></thead>
+                <tbody>
+                    <tr><th>商品小計（税込）</th><td th:text="${#numbers.formatInteger(history.before.itemSubtotal, 1, 'COMMA') + '円'}"></td><td th:text="${#numbers.formatInteger(history.after.itemSubtotal, 1, 'COMMA') + '円'}"></td></tr>
+                    <tr><th>送料（税込）</th><td th:text="${#numbers.formatInteger(history.before.shipping, 1, 'COMMA') + '円'}"></td><td th:text="${#numbers.formatInteger(history.after.shipping, 1, 'COMMA') + '円'}"></td></tr>
+                    <tr><th>うち消費税</th><td th:text="${#numbers.formatInteger(history.before.taxAmount, 1, 'COMMA') + '円'}"></td><td th:text="${#numbers.formatInteger(history.after.taxAmount, 1, 'COMMA') + '円'}"></td></tr>
+                    <tr><th>注文合計（税込）</th><td><strong th:text="${#numbers.formatInteger(history.before.totalAmount, 1, 'COMMA') + '円'}"></strong></td><td><strong th:text="${#numbers.formatInteger(history.after.totalAmount, 1, 'COMMA') + '円'}"></strong></td></tr>
+                </tbody>
+            </table>
+        </section>
+        <nav aria-label="注文変更履歴のページ">
+            <a th:if="${historyPage.page > 1}" rel="prev" th:href="@{/orders/{id}/content-changes(id=${historyPage.orderNumber},page=${historyPage.page - 1})}">前ページ</a>
+            <span th:text="${historyPage.page + ' / ' + historyPage.totalPages}"></span>
+            <a th:if="${historyPage.page < historyPage.totalPages}" rel="next" th:href="@{/orders/{id}/content-changes(id=${historyPage.orderNumber},page=${historyPage.page + 1})}">次ページ</a>
+        </nav>
+    </div>
+    <p><a th:href="@{/orders/{id}(id=${historyPage.orderNumber})}" class="button button-secondary">注文詳細へ戻る</a></p>
+    <p><a th:href="@{/orders}" class="button button-secondary">注文履歴へ戻る</a></p>
 </body>
-
 </html>
