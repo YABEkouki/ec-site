@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ecuser
       POSTGRES_PASSWORD: ecpassword
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ec-site-postgres-data:/var/lib/postgresql/data
     healthcheck:
