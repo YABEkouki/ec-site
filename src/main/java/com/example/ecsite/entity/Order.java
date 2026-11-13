@@ -60,8 +60,17 @@ public class Order {
     @Column(name = "ordered_at", nullable = false)
     private LocalDateTime orderedAt;
 
-    @Column(name = "change_deadline_at", nullable = false)
+    /** NULL until formal acceptance for AUTHORIZED_ACCEPTANCE orders; fixed once set. */
+    @Column(name = "change_deadline_at")
     private LocalDateTime changeDeadlineAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "acceptance_mode", nullable = false, length = 30, updatable = false)
+    private OrderAcceptanceMode acceptanceMode = OrderAcceptanceMode.LEGACY;
+
+    /** Formal acceptance time (Asia/Tokyo DB clock at authorization success). */
+    @Column(name = "accepted_at")
+    private LocalDateTime acceptedAt;
 
     @Column(name = "content_revision", nullable = false)
     private int contentRevision;
@@ -132,6 +141,19 @@ public class Order {
         this.changeDeadlineAt = changeDeadlineAt;
     }
 
+    /**
+     * Checkout order awaiting formal acceptance. It has no change deadline until
+     * {@link #acceptFormally} is called after the initial authorization succeeds.
+     */
+    public static Order awaitingAcceptance(Long userId, LocalDateTime orderedAt) {
+        Order order = new Order();
+        order.userId = userId;
+        order.status = OrderStatus.ORDERED;
+        order.orderedAt = orderedAt;
+        order.acceptanceMode = OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE;
+        return order;
+    }
+
     public Long getId() {
         return id;
     }
@@ -182,6 +204,43 @@ public class Order {
 
     public LocalDateTime getChangeDeadlineAt() {
         return changeDeadlineAt;
+    }
+
+    public OrderAcceptanceMode getAcceptanceMode() {
+        return acceptanceMode;
+    }
+
+    public LocalDateTime getAcceptedAt() {
+        return acceptedAt;
+    }
+
+    /** LEGACY orders count as accepted; new checkout orders only after formal acceptance. */
+    public boolean isFormallyAccepted() {
+        return acceptanceMode == OrderAcceptanceMode.LEGACY || acceptedAt != null;
+    }
+
+    public boolean isAwaitingAcceptance() {
+        return acceptanceMode == OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE && acceptedAt == null;
+    }
+
+    /**
+     * Records formal acceptance once. The caller holds the Order lock, has applied the
+     * successful initial authorization in the same transaction, and supplies the database
+     * time read after its locks together with the deadline calculated from it.
+     * Returns false when already accepted (idempotent no-op).
+     */
+    public boolean acceptFormally(LocalDateTime acceptedAt, LocalDateTime changeDeadlineAt) {
+        if (acceptanceMode != OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE) return false;
+        if (this.acceptedAt != null) return false;
+        if (acceptedAt == null || changeDeadlineAt == null || !changeDeadlineAt.isAfter(acceptedAt)) {
+            throw new IllegalArgumentException("有効な正式受注日時と変更期限が必要です。");
+        }
+        if (status != OrderStatus.ORDERED) {
+            throw new InvalidOrderStatusException("注文受付中の注文だけを正式受注にできます。");
+        }
+        this.acceptedAt = acceptedAt;
+        this.changeDeadlineAt = changeDeadlineAt;
+        return true;
     }
 
     public int getContentRevision() {
@@ -483,8 +542,10 @@ public class Order {
         return status == OrderStatus.ORDERED;
     }
 
+    /** False until formal acceptance; an unaccepted order has no modification period. */
     public boolean isWithinModificationPeriod(LocalDateTime now) {
-        return now.isBefore(changeDeadlineAt);
+        return now != null && changeDeadlineAt != null && isFormallyAccepted()
+                && now.isBefore(changeDeadlineAt);
     }
 
     public boolean canCancelByUser(LocalDateTime now) {

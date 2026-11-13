@@ -141,9 +141,10 @@
 
                 <td th:text="${order.userId}"></td>
 
-                <td th:text="${#temporals.format(
-                order.orderedAt,
-                'yyyy/MM/dd HH:mm')}">
+                <td>
+                    <span th:text="${#temporals.format(order.orderedAt, 'yyyy/MM/dd HH:mm')}"></span>
+                    <br th:if="${order.awaitingAcceptance}">
+                    <small th:if="${order.awaitingAcceptance}">正式受注前</small>
                 </td>
 
                 <td>

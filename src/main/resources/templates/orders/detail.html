@@ -37,6 +37,19 @@
             </tr>
 
             <tr>
+                <th>正式受注日時</th>
+                <td th:if="${order.acceptedAt != null}"
+                    th:text="${#temporals.format(order.acceptedAt, 'yyyy/MM/dd HH:mm:ss')}">
+                </td>
+                <td th:if="${order.acceptedAt == null and order.awaitingAcceptance}">
+                    正式受注前（カード与信・3Dセキュア認証の完了待ち）
+                </td>
+                <td th:if="${order.acceptedAt == null and !order.awaitingAcceptance}">
+                    記録なし（正式受注時刻の記録開始前の注文）
+                </td>
+            </tr>
+
+            <tr>
                 <th>注文状態</th>
                 <td>
                     <span class="status-badge"
@@ -48,7 +61,11 @@
 
             <tr>
                 <th>変更期限</th>
-                <td th:text="${#temporals.format(order.changeDeadlineAt, 'yyyy/MM/dd HH:mm')}">
+                <td th:if="${order.changeDeadlineAt != null}"
+                    th:text="${#temporals.format(order.changeDeadlineAt, 'yyyy/MM/dd HH:mm')}">
+                </td>
+                <td th:if="${order.changeDeadlineAt == null}">
+                    カード決済の完了後に確定します
                 </td>
             </tr>
 
@@ -139,7 +156,11 @@
             まで変更できます。
         </p>
 
-        <p th:unless="${withinModificationPeriod}">
+        <p th:if="${withinModificationPeriod != true and order.awaitingAcceptance}">
+            カード決済（3Dセキュア認証を含む）の完了後に、注文の変更を受け付けます。
+        </p>
+
+        <p th:if="${withinModificationPeriod != true and !order.awaitingAcceptance}">
             この注文の変更受付は終了しました。
         </p>
 

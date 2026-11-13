@@ -47,6 +47,27 @@
             </tr>
 
             <tr>
+                <th>正式受注日時</th>
+                <td th:if="${order.acceptedAt != null}"
+                    th:text="${#temporals.format(order.acceptedAt, 'yyyy/MM/dd HH:mm:ss')}">
+                </td>
+                <td th:if="${order.acceptedAt == null and order.awaitingAcceptance}">
+                    正式受注前（カード与信・3Dセキュア認証の完了待ち）
+                </td>
+                <td th:if="${order.acceptedAt == null and !order.awaitingAcceptance}">
+                    記録なし（正式受注時刻の記録開始前の注文）
+                </td>
+            </tr>
+
+            <tr>
+                <th>変更期限</th>
+                <td th:if="${order.changeDeadlineAt != null}"
+                    th:text="${#temporals.format(order.changeDeadlineAt, 'yyyy/MM/dd HH:mm')}">
+                </td>
+                <td th:if="${order.changeDeadlineAt == null}">未確定（正式受注前）</td>
+            </tr>
+
+            <tr>
                 <th>注文状態</th>
                 <td>
                     <span class="status-badge"

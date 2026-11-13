@@ -32,6 +32,7 @@ public class OrderShippingPreparationViewFactory {
         else if (order.getStatus() == OrderStatus.CANCELLED) state = State.CANCELLED;
         else if (order.getStatus() != OrderStatus.ORDERED && order.getStatus() != OrderStatus.PAID) state = State.UNAVAILABLE;
         else if (complete) state = State.STARTED;
+        else if (order.isAwaitingAcceptance()) state = State.AWAITING_ACCEPTANCE;
         else {
             LocalDateTime now = LocalDateTime.now(clock);
             if (policy.allowsPreparationStart(order, now)) state = State.CANDIDATE;
@@ -41,7 +42,7 @@ public class OrderShippingPreparationViewFactory {
         return new View(state, complete ? startedAt : null, complete ? actorId : null, complete ? username : null);
     }
 
-    public enum State { CANDIDATE, BEFORE_DEADLINE, STARTED, SHIPPED, CANCELLED, INCONSISTENT, UNAVAILABLE }
+    public enum State { CANDIDATE, BEFORE_DEADLINE, AWAITING_ACCEPTANCE, STARTED, SHIPPED, CANCELLED, INCONSISTENT, UNAVAILABLE }
 
     public record View(State state, LocalDateTime startedAt, Long startedByAccountId, String startedByUsername) {
         public boolean canStart() { return state == State.CANDIDATE; }
@@ -49,6 +50,7 @@ public class OrderShippingPreparationViewFactory {
             return switch (state) {
                 case CANDIDATE -> "発送準備開始の候補です。受付時に変更期限・注文状態・決済状況を確認し、開始可否を最終判定します。";
                 case BEFORE_DEADLINE -> "変更期限前のため、発送準備を開始できません。";
+                case AWAITING_ACCEPTANCE -> "カード与信（3Dセキュア認証を含む）が完了しておらず正式受注前のため、発送準備を開始できません。";
                 case STARTED -> "発送準備開始済みです。";
                 case SHIPPED -> "発送済みのため、発送準備を開始できません。";
                 case CANCELLED -> "キャンセル済みのため、発送準備を開始できません。";
