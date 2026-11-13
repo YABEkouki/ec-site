@@ -28,7 +28,7 @@ public class OrderReauthorizationTransactions {
     public record View(UUID id,long orderId,String state,Long newPaymentId,String newFlow,String oldFlow,
             Long createRequest,Long oldCancelRequest,Long abortRequest,boolean abortRequested,boolean flowClosed){}
     public enum AbortRequesterType { CUSTOMER, ADMINISTRATOR, SYSTEM }
-    public enum AbortReasonCode { CUSTOMER_REQUEST, BROWSER_INTERRUPTED, AUTHENTICATION_INTERRUPTED, COMMUNICATION_FAILURE, PAYMENT_FAILURE }
+    public enum AbortReasonCode { CUSTOMER_REQUEST, BROWSER_INTERRUPTED, AUTHENTICATION_INTERRUPTED, COMMUNICATION_FAILURE, PAYMENT_FAILURE, CHANGE_NOT_ADOPTED }
     public enum AbortResult { ACCEPTED, REPLAYED, CONTENT_CONFLICT, VERSION_CONFLICT, NOT_ALLOWED }
     public record AbortRequest(long orderId,long customerId,UUID operationId,UUID requestId,long expectedVersion,
             AbortRequesterType requesterType,AbortReasonCode reasonCode){
