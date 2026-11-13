@@ -98,8 +98,9 @@ class OrderToCaptureJourneyPostgresTest {
         Cart cart=new Cart();cart.addItem(new CartItem(seed.product(),"journey product",1000,3));
         Order created=orderService.createOrder(seed.user(),"customer",cart,address());
         long id=created.getId();
-        var orderedAt=date(id,"ordered_at");var deadline=date(id,"change_deadline_at");
-        assertThat(deadline).isEqualTo(deadlines.calculate(orderedAt));
+        // Feature127: checkout alone is not formal acceptance; no deadline exists yet.
+        assertThat(row(id)).containsEntry("acceptance_mode","AUTHORIZED_ACCEPTANCE").containsEntry("accepted_at",null)
+                .containsEntry("change_deadline_at",null);
         assertThat(row(id)).containsEntry("status","ORDERED").containsEntry("total_amount",3550).containsEntry("content_revision",0);
         assertThat(stock(seed)).isEqualTo(7);assertThat(quantity(id)).isEqualTo(3);
         assertThat(historyCount(id,"ORDERED")).isEqualTo(1);assertThat(historyCount(id,"SHIPPED")).isZero();
@@ -112,6 +113,12 @@ class OrderToCaptureJourneyPostgresTest {
         var authorized=authorization.prepareAuthorization(created);
         assertThat(authorization.refreshAuthorization(id,authorized.paymentId()).status()).isEqualTo(AuthorizationResultStatus.AUTHORIZED);
         assertThat(payment(id)).containsEntry("status","AUTHORIZED").containsEntry("amount",3550);
+        var acceptedAt=date(id,"accepted_at");var deadline=date(id,"change_deadline_at");
+        assertThat(acceptedAt).isAfterOrEqualTo(date(id,"ordered_at").minusSeconds(5));
+        assertThat(deadline).isEqualTo(deadlines.calculate(acceptedAt));
+        assertThat(jdbc.queryForMap("select accepted_at,change_deadline_at from order_acceptances where order_id=?",id))
+                .containsEntry("accepted_at",java.sql.Timestamp.valueOf(acceptedAt))
+                .containsEntry("change_deadline_at",java.sql.Timestamp.valueOf(deadline));
         var authBefore=transactions(id);
         assertThat(authBefore).hasSize(1);
         assertThat(authBefore.getFirst()).containsEntry("transaction_type","AUTHORIZE").containsEntry("status","SUCCEEDED")

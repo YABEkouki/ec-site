@@ -40,12 +40,18 @@ public class OrderModificationPolicy {
         return switchDecidedAt==null && graceUntil!=null && now!=null && !now.isBefore(graceUntil);
     }
 
+    /**
+     * Unaccepted checkout orders (3-D Secure or authorization still pending) have no deadline
+     * and are never modifiable nor shipping-preparation candidates. Accepted orders are judged
+     * against the deadline fixed from the formal acceptance time; LEGACY ones from ordered_at.
+     */
     private boolean hasValidDeadline(Order order, LocalDateTime now) {
-        return order != null
-                && now != null
-                && order.getOrderedAt() != null
-                && order.getChangeDeadlineAt() != null
-                && order.getChangeDeadlineAt().isAfter(order.getOrderedAt());
+        if (order == null || now == null || order.getOrderedAt() == null
+                || order.getChangeDeadlineAt() == null || !order.isFormallyAccepted()) {
+            return false;
+        }
+        LocalDateTime basis = order.getAcceptedAt() != null ? order.getAcceptedAt() : order.getOrderedAt();
+        return order.getChangeDeadlineAt().isAfter(basis);
     }
 
     private boolean isPreparationUnstarted(Order order) {

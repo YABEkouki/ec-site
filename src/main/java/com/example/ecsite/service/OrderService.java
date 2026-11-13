@@ -179,13 +179,9 @@ public class OrderService {
 
         LocalDateTime orderedAt = LocalDateTime.now(clock);
 
-        LocalDateTime changeDeadlineAt = orderDeadlineCalculator.calculate(orderedAt);
-
-        Order order = new Order(
-                userId,
-                0,
-                orderedAt,
-                changeDeadlineAt);
+        // Feature127: the change deadline is fixed only at formal acceptance
+        // (initial authorization success, including 3-D Secure), not at checkout.
+        Order order = Order.awaitingAcceptance(userId, orderedAt);
 
         OrderPricingContext pricingContext = new OrderPricingContext();
 

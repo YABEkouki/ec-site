@@ -101,6 +101,8 @@ public final class LegacyOrderEvidenceEnrollment {
         return "ORDERED".equals(t(o,"status"))&&nullableText(o,"shipping_preparation_started_at")==null
             &&nullableLong(o,"shipping_preparation_started_by_account_id")==null
             &&nullableText(o,"shipping_preparation_started_by_username")==null
+            // Feature127: an order awaiting formal acceptance has no deadline and is never eligible.
+            &&nullableText(o,"change_deadline_at")!=null
             &&LocalDateTime.parse(t(o,"change_deadline_at")).isAfter(dbNow)&&admissionsClear(r.facts().current().orderId());
     }
     private boolean foreignCustomer(Read r,Long customer){

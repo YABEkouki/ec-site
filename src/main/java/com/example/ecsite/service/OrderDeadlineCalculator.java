@@ -17,12 +17,17 @@ public class OrderDeadlineCalculator {
         this.changeDeadlineTime = changeDeadlineTime;
     }
 
-    public LocalDateTime calculate(LocalDateTime orderedAt) {
+    /**
+     * Change deadline from the formal acceptance time (Asia/Tokyo wall clock):
+     * accepted before the deadline time -> same day; at or after it -> next day.
+     * V81 enforces the same rule for 14:00 in the database.
+     */
+    public LocalDateTime calculate(LocalDateTime acceptedAt) {
 
         LocalDateTime deadline =
-                orderedAt.toLocalDate().atTime(changeDeadlineTime);
+                acceptedAt.toLocalDate().atTime(changeDeadlineTime);
 
-        if (orderedAt.isBefore(deadline)) {
+        if (acceptedAt.isBefore(deadline)) {
             return deadline;
         }
 

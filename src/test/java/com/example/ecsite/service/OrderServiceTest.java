@@ -280,7 +280,11 @@ class OrderServiceTest {
         assertEquals(100L, order.getItems().get(0).getCategoryId());
         assertEquals("テストカテゴリ", order.getItems().get(0).getCategoryName());
         assertEquals(LocalDateTime.of(2026, 9, 28, 10, 0), order.getOrderedAt());
-        assertEquals(LocalDateTime.of(2026, 9, 28, 14, 0), order.getChangeDeadlineAt());
+        // Feature127: no deadline until formal acceptance after authorization/3DS succeeds.
+        assertNull(order.getChangeDeadlineAt());
+        assertNull(order.getAcceptedAt());
+        assertEquals(com.example.ecsite.entity.OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE, order.getAcceptanceMode());
+        assertTrue(order.isAwaitingAcceptance());
         assertEquals(200L, order.getItems().get(0).getTaxCategoryId());
         assertEquals("STANDARD", order.getItems().get(0).getTaxCategoryCode());
         assertEquals("標準税率", order.getItems().get(0).getTaxCategoryName());
@@ -487,6 +491,7 @@ class OrderServiceTest {
         when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
         when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
         when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
+        when(order.isFormallyAccepted()).thenReturn(true);
         when(order.isWithinModificationPeriod(any(LocalDateTime.class))).thenReturn(true);
         OrderItem orderItem = mock(OrderItem.class);
 
@@ -1100,6 +1105,7 @@ class OrderServiceTest {
         when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
         when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
         when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
+        when(order.isFormallyAccepted()).thenReturn(true);
         OrderItem orderItem = mock(OrderItem.class);
 
         when(order.getId())
@@ -1168,6 +1174,7 @@ class OrderServiceTest {
         when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
         when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
         when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
+        when(order.isFormallyAccepted()).thenReturn(true);
 
         when(orderRepository
                 .findByIdAndUserIdForUpdate(
@@ -3276,6 +3283,7 @@ class OrderServiceTest {
         when(order.getShippingPreparationStartedByAccountId()).thenReturn(null);
         when(order.getOrderedAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 10, 0));
         when(order.getChangeDeadlineAt()).thenReturn(LocalDateTime.of(2026, 9, 28, 14, 0));
+        when(order.isFormallyAccepted()).thenReturn(true);
 
         OrderItem firstItem = mock(OrderItem.class);
         OrderItem secondItem = mock(OrderItem.class);
