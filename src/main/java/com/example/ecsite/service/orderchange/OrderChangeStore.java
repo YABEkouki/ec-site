@@ -28,7 +28,7 @@ public class OrderChangeStore {
     private Set<UUID> settledIds(long orderId,String state){return Set.copyOf(jdbc.queryForList(
         "select id from order_change_operations where order_id=? and state=?",UUID.class,orderId,state));}
     public record Operation(UUID id,long orderId,long customerId,String requestDigest,String state,
-            int beforeAmount,int afterAmount,LocalDateTime graceUntil,LocalDateTime switchDecidedAt,long version,boolean deadlineClosed){}
+            int beforeAmount,int afterAmount,LocalDateTime graceUntil,LocalDateTime switchDecidedAt,long version,boolean deadlineClosed,String finalOutcome){}
     public record Reservation(long itemId,long productId,int quantity,String state){}
     public record ExpiringOperation(long orderId,UUID operationId){}
     public boolean abortRequested(UUID id){return Boolean.TRUE.equals(jdbc.queryForObject("select abort_request_id is not null from order_change_operations where id=?",Boolean.class,id));}
@@ -54,11 +54,12 @@ public class OrderChangeStore {
     public Optional<Operation> submission(long orderId,UUID key){return find("order_id=? and submission_key=?",orderId,key);}
     public Optional<Operation> operation(long orderId,UUID id){return find("order_id=? and id=?",orderId,id);}
     private Optional<Operation> find(String predicate,Object... args){
-        var rows=jdbc.query("select *,exists(select 1 from order_change_deadline_closures c where c.operation_id=order_change_operations.id) as f128_deadline_closed"
+        var rows=jdbc.query("select *,exists(select 1 from order_change_deadline_closures c where c.operation_id=order_change_operations.id) as f128_deadline_closed,"
+                +"(select d.outcome from order_change_final_decisions d where d.operation_id=order_change_operations.id) as f128_final_outcome"
                 +" from order_change_operations where "+predicate+" for update of order_change_operations",(r,n)->new Operation(
                 r.getObject("id",UUID.class),r.getLong("order_id"),r.getLong("customer_id"),r.getString("request_digest"),
                 r.getString("state"),r.getInt("before_amount"),r.getInt("after_amount"),r.getObject("grace_until",LocalDateTime.class),
-                r.getObject("switch_decided_at",LocalDateTime.class),r.getLong("version"),r.getBoolean("f128_deadline_closed")),args);
+                r.getObject("switch_decided_at",LocalDateTime.class),r.getLong("version"),r.getBoolean("f128_deadline_closed"),r.getString("f128_final_outcome")),args);
         if(rows.size()>1)throw new IllegalStateException("Ambiguous order change");
         return rows.stream().findFirst();
     }

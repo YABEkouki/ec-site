@@ -951,6 +951,49 @@ public class OrderReauthorizationTransactions {
         auth.markFailed(null,"NOT_SENT_AFTER_DEADLINE","Order change deadline passed before the authorization request started",now());
         next.markFailed(now());release(data);return view(data);
     }
+    /** Feature128 A-2 constants; V83 fixes the same values in the database guards. */
+    public static final int SWITCH_CUTOFF_MINUTES=4,FINAL_DECISION_MINUTES=5;
+    public enum FinalDecisionResult { DECIDED, ALREADY_DECIDED, NOT_DUE, SETTLED }
+    public record FinalDecisionCandidate(long orderId,UUID operationId){}
+    /** Unresolved operations whose final decision time (deadline+5min, DB clock) has passed. Lookup only. */
+    public List<FinalDecisionCandidate> finalDecisionCandidates(int limit){
+        if(limit<1||limit>1000)throw new IllegalArgumentException("Invalid final decision batch size");
+        return jdbc.query("""
+            select o.order_id,o.id from order_change_operations o
+            where o.state not in ('COMPLETED','ABORTED')
+              and o.deadline_at+interval '5 minutes'<=timezone('Asia/Tokyo',clock_timestamp())
+              and not exists(select 1 from order_change_final_decisions d where d.operation_id=o.id)
+            order by o.deadline_at,o.order_id limit ?
+            """,(r,n)->new FinalDecisionCandidate(r.getLong(1),r.getObject(2,UUID.class)),limit);
+    }
+    /** Irreversible 14:05 decision under the usual Order -> operation -> Payments(id asc) locks with DB time.
+     * Idempotent: an operation is decided at most once, and settled operations need no decision.
+     * A decided switch is forward-only (LATE_ADOPTION, shipping hold); otherwise the change is NOT_ADOPTED. */
+    public FinalDecisionResult finalizeAtDeadline(long orderId,UUID operationId){
+        var data=lock(orderId,operationId);var op=data.operation();var id=(UUID)op.get("id");
+        String state=(String)op.get("state");
+        if(List.of("COMPLETED","ABORTED").contains(state))return FinalDecisionResult.SETTLED;
+        if(finalDecided(id))return FinalDecisionResult.ALREADY_DECIDED;
+        var deadline=data.order().getChangeDeadlineAt();
+        if(deadline==null||now().isBefore(deadline.plusMinutes(FINAL_DECISION_MINUTES)))return FinalDecisionResult.NOT_DUE;
+        boolean switched=op.get("switch_decided_at")!=null;
+        boolean releasable=!switched&&"RESERVED".equals(state)&&!abortRequested(data)&&op.get("new_payment_id")==null
+            &&!owned(data)&&!changes.financialStarted(id);
+        String outcome=switched?"LATE_ADOPTION":"NOT_ADOPTED",disposition=releasable?"ORIGINAL":"HOLD";
+        String reason=switched?"SWITCH_INCOMPLETE":releasable?"NO_REAUTHORIZATION_STARTED":switch(state){
+            case "RESERVED"->"RESERVATION_UNRELEASED";
+            case "AUTHORIZING","REQUIRES_ACTION"->"AUTHORIZATION_INCOMPLETE";
+            case "AUTHORIZED"->"SWITCH_NOT_DECIDED";
+            default->"PAYMENT_STATE_UNRESOLVED";
+        };
+        jdbc.update("""
+            insert into order_change_final_decisions(operation_id,order_id,outcome,shipping_disposition,reason_code,deadline_at,final_at,
+              operation_state,operation_version,switch_decided_at,decided_at)
+            values(?,?,?,?,?,?,?,?,?,?,timezone('Asia/Tokyo',clock_timestamp()))
+            """,id,orderId,outcome,disposition,reason,deadline,deadline.plusMinutes(FINAL_DECISION_MINUTES),state,op.get("version"),op.get("switch_decided_at"));
+        if(releasable){recordDeadlineClosure(data,"BEFORE_CREATE_REQUEST");release(data);}
+        return FinalDecisionResult.DECIDED;
+    }
     public View failed(long orderId,UUID operationId,boolean create,PaymentGatewayErrorCategory category){
         if(!create)return cancelFailed(orderId,operationId,false,category);
         var data=lock(orderId,operationId);if(progressBlocked(data))return view(data);
@@ -1043,7 +1086,9 @@ public class OrderReauthorizationTransactions {
                 ||next.getStatus()!=PaymentStatus.AUTHORIZED||!validAuthorization(data,transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION),next)
                 ||transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION).getStatus()!=PaymentTransactionStatus.SUCCEEDED)
             return review(data,"NEW_AUTH_NOT_READY");
-        if(expired(data))return prepareAbort(data,next);
+        // Feature128: after the switch cutoff (deadline+4min) or a final decision the change is not adopted;
+        // the unneeded new authorization is cancelled instead of switching.
+        if(expired(data)||switchClosed(data))return prepareAbort(data,next);
         if(old.getStatus()!=PaymentStatus.AUTHORIZED||!matchesFlow(data,old,oldObservation,false)||!authorized(oldObservation,old.getAmount()))
             return review(data,"OLD_AUTH_NOT_READY");
         if(newObservation.expiredAt()!=null&&!newObservation.expiredAt().toInstant().isAfter(now().atZone(ZoneId.of("Asia/Tokyo")).toInstant().plusSeconds(300)))
@@ -1274,6 +1319,14 @@ public class OrderReauthorizationTransactions {
     private boolean owned(Locked data){return bridge().isOwned(data.order().getId(),(UUID)data.operation().get("id"));}
     private boolean expired(Locked data){if(owned(data))return bridge().expired(data.order().getId(),(UUID)data.operation().get("id"));var grace=(java.sql.Timestamp)data.operation().get("grace_until");return policy.canExpireChange(grace.toLocalDateTime(),null,now());}
     private LocalDateTime now(){return orders.findCurrentTimeInTokyo();}
+    private boolean finalDecided(UUID operationId){
+        return Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from order_change_final_decisions where operation_id=?)",Boolean.class,operationId));
+    }
+    /** The old authorization cancel may be decided only before deadline+4min and never after a final decision (V83). */
+    private boolean switchClosed(Locked data){
+        var deadline=data.order().getChangeDeadlineAt();
+        return deadline==null||!now().isBefore(deadline.plusMinutes(SWITCH_CUTOFF_MINUTES))||finalDecided((UUID)data.operation().get("id"));
+    }
     /** Database time under the caller's locks. An order without a deadline (not formally accepted) fails closed. */
     private boolean pastChangeDeadline(Locked data){var deadline=data.order().getChangeDeadlineAt();return deadline==null||!now().isBefore(deadline);}
     /** Append-only evidence; V82 re-derives the deadline, DB time and financial phase from the locked rows. */

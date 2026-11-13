@@ -87,7 +87,13 @@ public class OrderIncreaseController {
         var withdrawal=withdrawals.status(id,user.getId(),operationId);
         model.addAttribute("withdrawalStatus",withdrawal);
         model.addAttribute("orderId",id);model.addAttribute("operation",operation);model.addAttribute("mode","STATUS");
-        model.addAttribute("statusMessage",switch(operation.state()){
+        model.addAttribute("statusMessage","LATE_ADOPTION".equals(operation.finalOutcome())&&!"COMPLETED".equals(operation.state())
+            ? "注文変更期限までに変更処理が完了しませんでした。決済状態の確認が完了次第、変更後の内容で発送準備を進めます。"
+            : "NOT_ADOPTED".equals(operation.finalOutcome())&&!"ABORTED".equals(operation.state())
+            ? "注文変更期限までに決済手続きが完了しなかったため、この変更は成立しませんでした。決済状態の確認後に発送準備を進めます。"
+            : "NOT_ADOPTED".equals(operation.finalOutcome())
+            ? "注文変更期限までに決済手続きが完了しなかったため、この変更は成立しませんでした。ご注文は変更前の内容のままです。"
+            : switch(operation.state()){
             case "RESERVED" -> "数量増加候補を受け付けました。決済はまだ開始していません。";
             case "COMPLETED" -> "注文変更が完了しました。変更後の注文詳細をご確認ください。";
             case "ABORTED" -> operation.deadlineClosed()
