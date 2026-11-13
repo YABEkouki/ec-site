@@ -28,7 +28,15 @@ public class OrderChangeRequestSender {
     public PayJpPaymentFlowObservation send(long requestId,com.example.ecsite.service.order.evidence.OrderEditApplicationPlan.Ownership owner){
         if(TransactionSynchronizationManager.isActualTransactionActive())throw new IllegalStateException("Sender requires no transaction");
         // A lost/failed commit response throws here: no dispatch token and no provider call.
-        var saved=start.execute(status->owner==null?store.findForDispatch(requestId):store.findForDispatch(requestId,owner));
+        StoredOrderChangeRequest saved;
+        try{saved=start.execute(status->owner==null?store.findForDispatch(requestId):store.findForDispatch(requestId,owner));
+        }catch(RuntimeException failure){
+            // A deadline violation, even from the deferred check at commit, rolled the STARTED permit back.
+            if(!(failure instanceof OrderChangeFinancialRequestStore.DispatchDeadlinePassed)
+                    &&OrderChangeFinancialRequestStore.isDeadlineViolation(failure))
+                throw new OrderChangeFinancialRequestStore.DispatchDeadlinePassed();
+            throw failure;
+        }
         return gateway.sendOrderChangeRequest(new Dispatch(saved));
     }
 }

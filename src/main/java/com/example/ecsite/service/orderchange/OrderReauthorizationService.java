@@ -33,6 +33,8 @@ public class OrderReauthorizationService {
             try{
                 var created=sender.send(Objects.requireNonNull(view.createRequest()),owner);
                 view=results.attachFlow(orderId,operationId,created==null?null:created.id());
+            }catch(OrderChangeFinancialRequestStore.DispatchDeadlinePassed late){
+                return results.createDeadlinePassed(orderId,operationId);
             }catch(OrderChangeFinancialRequestStore.DispatchUnavailable consumed){
                 return results.createDispatchUnavailable(orderId,operationId);
             }catch(PaymentGatewayException failure){return results.failed(orderId,operationId,true,failure.category());

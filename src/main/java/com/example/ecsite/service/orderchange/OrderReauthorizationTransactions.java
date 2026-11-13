@@ -811,7 +811,7 @@ public class OrderReauthorizationTransactions {
         jdbc.queryForObject("select f125_execution_assert_basis(?)",Object.class,admission);
         if(!Objects.equals(data.order().getUserId(),customer)||!"AUTHORIZING".equals(op.get("state"))
             ||op.get("switch_decided_at")!=null||abortRequested(data)||op.get("browser_confirmation_issued_at")!=null
-            ||op.get("new_payment_id")==null||expired(data))return Optional.empty();
+            ||op.get("new_payment_id")==null||expired(data)||pastChangeDeadline(data))return Optional.empty();
         var controls=jdbc.queryForList("""
             select c.version from order_edit_execution_controls c join order_edit_admissions a on a.id=c.admission_id
             where a.id=? and a.execution_state='RECOVERY_PENDING' and c.active_attempt_id is null
@@ -851,7 +851,8 @@ public class OrderReauthorizationTransactions {
         if(bridge().isOwned(orderId,operationId))return false;
         var data=lock(orderId,operationId);var op=data.operation();
         if(!"AUTHORIZING".equals(op.get("state")) || op.get("switch_decided_at")!=null
-                || abortRequested(data) || op.get("new_payment_id")==null || op.get("browser_confirmation_issued_at")!=null || expired(data))return false;
+                || abortRequested(data) || op.get("new_payment_id")==null || op.get("browser_confirmation_issued_at")!=null || expired(data)
+                || pastChangeDeadline(data))return false;
         var next=payment(data,number(op,"new_payment_id"));
         var auth=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION);
         if(!matchesFlow(data,next,observed,true) || !"requires_payment_method".equals(observed.status())
@@ -878,6 +879,8 @@ public class OrderReauthorizationTransactions {
         if(op.get("new_payment_id")!=null)return review(data,"LEGACY_REQUEST_REVIEW");
         validateBase(data);requireHeld(data);
         if(expired(data)){release(data);return view(data);}
+        // Feature128: no new reauthorization may start at or after the change deadline (not grace_until).
+        if(pastChangeDeadline(data)){recordDeadlineClosure(data,"BEFORE_CREATE_REQUEST");release(data);return view(data);}
         requireNoPending(data,null);
         var old=payment(data,number(op,"old_payment_id"));
         if(old.getStatus()!=PaymentStatus.AUTHORIZED)throw new IllegalStateException("Old authorization is not available");
@@ -929,6 +932,24 @@ public class OrderReauthorizationTransactions {
         if(progressBlocked(data)||view.newFlow()!=null||data.operation().get("switch_decided_at")!=null)return view;
         if(List.of("AUTHORIZING","AUTH_UNKNOWN").contains(view.state()))state(data,"AUTH_UNKNOWN","CREATE_DISPATCH_UNCONFIRMED");
         return view(data);
+    }
+    /** CREATE was prepared before the deadline but its single dispatch permit was never consumed; V82 makes that
+     * permanent. The change is closed as not adopted with no provider call. Owned order edits keep their own
+     * failure-closure flow, so they stop for review with the same durable closure evidence. */
+    public View createDeadlinePassed(long orderId,UUID operationId){
+        var data=lock(orderId,operationId);var op=data.operation();var view=view(data);
+        if(progressBlocked(data)||op.get("switch_decided_at")!=null||view.newFlow()!=null||view.createRequest()==null
+                ||!"AUTHORIZING".equals(op.get("state")))return view;
+        if(!pastChangeDeadline(data))throw new IllegalStateException("Order change deadline has not passed");
+        if(!List.of("READY").equals(jdbc.queryForList("select state from order_change_request_dispatches where request_id=?",String.class,view.createRequest())))
+            return review(data,"CREATE_DISPATCH_BLOCKED");
+        recordDeadlineClosure(data,"CREATE_NOT_STARTED");
+        if(owned(data))return review(data,"CREATE_DEADLINE_PASSED");
+        var next=payment(data,number(op,"new_payment_id"));var auth=transaction(data,PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION);
+        if(next.getStatus()!=PaymentStatus.PENDING||next.getProviderPaymentId()!=null||auth.getStatus()!=PaymentTransactionStatus.PENDING
+                ||!validAuthorization(data,auth,next))return review(data,"CREATE_DEADLINE_STATE_CONFLICT");
+        auth.markFailed(null,"NOT_SENT_AFTER_DEADLINE","Order change deadline passed before the authorization request started",now());
+        next.markFailed(now());release(data);return view(data);
     }
     public View failed(long orderId,UUID operationId,boolean create,PaymentGatewayErrorCategory category){
         if(!create)return cancelFailed(orderId,operationId,false,category);
@@ -1130,7 +1151,8 @@ public class OrderReauthorizationTransactions {
         if(order.getStatus()!=OrderStatus.ORDERED||order.getContentRevision()!=integer(op,"base_content_revision")||order.getTotalAmount()!=integer(op,"before_amount")
                 ||!Objects.equals(order.getActivePaymentId(),number(op,"old_payment_id"))||order.getShipmentCapturePaymentId()!=null
                 ||order.getShippingPreparationStartedAt()!=null||order.getShippingPreparationStartedByAccountId()!=null||order.getShippingPreparationStartedByUsername()!=null
-                ||order.getUserId()!=number(op,"customer_id")||!order.getChangeDeadlineAt().equals(op.get("deadline_at") instanceof java.sql.Timestamp t?t.toLocalDateTime():op.get("deadline_at")))
+                ||order.getUserId()!=number(op,"customer_id")||order.getChangeDeadlineAt()==null
+                ||!order.getChangeDeadlineAt().equals(op.get("deadline_at") instanceof java.sql.Timestamp t?t.toLocalDateTime():op.get("deadline_at")))
             throw new IllegalStateException("Original order changed");
         if(op.get("base_order_fingerprint")!=null&&!op.get("base_order_fingerprint").equals(baseFingerprint(order)))throw new IllegalStateException("Original order fingerprint mismatch");
         if(data.items().isEmpty())throw new IllegalStateException("Candidate items missing");
@@ -1252,6 +1274,16 @@ public class OrderReauthorizationTransactions {
     private boolean owned(Locked data){return bridge().isOwned(data.order().getId(),(UUID)data.operation().get("id"));}
     private boolean expired(Locked data){if(owned(data))return bridge().expired(data.order().getId(),(UUID)data.operation().get("id"));var grace=(java.sql.Timestamp)data.operation().get("grace_until");return policy.canExpireChange(grace.toLocalDateTime(),null,now());}
     private LocalDateTime now(){return orders.findCurrentTimeInTokyo();}
+    /** Database time under the caller's locks. An order without a deadline (not formally accepted) fails closed. */
+    private boolean pastChangeDeadline(Locked data){var deadline=data.order().getChangeDeadlineAt();return deadline==null||!now().isBefore(deadline);}
+    /** Append-only evidence; V82 re-derives the deadline, DB time and financial phase from the locked rows. */
+    private void recordDeadlineClosure(Locked data,String phase){
+        var op=data.operation();
+        jdbc.update("""
+            insert into order_change_deadline_closures(operation_id,order_id,phase,deadline_at,operation_state,operation_version,closed_at)
+            values(?,?,?,?,?,?,timezone('Asia/Tokyo',clock_timestamp()))
+            """,op.get("id"),data.order().getId(),phase,data.order().getChangeDeadlineAt(),op.get("state"),op.get("version"));
+    }
     private View current(long order,UUID operation){return view(lock(order,operation));}
     private View view(Locked data){
         var op=data.operation();var next=op.get("new_payment_id")==null?null:payment(data,number(op,"new_payment_id"));

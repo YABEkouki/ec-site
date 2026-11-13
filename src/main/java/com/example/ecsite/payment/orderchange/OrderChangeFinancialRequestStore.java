@@ -93,6 +93,18 @@ public class OrderChangeFinancialRequestStore {
     public static final class DispatchUnavailable extends RuntimeException {
         public DispatchUnavailable(){super("Request is legacy or dispatch has already started; observation only");}
     }
+    /** CREATE was never started and, the change deadline having passed, can never start (V82 guard). */
+    public static final class DispatchDeadlinePassed extends RuntimeException {
+        public DispatchDeadlinePassed(){super("Order change deadline passed before the authorization request started");}
+    }
+    /** SQLSTATE raised by the V82 deadline guards, including the deferred check at commit. */
+    public static final String DEADLINE_SQLSTATE="EC128";
+    public static boolean isDeadlineViolation(Throwable failure){
+        int depth=0;
+        for(var cause=failure;cause!=null&&depth<32;cause=cause.getCause(),depth++)
+            if(cause instanceof SQLException sql&&DEADLINE_SQLSTATE.equals(sql.getSQLState()))return true;
+        return false;
+    }
     /** Called only after validated provider GET evidence, in the result-application transaction. */
     public void observed(UUID operationId,String kind){
         requireTransaction();
@@ -132,6 +144,15 @@ public class OrderChangeFinancialRequestStore {
         };
         if(!eligible)throw new IllegalStateException("Order change is not eligible for request dispatch");
         saved.requireReplayAt(jdbc.queryForObject("select clock_timestamp()",OffsetDateTime.class).toInstant());
+        // A legacy (untracked) or already consumed permit stays observation-only; only a READY permit is judged
+        // against the deadline. Database clock under the Order lock; V82 repeats this on the row and at commit.
+        if(!List.of("READY").equals(jdbc.queryForList("select state from order_change_request_dispatches where request_id=? for update",String.class,id)))
+            throw new DispatchUnavailable();
+        if("CREATE".equals(request.kind())&&!Boolean.TRUE.equals(jdbc.queryForObject("""
+            select change_deadline_at is not null and timezone('Asia/Tokyo',clock_timestamp())<change_deadline_at
+              and not exists(select 1 from order_change_deadline_closures c where c.operation_id=?)
+            from orders where id=?
+            """,Boolean.class,request.operationId(),request.orderId())))throw new DispatchDeadlinePassed();
         if(orderEdit){
             bridge.validateBase(request.orderId(),request.operationId());
             bridge.requireOwner(request.orderId(),request.operationId(),owner);

@@ -90,8 +90,13 @@ public class OrderIncreaseController {
         model.addAttribute("statusMessage",switch(operation.state()){
             case "RESERVED" -> "数量増加候補を受け付けました。決済はまだ開始していません。";
             case "COMPLETED" -> "注文変更が完了しました。変更後の注文詳細をご確認ください。";
-            case "ABORTED" -> "変更候補は取り下げ済みです。元の注文をご確認ください。";
-            case "MANUAL_REVIEW","AUTH_UNKNOWN","OLD_CANCEL_UNKNOWN","OLD_CANCEL_REJECTED","ABORT_UNKNOWN" -> "要確認・復旧待ちです。重複した変更を行わず、確認をお待ちください。";
+            case "ABORTED" -> operation.deadlineClosed()
+                ? "注文変更期限を過ぎたため、この変更は成立しませんでした。ご注文は変更前の内容のままです。"
+                : "変更候補は取り下げ済みです。元の注文をご確認ください。";
+            case "MANUAL_REVIEW" -> operation.deadlineClosed()
+                ? "注文変更期限を過ぎたため、この変更は成立しませんでした。決済状態の確認をお待ちください。"
+                : "要確認・復旧待ちです。重複した変更を行わず、確認をお待ちください。";
+            case "AUTH_UNKNOWN","OLD_CANCEL_UNKNOWN","OLD_CANCEL_REJECTED","ABORT_UNKNOWN" -> "要確認・復旧待ちです。重複した変更を行わず、確認をお待ちください。";
             default -> "注文変更を処理中です。この表示だけで決済・注文変更の完了を意味するものではありません。";
         });
         return "orders/increase";

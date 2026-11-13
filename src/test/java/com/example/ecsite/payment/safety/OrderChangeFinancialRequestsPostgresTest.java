@@ -21,12 +21,16 @@ class OrderChangeFinancialRequestsPostgresTest {
     @BeforeAll static void guard(){PaymentSafetyExpandPostgresTest.verifyContainerBeforeAnyDatabaseAccess();}
     @BeforeEach void setup(TestInfo info){
         initialize(true);
-        // Historical DDL tests keep their original targets. Current dispatch code requires V71.
+        // Historical DDL tests keep their original targets. Current dispatch code requires V82 (Feature128 deadline guard).
         if(Set.of("senderLoadsOnlyCommittedRequestAndPostsOutsideTransaction","aNewSenderCannotPostAnAlreadyStartedRequest",
             "transportFailureConsumesPermitWithoutChangingBusinessData","startRollbackDoesNotConsumePermit",
             "crashAfterStartCommitLeavesNoRetryPermit","lostCommitResponseNeverEntersTransport",
             "concurrentSendCanEnterTransportOnlyOnce","abortedOperationCannotSendStoredCreate",
-            "settledTransactionIsObservationOnly").contains(info.getTestMethod().orElseThrow().getName()))db.migrate("71");
+            "settledTransactionIsObservationOnly").contains(info.getTestMethod().orElseThrow().getName())){
+            db.migrate("82");
+            // The fixture order is created with change_deadline_at=localtimestamp; these sends happen within the change period.
+            jdbc.update("update orders set change_deadline_at=localtimestamp+interval '1 hour' where id=?",order);
+        }
     }
     void initialize(boolean tracking){
         db=new PaymentSafetyExpandPostgresTest();db.isolatedSchema();db.migrate("57");jdbc=db.jdbc;
