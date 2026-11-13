@@ -2897,6 +2897,19 @@ class OrderReauthorizationPostgresTest {
 
     // Customer withdrawal workflow: all provider boundaries below use isolated Mock HTTP evidence.
     @Autowired OrderChangeWithdrawalService withdrawals;
+    @Autowired OrderChangeNotAdoptedCancellationService cancellationService;
+    /** Feature129-A: places the database clock {@code seconds} after the change deadline (same technique as
+     * Feature128 A-2's tests), so {@code finalizeAtDeadline} can record a real NOT_ADOPTED decision. */
+    void pushChangeDeadlineBack(Fixture f,OrderChangeStore.Operation op,int seconds){tx(()->{
+        jdbc.update("""
+            update orders set change_deadline_at=timezone('Asia/Tokyo',clock_timestamp())-make_interval(secs=>?),
+              ordered_at=least(ordered_at,timezone('Asia/Tokyo',clock_timestamp())-make_interval(secs=>?)-interval '1 hour') where id=?
+            """,seconds,seconds,f.order());
+        var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,f.order());
+        jdbc.update("update order_change_operations set accepted_at=?,deadline_at=?,grace_until=? where id=?",
+            deadline.minusMinutes(30),deadline,deadline.plusMinutes(10),op.id());
+        return null;
+    });}
     void mockWithdrawalTransport(AtomicInteger posts,boolean timeout){
         doAnswer(call->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             return com.example.ecsite.payment.payjp.MockAbortPreparationTransport.observe(call.getArgument(0));
@@ -2957,6 +2970,59 @@ class OrderReauthorizationPostgresTest {
         var status=withdrawals.status(f.order(),f.user(),op.id());assertThat(status.requested()).isTrue();assertThat(status.canRequest()).isFalse();
         assertThatThrownBy(()->withdrawals.withdraw(f.order(),f.user(),op.id(),UUID.randomUUID(),expected)).isInstanceOf(IllegalStateException.class);
         assertThat(closureDatabaseSnapshot()).isEqualTo(complete);verify(gateway,never()).sendRequestedAbort(any());
+    }
+
+    // Feature129-A: automatic SYSTEM cancellation of a new authorization that succeeds after the 14:05
+    // final decision confirmed the order change as NOT_ADOPTED. No customer ever withdraws.
+    @Test void notAdoptedAuthorizedOperationIsCancelledAutomaticallyWithoutAnyCustomerAction(){
+        var f=fixture();var op=accept(f,3);authorizeWithoutDecision(f,op);
+        int movements=jdbc.queryForObject("select count(*) from stock_movements where order_id=?",Integer.class,f.order());
+        pushChangeDeadlineBack(f,op,330);
+        assertThat(resultTransactions.finalizeAtDeadline(f.order(),op.id())).isEqualTo(OrderReauthorizationTransactions.FinalDecisionResult.DECIDED);
+        assertThat(jdbc.queryForObject("select outcome from order_change_final_decisions where operation_id=?",String.class,op.id())).isEqualTo("NOT_ADOPTED");
+        var original=withdrawalOriginal(f,op); // Captured after the deadline shift: only the cancellation itself must leave this untouched.
+
+        var posts=new AtomicInteger();mockWithdrawalTransport(posts,false);clearInvocations(gateway);
+        assertThat(cancellationService.cancelDue(100)).isEqualTo(1);
+
+        assertThat(posts).hasValue(1);assertWithdrawalReleasedOnce(f,op,movements);assertThat(withdrawalOriginal(f,op)).isEqualTo(original);
+        assertThat(jdbc.queryForObject("select abort_requester_type from order_change_operations where id=?",String.class,op.id())).isEqualTo("SYSTEM");
+        assertThat(jdbc.queryForObject("select abort_reason_code from order_change_operations where id=?",String.class,op.id())).isEqualTo("CHANGE_NOT_ADOPTED");
+        verify(gateway,times(1)).observeAbortPreparation(any());verify(gateway,times(1)).sendRequestedAbort(any());
+        verify(gateway,never()).sendOrderChangeRequest(any());
+
+        // Nothing left to request or progress; a later run (and the final decision scheduler) is a no-op.
+        clearInvocations(gateway);assertThat(cancellationService.cancelDue(100)).isZero();verifyNoInteractions(gateway);
+        assertThat(resultTransactions.finalDecisionCandidates(100)).isEmpty();
+    }
+    @Test void notAdoptedCancellationSurvivesAnUnknownPostResultAndNeverSendsTwice(){
+        var f=fixture();var op=accept(f,3);authorizeWithoutDecision(f,op);
+        int movements=jdbc.queryForObject("select count(*) from stock_movements where order_id=?",Integer.class,f.order());
+        pushChangeDeadlineBack(f,op,330);resultTransactions.finalizeAtDeadline(f.order(),op.id());
+
+        // The Cancel POST response is lost client-side (timeout=true), but within the same run the existing
+        // GET-only closure check discovers it actually succeeded: the lost response is never retried as a
+        // second POST, exactly like the customer withdrawal path.
+        var posts=new AtomicInteger();mockWithdrawalTransport(posts,true);clearInvocations(gateway);
+        assertThat(cancellationService.cancelDue(100)).isEqualTo(1);
+        assertThat(posts).hasValue(1);assertWithdrawalReleasedOnce(f,op,movements);
+
+        clearInvocations(gateway);assertThat(cancellationService.cancelDue(100)).isZero();verifyNoInteractions(gateway);
+    }
+    @Test void notAdoptedCancellationLeavesManualReviewAndLateAdoptionAlone(){
+        var f=fixture();var op=accept(f,3);authorizeWithoutDecision(f,op);
+        jdbc.update("update order_change_operations set state='MANUAL_REVIEW',financial_review_reason='TEST_REVIEW',version=version+1 where id=?",op.id());
+        pushChangeDeadlineBack(f,op,330);resultTransactions.finalizeAtDeadline(f.order(),op.id());
+        assertThat(jdbc.queryForObject("select shipping_disposition from order_change_final_decisions where operation_id=?",String.class,op.id())).isEqualTo("HOLD");
+
+        var decided=fixture();var decidedOp=accept(decided,3);authorizeWithoutDecision(decided,decidedOp);
+        assertThat(resultTransactions.decide(decided.order(),decidedOp.id(),newAuthorized(decided,decidedOp),
+            observation(decided.oldFlow(),"requires_capture",decidedOp.beforeAmount(),Map.of())).state()).isEqualTo("OLD_CANCEL_PENDING");
+        pushChangeDeadlineBack(decided,decidedOp,330);resultTransactions.finalizeAtDeadline(decided.order(),decidedOp.id());
+        assertThat(jdbc.queryForObject("select outcome from order_change_final_decisions where operation_id=?",String.class,decidedOp.id())).isEqualTo("LATE_ADOPTION");
+
+        clearInvocations(gateway);assertThat(cancellationService.cancelDue(100)).isZero();verifyNoInteractions(gateway);
+        assertThat(state(op.id())).isEqualTo("MANUAL_REVIEW");assertThat(state(decidedOp.id())).isEqualTo("OLD_CANCEL_PENDING");
     }
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings={"PREAUTH","PENDING","CREATE_UNKNOWN","MANUAL_REVIEW"})

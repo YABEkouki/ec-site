@@ -22,7 +22,7 @@ public final class NewFlowClosureObservation {
     public record AbortIntent(java.util.UUID requestId,LocalDateTime requestedAt,String requesterType,String reason,long expectedVersion) {
         public AbortIntent { Objects.requireNonNull(requestId);Objects.requireNonNull(requestedAt);
             if(expectedVersion<0||!java.util.List.of("CUSTOMER","ADMINISTRATOR","SYSTEM").contains(requesterType)
-                ||!java.util.List.of("CUSTOMER_REQUEST","BROWSER_INTERRUPTED","AUTHENTICATION_INTERRUPTED","COMMUNICATION_FAILURE","PAYMENT_FAILURE").contains(reason))
+                ||!java.util.List.of("CUSTOMER_REQUEST","BROWSER_INTERRUPTED","AUTHENTICATION_INTERRUPTED","COMMUNICATION_FAILURE","PAYMENT_FAILURE","CHANGE_NOT_ADOPTED").contains(reason))
                 throw new IllegalArgumentException("Invalid closure abort intent"); }
         @Override public String toString(){return "ClosureIntent[redacted]";}
     }
