@@ -22,7 +22,7 @@ class IsolatedTestSmokeTest {
         } else {
             assertThat(database).isEqualTo(IsolatedDatabaseGuard.address(expected.url()).database());
         }
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)).isEqualTo(81);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where version is not null and success",Integer.class)).isEqualTo(82);
         assertThat(jdbc.queryForObject("select state from order_edit_runtime_control where id=1",String.class)).isEqualTo("STOPPED");
         assertThat(jdbc.queryForObject("select to_regclass('order_payment_evidence_epochs') is not null",Boolean.class)).isTrue();
         assertThat(jdbc.queryForObject("select to_regclass('order_change_request_dispatches') is not null",Boolean.class)).isTrue();
