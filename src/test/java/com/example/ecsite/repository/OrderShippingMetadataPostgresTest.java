@@ -80,7 +80,8 @@ class OrderShippingMetadataPostgresTest {
     }
 
     @Test void migrationAndLegacyEntity() {
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(68);
+        // V53 (shipping metadata) must be applied; the latest version itself is pinned by IsolatedTestSmokeTest.
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isGreaterThanOrEqualTo(53);
         long id = order();
         jdbc.update("update orders set status='SHIPPED', shipped_at=localtimestamp where id=?", id);
         var entity = orders.findById(id).orElseThrow();
