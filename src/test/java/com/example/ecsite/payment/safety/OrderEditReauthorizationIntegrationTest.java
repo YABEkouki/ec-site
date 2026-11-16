@@ -104,6 +104,7 @@ class OrderEditReauthorizationIntegrationTest {
             assertThat(db.jdbc.queryForObject("select count(*) from order_edit_inventory_plans where operation_id=? and reserve_quantity>0 and reservation_state='HELD'",Integer.class,request.operationId())).isEqualTo(positivePlans);
             operation=request.operationId();newFlow="pfw_f125_"+operation;
             if("CREATE".equals(request.kind())){afterAmount=request.amount();return observation(newFlow,"requires_payment_method",afterAmount,Map.of());}
+            if("NEW_ABORT".equals(request.kind())){newStatus="canceled";return observation(newFlow,"canceled",afterAmount,Map.of());}
             assertThat(request.kind()).isEqualTo("OLD_CANCEL");assertThat(request.amount()).isEqualTo(6000);
             if("unknown".equals(oldCancelMode))throw new PaymentGatewayException("lost cancel response");
             if("failed".equals(oldCancelMode))throw new PaymentGatewayException(PaymentGatewayErrorCategory.OTHER_HTTP_ERROR,400,"rejected",false);
@@ -360,6 +361,26 @@ class OrderEditReauthorizationIntegrationTest {
         assertThat(controls.resolve(new OrderEditExecution.Resolution(id,UUID.randomUUID(),owner.attemptId(),owner.token(),owner.controlVersion(),OrderEditExecution.Disposition.UNKNOWN,"LOST_DECISION_COMMIT_RESPONSE")).outcome()).isEqualTo(OrderEditExecution.Outcome.RECORDED);
         assertThat(resumeAfterPolicyDelay(id).status()).isEqualTo(OrderEditExecutionService.Status.COMPLETED);
         verify(gateway,times(2)).sendOrderChangeRequest(any());
+    }
+
+    // Feature129-B: the candidate query must not pick up ordinary in-flight admissions that have no
+    // NOT_ADOPTED final decision yet (the overwhelming common case). A full end-to-end proof that a real
+    // deadline passage later triggers cancellation is not covered here: the fixture only offers a binary
+    // +/-2 day change_deadline_at, and an owned order's business state (including that column) is
+    // immutable once accepted (f125_reauth_assert_current rejects any change made outside the owned
+    // reauthorization flow), so the deadline cannot be shortened after fixture setup without either a real
+    // 2-day wait or risking the shared fixture helper. See docs/feature129/not-adopted-cancellation.md.
+    @Test void reconciliationLeavesOrdinaryInFlightAdmissionsAlone(){
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);long added=helper().product(f,7000);
+        UUID id=accepted(f,List.of(new Line(null,added,1)),OrderChangeRoutePolicy.Route.REAUTHORIZE);mockTransport(f);
+        newStatus="processing"; // still in flight; no final decision exists, so reconcileDue must ignore it
+        var execution=service();
+        assertThat(execution.execute(id).status()).isNotEqualTo(OrderEditExecutionService.Status.COMPLETED);
+        assertHeld(id);
+        var reconciliation=new OrderEditNotAdoptedReconciliationService(db.jdbc,execution);
+        clearInvocations(gateway);
+        assertThat(reconciliation.reconcileDue(100)).isZero();verifyNoInteractions(gateway);
+        assertHeld(id);
     }
 
     OrderEditExecutionService.Result resumeAfterPolicyDelay(UUID id){
