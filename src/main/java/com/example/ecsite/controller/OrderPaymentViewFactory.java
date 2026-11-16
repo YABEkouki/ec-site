@@ -76,9 +76,7 @@ public class OrderPaymentViewFactory {
         if (order.getStatus() == OrderStatus.PAID && (order.getShippedAt() != null
                 || order.getShippedByAccountId() != null || order.getShippedByUsername() != null)) return unavailable();
         if (order.getStatus() == OrderStatus.SHIPPED && !unprepared && (order.getShippedAt() == null
-                || order.getShippedByAccountId() == null || order.getShippedByAccountId() <= 0
-                || order.getShippedByUsername() == null || order.getShippedByUsername().isBlank()
-                || order.getShippedByUsername().length() > 100)) return unavailable();
+                || !Order.isValidShipmentActor(order.getShippedByAccountId(), order.getShippedByUsername()))) return unavailable();
         if (local && (order.getStatus() == OrderStatus.PAID || order.getStatus() == OrderStatus.SHIPPED)
                 && order.getShipmentCapturePaymentId() == null && order.getPaidAt() != null
                 && history.stream().noneMatch(t -> t.getTransactionType() == PaymentTransactionType.CAPTURE)) {

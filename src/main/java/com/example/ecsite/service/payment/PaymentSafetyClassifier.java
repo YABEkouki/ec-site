@@ -211,7 +211,7 @@ public final class PaymentSafetyClassifier {
         }
         var capture = captures.getFirst();
         if (capture.amount() != order.totalAmount() || capture.contentRevision() != order.contentRevision()
-                || !"ADMIN".equals(capture.initiatorType()) || !Objects.equals(capture.initiatorId(), order.shippedByAccountId())
+                || !Objects.equals(capture.initiatorType(), shipperType(order)) || !Objects.equals(capture.initiatorId(), order.shippedByAccountId())
                 || !Objects.equals(capture.initiatorUsername(), order.shippedByUsername())) {
             issue(issues, Reason.SHIPMENT_MISMATCH, p.id(), capture.id(), "Capture amount/revision/actor/time disagrees with fixed shipment");
         }
@@ -257,8 +257,8 @@ public final class PaymentSafetyClassifier {
         if (Set.of("ORDERED", "CANCELLED").contains(o.status()) && o.paidAt() != null) return false;
         var last = history.getLast();
         if (shipped) {
-            if (!positive(o.shippedByAccountId()) || !nonblank(o.shippedByUsername()) || o.shippedByUsername().length() > 100
-                    || !"ADMIN".equals(last.actorType()) || !Objects.equals(last.actorId(), o.shippedByAccountId())
+            if (shipperType(o) == null
+                    || !Objects.equals(last.actorType(), shipperType(o)) || !Objects.equals(last.actorId(), o.shippedByAccountId())
                     || !Objects.equals(last.actorUsername(), o.shippedByUsername()) || !o.shippingPreparationComplete()) return false;
             if (o.shipmentCapturePaymentId() == null && (!"PAID".equals(last.fromStatus()) || o.paidAt() == null)) return false;
         }
@@ -430,6 +430,20 @@ public final class PaymentSafetyClassifier {
 
     private List<TransactionFacts> history(PaymentSafetySnapshot s, Long paymentId) {
         return s.transactions().stream().filter(t -> Objects.equals(t.paymentId(), paymentId)).toList();
+    }
+    /**
+     * "ADMIN" for an administrator shipment, "SYSTEM" for the warehouse shipment import (Feature132-A; only on an
+     * order the warehouse export prepared), otherwise null. Capture initiator and SHIPPED history must carry it.
+     */
+    private String shipperType(OrderFacts o) {
+        if (positive(o.shippedByAccountId()) && nonblank(o.shippedByUsername()) && o.shippedByUsername().length() <= 100)
+            return "ADMIN";
+        var p = o.shippingPreparation();
+        if (com.example.ecsite.entity.Order.isWarehouseShipmentImportActor(o.shippedByAccountId(), o.shippedByUsername())
+                && p != null && p.startedAt() != null && p.actorId() == null
+                && com.example.ecsite.entity.Order.WAREHOUSE_EXPORT_PREPARER.equals(p.actorUsername()))
+            return "SYSTEM";
+        return null;
     }
     private boolean validActor(String type, Long id, String username) {
         return contains(Set.of("USER", "ADMIN", "SYSTEM"), type) && nonblank(username)
