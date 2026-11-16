@@ -79,7 +79,8 @@ public class AdminOrderHoldViewService {
             }
             if (category == Category.EDIT_REVIEW_REQUIRED && "ABORTED".equals(linkedOperationState)) {
                 return "注文変更の金融処理は取消済み（ABORTED）ですが、受付が終了していないため出荷できません。"
-                        + "現在、画面から受付を終了する操作はありません。開発担当へ連絡してください。";
+                        + "不成立（NOT_ADOPTED）が確定している場合は照合処理が受付を自動で終了します。"
+                        + "この表示が続く場合は、Feature125のruntimeの稼働状況とアプリのログ（not-adopted closure deferred）を確認し、開発担当へ連絡してください。";
             }
             return null;
         }

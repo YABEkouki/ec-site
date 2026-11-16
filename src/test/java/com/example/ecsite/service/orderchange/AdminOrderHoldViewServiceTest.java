@@ -31,10 +31,10 @@ class AdminOrderHoldViewServiceTest {
     }
 
     @Test
-    void abortedOperationWithOpenReviewAdmissionExplainsTheMissingClosure() {
+    void abortedOperationWithOpenReviewAdmissionExplainsTheAutomaticClosure() {
         var item = admission(10, Category.EDIT_REVIEW_REQUIRED, "ABORTED", 10, false);
         assertThat(item.manual()).isTrue();
-        assertThat(item.note()).contains("受付を終了する操作はありません");
+        assertThat(item.note()).contains("照合処理が受付を自動で終了します").contains("not-adopted closure deferred");
     }
 
     @Test

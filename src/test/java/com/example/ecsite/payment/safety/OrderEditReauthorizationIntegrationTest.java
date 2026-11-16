@@ -431,44 +431,111 @@ class OrderEditReauthorizationIntegrationTest {
     }
     String operationState(UUID op){return db.jdbc.queryForObject("select state from order_change_operations where id=?",String.class,op);}
 
-    // Feature130-B reproduction: after Feature129-B cancels the late new authorization of a NOT_ADOPTED owned
-    // change, the operation is ABORTED but the admission is left open, so shipping/capture stay blocked.
-    @Test void notAdoptedOwnedCancellationLeavesTheAdmissionOpenAndShippingBlocked(){
-        var f=OrderEditAdmissionServicePostgresTest.fixture(false);long added=helper().product(f,7000);
+    // Feature130-B: after Feature129-B cancels the late new authorization of a NOT_ADOPTED owned change, the
+    // admission is parked REVIEW_REQUIRED. The same reconciliation now closes it, so shipping/capture are released.
+    UUID notAdoptedInFlight(OrderEditAdmissionServicePostgresTest.Fixture f){
+        long added=helper().product(f,7000);
         UUID id=accepted(f,List.of(new Line(null,added,1)),OrderChangeRoutePolicy.Route.REAUTHORIZE);mockTransport(f);
-        newStatus="processing";var execution=service();
-        assertThat(execution.execute(id).status()).isNotEqualTo(OrderEditExecutionService.Status.COMPLETED);assertHeld(id);
+        newStatus="processing";
+        assertThat(service().execute(id).status()).isNotEqualTo(OrderEditExecutionService.Status.COMPLETED);assertHeld(id);
         assertThat(operation).isNotNull();forgeNotAdoptedFinalDecision(operation);
-
         newStatus="requires_capture"; // PAY.JP succeeds after 14:05
-        var reconciliation=new OrderEditNotAdoptedReconciliationService(db.jdbc,execution);
-        for(int i=0;i<10&&!"ABORTED".equals(operationState(operation));i++){
-            reconciliation.reconcileDue(100);
-            db.jdbc.queryForObject("select pg_sleep(least(5,greatest(0,coalesce(extract(epoch from next_attempt_at-clock_timestamp()),0))+0.02)) from order_edit_execution_controls where admission_id=?",Object.class,id);
-        }
+        return id;
+    }
+    void waitForRetryWindow(UUID id){
+        db.jdbc.queryForObject("select pg_sleep(least(5,greatest(0,coalesce(extract(epoch from next_attempt_at-clock_timestamp()),0))+0.02)) from order_edit_execution_controls where admission_id=?",Object.class,id);
+    }
+    void assertUnwound(OrderEditAdmissionServicePostgresTest.Fixture f){
         assertThat(operationState(operation)).isEqualTo("ABORTED");
         assertThat(newStatus).isEqualTo("canceled");
         verify(gateway,never()).sendRequestedAbort(any());
         assertThat(db.jdbc.queryForObject("select count(*) from order_change_financial_requests where operation_id=? and request_kind='NEW_ABORT'",Integer.class,operation)).isOne();
         assertThat(db.jdbc.queryForObject("select count(*) from order_change_financial_requests where operation_id=? and request_kind='OLD_CANCEL'",Integer.class,operation)).isZero();
         assertThat(oldCancelled).isFalse();assertOriginalContent(f);
-        System.out.println("F130B-REPRO inventory="+db.jdbc.queryForList("select reservation_state from order_edit_inventory_plans where admission_id=? and reserve_quantity>0",String.class,id)
-            +" admission="+db.jdbc.queryForMap("select admission_state,execution_state,reason_code,closed_at,applied_operation_id from order_edit_admissions where id=?",id)
-            +" results="+db.jdbc.queryForList("select disposition||':'||reason_code from order_edit_execution_attempt_results where admission_id=? order by recorded_at",String.class,id)
-            +" newPayment="+db.jdbc.queryForObject("select p.status from payments p join order_change_operations o on o.new_payment_id=p.id where o.id=?",String.class,operation));
+    }
+    boolean admissionBlocks(UUID id){
+        return db.jdbc.queryForObject("select "+com.example.ecsite.service.orderchange.AdminOrderHoldViewService.ADMISSION_BLOCKS
+            +" from order_edit_admissions a where a.id=?",Boolean.class,id);
+    }
+    void assertOpenReview(UUID id){
+        var admission=db.jdbc.queryForMap("select execution_state,reason_code,closed_at from order_edit_admissions where id=?",id);
+        assertThat(admission.get("closed_at")).isNull();assertThat(admissionBlocks(id)).isTrue();
+        assertThat(db.jdbc.queryForObject("select count(*) from order_edit_not_adopted_closures where admission_id=?",Integer.class,id)).isZero();
+    }
+    Object closeNotAdopted(UUID id,long version){
+        return db.jdbc.queryForObject("select f125_not_adopted_close_unapplied(?,?)",UUID.class,id,version);
+    }
+    long controlVersion(UUID id){return db.jdbc.queryForObject("select version from order_edit_execution_controls where admission_id=?",Long.class,id);}
 
-        // The admission stays open and keeps blocking the shipping gate; Feature129-B no longer selects it.
-        var admission=db.jdbc.queryForMap("select execution_state,closed_at from order_edit_admissions where id=?",id);
-        assertThat(admission.get("closed_at")).isNull();
-        assertThat(db.jdbc.queryForObject("select "+com.example.ecsite.service.orderchange.AdminOrderHoldViewService.ADMISSION_BLOCKS
-            +" from order_edit_admissions a where a.id=?",Boolean.class,id)).isTrue();
+    @Test void notAdoptedOwnedCancellationClosesTheAdmissionAndReleasesTheShippingGate(){
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);UUID id=notAdoptedInFlight(f);
+        var reconciliation=new OrderEditNotAdoptedReconciliationService(db.jdbc,service());
+        for(int i=0;i<10&&db.jdbc.queryForObject("select closed_at is null from order_edit_admissions where id=?",Boolean.class,id);i++){
+            reconciliation.reconcileDue(100);waitForRetryWindow(id);
+        }
+        assertUnwound(f);
+        assertThat(db.jdbc.queryForList("select reservation_state from order_edit_inventory_plans where admission_id=? and reserve_quantity>0",String.class,id)).isNotEmpty().containsOnly("RELEASED");
+        var admission=db.jdbc.queryForMap("select admission_state,execution_state,reason_code,closed_at,applied_operation_id from order_edit_admissions where id=?",id);
+        assertThat(admission.get("admission_state")).isEqualTo("ACCEPTED");
+        assertThat(admission.get("execution_state")).isEqualTo("CLOSED_UNAPPLIED");
+        assertThat(admission.get("reason_code")).isEqualTo("CHANGE_NOT_ADOPTED");
+        assertThat(admission.get("closed_at")).isNotNull();assertThat(admission.get("applied_operation_id")).isNull();
+        assertThat(db.jdbc.queryForObject("select f125_not_adopted_closed(?)",Boolean.class,id)).isTrue();
+        assertThat(db.jdbc.queryForObject("select new_payment_id from order_edit_not_adopted_closures where admission_id=?",Long.class,id))
+            .isEqualTo(db.jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,operation));
+        // The shipping/capture gate and the administrator hold list agree that nothing is held any more.
+        assertThat(admissionBlocks(id)).isFalse();
+        var gateTx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(db.source));
+        gateTx.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
+        assertThatCode(()->gateTx.executeWithoutResult(s->new OrderEditAdmissionGuard(db.jdbc).requireClear(f.order()))).doesNotThrowAnyException();
+        assertThat(new com.example.ecsite.service.orderchange.AdminOrderHoldViewService(db.jdbc,java.time.Duration.ofMinutes(30)).listForOrder(f.order())).isEmpty();
+        // Nothing is left to do, and nothing contacts PAY.JP again.
         clearInvocations(gateway);assertThat(reconciliation.reconcileDue(100)).isZero();verifyNoInteractions(gateway);
-        // The existing generic closure is refused by the database for this state.
-        long version=db.jdbc.queryForObject("select version from order_edit_execution_controls where admission_id=?",Long.class,id);
-        var closed=new OrderEditExecutionCoordinator(db.source).closeUnapplied(new OrderUnappliedClosure.Command(id,UUID.randomUUID(),version,"CLOSED_UNAPPLIED","TEST_F130B_PROBE"));
-        System.out.println("F130B-REPRO closeUnapplied="+closed.outcome()+" "+closed.reason());
-        assertThat(closed.outcome()).isNotEqualTo(OrderEditExecution.Outcome.RECORDED);
-        assertThat(db.jdbc.queryForObject("select closed_at is null from order_edit_admissions where id=?",Boolean.class,id)).isTrue();
+        // Idempotent replay with the recorded version; any other version is a conflict.
+        long recorded=db.jdbc.queryForObject("select expected_version from order_edit_not_adopted_closures where admission_id=?",Long.class,id);
+        assertThat(closeNotAdopted(id,recorded)).isEqualTo(operation);
+        assertThatThrownBy(()->closeNotAdopted(id,recorded+1)).hasMessageContaining("replay conflict");
+        assertThat(db.jdbc.queryForObject("select count(*) from order_edit_unapplied_evidences where admission_id=?",Integer.class,id)).isOne();
+        // The generic closure still has no way in, and the proof is append-only.
+        assertThatThrownBy(()->db.jdbc.update("update order_edit_not_adopted_closures set expected_version=expected_version where admission_id=?",id)).hasMessageContaining("append only");
+        assertThatThrownBy(()->db.jdbc.update("delete from order_edit_not_adopted_closures where admission_id=?",id)).hasMessageContaining("append only");
+    }
+
+    @Test void notAdoptedClosureRefusesUnfinishedWorkStaleVersionsDetachedProofAndStoppedRuntime(){
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);UUID id=notAdoptedInFlight(f);
+        // Not yet unwound: the operation still holds a live new authorization.
+        assertThat(operationState(operation)).isNotEqualTo("ABORTED");
+        long early=controlVersion(id);
+        assertThatThrownBy(()->closeNotAdopted(id,early)).hasMessageContaining("fully unwound");
+        assertOpenReview(id);assertHeld(id);
+        // Unwind through the real 129-B path only (no closure pass).
+        var execution=service();
+        for(int i=0;i<10&&!"ABORTED".equals(operationState(operation));i++){execution.reconcile(id);waitForRetryWindow(id);}
+        assertUnwound(f);
+        assertThat(db.jdbc.queryForObject("select execution_state||':'||reason_code from order_edit_admissions where id=?",String.class,id)).isEqualTo("REVIEW_REQUIRED:REAUTHORIZATION_ABORTED");
+        assertOpenReview(id);
+        long version=controlVersion(id);
+        // The generic V72 closure keeps refusing the uncertain state.
+        var generic=new OrderEditExecutionCoordinator(db.source).closeUnapplied(new OrderUnappliedClosure.Command(id,UUID.randomUUID(),version,"CLOSED_UNAPPLIED","CHANGE_NOT_ADOPTED"));
+        assertThat(generic.outcome()).isNotEqualTo(OrderEditExecution.Outcome.RECORDED);assertOpenReview(id);
+        // Stale CAS version.
+        assertThatThrownBy(()->closeNotAdopted(id,version-1)).hasMessageContaining("CAS conflict");assertOpenReview(id);
+        // A proof row alone cannot commit without closing the admission in the same transaction.
+        assertThatThrownBy(()->db.jdbc.update("""
+            insert into order_edit_not_adopted_closures(admission_id,order_id,operation_id,new_payment_id,expected_version)
+            select ?,o.order_id,o.id,o.new_payment_id,? from order_change_operations o where o.id=?
+            """,id,version,operation)).hasMessageContaining("Incomplete atomic not-adopted closure");
+        assertOpenReview(id);
+        // Runtime STOPPED: the scheduler pass writes nothing and contacts nobody.
+        UUID generation=db.jdbc.queryForObject("select db_generation_id from order_edit_admissions where id=?",UUID.class,id);
+        var reconciliation=new OrderEditNotAdoptedReconciliationService(db.jdbc,execution);
+        db.jdbc.update("update order_edit_runtime_control set state='STOPPED',generation_id=null,version=version+1 where id=1");
+        clearInvocations(gateway);
+        assertThat(reconciliation.reconcileDue(100)).isZero();verifyNoInteractions(gateway);assertOpenReview(id);
+        db.jdbc.update("update order_edit_runtime_control set state='ISOLATED_TEST',generation_id=?,version=version+1 where id=1",generation);
+        // Back RUNNING: one closure, without any provider call.
+        assertThat(reconciliation.reconcileDue(100)).isOne();verifyNoInteractions(gateway);
+        assertThat(admissionBlocks(id)).isFalse();assertThat(db.jdbc.queryForObject("select f125_not_adopted_closed(?)",Boolean.class,id)).isTrue();
     }
 
     OrderEditExecutionService.Result resumeAfterPolicyDelay(UUID id){
