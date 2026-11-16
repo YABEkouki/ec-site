@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<body>
+
+    <table th:fragment="table(items, showOrder)">
+        <thead>
+            <tr>
+                <th th:if="${showOrder}">注文</th>
+                <th>区分</th>
+                <th>対応</th>
+                <th>対象</th>
+                <th>状態</th>
+                <th>最終判定</th>
+                <th>起点日時</th>
+                <th>経過</th>
+                <th>説明</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="item : ${items}">
+                <td th:if="${showOrder}">
+                    <a th:href="@{/admin/orders/{id}(id=${item.orderId})}" th:text="'#' + ${item.orderId}">#1</a>
+                    <br>
+                    <span th:text="${item.orderStatus}">ORDERED</span>
+                </td>
+                <td th:text="${item.category.label}">区分</td>
+                <td>
+                    <span th:if="${item.manual()}" class="action-required-danger">管理者確認が必要</span>
+                    <span th:unless="${item.manual()}">自動処理中</span>
+                    <br th:if="${item.stale}">
+                    <span th:if="${item.stale}" class="action-required-warning">滞留</span>
+                </td>
+                <td>
+                    <span th:text="${item.kind.name() == 'OPERATION'} ? '注文変更' : '一括編集受付'">注文変更</span>
+                    <br>
+                    <small th:text="${item.referenceId}">uuid</small>
+                </td>
+                <td>
+                    <span th:text="${item.state}">STATE</span>
+                    <span th:if="${item.admissionState != null}" th:text="'（受付: ' + ${item.admissionState} + '）'"></span>
+                    <span th:if="${item.linkedOperationState != null}" th:text="'（注文変更: ' + ${item.linkedOperationState} + '）'"></span>
+                    <br th:if="${item.reasonCode != null}">
+                    <small th:if="${item.reasonCode != null}" th:text="${item.reasonCode}">REASON</small>
+                </td>
+                <td>
+                    <span th:if="${item.outcome == null}">なし</span>
+                    <span th:if="${item.outcome != null}"
+                        th:text="${item.outcome} + ' / ' + ${item.shippingDisposition}">NOT_ADOPTED / HOLD</span>
+                    <br th:if="${item.decisionReason != null}">
+                    <small th:if="${item.decisionReason != null}" th:text="${item.decisionReason}">REASON</small>
+                </td>
+                <td th:text="${item.since}">2026/11/16 14:05:00</td>
+                <td th:text="${item.elapsedMinutes} + '分'">0分</td>
+                <td>
+                    <span th:text="${item.category.guidance}">説明</span>
+                    <p th:if="${item.note() != null}" class="action-required-danger" th:text="${item.note()}"></p>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+</body>
+
+</html>

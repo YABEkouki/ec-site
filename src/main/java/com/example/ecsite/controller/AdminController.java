@@ -1,5 +1,6 @@
 package com.example.ecsite.controller;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -12,6 +13,7 @@ import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.AdminPaymentDiscrepancyService;
 import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ProductService;
+import com.example.ecsite.service.orderchange.AdminOrderHoldViewService;
 
 @Controller
 public class AdminController {
@@ -19,15 +21,18 @@ public class AdminController {
     private final OrderService orderService;
     private final ProductService productService;
     private final AdminPaymentDiscrepancyService adminPaymentDiscrepancyService;
+    private final AdminOrderHoldViewService orderHoldViewService;
 
     public AdminController(
             OrderService orderService,
             ProductService productService,
-            AdminPaymentDiscrepancyService adminPaymentDiscrepancyService) {
+            AdminPaymentDiscrepancyService adminPaymentDiscrepancyService,
+            AdminOrderHoldViewService orderHoldViewService) {
 
         this.orderService = orderService;
         this.productService = productService;
         this.adminPaymentDiscrepancyService = adminPaymentDiscrepancyService;
+        this.orderHoldViewService = orderHoldViewService;
     }
 
     @GetMapping("/admin")
@@ -108,6 +113,15 @@ public class AdminController {
         model.addAttribute(
                 "openPaymentDiscrepancyCount",
                 adminPaymentDiscrepancyService.countOpen());
+
+        // The hold summary must never prevent the dashboard itself from rendering.
+        AdminOrderHoldViewService.Summary orderHoldSummary = null;
+        try {
+            orderHoldSummary = orderHoldViewService.summary();
+        } catch (DataAccessException unavailable) {
+            // Rendered as "unavailable"; the dedicated hold list reports the failure itself.
+        }
+        model.addAttribute("orderHoldSummary", orderHoldSummary);
 
         return "admin/index";
     }

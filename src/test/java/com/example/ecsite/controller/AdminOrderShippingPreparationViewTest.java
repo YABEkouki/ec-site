@@ -29,6 +29,8 @@ class AdminOrderShippingPreparationViewTest {
     private final OrderPaymentViewReadService paymentViewReader = mock(OrderPaymentViewReadService.class);
     private final PaymentCaptureService captures = mock(PaymentCaptureService.class);
     private final AdminPaymentCancellationService cancellations = mock(AdminPaymentCancellationService.class);
+    private final com.example.ecsite.service.orderchange.AdminOrderHoldViewService holds =
+            mock(com.example.ecsite.service.orderchange.AdminOrderHoldViewService.class);
     private final Order order = new Order(1L, 100, DEADLINE.withHour(10), DEADLINE);
     private final String returnUrl = "/admin/orders?page=2&size=20&sort=id,desc";
 
@@ -42,7 +44,7 @@ class AdminOrderShippingPreparationViewTest {
                 mock(OrderStatusHistoryService.class), mock(OrderNoteService.class),
                 mock(OrderHandlingStatusHistoryService.class), mock(OrderShippingAddressHistoryService.class),
                 mock(OrderAssigneeHistoryService.class), mock(OrderContentChangeHistoryService.class),
-                mock(AdminAccountService.class), payments, captures, cancellations, factory, paymentViewReader, mock(com.example.ecsite.service.orderchange.AdminOldCancelRecoveryViewService.class));
+                mock(AdminAccountService.class), payments, captures, cancellations, factory, paymentViewReader, mock(com.example.ecsite.service.orderchange.AdminOldCancelRecoveryViewService.class), holds);
         var resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/"); resolver.setSuffix(".html");
         resolver.setTemplateMode("HTML"); resolver.setCharacterEncoding("UTF-8");
@@ -127,5 +129,36 @@ class AdminOrderShippingPreparationViewTest {
     void terminalOrderHidesButton(String status) throws Exception {
         ReflectionTestUtils.setField(order, "status", OrderStatus.valueOf(status));
         assertThat(render(DEADLINE)).doesNotContain("発送準備を開始する");
+    }
+
+    // Feature130-A: the order detail shows why shipping is held, using the shared hold table fragment.
+    @Test
+    void heldOrderShowsHoldSectionWithEscapedValuesAndManualNote() throws Exception {
+        var item = new com.example.ecsite.service.orderchange.AdminOrderHoldViewService.Item(42L, "ORDERED",
+                com.example.ecsite.service.orderchange.AdminOrderHoldViewService.Kind.ADMISSION,
+                java.util.UUID.fromString("00000000-0000-0000-0000-000000000130"),
+                com.example.ecsite.service.orderchange.AdminOrderHoldViewService.Category.EDIT_REVIEW_REQUIRED,
+                "REVIEW_REQUIRED", "<b>REAUTHORIZATION_ABORTED</b>", null, null, null, "ACCEPTED", "ABORTED",
+                "2026/10/16 14:05:00", 45, true);
+        when(holds.listForOrder(42L)).thenReturn(java.util.List.of(item));
+        String html = render(DEADLINE);
+        String section = html.substring(html.indexOf("<h2>注文変更による出荷保留</h2>"), html.indexOf("<h2>注文情報</h2>"));
+        assertThat(section).contains("一括編集受付：確認が必要", "管理者確認が必要", "滞留", "一括編集受付",
+                "00000000-0000-0000-0000-000000000130", "（受付: ACCEPTED）", "（注文変更: ABORTED）",
+                "&lt;b&gt;REAUTHORIZATION_ABORTED&lt;/b&gt;", "2026/10/16 14:05:00", "45分",
+                "画面から受付を終了する操作はありません", "href=\"/admin/order-holds\"")
+                .doesNotContain("<b>REAUTHORIZATION_ABORTED</b>", "<form", "<th>注文</th>");
+    }
+
+    @Test
+    void orderWithoutHoldsHasNoHoldSection() throws Exception {
+        assertThat(render(DEADLINE)).doesNotContain("注文変更による出荷保留");
+        verify(holds).listForOrder(42L);
+    }
+
+    @Test
+    void unavailableHoldViewStillRendersOrderDetail() throws Exception {
+        when(holds.listForOrder(42L)).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
+        assertThat(render(DEADLINE)).contains("注文変更による保留状況を取得できませんでした", "注文情報");
     }
 }

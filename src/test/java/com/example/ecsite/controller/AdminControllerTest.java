@@ -41,6 +41,9 @@ class AdminControllerTest {
     @MockitoBean
     private AdminPaymentDiscrepancyService adminPaymentDiscrepancyService;
 
+    @MockitoBean
+    private com.example.ecsite.service.orderchange.AdminOrderHoldViewService orderHoldViewService;
+
     @Test
     void indexAddsOrderSummariesToModel() throws Exception {
 
@@ -122,6 +125,10 @@ class AdminControllerTest {
         when(adminPaymentDiscrepancyService.countOpen())
                 .thenReturn(1L);
 
+        var holdSummary = new com.example.ecsite.service.orderchange.AdminOrderHoldViewService.Summary(3L, 1L, 2L);
+        when(orderHoldViewService.summary())
+                .thenReturn(holdSummary);
+
         mockMvc.perform(
                 get("/admin").with(authentication(authentication)))
                 .andExpect(status().isOk())
@@ -136,7 +143,8 @@ class AdminControllerTest {
                 .andExpect(model().attribute("unassignedActionRequiredOrderCount", 4L))
                 .andExpect(model().attribute("unassignedActionRequiredAgingSummary", unassignedAgingSummary))
                 .andExpect(model().attribute("assigneeActionRequiredSummaries", assigneeSummaries))
-                .andExpect(model().attribute("openPaymentDiscrepancyCount", 1L));
+                .andExpect(model().attribute("openPaymentDiscrepancyCount", 1L))
+                .andExpect(model().attribute("orderHoldSummary", holdSummary));
 
         verify(orderService)
                 .getMyAssignedActionRequiredAgingSummary(adminId);
@@ -152,6 +160,26 @@ class AdminControllerTest {
 
         verify(adminPaymentDiscrepancyService)
                 .countOpen();
+    }
+
+    @Test
+    void indexStillRendersWhenOrderHoldSummaryIsUnavailable() throws Exception {
+        var empty = new ActionRequiredAgingSummary(0L, 0L);
+        when(orderService.getActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getUnassignedActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getMyAssignedActionRequiredAgingSummary(20L)).thenReturn(empty);
+        when(orderHoldViewService.summary())
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
+        AdminUserDetails adminUser = new AdminUserDetails(20L, "admin", "password", true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+
+        mockMvc.perform(get("/admin").with(authentication(new UsernamePasswordAuthenticationToken(
+                        adminUser, adminUser.getPassword(), adminUser.getAuthorities()))))
+                .andExpect(status().isOk())
+                .andExpect(view().name("admin/index"))
+                .andExpect(model().attribute("orderHoldSummary", (Object) null))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.containsString("注文変更による出荷保留")));
     }
 
 }
