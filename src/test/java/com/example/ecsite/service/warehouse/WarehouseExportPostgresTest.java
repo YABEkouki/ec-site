@@ -54,12 +54,69 @@ class WarehouseExportPostgresTest {
     @Autowired com.example.ecsite.service.orderchange.OrderChangeFinalDecisionService finalDecisions;
     @Autowired WarehouseExportCsvService csv;
     @Autowired WarehouseExportShipmentGuard shipmentGuard;
+    @Autowired WarehouseExportHoldStore holdStore;
+
+    // ---- C-3: hold history ----
+
+    @Test void heldOrdersAreRecordedPerBusinessDateUntilTheyAreExported() {
+        var date = nextBusinessDate(); var held = card(date); var ok = card(date);
+        long late = lateAuthorization(held);
+
+        var first = runner(date).run(date);
+        var pending = holdStore.pending(held.order());
+        assertThat(pending).singleElement().satisfies(h -> {
+            assertThat(h.reason()).isEqualTo(Reason.PAYMENT_NOT_READY);
+            assertThat(h.lastBusinessDate()).isEqualTo(date);
+            assertThat(h.firstBusinessDate()).isEqualTo(date);
+            assertThat(h.heldBatches()).isEqualTo(1);
+            assertThat(h.overdue()).isFalse();
+            assertThat(h.label()).isNotBlank();
+            assertThat(h.guidance()).isNotBlank();
+        });
+        assertThat(holdStore.pending(ok.order())).isEmpty();
+        assertThat(jdbc.queryForObject("select batch_id from warehouse_export_holds where order_id=?", Long.class, held.order()))
+                .isEqualTo(first.batchId());
+
+        runner(date).run(date.plusDays(1));
+        assertThat(holdStore.pending(held.order())).singleElement().satisfies(h -> {
+            assertThat(h.lastBusinessDate()).isEqualTo(date.plusDays(1));
+            assertThat(h.firstBusinessDate()).isEqualTo(date);
+            assertThat(h.heldBatches()).isEqualTo(2);
+            assertThat(h.overdue()).isTrue();
+        });
+        assertThat(holdStore.pending(null)).extracting(WarehouseExportHoldStore.Held::orderId).contains(held.order());
+
+        jdbc.update("update payments set status='CANCELLED' where id=?", late);
+        runner(date).run(date.plusDays(2));
+        assertThat(holdStore.pending(held.order())).isEmpty();
+        assertThat(lines(held.order())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from warehouse_export_holds where order_id=?", Integer.class, held.order())).isEqualTo(2);
+    }
+
+    @Test void aResumedPassKeepsOneHoldPerBatchAndHoldsAreAppendOnly() {
+        var date = nextBusinessDate(); var held = card(date); lateAuthorization(held);
+        long batch = batch(date);
+        assertThat(service.export(batch, held.order()).held()).isEqualTo(Reason.PAYMENT_NOT_READY);
+        jdbc.update("update orders set status='CANCELLED', cancelled_at=ordered_at where id=?", held.order());
+        assertThat(service.export(batch, held.order()).held()).isEqualTo(Reason.NOT_EXPORTABLE_STATUS);
+        assertThat(jdbc.queryForList("select reason from warehouse_export_holds where order_id=?", String.class, held.order()))
+                .containsExactly("PAYMENT_NOT_READY");
+        // A cancelled order no longer waits for an export.
+        assertThat(holdStore.pending(held.order())).isEmpty();
+        rejects("55000", () -> jdbc.update("update warehouse_export_holds set reason='FAILED' where order_id=?", held.order()));
+        rejects("55000", () -> jdbc.update("delete from warehouse_export_holds where order_id=?", held.order()));
+        batches.seal(batch);
+        var other = card(date);
+        rejects("23514", () -> jdbc.update("insert into warehouse_export_holds(batch_id,order_id,reason) values (?,?,'FAILED')", batch, other.order()));
+        holdStore.recordQuietly(batch, other.order(), Reason.FAILED);  // best effort: refused silently
+        assertThat(jdbc.queryForObject("select count(*) from warehouse_export_holds where order_id=?", Integer.class, other.order())).isZero();
+    }
 
     @AfterEach void clearAuthentication() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
 
     /** A runner limited to orders from {@code startDate}, so other tests' fixtures are never swept into its batches. */
     WarehouseExportRunner runner(LocalDate startDate) {
-        return new WarehouseExportRunner(batches, service, finalDecisions, orders, startDate.toString(), 1);
+        return new WarehouseExportRunner(batches, service, holdStore, finalDecisions, orders, startDate.toString(), 1);
     }
 
     void authenticate(long id, String username) {

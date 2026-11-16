@@ -39,14 +39,16 @@ public class WarehouseExportRunner {
     private final OrderRepository orders;
     private final LocalDate startDate;
     private final int pageSize;
+    private final WarehouseExportHoldStore holds;
 
     public WarehouseExportRunner(WarehouseExportBatchStore batches, WarehouseExportService exports,
-            OrderChangeFinalDecisionService finalDecisions, OrderRepository orders,
+            WarehouseExportHoldStore holds, OrderChangeFinalDecisionService finalDecisions, OrderRepository orders,
             @Value("${app.warehouse-export.start-date:}") String startDate,
             @Value("${app.warehouse-export.page-size:100}") int pageSize) {
         if (pageSize <= 0) throw new IllegalArgumentException("app.warehouse-export.page-size must be positive");
         this.batches = batches;
         this.exports = exports;
+        this.holds = holds;
         this.finalDecisions = finalDecisions;
         this.orders = orders;
         this.startDate = startDate == null || startDate.isBlank() ? null : LocalDate.parse(startDate.trim());
@@ -99,6 +101,7 @@ public class WarehouseExportRunner {
                     // Treated like a hold: the order stays unprepared and is judged again by the next batch.
                     failed++;
                     log.warn("Warehouse export of an order failed. batchId={}, orderId={}", existing.id(), orderId, failure);
+                    if (holds != null) holds.recordQuietly(existing.id(), orderId, WarehouseExportHoldException.Reason.FAILED);
                 }
             }
         }

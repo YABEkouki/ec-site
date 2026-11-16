@@ -46,6 +46,9 @@ class AdminOrderHoldControllerTest {
     private AdminOrderHoldViewService holds;
 
     @MockitoBean
+    private com.example.ecsite.service.warehouse.WarehouseExportHoldStore warehouseHolds;
+
+    @MockitoBean
     private AdminUserDetailsService adminUserDetailsService;
 
     @MockitoBean
@@ -103,6 +106,42 @@ class AdminOrderHoldControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("保留注文の情報を取得できませんでした")))
                 .andExpect(content().string(not(containsString("出荷が保留されている注文はありません"))));
+    }
+
+    // Feature131 C-3
+    @Test
+    void warehouseExportHoldsAreListedWithReasonGuidanceAndDelay() throws Exception {
+        when(holds.list()).thenReturn(List.of());
+        var reason = com.example.ecsite.service.warehouse.WarehouseExportHoldException.Reason.PAYMENT_NOT_READY;
+        when(warehouseHolds.pending(null)).thenReturn(List.of(new com.example.ecsite.service.warehouse.WarehouseExportHoldStore.Held(
+                9L, "ORDERED", reason, java.time.LocalDate.of(2026, 11, 17), java.time.LocalDate.of(2026, 11, 16), 2,
+                java.time.LocalDateTime.of(2026, 11, 17, 14, 5, 2))));
+        mockMvc.perform(get("/admin/order-holds").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("倉庫出力の保留")))
+                .andExpect(content().string(containsString("href=\"/admin/orders/9\"")))
+                .andExpect(content().string(containsString("決済状態を確認できない")))
+                .andExpect(content().string(containsString("2026/11/16")))
+                .andExpect(content().string(containsString("（出荷遅延）")))
+                .andExpect(content().string(not(containsString("倉庫出力で保留されている注文はありません"))));
+    }
+
+    @Test
+    void warehouseHoldFailureIsReportedSeparately() throws Exception {
+        when(holds.list()).thenReturn(List.of());
+        when(warehouseHolds.pending(null)).thenThrow(new DataAccessResourceFailureException("down"));
+        mockMvc.perform(get("/admin/order-holds").with(user("admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("倉庫出力の保留情報を取得できませんでした")))
+                .andExpect(content().string(containsString("出荷が保留されている注文はありません")))
+                .andExpect(content().string(not(containsString("倉庫出力で保留されている注文はありません"))));
+    }
+
+    @Test
+    void noWarehouseHoldsSaysSo() throws Exception {
+        when(holds.list()).thenReturn(List.of());
+        mockMvc.perform(get("/admin/order-holds").with(user("admin").roles("ADMIN")))
+                .andExpect(content().string(containsString("倉庫出力で保留されている注文はありません")));
     }
 
     @Test

@@ -29,8 +29,8 @@ class WarehouseExportSchedulerTest {
 
     @Test
     void theRunnerRejectsAnInvalidPageSize() {
-        assertThatThrownBy(() -> new WarehouseExportRunner(null, null, null, null, "2026-11-17", 0))
+        assertThatThrownBy(() -> new WarehouseExportRunner(null, null, null, null, null, "2026-11-17", 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(new WarehouseExportRunner(null, null, null, null, " ", 1).startDate()).isNull();
+        assertThat(new WarehouseExportRunner(null, null, null, null, null, " ", 1).startDate()).isNull();
     }
 }

@@ -52,6 +52,43 @@
             <table th:replace="~{admin/order-holds/fragments/hold-table :: table(${holdItems}, true)}">
             </table>
         </th:block>
+
+        <h2 id="warehouse-export-holds">倉庫出力の保留</h2>
+        <p>
+            14:05の倉庫向け注文データ出力で、安全を確認できなかったため出力しなかった注文です（出荷準備にも移行していません）。
+            保留した注文は翌日の出力で再判定します。出力・発送準備開始・キャンセルされると、この一覧から消えます。
+            2日以上保留されている注文は出荷が遅れています。
+            <a th:href="@{/admin/warehouse-exports}">倉庫向け注文データ出力へ</a>
+        </p>
+        <p th:if="${warehouseHoldError}" th:text="${warehouseHoldError}" class="message-error"></p>
+        <p th:if="${warehouseHoldError == null and #lists.isEmpty(warehouseHolds)}">倉庫出力で保留されている注文はありません。</p>
+        <table th:unless="${#lists.isEmpty(warehouseHolds)}">
+            <thead>
+                <tr>
+                    <th>注文番号</th>
+                    <th>注文状態</th>
+                    <th>保留理由（最新）</th>
+                    <th>最新の業務日</th>
+                    <th>最初に保留された業務日</th>
+                    <th>保留日数</th>
+                    <th>対応</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="held : ${warehouseHolds}">
+                    <td><a th:href="@{/admin/orders/{id}(id=${held.orderId})}" th:text="${held.orderId}"></a></td>
+                    <td th:text="${held.orderStatus}"></td>
+                    <td th:text="${held.label()}"></td>
+                    <td th:text="${#temporals.format(held.lastBusinessDate, 'yyyy/MM/dd')}"></td>
+                    <td th:text="${#temporals.format(held.firstBusinessDate, 'yyyy/MM/dd')}"></td>
+                    <td>
+                        <span th:text="${held.heldBatches} + '日'"></span>
+                        <span th:if="${held.overdue()}" class="action-required-warning">（出荷遅延）</span>
+                    </td>
+                    <td th:text="${held.guidance()}"></td>
+                </tr>
+            </tbody>
+        </table>
     </main>
 
 </body>

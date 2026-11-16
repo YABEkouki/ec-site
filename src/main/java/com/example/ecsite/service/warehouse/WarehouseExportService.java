@@ -24,11 +24,14 @@ public class WarehouseExportService {
     }
 
     private final WarehouseExportOrderTransactions transactions;
+    private final WarehouseExportHoldStore holds;
 
-    public WarehouseExportService(WarehouseExportOrderTransactions transactions) {
+    public WarehouseExportService(WarehouseExportOrderTransactions transactions, WarehouseExportHoldStore holds) {
         this.transactions = transactions;
+        this.holds = holds;
     }
 
+    /** A hold is recorded (C-3) after the order's transaction has rolled back. */
     public Outcome export(long batchId, long orderId) {
         try {
             return new Outcome(transactions.exportOrder(batchId, orderId), null);
@@ -36,6 +39,7 @@ public class WarehouseExportService {
             if (hold.reason() == Reason.DATABASE_GUARD) {
                 log.warn("Warehouse export rejected by database guard. batchId={}, orderId={}", batchId, orderId);
             }
+            holds.recordQuietly(batchId, orderId, hold.reason());
             return new Outcome(null, hold.reason());
         }
     }
