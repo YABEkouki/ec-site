@@ -44,15 +44,11 @@
 
 既存の「要対応注文一覧」（`handling_status`）とは統合しない。あちらは人が手で設定する対応状況、こちらはシステムの状態から導出する保留で、意味が異なるため。
 
-## 既知の問題（Feature130-Bで対応予定）
+## 既知の問題（Feature130-Bで対応済み）
 
-一括編集（owned）経路では、129-Bの照合で不要な新与信を取消すとoperationは `ABORTED` になる。しかしadmissionは `REVIEW_REQUIRED`（reason `REAUTHORIZATION_ABORTED`）のまま残る。
+一括編集（owned）経路で、129-Bの照合が不要な新与信を取消すと、operationは `ABORTED` になるが、admissionは `REVIEW_REQUIRED`（reason `REAUTHORIZATION_ABORTED`）のまま残り、出荷・売上確定を止め続けていた。130-Bでテストにより再現し、V85で自動終了するようにした。詳細は [owned-admission-closure.md](owned-admission-closure.md)。
 
-- 129-Bの候補クエリは `ABORTED` を除外するため、スケジューラはそれ以上このadmissionを処理しない。
-- 未適用終了にするAPI `OrderEditExecutionCoordinator.closeUnapplied` は、本番コードから呼ばれていない。
-- このため、出荷のブロックが解除されない可能性が高い（コードからの推論で、テストでは未検証）。
-
-一覧ではこのケースに「画面から受付を終了する操作はありません」と注記を表示する。
+一覧では、まだ終了されていないこのケースに「照合処理が受付を自動で終了します。この表示が続く場合は…」と注記を表示する。紐づく注文変更が `MANUAL_REVIEW` の一括編集受付は「管理者確認が必要」に分類し、理由を注記する（130-Bで修正）。
 
 ## テスト
 
