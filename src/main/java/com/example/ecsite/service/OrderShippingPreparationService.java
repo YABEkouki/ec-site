@@ -92,8 +92,7 @@ public class OrderShippingPreparationService {
         if (startedAt == null && actorId == null && username == null) {
             return false;
         }
-        if (startedAt == null || actorId == null || actorId <= 0
-                || username == null || username.isBlank() || username.length() > 100) {
+        if (startedAt == null || !Order.isValidShippingPreparationActor(actorId, username)) {
             throw new IllegalStateException("発送準備開始情報が不整合です。");
         }
         return true;

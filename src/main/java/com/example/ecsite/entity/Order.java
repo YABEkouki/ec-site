@@ -286,10 +286,41 @@ public class Order {
         shippingPreparationStartedByUsername = username;
     }
 
+    /**
+     * Feature131: preparation started by the 14:05 warehouse export (no administrator). Only
+     * WarehouseExportOrderTransactions calls this; V86 requires the export line in the same commit.
+     */
+    public void beginShippingPreparationByWarehouseExport(LocalDateTime now) {
+        if (now == null) throw new IllegalArgumentException("発送準備開始日時が必要です。");
+        if (shippingPreparationStartedAt != null || shippingPreparationStartedByAccountId != null
+                || shippingPreparationStartedByUsername != null) {
+            throw new IllegalStateException("発送準備開始情報は上書きできません。");
+        }
+        shippingPreparationStartedAt = now;
+        shippingPreparationStartedByUsername = WAREHOUSE_EXPORT_PREPARER;
+    }
+
+    /** Fixed preparer name of an automatic warehouse-export preparation (account id is NULL). */
+    public static final String WAREHOUSE_EXPORT_PREPARER = "WAREHOUSE_EXPORT";
+
+    /**
+     * Complete preparation actor: an administrator (positive id and username), or the automatic
+     * warehouse export (no id, fixed name). Mirrors chk_orders_shipping_preparation_metadata (V86).
+     */
+    public static boolean isValidShippingPreparationActor(Long actorId, String username) {
+        return validShipmentActor(actorId, username)
+                || (actorId == null && WAREHOUSE_EXPORT_PREPARER.equals(username));
+    }
+
+    public boolean isShippingPreparedByWarehouseExport() {
+        return shippingPreparationStartedAt != null && shippingPreparationStartedByAccountId == null
+                && WAREHOUSE_EXPORT_PREPARER.equals(shippingPreparationStartedByUsername);
+    }
+
     /** Shared metadata predicate; does not decide status, payment eligibility or deadlines. */
     public boolean hasCompleteShippingPreparation() {
         return shippingPreparationStartedAt != null
-                && validShipmentActor(shippingPreparationStartedByAccountId, shippingPreparationStartedByUsername);
+                && isValidShippingPreparationActor(shippingPreparationStartedByAccountId, shippingPreparationStartedByUsername);
     }
 
     /**

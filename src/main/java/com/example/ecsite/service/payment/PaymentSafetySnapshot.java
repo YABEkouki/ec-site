@@ -47,8 +47,8 @@ public record PaymentSafetySnapshot(
 
     public record ShippingPreparationFacts(LocalDateTime startedAt, Long actorId, String actorUsername) {
         public boolean complete() {
-            return startedAt != null && actorId != null && actorId > 0 && actorUsername != null
-                    && !actorUsername.isBlank() && actorUsername.length() <= 100;
+            return startedAt != null
+                    && com.example.ecsite.entity.Order.isValidShippingPreparationActor(actorId, actorUsername);
         }
         public boolean absent() { return startedAt == null && actorId == null && actorUsername == null; }
     }

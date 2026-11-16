@@ -24,8 +24,7 @@ public class OrderShippingPreparationViewFactory {
         Long actorId = order.getShippingPreparationStartedByAccountId();
         String username = order.getShippingPreparationStartedByUsername();
         boolean empty = startedAt == null && actorId == null && username == null;
-        boolean complete = startedAt != null && actorId != null && actorId > 0
-                && username != null && !username.isBlank() && username.length() <= 100;
+        boolean complete = startedAt != null && Order.isValidShippingPreparationActor(actorId, username);
         State state;
         if (!empty && !complete) state = State.INCONSISTENT;
         else if (order.getStatus() == OrderStatus.SHIPPED) state = State.SHIPPED;
@@ -59,5 +58,7 @@ public class OrderShippingPreparationViewFactory {
             };
         }
         public boolean inconsistent() { return state == State.INCONSISTENT; }
+        /** Feature131: started by the automatic warehouse export rather than an administrator. */
+        public boolean automatic() { return startedAt != null && startedByAccountId == null; }
     }
 }
