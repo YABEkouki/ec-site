@@ -16,7 +16,9 @@ public class WarehouseExportHoldException extends RuntimeException {
         /** Not formally accepted, before deadline + 5 minutes, or the deadline is after the batch's business date. */
         NOT_DUE,
         /** The application judged the order exportable but a V86 database guard rejected it. */
-        DATABASE_GUARD
+        DATABASE_GUARD,
+        /** An unexpected error (lock timeout, connection loss, ...); recorded by the runner, never thrown as a hold. */
+        FAILED
     }
 
     private final Reason reason;

@@ -12,9 +12,12 @@ import com.example.ecsite.service.orderchange.AdminOrderHoldViewService;
 public class AdminOrderHoldController {
 
     private final AdminOrderHoldViewService holds;
+    private final com.example.ecsite.service.warehouse.WarehouseExportHoldStore warehouseHolds;
 
-    public AdminOrderHoldController(AdminOrderHoldViewService holds) {
+    public AdminOrderHoldController(AdminOrderHoldViewService holds,
+            com.example.ecsite.service.warehouse.WarehouseExportHoldStore warehouseHolds) {
         this.holds = holds;
+        this.warehouseHolds = warehouseHolds;
     }
 
     @GetMapping("/admin/order-holds")
@@ -27,6 +30,13 @@ public class AdminOrderHoldController {
         } catch (DataAccessException unavailable) {
             model.addAttribute("holdItems", java.util.List.of());
             model.addAttribute("errorMessage", "保留注文の情報を取得できませんでした。時間をおいて再度表示してください。");
+        }
+        // Feature131 C-3: orders the 14:05 warehouse export held, independent of the order change holds above.
+        try {
+            model.addAttribute("warehouseHolds", warehouseHolds.pending(null));
+        } catch (DataAccessException unavailable) {
+            model.addAttribute("warehouseHolds", java.util.List.of());
+            model.addAttribute("warehouseHoldError", "倉庫出力の保留情報を取得できませんでした。時間をおいて再度表示してください。");
         }
         return "admin/order-holds/list";
     }
