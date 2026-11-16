@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>注文変更による出荷保留一覧</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>注文変更による出荷保留一覧</h1>
+
+        <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error"></p>
+
+        <p>
+            注文変更（再与信）や一括編集の処理が終わっていないため、出荷準備・売上確定ができない注文の一覧です。
+            変更期限＋5分（14:05）の最終判定以降も残っているもの、および手動確認が必要なものを表示します。
+            この画面から注文や決済の状態は変更しません。
+        </p>
+        <p>
+            「自動処理中」の項目は、照合・取消のスケジューラが解消を進めています。
+            起点日時から<span th:text="${staleAfterMinutes}">30</span>分以上解消されていないものは「滞留」と表示します。
+        </p>
+
+        <table th:if="${holdSummary != null}">
+            <thead>
+                <tr>
+                    <th>保留中の注文</th>
+                    <th>管理者確認が必要な注文</th>
+                    <th>滞留している注文</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td th:text="${holdSummary.holdOrders}">0</td>
+                    <td><strong class="action-required-danger" th:text="${holdSummary.manualOrders}">0</strong></td>
+                    <td><strong class="action-required-warning" th:text="${holdSummary.staleOrders}">0</strong></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p th:if="${errorMessage == null and #lists.isEmpty(holdItems)}">
+            出荷が保留されている注文はありません。
+        </p>
+
+        <th:block th:if="${!#lists.isEmpty(holdItems)}">
+            <table th:replace="~{admin/order-holds/fragments/hold-table :: table(${holdItems}, true)}">
+            </table>
+        </th:block>
+    </main>
+
+</body>
+
+</html>

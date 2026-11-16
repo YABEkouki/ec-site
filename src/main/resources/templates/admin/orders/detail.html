@@ -24,6 +24,21 @@
         <p th:each="target : ${recoveryTargets}"><a th:href="@{/admin/orders/{id}/changes/{op}/old-cancel-recovery(id=${order.id},op=${target.operationId})}">旧与信取消の再照合を確認する</a></p>
     </section>
 
+    <section th:if="${orderHoldUnavailable == true or (orderHoldItems != null and !#lists.isEmpty(orderHoldItems))}">
+        <h2>注文変更による出荷保留</h2>
+        <p th:if="${orderHoldUnavailable == true}" class="message-error">
+            注文変更による保留状況を取得できませんでした。
+        </p>
+        <th:block th:if="${orderHoldItems != null and !#lists.isEmpty(orderHoldItems)}">
+            <p class="action-required-danger">
+                この注文は、注文変更の処理が終わっていないため出荷準備・売上確定ができません。
+            </p>
+            <table th:replace="~{admin/order-holds/fragments/hold-table :: table(${orderHoldItems}, false)}">
+            </table>
+            <p><a th:href="@{/admin/order-holds}">出荷保留一覧へ</a></p>
+        </th:block>
+    </section>
+
     <h2>注文情報</h2>
 
     <table>

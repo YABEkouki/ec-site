@@ -3094,4 +3094,89 @@ class OrderReauthorizationPostgresTest {
         assertThat(registration.enroll(f.order()).status()).isEqualTo(com.example.ecsite.service.order.evidence.LegacyOrderEvidenceEnrollment.Status.ENROLLED);
         assertThat(jdbc.queryForList("select to_jsonb(h)::text from order_content_change_histories h where order_id=? order by id",String.class,f.order())).isEqualTo(before);
     }
+
+    // Feature130-A: the administrator hold list is derived only from persisted state and the DB clock.
+    @Autowired AdminOrderHoldViewService holds;
+    List<AdminOrderHoldViewService.Category> holdCategories(Fixture f){
+        return holds.listForOrder(f.order()).stream().map(AdminOrderHoldViewService.Item::category).toList();
+    }
+    @Test void holdListFollowsANotAdoptedOperationFromOverdueToAutomaticCancellation(){
+        var f=fixture();var op=accept(f,3);authorizeWithoutDecision(f,op);
+        assertThat(holds.listForOrder(f.order())).as("ordinary in-flight change before 14:05 is not a hold").isEmpty();
+
+        pushChangeDeadlineBack(f,op,330);
+        var overdue=holds.listForOrder(f.order());
+        assertThat(overdue).singleElement().satisfies(item->{
+            assertThat(item.category()).isEqualTo(AdminOrderHoldViewService.Category.FINAL_DECISION_OVERDUE);
+            assertThat(item.kind()).isEqualTo(AdminOrderHoldViewService.Kind.OPERATION);
+            assertThat(item.referenceId()).isEqualTo(op.id());assertThat(item.outcome()).isNull();
+            assertThat(item.manual()).isFalse();assertThat(item.stale()).isFalse();assertThat(item.elapsedMinutes()).isZero();
+        });
+
+        assertThat(resultTransactions.finalizeAtDeadline(f.order(),op.id())).isEqualTo(OrderReauthorizationTransactions.FinalDecisionResult.DECIDED);
+        assertThat(holds.listForOrder(f.order())).singleElement().satisfies(item->{
+            assertThat(item.category()).isEqualTo(AdminOrderHoldViewService.Category.NOT_ADOPTED_CANCELLING);
+            assertThat(item.state()).isEqualTo("AUTHORIZED");assertThat(item.outcome()).isEqualTo("NOT_ADOPTED");
+            assertThat(item.shippingDisposition()).isEqualTo("HOLD");assertThat(item.decisionReason()).isEqualTo("SWITCH_NOT_DECIDED");
+            assertThat(item.orderStatus()).isEqualTo("ORDERED");assertThat(item.manual()).isFalse();
+        });
+
+        var posts=new AtomicInteger();mockWithdrawalTransport(posts,false);
+        assertThat(cancellationService.cancelDue(100)).isEqualTo(1);assertThat(state(op.id())).isEqualTo("ABORTED");
+        assertThat(holds.listForOrder(f.order())).as("resolved: shipping is no longer held").isEmpty();
+    }
+    @Test void holdListMarksManualReviewAndLateAdoptionAndStalledItems(){
+        var manual=fixture();var manualOp=accept(manual,3);authorizeWithoutDecision(manual,manualOp);
+        jdbc.update("update order_change_operations set state='MANUAL_REVIEW',financial_review_reason='TEST_REVIEW',version=version+1 where id=?",manualOp.id());
+        assertThat(holds.listForOrder(manual.order())).as("manual review is listed even before the final decision").singleElement().satisfies(item->{
+            assertThat(item.category()).isEqualTo(AdminOrderHoldViewService.Category.CHANGE_MANUAL_REVIEW);
+            assertThat(item.manual()).isTrue();assertThat(item.reasonCode()).isEqualTo("TEST_REVIEW");assertThat(item.outcome()).isNull();
+        });
+        pushChangeDeadlineBack(manual,manualOp,330);resultTransactions.finalizeAtDeadline(manual.order(),manualOp.id());
+        assertThat(holds.listForOrder(manual.order())).singleElement().satisfies(item->{
+            assertThat(item.category()).isEqualTo(AdminOrderHoldViewService.Category.CHANGE_MANUAL_REVIEW);
+            assertThat(item.outcome()).isEqualTo("NOT_ADOPTED");assertThat(item.decisionReason()).isEqualTo("PAYMENT_STATE_UNRESOLVED");
+        });
+
+        var late=fixture();var lateOp=accept(late,3);authorizeWithoutDecision(late,lateOp);
+        assertThat(resultTransactions.decide(late.order(),lateOp.id(),newAuthorized(late,lateOp),
+            observation(late.oldFlow(),"requires_capture",lateOp.beforeAmount(),Map.of())).state()).isEqualTo("OLD_CANCEL_PENDING");
+        // One hour after the final decision: beyond the default 30 minute stall threshold.
+        pushChangeDeadlineBack(late,lateOp,330+3600);resultTransactions.finalizeAtDeadline(late.order(),lateOp.id());
+        assertThat(holds.listForOrder(late.order())).singleElement().satisfies(item->{
+            assertThat(item.category()).isEqualTo(AdminOrderHoldViewService.Category.LATE_ADOPTION_PENDING);
+            assertThat(item.outcome()).isEqualTo("LATE_ADOPTION");assertThat(item.state()).isEqualTo("OLD_CANCEL_PENDING");
+            assertThat(item.manual()).isFalse();assertThat(item.stale()).isTrue();
+            assertThat(item.elapsedMinutes()).isBetween(59L,61L);
+        });
+        var strict=new AdminOrderHoldViewService(jdbc,java.time.Duration.ofHours(2));
+        assertThat(strict.listForOrder(late.order())).singleElement().satisfies(item->assertThat(item.stale()).isFalse());
+
+        var items=new ArrayList<AdminOrderHoldViewService.Item>();
+        items.addAll(holds.listForOrder(late.order()));items.addAll(holds.listForOrder(manual.order()));
+        assertThat(AdminOrderHoldViewService.summarize(items)).isEqualTo(new AdminOrderHoldViewService.Summary(2,1,1));
+        assertThat(holds.list()).extracting(AdminOrderHoldViewService.Item::referenceId).contains(manualOp.id(),lateOp.id());
+        // Administrator action first, then stalled automatic work.
+        var ordered=holds.list().stream().filter(i->i.referenceId().equals(manualOp.id())||i.referenceId().equals(lateOp.id())).toList();
+        assertThat(ordered).extracting(AdminOrderHoldViewService.Item::referenceId).containsExactly(manualOp.id(),lateOp.id());
+    }
+    @Test void holdListAdmissionRuleMatchesTheShippingGateForEveryStateShape() throws Exception {
+        var blocks=Class.forName("com.example.ecsite.service.order.evidence.OrderEditAdmissionGuard")
+            .getDeclaredMethod("blocks",String.class,String.class,boolean.class,boolean.class);
+        blocks.setAccessible(true);
+        var admissions=new ArrayList<String>(List.of("RECORDED_UNVERIFIED","UNPROVEN","ACCEPTED","REJECTED_LATE","UNKNOWN"));admissions.add(null);
+        var executions=new ArrayList<String>(List.of("NOT_READY","QUEUED","OBSERVING","APPLYING","COMPLETED","FAILED_UNAPPLIED",
+            "CLOSED_UNAPPLIED","REVIEW_REQUIRED","RECOVERY_PENDING","UNKNOWN"));executions.add(null);
+        int compared=0;
+        for(String admission:admissions)for(String execution:executions)for(boolean closed:List.of(true,false))for(boolean applied:List.of(true,false)){
+            boolean sql=jdbc.queryForObject("select "+AdminOrderHoldViewService.ADMISSION_BLOCKS
+                +" from (select ?::text admission_state,?::text execution_state,"
+                +"case when ? then clock_timestamp() end closed_at,case when ? then gen_random_uuid() end applied_operation_id) a",
+                Boolean.class,admission,execution,closed,applied);
+            assertThat(sql).as("%s/%s closed=%s applied=%s",admission,execution,closed,applied)
+                .isEqualTo((boolean)blocks.invoke(null,admission,execution,closed,applied));
+            compared++;
+        }
+        assertThat(compared).isEqualTo(6*11*4);
+    }
 }

@@ -106,6 +106,24 @@
                         </a>
                     </td>
                 </tr>
+                <tr>
+                    <td><strong>注文変更による出荷保留</strong></td>
+                    <td>
+                        <th:block th:if="${orderHoldSummary != null}">
+                            <strong th:text="${orderHoldSummary.holdOrders}">0</strong>
+                            <span th:if="${orderHoldSummary.manualOrders > 0}" class="action-required-danger"
+                                th:text="'（要確認 ' + ${orderHoldSummary.manualOrders} + '）'"></span>
+                            <span th:if="${orderHoldSummary.staleOrders > 0}" class="action-required-warning"
+                                th:text="'（滞留 ' + ${orderHoldSummary.staleOrders} + '）'"></span>
+                        </th:block>
+                        <span th:if="${orderHoldSummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/order-holds}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
             </tbody>
         </table>
 

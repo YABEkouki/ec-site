@@ -383,6 +383,35 @@ class OrderEditReauthorizationIntegrationTest {
         assertHeld(id);
     }
 
+    // Feature130-A: a held owned admission blocks shipping, so the administrator hold list must show it
+    // (before the deadline too, since RECOVERY_PENDING/REVIEW_REQUIRED never clear without further work).
+    @Test void holdListShowsHeldOwnedAdmissionBeforeTheDeadline(){
+        var holds=new com.example.ecsite.service.orderchange.AdminOrderHoldViewService(db.jdbc,java.time.Duration.ofMinutes(30));
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);long added=helper().product(f,7000);
+        UUID id=accepted(f,List.of(new Line(null,added,1)),OrderChangeRoutePolicy.Route.REAUTHORIZE);mockTransport(f);
+        doThrow(new PaymentGatewayException("lost create response")).when(gateway).sendOrderChangeRequest(any());
+        assertThat(service().execute(id).status()).isNotEqualTo(OrderEditExecutionService.Status.COMPLETED);assertHeld(id);
+        String execution=db.jdbc.queryForObject("select execution_state from order_edit_admissions where id=?",String.class,id);
+        assertThat(execution).isIn("RECOVERY_PENDING","REVIEW_REQUIRED");
+        var admissionItems=holds.listForOrder(f.order()).stream()
+            .filter(i->i.kind()==com.example.ecsite.service.orderchange.AdminOrderHoldViewService.Kind.ADMISSION).toList();
+        assertThat(admissionItems).singleElement().satisfies(item->{
+            assertThat(item.referenceId()).isEqualTo(id);assertThat(item.state()).isEqualTo(execution);
+            assertThat(item.admissionState()).isEqualTo("ACCEPTED");
+            assertThat(item.category()).isEqualTo(execution.equals("REVIEW_REQUIRED")
+                ?com.example.ecsite.service.orderchange.AdminOrderHoldViewService.Category.EDIT_REVIEW_REQUIRED
+                :com.example.ecsite.service.orderchange.AdminOrderHoldViewService.Category.EDIT_RECOVERY_PENDING);
+            assertThat(item.linkedOperationState()).isNotNull();assertThat(item.stale()).isFalse();
+        });
+    }
+    @Test void holdListOmitsCompletedOwnedAdmission(){
+        var holds=new com.example.ecsite.service.orderchange.AdminOrderHoldViewService(db.jdbc,java.time.Duration.ofMinutes(30));
+        var f=OrderEditAdmissionServicePostgresTest.fixture(false);long added=helper().product(f,7000);
+        UUID id=accepted(f,List.of(new Line(null,added,1)),OrderChangeRoutePolicy.Route.REAUTHORIZE);mockTransport(f);
+        assertThat(service().execute(id).status()).isEqualTo(OrderEditExecutionService.Status.COMPLETED);
+        assertThat(holds.listForOrder(f.order())).isEmpty();
+    }
+
     OrderEditExecutionService.Result resumeAfterPolicyDelay(UUID id){
         var execution=service();var resumed=execution.reconcile(id);
         if(resumed.status()==OrderEditExecutionService.Status.HELD){
