@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>倉庫向け注文データ出力（バッチ詳細）</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>倉庫向け注文データ出力（バッチ詳細）</h1>
+
+        <p><a th:href="@{/admin/warehouse-exports}">出力バッチ一覧へ戻る</a></p>
+
+        <dl>
+            <dt>業務日</dt>
+            <dd th:text="${#temporals.format(batch.businessDate, 'yyyy/MM/dd')}"></dd>
+            <dt>バッチID</dt>
+            <dd th:text="${batch.id}"></dd>
+            <dt>状態</dt>
+            <dd th:text="${batch.open() ? '出力処理中' : '締め済み'}"></dd>
+            <dt>開始日時</dt>
+            <dd th:text="${#temporals.format(batch.openedAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
+            <dt>締め日時</dt>
+            <dd th:text="${batch.sealedAt == null ? '' : #temporals.format(batch.sealedAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
+        </dl>
+
+        <form th:unless="${batch.open()}" th:action="@{/admin/warehouse-exports/{id}/csv(id=${batch.id})}" method="post">
+            <button type="submit">CSVをダウンロード</button>
+        </form>
+
+        <h2>出力した注文</h2>
+        <p th:if="${#lists.isEmpty(lines)}">このバッチで出力した注文はありません。</p>
+        <table th:unless="${#lists.isEmpty(lines)}">
+            <thead>
+                <tr>
+                    <th>注文番号</th>
+                    <th>注文状態（出力時）</th>
+                    <th>受取人</th>
+                    <th>商品明細数</th>
+                    <th>合計金額</th>
+                    <th>与信Payment</th>
+                    <th>変更期限</th>
+                    <th>出荷準備開始</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="line : ${lines}">
+                    <td><a th:href="@{/admin/orders/{id}(id=${line.orderId})}" th:text="${line.orderId}"></a></td>
+                    <td th:text="${line.orderStatus == 'PAID' ? '支払済み' : 'カード与信済み'}"></td>
+                    <td th:text="${line.shippingName}"></td>
+                    <td th:text="${line.itemCount}"></td>
+                    <td th:text="${#numbers.formatInteger(line.totalAmount, 1, 'COMMA')} + '円'"></td>
+                    <td th:text="${line.paymentId == null ? 'なし' : line.paymentId}"></td>
+                    <td th:text="${#temporals.format(line.changeDeadlineAt, 'yyyy/MM/dd HH:mm')}"></td>
+                    <td th:text="${#temporals.format(line.preparedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>ダウンロード履歴</h2>
+        <p th:if="${#lists.isEmpty(downloads)}">まだダウンロードされていません。</p>
+        <table th:unless="${#lists.isEmpty(downloads)}">
+            <thead>
+                <tr>
+                    <th>日時</th>
+                    <th>管理者</th>
+                    <th>注文数</th>
+                    <th>CSV行数</th>
+                    <th>SHA-256</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="d : ${downloads}">
+                    <td th:text="${#temporals.format(d.downloadedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${d.adminUsername} + '（ID: ' + ${d.adminAccountId} + '）'"></td>
+                    <td th:text="${d.lineCount}"></td>
+                    <td th:text="${d.rowCount}"></td>
+                    <td><code th:text="${d.sha256}"></code></td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+
+</body>
+
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>倉庫向け注文データ出力</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>倉庫向け注文データ出力</h1>
+
+        <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error"></p>
+
+        <p>
+            毎日14:05（変更期限＋5分）に、出荷準備に移行できる注文を倉庫向けに出力します。出力した注文は同時に出荷準備へ移行し、
+            以後は内容を変更できません。注文変更や決済の処理が終わっていない注文は出力せず、翌日の出力で再判定します。
+        </p>
+        <p>
+            CSVは出力処理が完了した（締め済みの）バッチだけダウンロードできます。何度ダウンロードしても同じ内容で、ダウンロードはすべて記録されます。
+        </p>
+        <p th:if="${startDate == null}" class="action-required-warning">
+            自動出力の開始日が設定されていないため、自動出力は行われません。
+        </p>
+        <p th:if="${startDate != null}">
+            自動出力の対象：変更期限が <span th:text="${#temporals.format(startDate, 'yyyy/MM/dd')}"></span> 以降の注文
+        </p>
+
+        <p th:if="${#lists.isEmpty(batches)}">出力バッチはまだありません。</p>
+
+        <table th:unless="${#lists.isEmpty(batches)}">
+            <thead>
+                <tr>
+                    <th>業務日</th>
+                    <th>バッチID</th>
+                    <th>状態</th>
+                    <th>開始日時</th>
+                    <th>締め日時</th>
+                    <th>注文数</th>
+                    <th>ダウンロード</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="item : ${batches}">
+                    <td th:text="${#temporals.format(item.batch.businessDate, 'yyyy/MM/dd')}"></td>
+                    <td><a th:href="@{/admin/warehouse-exports/{id}(id=${item.batch.id})}" th:text="${item.batch.id}"></a></td>
+                    <td>
+                        <span th:if="${item.batch.open()}" class="action-required-warning">出力処理中</span>
+                        <span th:unless="${item.batch.open()}">締め済み</span>
+                    </td>
+                    <td th:text="${#temporals.format(item.batch.openedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${item.batch.sealedAt == null ? '' : #temporals.format(item.batch.sealedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${item.currentLines}">0</td>
+                    <td>
+                        <span th:text="${item.downloads} + '回'"></span>
+                        <span th:if="${item.lastDownload != null}"
+                            th:text="'（最終 ' + ${#temporals.format(item.lastDownload, 'yyyy/MM/dd HH:mm')} + '）'"></span>
+                    </td>
+                    <td>
+                        <form th:unless="${item.batch.open()}"
+                            th:action="@{/admin/warehouse-exports/{id}/csv(id=${item.batch.id})}" method="post">
+                            <button type="submit">CSVをダウンロード</button>
+                        </form>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+
+</body>
+
+</html>

@@ -38,6 +38,13 @@ public class CaptureShipmentOperations {
     private final PayJpSafetyProperties safety;
     private final OrderStatusHistoryRepository shipmentHistory;
     private static final ZoneId JST = ZoneId.of("Asia/Tokyo");
+    private com.example.ecsite.service.warehouse.WarehouseExportShipmentGuard exportGuard;
+
+    /** Spring always injects it; hand-built unit fixtures predate Feature131 and V87 still guards the database. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setExportGuard(com.example.ecsite.service.warehouse.WarehouseExportShipmentGuard exportGuard) {
+        this.exportGuard = exportGuard;
+    }
 
     public CaptureShipmentOperations(OrderRepository orders, PaymentRepository payments,
             PaymentTransactionRepository transactions, EntityManager em, OrderWriteContext context,
@@ -75,6 +82,8 @@ public class CaptureShipmentOperations {
                     ? PaymentStartDisposition.REUSED : PaymentStartDisposition.ALREADY_APPLIED);
         }
         Payment payment = data.payments().stream().filter(p -> p.getId().equals(decision.paymentId())).findFirst().orElseThrow();
+        // Feature131: an exported order is captured only on the payment the warehouse export recorded.
+        if (exportGuard != null && !exportGuard.matchesExport(order, payment.getId())) throw recovery(orderId);
         var identity = connection.requireIdentity(activeConnection);
         if (!safety.isValid()) throw recovery(orderId);
         String note = internalNote == null ? null : internalNote.trim();
