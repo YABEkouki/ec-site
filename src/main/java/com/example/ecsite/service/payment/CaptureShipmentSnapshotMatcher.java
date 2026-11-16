@@ -30,12 +30,19 @@ public class CaptureShipmentSnapshotMatcher {
                 && Objects.equals(expected.providerPaymentId(),payment.getProviderPaymentId())
                 && transaction.getAmount()>0 && transaction.getAmount()==order.getTotalAmount() && expected.amount()==transaction.getAmount()
                 && transaction.getOrderContentRevision()==order.getContentRevision() && expected.orderContentRevision()==transaction.getOrderContentRevision()
-                && transaction.getInitiatorType()==PaymentTransactionInitiatorType.ADMIN && expected.initiatorType()==transaction.getInitiatorType()
-                && positive(transaction.getInitiatorId()) && Objects.equals(expected.initiatorId(),transaction.getInitiatorId())
-                && validActorName(transaction.getInitiatorUsername()) && Objects.equals(expected.initiatorUsername(),transaction.getInitiatorUsername())
+                && validShipper(transaction) && expected.initiatorType()==transaction.getInitiatorType()
+                && Objects.equals(expected.initiatorId(),transaction.getInitiatorId())
+                && Objects.equals(expected.initiatorUsername(),transaction.getInitiatorUsername())
                 && Objects.equals(order.getShippedByAccountId(),transaction.getInitiatorId())
                 && Objects.equals(order.getShippedByUsername(),transaction.getInitiatorUsername())
                 && Objects.equals(expected.internalNote(),transaction.getInternalNote());
+    }
+    /** An administrator (positive id), or the warehouse shipment import as SYSTEM (Feature132-A, V89). */
+    private boolean validShipper(PaymentTransaction t) {
+        if(t.getInitiatorType()==PaymentTransactionInitiatorType.ADMIN)
+            return positive(t.getInitiatorId()) && validActorName(t.getInitiatorUsername());
+        return t.getInitiatorType()==PaymentTransactionInitiatorType.SYSTEM
+                && Order.isWarehouseShipmentImportActor(t.getInitiatorId(),t.getInitiatorUsername());
     }
     private boolean positive(Long id) { return id!=null && id>0; }
     private boolean nonblank(String value) { return value!=null && !value.isBlank(); }

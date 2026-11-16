@@ -61,9 +61,9 @@ public class CaptureShipmentPolicy {
             return new Decision(Disposition.NEW,Reason.NONE,payment.getId(),null);
         }
         if(!Objects.equals(order.getShipmentCapturePaymentId(),payment.getId()) || order.getShippedAt()==null
-                || order.getShippedByAccountId()==null || order.getShippedByAccountId()<=0
-                || order.getShippedByUsername()==null || order.getShippedByUsername().isBlank()
-                || order.getShippedByUsername().length()>100) return recovery(Reason.INVALID_SHIPMENT);
+                || !Order.isValidShipmentActor(order.getShippedByAccountId(),order.getShippedByUsername())
+                || (order.isShippedByWarehouseImport() && !order.isShippingPreparedByWarehouseExport()))
+            return recovery(Reason.INVALID_SHIPMENT);
         var candidates=history.stream().filter(t -> t.getTransactionType()==PaymentTransactionType.CAPTURE
                 && Objects.equals(t.getPayment().getId(),payment.getId())).toList();
         if(candidates.size()!=1) return recovery(Reason.AMBIGUOUS_CAPTURE);

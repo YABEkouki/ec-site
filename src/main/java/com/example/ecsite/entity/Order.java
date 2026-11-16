@@ -317,6 +317,25 @@ public class Order {
                 && WAREHOUSE_EXPORT_PREPARER.equals(shippingPreparationStartedByUsername);
     }
 
+    /** Fixed shipper name of a shipment recorded by the warehouse shipment import (account id is NULL; V89). */
+    public static final String WAREHOUSE_SHIPMENT_IMPORTER = "WAREHOUSE_SHIPMENT_IMPORT";
+
+    /**
+     * Complete shipment actor: an administrator (positive id and username), or the warehouse shipment import
+     * (no id, fixed name). Mirrors chk_orders_shipment_metadata (V89).
+     */
+    public static boolean isValidShipmentActor(Long actorId, String username) {
+        return validShipmentActor(actorId, username) || isWarehouseShipmentImportActor(actorId, username);
+    }
+
+    public static boolean isWarehouseShipmentImportActor(Long actorId, String username) {
+        return actorId == null && WAREHOUSE_SHIPMENT_IMPORTER.equals(username);
+    }
+
+    public boolean isShippedByWarehouseImport() {
+        return shippedAt != null && isWarehouseShipmentImportActor(shippedByAccountId, shippedByUsername);
+    }
+
     /** Shared metadata predicate; does not decide status, payment eligibility or deadlines. */
     public boolean hasCompleteShippingPreparation() {
         return shippingPreparationStartedAt != null
@@ -361,7 +380,7 @@ public class Order {
             throw new IllegalArgumentException("有効なCapture対象Payment IDと入金日時が必要です。");
         }
         if (status != OrderStatus.SHIPPED || !hasCompleteShippingPreparation()
-                || shippedAt == null || !validShipmentActor(shippedByAccountId, shippedByUsername)
+                || shippedAt == null || !isValidShipmentActor(shippedByAccountId, shippedByUsername)
                 || !capturePaymentId.equals(shipmentCapturePaymentId)) {
             throw new IllegalStateException("発送記録とCapture対象Paymentが一致しません。");
         }
@@ -372,8 +391,11 @@ public class Order {
     }
 
     private void requireNewShipment(OrderStatus sourceStatus, LocalDateTime at, Long actorId, String username) {
-        if (at == null || !validShipmentActor(actorId, username)) {
+        if (at == null || !isValidShipmentActor(actorId, username)) {
             throw new IllegalArgumentException("有効な発送日時と管理者情報が必要です。");
+        }
+        if (isWarehouseShipmentImportActor(actorId, username) && !isShippingPreparedByWarehouseExport()) {
+            throw new IllegalStateException("倉庫出力で出荷準備に移った注文だけを倉庫出荷取込みで発送できます。");
         }
         if (status != sourceStatus) throw new InvalidOrderStatusException("この注文状態では発送できません。");
         if (!hasCompleteShippingPreparation()) throw new IllegalStateException("有効な発送準備情報が必要です。");

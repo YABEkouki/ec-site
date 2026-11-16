@@ -12,6 +12,7 @@ import com.example.ecsite.payment.*;
 import com.example.ecsite.repository.*;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.*;
+import com.example.ecsite.service.warehouse.WarehouseShipmentActor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -61,12 +62,35 @@ public class CaptureShipmentOperations {
     public PaymentCaptureStart start(Long orderId, Long accountId, String username, String internalNote) {
         if (orderId == null || orderId <= 0) throw new IllegalArgumentException("正の注文IDが必要です。");
         AdminUserDetails actor = requireActor(accountId, username);
+        return start(orderId, new Shipper(PaymentTransactionInitiatorType.ADMIN, OrderStatusHistoryActorType.ADMIN,
+                actor.getId(), actor.getUsername()), internalNote);
+    }
+
+    /**
+     * Feature132-A: ships an exported order as the system (warehouse shipment import), with no logged-in
+     * administrator. Only the warehouse package can hold a {@link WarehouseShipmentActor}; the order must have
+     * been prepared by the warehouse export and must still match its export line (V87/V89 re-check both).
+     */
+    public PaymentCaptureStart startAsWarehouseImport(Long orderId, WarehouseShipmentActor actor) {
+        if (orderId == null || orderId <= 0) throw new IllegalArgumentException("正の注文IDが必要です。");
+        if (actor == null) throw new AccessDeniedException("倉庫出荷取込みの権限が必要です。");
+        return start(orderId, new Shipper(PaymentTransactionInitiatorType.SYSTEM, OrderStatusHistoryActorType.SYSTEM,
+                null, actor.username()), null);
+    }
+
+    private record Shipper(PaymentTransactionInitiatorType initiatorType, OrderStatusHistoryActorType historyType,
+            Long id, String username) {
+        boolean system() { return initiatorType == PaymentTransactionInitiatorType.SYSTEM; }
+    }
+
+    private PaymentCaptureStart start(Long orderId, Shipper actor, String internalNote) {
         context.requireCleanWritableReadCommitted();
         Order order = orders.findByIdForUpdate(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
         context.refreshWritableOrder(order);
         if (order.getStatus() != OrderStatus.ORDERED && order.getStatus() != OrderStatus.SHIPPED) throw recovery(orderId);
         if (order.getStatus()==OrderStatus.ORDERED) paymentGuard.requireNoOrderChange(order);
         guard.requirePrepared(order);
+        if (actor.system() && (!order.isShippingPreparedByWarehouseExport() || exportGuard == null)) throw recovery(orderId);
         LockedData data = load(order, null);
         PaymentOperationSnapshot saved = null;
         if (order.getStatus() == OrderStatus.SHIPPED) {
@@ -91,15 +115,15 @@ public class CaptureShipmentOperations {
         var now = orders.findCurrentTimeInTokyo();
         var capture = new PaymentTransaction(payment, PaymentTransactionType.CAPTURE, order.getTotalAmount(),
                 order.getContentRevision(), UUID.randomUUID().toString(), now,
-                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN, actor.getId(), actor.getUsername(), note), PaymentTransactionPurpose.SHIPMENT_CAPTURE);
+                new PaymentTransactionInitiator(actor.initiatorType(), actor.id(), actor.username(), note), PaymentTransactionPurpose.SHIPMENT_CAPTURE);
         transactions.saveAndFlush(capture);
         var created = now.atZone(JST).toInstant();
         var http = CaptureHttpRequest.create(identity, payment.getProviderPaymentId(), capture.getAmount(), capture.getIdempotencyKey());
         var stored = requests.insert(payment, capture, http, created,
                 created.plus(safety.postMaxAge()).truncatedTo(ChronoUnit.MICROS));
-        order.confirmCardShipment(now, actor.getId(), actor.getUsername(), payment.getId());
-        histories.record(order, OrderStatus.ORDERED, OrderStatus.SHIPPED, OrderStatusHistoryActorType.ADMIN,
-                actor.getId(), actor.getUsername(), note);
+        order.confirmCardShipment(now, actor.id(), actor.username(), payment.getId());
+        histories.record(order, OrderStatus.ORDERED, OrderStatus.SHIPPED, actor.historyType(),
+                actor.id(), actor.username(), note);
         var snapshot = PaymentOperationSnapshot.from(capture);
         return new PaymentCaptureStart(snapshot.paymentId(), snapshot.transactionId(), snapshot.providerPaymentId(),
                 snapshot.amount(), snapshot.idempotencyKey(), PaymentStartDisposition.NEW, snapshot,
@@ -142,7 +166,9 @@ public class CaptureShipmentOperations {
                 .peek(em::refresh).filter(h -> h.getToStatus() == OrderStatus.SHIPPED).toList();
         if (shipments.size() != 1) throw recovery(order.getId());
         var history = shipments.getFirst();
-        if (history.getFromStatus() != OrderStatus.ORDERED || history.getChangedByType() != OrderStatusHistoryActorType.ADMIN
+        var expectedHistoryActor = Order.isWarehouseShipmentImportActor(order.getShippedByAccountId(), order.getShippedByUsername())
+                ? OrderStatusHistoryActorType.SYSTEM : OrderStatusHistoryActorType.ADMIN;
+        if (history.getFromStatus() != OrderStatus.ORDERED || history.getChangedByType() != expectedHistoryActor
                 || !Objects.equals(history.getChangedByAccountId(), order.getShippedByAccountId())
                 || !Objects.equals(history.getChangedByUsername(), order.getShippedByUsername())
                 || !Objects.equals(history.getInternalNote(), snapshot.internalNote())) throw recovery(order.getId());

@@ -58,7 +58,11 @@ public class PaymentOperationSyncService {
                     yield classify(applied, waiting);
                 }
                 case CAPTURE -> {
-                    if (snapshot.initiatorType() != PaymentTransactionInitiatorType.ADMIN)
+                    // Feature132-A: the warehouse shipment import starts shipment captures as the system.
+                    if (snapshot.initiatorType() != PaymentTransactionInitiatorType.ADMIN
+                            && !(snapshot.initiatorType() == PaymentTransactionInitiatorType.SYSTEM
+                                && com.example.ecsite.entity.Order.isWarehouseShipmentImportActor(
+                                        snapshot.initiatorId(), snapshot.initiatorUsername())))
                         yield PaymentSynchronizationOutcome.SKIPPED;
                     PaymentFlowState state = gateway.retrievePaymentFlow(snapshot.providerPaymentId());
                     boolean captured = state.status() == PaymentFlowStatus.SUCCEEDED;

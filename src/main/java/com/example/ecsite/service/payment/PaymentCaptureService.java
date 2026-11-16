@@ -10,6 +10,7 @@ import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.payment.CaptureResultStatus;
 import com.example.ecsite.payment.PaymentFlowState;
 import com.example.ecsite.payment.PaymentFlowStatus;
+import com.example.ecsite.service.warehouse.WarehouseShipmentActor;
 
 @Service
 @Transactional(propagation = Propagation.NEVER)
@@ -38,12 +39,22 @@ public class PaymentCaptureService {
             String username,
             String internalNote) {
 
-        PaymentCaptureStart start = startService.start(
+        return capture(orderId, startService.start(
                 orderId,
                 accountId,
                 username,
-                internalNote);
+                internalNote));
+    }
 
+    /**
+     * Feature132-A: the same shipment capture, started as the system (warehouse shipment import). Unknown
+     * results stay SHIPPED with a PENDING capture and converge through reconciliation, as for an administrator.
+     */
+    public CaptureResult captureForWarehouseImport(Long orderId, WarehouseShipmentActor actor) {
+        return capture(orderId, startService.startAsWarehouseImport(orderId, actor));
+    }
+
+    private CaptureResult capture(Long orderId, PaymentCaptureStart start) {
         if (start.disposition() == PaymentStartDisposition.ALREADY_APPLIED) {
             return new CaptureResult(CaptureResultStatus.CAPTURED, start.providerPaymentId(), null, null);
         }

@@ -8,6 +8,7 @@ import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.security.AdminUserDetails;
 import com.example.ecsite.service.payment.OrderPaymentGuard;
+import com.example.ecsite.service.warehouse.WarehouseShipmentActor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -41,12 +42,30 @@ public class ManualOrderShipmentService {
     public void ship(Long id, Long accountId, String username, String internalNote) {
         if (id == null || id <= 0) throw new IllegalArgumentException("正の注文IDが必要です。");
         AdminUserDetails actor = requireActor(accountId, username);
+        ship(id, OrderStatusHistoryActorType.ADMIN, actor.getId(), actor.getUsername(), internalNote);
+    }
+
+    /**
+     * Feature132-A: ships an exported paid order as the system (warehouse shipment import), with no logged-in
+     * administrator. Only the warehouse package can hold a {@link WarehouseShipmentActor}.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void shipAsWarehouseImport(Long id, WarehouseShipmentActor actor) {
+        if (id == null || id <= 0) throw new IllegalArgumentException("正の注文IDが必要です。");
+        if (actor == null) throw new AccessDeniedException("倉庫出荷取込みの権限が必要です。");
+        ship(id, OrderStatusHistoryActorType.SYSTEM, null, actor.username(), null);
+    }
+
+    private void ship(Long id, OrderStatusHistoryActorType actorType, Long actorId, String actorName, String internalNote) {
+        boolean system = actorType == OrderStatusHistoryActorType.SYSTEM;
         context.requireCleanWritableReadCommitted();
         var order = orders.findByIdForUpdate(id).orElseThrow(() -> new OrderNotFoundException(id));
         context.refreshWritableOrder(order);
         if (order.getStatus() != OrderStatus.PAID)
             throw new InvalidOrderStatusException("支払済みの注文だけを発送済みに変更できます。");
         shipmentGuard.requirePrepared(order);
+        if (system && (!order.isShippingPreparedByWarehouseExport() || exportGuard == null))
+            throw new InvalidOrderStatusException("倉庫出力で出荷準備に移った注文だけを倉庫出荷取込みで発送できます。");
         paymentGuard.requireNoOrderChange(order);
         context.refreshPayments(order);
         paymentGuard.validateManualShipment(order);
@@ -54,9 +73,8 @@ public class ManualOrderShipmentService {
         if (exportGuard != null && !exportGuard.matchesExport(order, null))
             throw new InvalidOrderStatusException("倉庫へ出力した内容と注文が一致しないため、発送できません。");
         var now = orders.findCurrentTimeInTokyo();
-        order.confirmManualShipment(now, actor.getId(), actor.getUsername());
-        histories.record(order, OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatusHistoryActorType.ADMIN,
-                actor.getId(), actor.getUsername(), internalNote);
+        order.confirmManualShipment(now, actorId, actorName);
+        histories.record(order, OrderStatus.PAID, OrderStatus.SHIPPED, actorType, actorId, actorName, internalNote);
     }
 
     private AdminUserDetails requireActor(Long accountId, String username) {

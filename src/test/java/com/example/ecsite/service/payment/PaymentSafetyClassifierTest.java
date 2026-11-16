@@ -78,6 +78,63 @@ class PaymentSafetyClassifierTest {
         assertEquals(FinancialResumption.NOT_EVALUATED, result.financialResumption());
     }
 
+    // ---- Feature132-A: shipment by the warehouse shipment import (system actor) ----
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PENDING", "SUCCEEDED"})
+    void warehouseImportShipmentIsSelectedWhenEveryRecordCarriesTheSystemShipper(String captureStatus) {
+        var result = classify(systemShipped(captureStatus));
+        assertEquals(ActivePaymentDisposition.SELECTED, result.disposition(), result.toString());
+        assertEquals(10L, result.activePaymentId());
+        assertEquals(SHIPMENT_CAPTURE, result.transactionPurposes().get(1).purpose());
+    }
+
+    @Test
+    void warehouseImportShipmentRequiresTheWarehouseExportPreparation() {
+        var f = systemShipped("PENDING");
+        var o = f.order;
+        f.order = new OrderFacts(o.id(), o.status(), o.totalAmount(), o.contentRevision(), o.paidAt(), o.cancelledAt(),
+                o.shippedAt(), preparation(true), o.shipmentCapturePaymentId(), null, com.example.ecsite.entity.Order.WAREHOUSE_SHIPMENT_IMPORTER);
+        review(f);
+    }
+
+    @Test
+    void systemAndAdministratorShipmentRecordsMustNotBeMixed() {
+        var f = systemShipped("PENDING");          // capture started by an administrator
+        f.transactions.set(1, withInitiator(f.transactions.get(1), "ADMIN", 5L, "admin"));
+        review(f);
+        f = systemShipped("PENDING");              // SHIPPED history recorded by an administrator
+        f.history.set(1, history(2L, "ORDERED", "SHIPPED", T.plusMinutes(2)));
+        review(f);
+        f = shipped("PENDING");                    // administrator shipment with a system capture
+        f.transactions.set(1, withInitiator(f.transactions.get(1), "SYSTEM", null, com.example.ecsite.entity.Order.WAREHOUSE_SHIPMENT_IMPORTER));
+        review(f);
+        f = systemShipped("PENDING");              // a system shipper with any other name
+        f.transactions.set(1, withInitiator(f.transactions.get(1), "SYSTEM", null, "SOMEONE"));
+        f.history.set(1, new StatusHistory(2L, 1L, "ORDERED", "SHIPPED", T.plusMinutes(2), "SYSTEM", null, "SOMEONE"));
+        var o = f.order;
+        f.order = new OrderFacts(o.id(), o.status(), o.totalAmount(), o.contentRevision(), o.paidAt(), o.cancelledAt(),
+                o.shippedAt(), o.shippingPreparation(), o.shipmentCapturePaymentId(), null, "SOMEONE");
+        review(f);
+    }
+
+    private static Fixture systemShipped(String status) {
+        String importer = com.example.ecsite.entity.Order.WAREHOUSE_SHIPMENT_IMPORTER;
+        var f = shipped(status);
+        var o = f.order;
+        f.order = new OrderFacts(o.id(), o.status(), o.totalAmount(), o.contentRevision(), o.paidAt(), o.cancelledAt(),
+                o.shippedAt(), new ShippingPreparationFacts(T.plusMinutes(1), null, com.example.ecsite.entity.Order.WAREHOUSE_EXPORT_PREPARER),
+                o.shipmentCapturePaymentId(), null, importer);
+        f.transactions.set(1, withInitiator(f.transactions.get(1), "SYSTEM", null, importer));
+        f.history.set(1, new StatusHistory(2L, 1L, "ORDERED", "SHIPPED", T.plusMinutes(2), "SYSTEM", null, importer));
+        return f;
+    }
+
+    private static TransactionFacts withInitiator(TransactionFacts t, String type, Long id, String username) {
+        return new TransactionFacts(t.id(), t.paymentId(), t.type(), t.status(), t.amount(), t.contentRevision(),
+                t.idempotencyKey(), t.providerTransactionId(), t.createdAt(), t.completedAt(), type, id, username, t.declaredPurpose());
+    }
+
     @Test
     void shippedDecreaseKeepsOriginalAuthorizationAndCapturesReducedAmount() {
         var f = shipped("PENDING");
