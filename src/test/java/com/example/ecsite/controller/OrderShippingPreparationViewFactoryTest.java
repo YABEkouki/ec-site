@@ -81,6 +81,35 @@ class OrderShippingPreparationViewFactoryTest {
     }
 
     @Test
+    void warehouseExportPreparationIsStartedAndAutomatic() {
+        Order order = order();
+        order.beginShippingPreparationByWarehouseExport(DEADLINE.plusMinutes(5));
+        var view = factory(DEADLINE.plusHours(1)).create(order);
+        assertThat(view.state()).isEqualTo(OrderShippingPreparationViewFactory.State.STARTED);
+        assertThat(view.automatic()).isTrue();
+        assertThat(view.startedByAccountId()).isNull();
+        assertThat(order.hasCompleteShippingPreparation()).isTrue();
+        assertThat(order.isShippingPreparedByWarehouseExport()).isTrue();
+        var admin = order();
+        admin.beginShippingPreparation(DEADLINE, 7L, "admin");
+        assertThat(factory(DEADLINE).create(admin).automatic()).isFalse();
+        assertThat(admin.isShippingPreparedByWarehouseExport()).isFalse();
+    }
+
+    @Test
+    void warehouseExportNameWithoutTimeIsInconsistentAndPreparationIsNeverOverwritten() {
+        Order withoutTime = order();
+        ReflectionTestUtils.setField(withoutTime, "shippingPreparationStartedByUsername", Order.WAREHOUSE_EXPORT_PREPARER);
+        assertThat(factory(DEADLINE).create(withoutTime).state()).isEqualTo(OrderShippingPreparationViewFactory.State.INCONSISTENT);
+        Order prepared = order();
+        prepared.beginShippingPreparationByWarehouseExport(DEADLINE);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> prepared.beginShippingPreparation(DEADLINE, 7L, "admin"))
+                .isInstanceOf(IllegalStateException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> prepared.beginShippingPreparationByWarehouseExport(DEADLINE))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void invalidCompleteMetadataIsInconsistent() {
         Order order = order();
         order.beginShippingPreparation(DEADLINE, 7L, "admin");
