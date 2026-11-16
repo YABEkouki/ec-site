@@ -67,10 +67,16 @@ public class AdminOrderHoldViewService {
             String state, String reasonCode, String outcome, String shippingDisposition, String decisionReason,
             String admissionState, String linkedOperationState, String since, long elapsedMinutes, boolean stale) {
 
-        public boolean manual() { return category.isManual(); }
+        /** An admission whose order change awaits manual review cannot progress automatically either. */
+        public boolean manual() {
+            return category.isManual() || (kind == Kind.ADMISSION && "MANUAL_REVIEW".equals(linkedOperationState));
+        }
 
         /** Extra, state-specific guidance in addition to the category guidance. */
         public String note() {
+            if (kind == Kind.ADMISSION && "MANUAL_REVIEW".equals(linkedOperationState)) {
+                return "紐づく注文変更が手動確認待ち（MANUAL_REVIEW）のため、この受付は自動では進みません。注文変更の行を確認してください。";
+            }
             if (category == Category.EDIT_REVIEW_REQUIRED && "ABORTED".equals(linkedOperationState)) {
                 return "注文変更の金融処理は取消済み（ABORTED）ですが、受付が終了していないため出荷できません。"
                         + "現在、画面から受付を終了する操作はありません。開発担当へ連絡してください。";
