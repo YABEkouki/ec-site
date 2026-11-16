@@ -22,6 +22,14 @@ public class ManualOrderShipmentService {
     private final OrderShipmentGuard shipmentGuard;
     private final OrderPaymentGuard paymentGuard;
     private final OrderStatusHistoryService histories;
+    private com.example.ecsite.service.warehouse.WarehouseExportShipmentGuard exportGuard;
+
+    /** Spring always injects it; hand-built unit fixtures predate Feature131 and V87 still guards the database. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setExportGuard(com.example.ecsite.service.warehouse.WarehouseExportShipmentGuard exportGuard) {
+        this.exportGuard = exportGuard;
+    }
+
     public ManualOrderShipmentService(OrderRepository orders, OrderWriteContext context, OrderShipmentGuard shipmentGuard,
             OrderPaymentGuard paymentGuard, OrderStatusHistoryService histories) {
         this.orders = orders; this.context = context; this.shipmentGuard = shipmentGuard;
@@ -42,6 +50,9 @@ public class ManualOrderShipmentService {
         paymentGuard.requireNoOrderChange(order);
         context.refreshPayments(order);
         paymentGuard.validateManualShipment(order);
+        // Feature131: an exported paid order ships only as exported (no payment, same revision and amount).
+        if (exportGuard != null && !exportGuard.matchesExport(order, null))
+            throw new InvalidOrderStatusException("倉庫へ出力した内容と注文が一致しないため、発送できません。");
         var now = orders.findCurrentTimeInTokyo();
         order.confirmManualShipment(now, actor.getId(), actor.getUsername());
         histories.record(order, OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatusHistoryActorType.ADMIN,

@@ -68,8 +68,9 @@ public class WarehouseExportBatchStore {
      * Unlocked scan of orders that may belong to the business date's export: not yet prepared, ORDERED or PAID,
      * formally accepted, with a change deadline on or before the business date and not before {@code startDate}.
      * Every candidate is re-judged under its Order lock by {@link WarehouseExportOrderTransactions}.
+     * Keyset pagination by id ({@code afterId} exclusive), so held orders never make a scan loop forever.
      */
-    public List<Long> candidates(LocalDate businessDate, LocalDate startDate, int limit) {
+    public List<Long> candidates(LocalDate businessDate, LocalDate startDate, long afterId, int limit) {
         if (businessDate == null || startDate == null || limit <= 0) throw new IllegalArgumentException("Invalid candidate scan");
         return jdbc.queryForList("""
             select id from orders
@@ -79,9 +80,50 @@ public class WarehouseExportBatchStore {
               and (acceptance_mode='LEGACY' or accepted_at is not null)
               and change_deadline_at >= ?::date
               and change_deadline_at < ?::date + 1
-            order by change_deadline_at, id
+              and id > ?
+            order by id
             limit ?
-            """, Long.class, startDate, businessDate, limit);
+            """, Long.class, startDate, businessDate, afterId, limit);
+    }
+
+    /** Batches newest first, with how often each was downloaded. */
+    public List<Listed> list(int limit) {
+        return jdbc.query("""
+            select b.id,b.business_date,b.state,b.opened_at,b.sealed_at,b.line_count,
+              (select count(*) from warehouse_export_lines l where l.batch_id=b.id) as current_lines,
+              (select count(*) from warehouse_export_downloads d where d.batch_id=b.id) as downloads,
+              (select max(d.downloaded_at) from warehouse_export_downloads d where d.batch_id=b.id) as last_download
+            from warehouse_export_batches b order by b.business_date desc, b.id desc limit ?
+            """, (r, n) -> new Listed(batch(r, n), r.getInt("current_lines"), r.getInt("downloads"),
+                r.getObject("last_download", LocalDateTime.class)), limit);
+    }
+
+    public record Listed(Batch batch, int currentLines, int downloads, LocalDateTime lastDownload) {}
+
+    /** An export line as shown to administrators. */
+    public record Line(long orderId, String orderStatus, int contentRevision, int totalAmount, Long paymentId,
+            LocalDateTime changeDeadlineAt, LocalDateTime preparedAt, String shippingName, int itemCount) {}
+
+    public record DownloadRecord(long id, long adminAccountId, String adminUsername, LocalDateTime downloadedAt,
+            int lineCount, int rowCount, String sha256) {}
+
+    public List<Line> lines(long batchId) {
+        return jdbc.query("""
+            select order_id,order_status,content_revision,total_amount,payment_id,change_deadline_at,prepared_at,
+              shipping_name,jsonb_array_length(items) as item_count
+            from warehouse_export_lines where batch_id=? order by order_id
+            """, (r, n) -> new Line(r.getLong("order_id"), r.getString("order_status"), r.getInt("content_revision"),
+                r.getInt("total_amount"), (Long) r.getObject("payment_id"), r.getObject("change_deadline_at", LocalDateTime.class),
+                r.getObject("prepared_at", LocalDateTime.class), r.getString("shipping_name"), r.getInt("item_count")), batchId);
+    }
+
+    public List<DownloadRecord> downloads(long batchId) {
+        return jdbc.query("""
+            select id,admin_account_id,admin_username,downloaded_at,line_count,row_count,encode(content_sha256,'hex') as sha256
+            from warehouse_export_downloads where batch_id=? order by id desc
+            """, (r, n) -> new DownloadRecord(r.getLong("id"), r.getLong("admin_account_id"), r.getString("admin_username"),
+                r.getObject("downloaded_at", LocalDateTime.class), r.getInt("line_count"), r.getInt("row_count"),
+                r.getString("sha256")), batchId);
     }
 
     private static Batch batch(ResultSet r, int n) throws SQLException {

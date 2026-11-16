@@ -146,7 +146,8 @@ class AdminOrderShippingPreparationViewTest {
         assertThat(section).contains("一括編集受付：確認が必要", "管理者確認が必要", "滞留", "一括編集受付",
                 "00000000-0000-0000-0000-000000000130", "（受付: ACCEPTED）", "（注文変更: ABORTED）",
                 "&lt;b&gt;REAUTHORIZATION_ABORTED&lt;/b&gt;", "2026/10/16 14:05:00", "45分",
-                "画面から受付を終了する操作はありません", "href=\"/admin/order-holds\"")
+                // Feature130-B: an ABORTED change is closed automatically by reconciliation, not from the screen.
+                "照合処理が受付を自動で終了します", "href=\"/admin/order-holds\"")
                 .doesNotContain("<b>REAUTHORIZATION_ABORTED</b>", "<form", "<th>注文</th>");
     }
 

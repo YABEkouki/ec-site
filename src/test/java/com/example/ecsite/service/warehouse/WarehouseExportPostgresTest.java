@@ -51,6 +51,170 @@ class WarehouseExportPostgresTest {
     @Autowired OrderStatusHistoryService histories;
     @Autowired PlatformTransactionManager manager;
     @MockitoBean PaymentGateway gateway;
+    @Autowired com.example.ecsite.service.orderchange.OrderChangeFinalDecisionService finalDecisions;
+    @Autowired WarehouseExportCsvService csv;
+    @Autowired WarehouseExportShipmentGuard shipmentGuard;
+
+    @AfterEach void clearAuthentication() { org.springframework.security.core.context.SecurityContextHolder.clearContext(); }
+
+    /** A runner limited to orders from {@code startDate}, so other tests' fixtures are never swept into its batches. */
+    WarehouseExportRunner runner(LocalDate startDate) {
+        return new WarehouseExportRunner(batches, service, finalDecisions, orders, startDate.toString(), 1);
+    }
+
+    void authenticate(long id, String username) {
+        var authorities = List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
+        var principal = new com.example.ecsite.security.AdminUserDetails(id, username, "password", true, authorities);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal, "password", authorities));
+    }
+
+    long lateAuthorization(Fixture f) {
+        return tx(() -> {
+            var now = orders.findCurrentTimeInTokyo(); var order = orders.findById(f.order()).orElseThrow();
+            var late = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 1000, now);
+            late.setProviderPaymentId("pfw_late_" + f.order(), now); late.markAuthorized(now); payments.saveAndFlush(late);
+            return late.getId();
+        });
+    }
+
+    // ---- C-2: daily runner ----
+
+    @Test void theRunnerSealsOnePassAndAHeldOrderWaitsForTheNextDay() {
+        var date = nextBusinessDate(); var ok = card(date); var held = card(date);
+        long late = lateAuthorization(held);
+
+        var first = runner(date).run(date);
+        assertThat(first.status()).isEqualTo(WarehouseExportRunner.Status.SEALED);
+        assertThat(first.exported()).isEqualTo(1);
+        assertThat(first.held()).isEqualTo(1);
+        assertThat(first.lineCount()).isEqualTo(1);
+        assertThat(lines(ok.order())).isEqualTo(1);
+        assertUnprepared(held.order());
+
+        // The unnecessary authorization is cancelled later the same day: still not added to the sealed batch.
+        jdbc.update("update payments set status='CANCELLED' where id=?", late);
+        var again = runner(date).run(date);
+        assertThat(again.status()).isEqualTo(WarehouseExportRunner.Status.ALREADY_SEALED);
+        assertThat(again.batchId()).isEqualTo(first.batchId());
+        assertUnprepared(held.order());
+
+        var next = runner(date).run(date.plusDays(1));
+        assertThat(next.status()).isEqualTo(WarehouseExportRunner.Status.SEALED);
+        assertThat(next.lineCount()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select batch_id from warehouse_export_lines where order_id=?", Long.class, held.order()))
+                .isEqualTo(next.batchId());
+    }
+
+    @Test void theRunnerResumesAnInterruptedBatchAndRespectsTheStartDate() {
+        var date = nextBusinessDate(); var done = card(date); var pending = card(date);
+        long batch = batch(date);
+        service.export(batch, done.order());  // a pass that stopped before sealing
+
+        assertThat(runner(date.plusDays(1)).run(date).status()).isEqualTo(WarehouseExportRunner.Status.NOT_STARTED);
+        var resumed = runner(date).run(date);
+        assertThat(resumed.batchId()).isEqualTo(batch);
+        assertThat(resumed.lineCount()).isEqualTo(2);
+        assertThat(lines(pending.order())).isEqualTo(1);
+
+        var other = nextBusinessDate();
+        assertThat(runner(other.plusDays(1)).run(other).status()).isEqualTo(WarehouseExportRunner.Status.NOT_STARTED);
+        assertThat(jdbc.queryForObject("select count(*) from warehouse_export_batches where business_date=?", Integer.class, other)).isZero();
+        var tomorrow = jdbc.queryForObject("select (timezone('Asia/Tokyo',clock_timestamp()))::date + 1", LocalDate.class);
+        assertThatThrownBy(() -> runner(date).run(tomorrow)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void dueBusinessDateSwitchesAt1405() {
+        var day = LocalDate.of(2026, 11, 16);
+        assertThat(WarehouseExportRunner.dueBusinessDate(day.atTime(14, 4, 59))).isEqualTo(day.minusDays(1));
+        assertThat(WarehouseExportRunner.dueBusinessDate(day.atTime(14, 5))).isEqualTo(day);
+    }
+
+    // ---- C-2: CSV delivery ----
+
+    @Test void onlyASealedBatchIsDownloadedAndEveryDownloadIsIdenticalAndRecorded() {
+        var date = nextBusinessDate(); var f = card(date); var g = card(date);
+        jdbc.update("update orders set shipping_address_line='千代田1-1, ビル\"A\"' where id=?", g.order());
+        long batch = batch(date);
+        service.export(batch, f.order()); service.export(batch, g.order());
+        authenticate(7, "downloader");
+
+        assertThatThrownBy(() -> csv.download(batch)).isInstanceOf(WarehouseExportCsvService.NotDownloadableException.class);
+        rejects("23514", () -> jdbc.update("insert into warehouse_export_downloads(batch_id,admin_account_id,admin_username,line_count,row_count,content_sha256)"
+                + " values (?,7,'x',0,0,sha256('x'))", batch));
+        batches.seal(batch);
+
+        var first = csv.download(batch); var second = csv.download(batch);
+        assertThat(second.content()).isEqualTo(first.content());
+        assertThat(first.lineCount()).isEqualTo(2);
+        assertThat(first.rowCount()).isEqualTo(2);
+        assertThat(first.filename()).isEqualTo("warehouse-export-" + date.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE) + "-" + batch + ".csv");
+        assertThat(java.util.Arrays.copyOf(first.content(), 3)).containsExactly(0xEF, 0xBB, 0xBF);
+        String text = new String(first.content(), 3, first.content().length - 3, java.nio.charset.StandardCharsets.UTF_8);
+        var rows = text.split("\r\n");
+        assertThat(rows).hasSize(3);
+        assertThat(rows[0]).isEqualTo(WarehouseExportCsvService.HEADER);
+        String day = date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        assertThat(rows[1]).isEqualTo(batch + "," + day + "," + f.order() + ",1,山田 太郎,100-0001,東京都,千代田区,千代田1-1,0312345678,"
+                + jdbc.queryForObject("select product_id from order_items where id=?", Long.class, f.item()) + ",ordered,2");
+        assertThat(rows[2]).contains(",\"千代田1-1, ビル\"\"A\"\"\",");
+        var recorded = batches.downloads(batch);
+        assertThat(recorded).hasSize(2);
+        assertThat(recorded).extracting(WarehouseExportBatchStore.DownloadRecord::sha256).containsOnly(recorded.getFirst().sha256());
+        assertThat(recorded.getFirst().adminUsername()).isEqualTo("downloader");
+        rejects("55000", () -> jdbc.update("update warehouse_export_downloads set admin_username='other' where batch_id=?", batch));
+        rejects("55000", () -> jdbc.update("delete from warehouse_export_downloads where batch_id=?", batch));
+        assertThat(batches.list(1000)).anySatisfy(listed -> {
+            assertThat(listed.batch().id()).isEqualTo(batch);
+            assertThat(listed.downloads()).isEqualTo(2);
+            assertThat(listed.currentLines()).isEqualTo(2);
+        });
+    }
+
+    @Test void downloadRequiresAnAdministrator() {
+        var date = nextBusinessDate(); card(date); long batch = runner(date).run(date).batchId();
+        assertThatThrownBy(() -> csv.download(batch)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThat(batches.downloads(batch)).isEmpty();
+    }
+
+    // ---- C-2: shipment must match the export ----
+
+    @Test void anExportedOrderShipsOnlyWithItsExportedPayment() {
+        var f = card(nextBusinessDate()); long batch = batch(f.businessDate());
+        service.export(batch, f.order());
+        long other = tx(() -> {
+            var now = orders.findCurrentTimeInTokyo(); var order = orders.findById(f.order()).orElseThrow();
+            var p = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 750, now);
+            p.setProviderPaymentId("pfw_other_" + f.order(), now); p.markFailed(now); payments.saveAndFlush(p);
+            return p.getId();
+        });
+        tx(() -> {
+            var order = orders.findById(f.order()).orElseThrow();
+            assertThat(shipmentGuard.matchesExport(order, f.payment())).isTrue();
+            assertThat(shipmentGuard.matchesExport(order, other)).isFalse();
+            assertThat(shipmentGuard.matchesExport(order, null)).isFalse();
+            return null;
+        });
+        String ship = "update orders set status='SHIPPED', shipped_at=timezone('Asia/Tokyo',clock_timestamp()),"
+                + "shipped_by_account_id=9, shipped_by_username='shipper', shipment_capture_payment_id=? where id=?";
+        rejects("23514", () -> jdbc.update(ship, other, f.order()));
+        jdbc.update(ship, f.payment(), f.order());
+        assertThat(orderRow(f.order())).containsEntry("status", "SHIPPED");
+    }
+
+    @Test void anExportedPaidOrderShipsWithoutAPaymentAndAdminPreparedOrdersAreUnaffected() {
+        var date = nextBusinessDate(); var paid = order(date, false); var manual = card(date);
+        jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", paid.order());
+        service.export(batch(date), paid.order());
+        jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
+                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", manual.order());
+        tx(() -> {
+            assertThat(shipmentGuard.matchesExport(orders.findById(paid.order()).orElseThrow(), null)).isTrue();
+            assertThat(shipmentGuard.matchesExport(orders.findById(paid.order()).orElseThrow(), 1L)).isFalse();
+            assertThat(shipmentGuard.matchesExport(orders.findById(manual.order()).orElseThrow(), 123456789L)).isTrue();
+            return null;
+        });
+    }
 
     private static final AtomicInteger DAYS_AGO = new AtomicInteger(1000 + new Random().nextInt(20000));
 
@@ -254,11 +418,13 @@ class WarehouseExportPostgresTest {
         jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
                 + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", manual.order());
 
-        var found = batches.candidates(date, date.minusDays(1), 1000);
+        var found = batches.candidates(date, date.minusDays(1), 0, 1000);
 
         assertThat(found).contains(due.order(), older.order())
                 .doesNotContain(tooOld.order(), later.order(), manual.order());
-        assertThat(found.indexOf(older.order())).isLessThan(found.indexOf(due.order()));
+        assertThat(found).isSorted();
+        assertThat(batches.candidates(date, date.minusDays(1), Math.min(due.order(), older.order()), 1000))
+                .contains(Math.max(due.order(), older.order())).doesNotContain(Math.min(due.order(), older.order()));
     }
 
     @Test void theDatabaseRequiresTheLineForAnAutomaticPreparation() {
