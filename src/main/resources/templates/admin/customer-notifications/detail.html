@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お客様へのメール通知（詳細）</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main th:with="n=${detail.notification}">
+        <h1>お客様へのメール通知（詳細）</h1>
+
+        <p th:if="${message}" th:text="${message}" class="message-success"></p>
+        <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error"></p>
+        <p><a th:href="@{/admin/customer-notifications}">通知一覧へ戻る</a></p>
+
+        <dl>
+            <dt>通知ID</dt>
+            <dd>
+                <span th:text="${n.id}"></span>
+                <span th:if="${n.resend}">
+                    （<a th:href="@{/admin/customer-notifications/{id}(id=${n.resendOf})}" th:text="'通知' + ${n.resendOf}"></a>の再送）
+                </span>
+            </dd>
+            <dt>注文番号</dt>
+            <dd><a th:href="@{/admin/orders/{id}(id=${n.orderId})}" th:text="${n.orderId}"></a></dd>
+            <dt>お客様</dt>
+            <dd th:text="${n.username}"></dd>
+            <dt>種類</dt>
+            <dd th:text="${n.eventLabel}"></dd>
+            <dt>状態</dt>
+            <dd>
+                <span th:text="${n.statusLabel}" th:classappend="${n.actionRequired} ? 'action-required-danger'"></span>
+            </dd>
+            <dt>記録日時</dt>
+            <dd th:text="${#temporals.format(n.createdAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
+            <dt>終了日時</dt>
+            <dd th:text="${n.closedAt == null ? '-' : #temporals.format(n.closedAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
+        </dl>
+
+        <p th:if="${n.status == 'EXHAUSTED' and n.deliveryUncertain}" class="action-required-warning">
+            メールサーバーへの送信中に応答が途切れたため、お客様に届いたかどうか分かりません。二重送信を防ぐため、自動では再送しません。
+        </p>
+        <p th:if="${n.status == 'SKIPPED'}">
+            お客様のメールアドレスが未確認（または未登録）のため送信しませんでした。確認後に再送できます。
+        </p>
+        <p th:if="${n.status == 'EXPIRED'}">
+            送信（バックグラウンド）が無効だった間に、作成から24時間を過ぎたため送信しませんでした。
+        </p>
+        <p th:unless="${deliveryEnabled}" class="action-required-warning">
+            送信（バックグラウンド）が無効のため、送信待ちの通知は送信されません。
+        </p>
+
+        <h2>送信の試行</h2>
+        <p th:if="${#lists.isEmpty(detail.attempts)}">まだ送信を試みていません。</p>
+        <th:block th:each="a : ${detail.attempts}">
+            <h3 th:text="'試行 ' + ${a.attemptNo} + '：' + ${a.resultLabel}"></h3>
+            <dl>
+                <dt>開始・終了</dt>
+                <dd th:text="${#temporals.format(a.startedAt, 'yyyy/MM/dd HH:mm:ss')} + ' 〜 ' + ${a.finishedAt == null ? '' : #temporals.format(a.finishedAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
+                <dt th:if="${a.failureCode != null}">失敗コード</dt>
+                <dd th:if="${a.failureCode != null}" th:text="${a.failureCode}"></dd>
+                <dt>宛先</dt>
+                <dd th:text="${a.recipient}"></dd>
+                <dt>件名</dt>
+                <dd th:text="${a.subject}"></dd>
+            </dl>
+            <pre th:text="${a.body}" style="white-space: pre-wrap;"></pre>
+        </th:block>
+
+        <h2>再送</h2>
+        <p th:if="${#lists.size(detail.chain) > 1}">この通知の元の通知と再送：</p>
+        <table th:if="${#lists.size(detail.chain) > 1}">
+            <thead>
+                <tr><th>通知ID</th><th>区分</th><th>状態</th><th>記録日時</th></tr>
+            </thead>
+            <tbody>
+                <tr th:each="c : ${detail.chain}">
+                    <td><a th:href="@{/admin/customer-notifications/{id}(id=${c.id})}" th:text="${c.id}"></a></td>
+                    <td th:text="${c.resend} ? '再送' : '元の通知'"></td>
+                    <td th:text="${c.statusLabel}"></td>
+                    <td th:text="${#temporals.format(c.createdAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                </tr>
+            </tbody>
+        </table>
+        <table th:unless="${#lists.isEmpty(detail.resends)}">
+            <thead>
+                <tr><th>回</th><th>依頼者</th><th>依頼日時</th><th>理由</th><th>2通届く可能性の確認</th><th>再送の状態</th></tr>
+            </thead>
+            <tbody>
+                <tr th:each="r : ${detail.resends}">
+                    <td th:text="${r.requestNo}"></td>
+                    <td th:text="${r.actorUsername}"></td>
+                    <td th:text="${#temporals.format(r.requestedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${r.reason}"></td>
+                    <td th:text="${r.riskAcknowledged} ? '確認済み' : '-'"></td>
+                    <td><a th:href="@{/admin/customer-notifications/{id}(id=${r.copyId})}" th:text="${r.copyStatusLabel}"></a></td>
+                </tr>
+            </tbody>
+        </table>
+        <form th:if="${detail.eligibility.allowed}" th:action="@{/admin/customer-notifications/{id}/resend(id=${detail.original.id})}"
+            method="get">
+            <button type="submit">このメールを再送する</button>
+            （再送は1つの通知につき3回まで。これまで <span th:text="${detail.eligibility.resendCount}"></span> 回）
+        </form>
+        <p th:unless="${detail.eligibility.allowed}" th:text="${detail.eligibility.refusal}"></p>
+    </main>
+
+</body>
+
+</html>

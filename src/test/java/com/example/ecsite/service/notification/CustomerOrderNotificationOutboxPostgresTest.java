@@ -220,7 +220,7 @@ class CustomerOrderNotificationOutboxPostgresTest {
                 + "created_at,updated_at,recorded_xid) values ('ORDER_SHIPPED',?,?,'999999',?::jsonb,'PENDING',now(),now(),pg_current_xact_id())",
                 id,seed.user(),"{\"version\":1,\"eventType\":\"ORDER_SHIPPED\",\"order\":{}}"));
         rejects("55000",() -> jdbc.update("delete from customer_order_notifications where id=?",first));
-        rejects("55000",() -> jdbc.execute("truncate customer_order_notification_attempts, customer_order_notifications"));
+        rejects("55000",() -> jdbc.execute("truncate customer_order_notification_resends, customer_order_notification_attempts, customer_order_notifications"));
         rejects("55000",() -> jdbc.update("update customer_order_notifications set payload=payload||'{\"x\":1}'::jsonb,version=version+1 where id=?",first));
         rejects("55000",() -> jdbc.update("update customer_order_notifications set source_key='1',version=version+1 where id=?",first));
         rejects("23514",() -> jdbc.update("update customer_order_notifications set status='SENT',next_attempt_at=null,version=version+1 where id=?",first));

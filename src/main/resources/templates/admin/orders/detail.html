@@ -655,6 +655,38 @@
     </section>
 
     <section>
+        <h2>お客様へのメール</h2>
+
+        <table th:unless="${customerNotifications == null or #lists.isEmpty(customerNotifications)}">
+            <thead>
+                <tr>
+                    <th>通知ID</th>
+                    <th>種類</th>
+                    <th>状態</th>
+                    <th>記録日時</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="n : ${customerNotifications}">
+                    <td>
+                        <a th:href="@{/admin/customer-notifications/{id}(id=${n.id})}" th:text="${n.id}"></a>
+                        <span th:if="${n.resend}">（再送）</span>
+                    </td>
+                    <td th:text="${n.eventLabel}"></td>
+                    <td>
+                        <span th:text="${n.statusLabel}" th:classappend="${n.actionRequired} ? 'action-required-danger'"></span>
+                    </td>
+                    <td th:text="${#temporals.format(n.createdAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p th:if="${customerNotifications == null or #lists.isEmpty(customerNotifications)}">
+            この注文のお客様へのメールはありません。
+        </p>
+    </section>
+
+    <section>
         <h2>注文内容変更履歴</h2>
 
         <p>

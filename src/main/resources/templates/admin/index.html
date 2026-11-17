@@ -125,6 +125,22 @@
                     </td>
                 </tr>
                 <tr>
+                    <td><strong>お客様へのメール通知</strong></td>
+                    <td>
+                        <th:block th:if="${customerNotificationActionCount != null}">
+                            <span th:if="${customerNotificationActionCount > 0}" class="action-required-danger"
+                                th:text="'送信失敗・結果不明 ' + ${customerNotificationActionCount} + '件'"></span>
+                            <span th:if="${customerNotificationActionCount == 0}">要対応なし</span>
+                        </th:block>
+                        <span th:if="${customerNotificationActionCount == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/customer-notifications}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+                <tr>
                     <td><strong>倉庫向け注文データ出力</strong></td>
                     <td>14:05の出力バッチとCSV</td>
                     <td>

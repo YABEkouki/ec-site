@@ -123,6 +123,23 @@ public class AdminController {
         }
         model.addAttribute("orderHoldSummary", orderHoldSummary);
 
+        // Feature133-C: like the hold summary, an unavailable count must not break the dashboard.
+        Long customerNotificationActionCount = null;
+        try {
+            if (customerNotifications != null) customerNotificationActionCount = customerNotifications.countActionRequired();
+        } catch (DataAccessException unavailable) {
+            // Rendered as "unavailable".
+        }
+        model.addAttribute("customerNotificationActionCount", customerNotificationActionCount);
+
         return "admin/index";
+    }
+
+    private com.example.ecsite.service.notification.AdminCustomerNotificationQueries customerNotifications;
+
+    /** Feature133-C. Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setCustomerNotifications(com.example.ecsite.service.notification.AdminCustomerNotificationQueries customerNotifications) {
+        this.customerNotifications = customerNotifications;
     }
 }
