@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>倉庫出荷取込み（取込み詳細）</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>倉庫出荷取込み（取込み詳細）</h1>
+
+        <p th:if="${message}" th:text="${message}" class="message-success"></p>
+        <p><a th:href="@{/admin/warehouse-shipments}">取込み一覧へ戻る</a></p>
+
+        <dl>
+            <dt>取込みID</dt>
+            <dd th:text="${importRecord.id}"></dd>
+            <dt>ファイル名</dt>
+            <dd th:text="${importRecord.fileName}"></dd>
+            <dt>取込み日時</dt>
+            <dd th:text="${#temporals.format(importRecord.uploadedAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
+            <dt>取込み者</dt>
+            <dd th:text="${importRecord.uploadedByUsername}"></dd>
+            <dt>行数</dt>
+            <dd th:text="${importRecord.lineCount}"></dd>
+        </dl>
+
+        <p th:unless="${workerEnabled}" class="action-required-warning">
+            発送処理（バックグラウンド）が無効のため、「処理待ち」の行は発送されません。
+        </p>
+        <p>
+            「売上確定を確認中」は、発送済みでカード決済の売上確定の結果を確認している状態です。決済の照合処理で確定すると「発送完了」になります。
+        </p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>行</th>
+                    <th>バッチID</th>
+                    <th>注文番号</th>
+                    <th>出荷日（CSV）</th>
+                    <th>配送業者</th>
+                    <th>追跡番号</th>
+                    <th>結果</th>
+                    <th>試行回数</th>
+                    <th>処理日時</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="line : ${lines}">
+                    <td th:text="${line.lineNo}"></td>
+                    <td th:text="${line.batchId}"></td>
+                    <td>
+                        <a th:if="${line.orderId != null}" th:href="@{/admin/orders/{id}(id=${line.orderId})}" th:text="${line.orderId}"></a>
+                    </td>
+                    <td th:text="${line.csvShippedOn == null ? '' : #temporals.format(line.csvShippedOn, 'yyyy/MM/dd')}"></td>
+                    <td th:text="${line.carrier}"></td>
+                    <td th:text="${line.trackingNumber}"></td>
+                    <td>
+                        <span th:text="${line.state.label()}" th:classappend="${line.state.actionRequired()} ? 'action-required-warning'"></span>
+                        <div th:if="${line.reason != null}" th:text="${line.reason.label()}"></div>
+                        <div th:if="${line.state.name() == 'REJECTED'}">CSVの内容：<code th:text="${line.lineText}"></code></div>
+                    </td>
+                    <td th:text="${line.attempts}"></td>
+                    <td th:text="${line.processedAt == null ? '' : #temporals.format(line.processedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+
+</body>
+
+</html>
