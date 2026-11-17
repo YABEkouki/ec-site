@@ -43,6 +43,7 @@ class WarehouseShipmentImportPostgresTest {
     @Autowired WarehouseShipmentImportService imports;
     @Autowired WarehouseShipmentImportQueries queries;
     @Autowired WarehouseShipmentImportWorker worker;
+    @Autowired OrderShipmentTrackingReader tracking;
     @Autowired PaymentReconciliationItemService reconciliation;
     @Autowired WarehouseExportService exports;
     @Autowired WarehouseExportBatchStore batches;
@@ -173,6 +174,15 @@ class WarehouseShipmentImportPostgresTest {
             assertThat(l.attempts()).isEqualTo(1);
             assertThat(l.processedAt()).isNotNull();
         });
+        // Feature132-C: the shipping line's carrier and tracking number are the order's tracking.
+        assertThat(tracking.find(card.order())).hasValueSatisfying(t -> {
+            assertThat(t.carrier()).isEqualTo("ヤマト運輸");
+            assertThat(t.trackingNumber()).isEqualTo("1");
+            assertThat(t.csvShippedOn()).isEqualTo(LocalDate.of(2026, 11, 17));
+            assertThat(t.importId()).isEqualTo(id);
+            assertThat(t.lineState()).isEqualTo(WarehouseShipmentImportLineState.SHIPPED);
+        });
+        assertThat(tracking.find(paid.order()).map(OrderShipmentTrackingReader.Tracking::trackingNumber)).contains("2");
         // A later pass has nothing to do.
         assertThat(worker.runPass().processed()).isZero();
         verify(gateway, times(1)).capture(any());
@@ -185,6 +195,7 @@ class WarehouseShipmentImportPostgresTest {
 
         worker.runPass();
         assertThat(states(id)).containsExactly("CAPTURE_UNCONFIRMED");
+        assertThat(tracking.find(f.order())).isPresent();
         worker.runPass();
         assertThat(states(id)).containsExactly("CAPTURE_UNCONFIRMED");
 
@@ -233,6 +244,9 @@ class WarehouseShipmentImportPostgresTest {
                 + "shipped_by_account_id=null, shipped_by_username=? where id=?", Order.WAREHOUSE_SHIPMENT_IMPORTER, interrupted.order());
         worker.runPass();
         assertThat(states(id)).containsExactly("ALREADY_SHIPPED", "SHIPPED");
+        // An order shipped by an administrator shows no warehouse tracking, even if the CSV listed it.
+        assertThat(tracking.find(byAdmin.order())).isEmpty();
+        assertThat(tracking.find(interrupted.order())).isPresent();
     }
 
     @Test void theDatabaseGuardsImportLines() {
