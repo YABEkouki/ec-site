@@ -103,10 +103,11 @@
                 </tr>
             </tbody>
         </table>
-        <p th:if="${detail.eligibility.allowed}">
-            <a th:href="@{/admin/customer-notifications/{id}/resend(id=${detail.original.id})}">このメールを再送する</a>
+        <form th:if="${detail.eligibility.allowed}" th:action="@{/admin/customer-notifications/{id}/resend(id=${detail.original.id})}"
+            method="get">
+            <button type="submit">このメールを再送する</button>
             （再送は1つの通知につき3回まで。これまで <span th:text="${detail.eligibility.resendCount}"></span> 回）
-        </p>
+        </form>
         <p th:unless="${detail.eligibility.allowed}" th:text="${detail.eligibility.refusal}"></p>
     </main>
 
