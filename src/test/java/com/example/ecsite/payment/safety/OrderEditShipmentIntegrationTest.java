@@ -123,6 +123,7 @@ class OrderEditShipmentIntegrationTest {
         long newPayment=jdbc.queryForObject("select active_payment_id from orders where id=?",Long.class,f.order());
         assertThat(newPayment).isNotEqualTo(f.payment());
         long newItem=jdbc.queryForObject("select id from order_items where order_id=?",Long.class,f.order());
+        int reauthorizedTotal=total(f.order());
         long replacement=h.helper().product(f,6000);
         // Current epoch is the completed reauthorization; retaining it must prove the next revision too.
         edit(f,List.of(new Line(null,replacement,1)),OrderChangeRoutePolicy.Route.RETAIN_AUTH);
@@ -130,6 +131,18 @@ class OrderEditShipmentIntegrationTest {
         preparation(f.order());captureTransport(f.order(),CaptureResultStatus.CAPTURED);
         assertThat(capture.captureForShipment(f.order(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.CAPTURED);
         assertThat(jdbc.queryForList("select payment_id from payment_transactions where payment_id in (?,?) and transaction_type='CAPTURE'",Long.class,f.payment(),newPayment)).containsExactly(newPayment);
+        // Feature133-A: both owned edits and the shipment each record one customer notification. The owned writer
+        // inserts history items after the history header; the commit-time snapshot still contains them.
+        var events=jdbc.queryForList("""
+            select event_type,(payload->'change'->>'newTotalAmount')::int new_total,
+                   jsonb_array_length(coalesce(payload->'change'->'items','[]'::jsonb)) changed_lines
+            from customer_order_notifications where order_id=? and event_type in ('ITEMS_CHANGED','ORDER_SHIPPED') order by id
+            """,f.order());
+        assertThat(events).extracting(r->r.get("event_type")).containsExactly("ITEMS_CHANGED","ITEMS_CHANGED","ORDER_SHIPPED");
+        assertThat(events.get(0)).containsEntry("new_total",reauthorizedTotal);
+        assertThat(events.get(1)).containsEntry("new_total",total(f.order()));
+        assertThat(((Number)events.get(0).get("changed_lines")).intValue()).isPositive();
+        assertThat(((Number)events.get(1).get("changed_lines")).intValue()).isEqualTo(2);
     }
     @Test void unresolvedAdmissionBlocksPreparationAndCompletedPreparationBlocksFurtherEditing(){
         var f=OrderEditAdmissionServicePostgresTest.fixture(false);long p=h.helper().product(f,6000);

@@ -91,6 +91,8 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 // Never disable V54 triggers or delete immutable requests for cleanup.
                 // Retain their complete FK graph until this class's isolated container is destroyed.
                 if (jdbc.queryForObject("select count(*) from capture_requests r join payments p on p.id=r.payment_id where p.order_id=?",Integer.class,id)>0) continue;
+                // Feature133-A customer notifications are never deleted either (V91 guard); keep the order with them.
+                if (jdbc.queryForObject("select count(*) from customer_order_notifications where order_id=?",Integer.class,id)>0) continue;
                 jdbc.update("update orders set shipment_capture_payment_id=null where id=?", id);
                 jdbc.update("delete from payment_transactions where payment_id in (select id from payments where order_id=?)", id);
                 jdbc.update("delete from payments where order_id=?", id);
@@ -190,7 +192,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 .andExpect(flash().attribute("successMessage", "この注文は既に発送準備を開始しています。"));
         assertThat(row(id)).isEqualTo(saved);
         verify(preparation, times(2)).start(id);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(90);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(91);
     }
 
     @ParameterizedTest

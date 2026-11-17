@@ -121,6 +121,13 @@ class OrderChangeFinalDecisionPostgresTest {
     String state(UUID op){return jdbc.queryForObject("select state from order_change_operations where id=?",String.class,op);}
     Map<String,Object> decision(UUID op){return jdbc.queryForMap("select * from order_change_final_decisions where operation_id=?",op);}
     int decisionCount(UUID op){return jdbc.queryForObject("select count(*) from order_change_final_decisions where operation_id=?",Integer.class,op);}
+    // Feature133-A: the final decision records exactly one customer notification for the operation.
+    Map<String,Object> notification(String type,UUID op){
+        return jdbc.queryForMap("select order_id,status,payload->>'shippingDisposition' disposition,payload->>'reasonCode' reason from customer_order_notifications where event_type=? and source_key=?",type,op.toString());
+    }
+    List<String> notificationTypes(Fixture f){
+        return jdbc.queryForList("select event_type from customer_order_notifications where order_id=? and event_type<>'ORDER_ACCEPTED' order by id",String.class,f.order());
+    }
     int orderTotal(Fixture f){return jdbc.queryForObject("select total_amount from orders where id=?",Integer.class,f.order());}
 
     @Test void reservedChangeWithoutPaymentWorkIsNotAdoptedAndReleasedAt1405()throws Exception{
@@ -138,6 +145,9 @@ class OrderChangeFinalDecisionPostgresTest {
         assertThat(results.finalizeAtDeadline(f.order(),op.id())).isEqualTo(OrderReauthorizationTransactions.FinalDecisionResult.SETTLED);
         assertThat(decisionCount(op.id())).isEqualTo(1);
         assertThat(increases.status(f.order(),f.user(),op.id()).finalOutcome()).isEqualTo("NOT_ADOPTED");
+        assertThat(notification("CHANGE_NOT_ADOPTED",op.id())).containsEntry("order_id",f.order()).containsEntry("status","PENDING")
+            .containsEntry("disposition","ORIGINAL").containsEntry("reason","NO_REAUTHORIZATION_STARTED");
+        assertThat(notificationTypes(f)).containsExactly("CHANGE_NOT_ADOPTED");
     }
 
     @Test void incompleteAuthorizationIsNotAdoptedAndALateSuccessIsCancelledInsteadOfSwitched()throws Exception{
@@ -161,6 +171,9 @@ class OrderChangeFinalDecisionPostgresTest {
         assertThat(orderTotal(f)).isEqualTo(op.beforeAmount());
         assertThat(jdbc.queryForObject("select count(*) from order_change_financial_requests where operation_id=? and request_kind='NEW_ABORT'",Integer.class,op.id())).isEqualTo(1);
         assertThat(decisionCount(op.id())).isEqualTo(1);
+        assertThat(notification("CHANGE_NOT_ADOPTED",op.id())).containsEntry("disposition","HOLD").containsEntry("reason","AUTHORIZATION_INCOMPLETE");
+        // The late authorization success never switches the order, so no change notification follows.
+        assertThat(notificationTypes(f)).containsExactly("CHANGE_NOT_ADOPTED");
     }
 
     @Test void switchIsNotDecidedAfter1404EvenBeforeTheFinalDecision()throws Exception{
@@ -196,6 +209,11 @@ class OrderChangeFinalDecisionPostgresTest {
         assertThat(orderTotal(f)).isEqualTo(op.afterAmount());
         assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,f.oldPayment())).isEqualTo("CANCELLED");
         assertThat(decisionCount(op.id())).isEqualTo(1);
+        assertThat(notification("CHANGE_LATE_ADOPTION",op.id())).containsEntry("disposition","HOLD").containsEntry("reason","SWITCH_INCOMPLETE");
+        // The switch completed later by the reauthorization path records its own change notification.
+        assertThat(notificationTypes(f)).containsExactly("CHANGE_LATE_ADOPTION","ITEMS_CHANGED");
+        assertThat(jdbc.queryForObject("select (payload->'change'->>'newTotalAmount')::int from customer_order_notifications where order_id=? and event_type='ITEMS_CHANGED'",
+            Integer.class,f.order())).isEqualTo(op.afterAmount());
     }
 
     @Test void unresolvedReviewIsHeldAndNotAdopted()throws Exception{
