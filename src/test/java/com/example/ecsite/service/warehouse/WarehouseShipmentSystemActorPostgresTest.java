@@ -79,6 +79,7 @@ class WarehouseShipmentSystemActorPostgresTest {
         assertThat(capture.captureForWarehouseImport(f.order(), SYSTEM).status()).isEqualTo(CaptureResultStatus.CAPTURED);
         assertThat(captures(f)).isEqualTo(1);
         assertThat(shippedHistories(f)).isEqualTo(1);
+        assertWarehouseShipmentNotification(f);
     }
 
     @Test void anUnknownCaptureResultStaysPendingAndConvergesThroughReconciliation() {
@@ -108,6 +109,7 @@ class WarehouseShipmentSystemActorPostgresTest {
         assertThat(order(f)).containsEntry("shipment_capture_payment_id", null);
         assertThat(jdbc.queryForObject("select from_status from order_status_histories where order_id=? and to_status='SHIPPED'",
                 String.class, f.order())).isEqualTo("PAID");
+        assertWarehouseShipmentNotification(f);
     }
 
     @Test void onlyAnOrderPreparedByTheWarehouseExportShipsAsTheSystem() {
@@ -184,6 +186,14 @@ class WarehouseShipmentSystemActorPostgresTest {
     }
 
     // ---- fixtures ----
+
+    /** Feature133-A: a warehouse import shipment records exactly one notification marked for tracking details. */
+    void assertWarehouseShipmentNotification(Fixture f) {
+        assertThat(jdbc.queryForList("select payload->>'changedByType' actor, (payload->>'warehouseImport')::boolean warehouse, status "
+                + "from customer_order_notifications where order_id=? and event_type='ORDER_SHIPPED'", f.order()))
+                .singleElement().satisfies(n -> assertThat(n).containsEntry("actor", "SYSTEM").containsEntry("warehouse", true)
+                        .containsEntry("status", "PENDING"));
+    }
 
     record Fixture(long order, long payment, String provider) {}
 
