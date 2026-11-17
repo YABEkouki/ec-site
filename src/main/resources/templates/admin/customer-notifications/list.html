@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お客様へのメール通知</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>お客様へのメール通知</h1>
+
+        <p>
+            注文完了・注文内容やお届け先の変更・変更不成立・注文取消・発送完了のときに、お客様へ送るメールの一覧です。
+            メールアドレスを確認済みのお客様にだけ送ります。
+        </p>
+        <p th:unless="${deliveryEnabled}" class="action-required-warning">
+            送信（バックグラウンド）が無効のため、メールは送信されません（通知の記録だけ行います）。
+            作成から24時間を過ぎた通知は、有効にしても送信せず「期限切れ」になります。
+        </p>
+
+        <form th:action="@{/admin/customer-notifications}" method="get">
+            <label>状態
+                <select name="filter">
+                    <option th:each="f : ${filters}" th:value="${f.name()}" th:text="${f.label()}"
+                        th:selected="${f == filter}"></option>
+                </select>
+            </label>
+            <label>種類
+                <select name="type">
+                    <option value="">すべて</option>
+                    <option th:each="e : ${events}" th:value="${e.key}" th:text="${e.value}"
+                        th:selected="${e.key == type}"></option>
+                </select>
+            </label>
+            <label>注文番号
+                <input type="number" name="orderId" min="1" th:value="${orderId}">
+            </label>
+            <button type="submit">絞り込む</button>
+        </form>
+
+        <p th:if="${#lists.isEmpty(result.rows)}">該当する通知はありません。</p>
+
+        <table th:unless="${#lists.isEmpty(result.rows)}">
+            <thead>
+                <tr>
+                    <th>通知ID</th>
+                    <th>注文番号</th>
+                    <th>お客様</th>
+                    <th>種類</th>
+                    <th>状態</th>
+                    <th>試行回数</th>
+                    <th>記録日時</th>
+                    <th>終了日時</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="n : ${result.rows}">
+                    <td>
+                        <a th:href="@{/admin/customer-notifications/{id}(id=${n.id})}" th:text="${n.id}"></a>
+                        <span th:if="${n.resend}" th:text="'（通知' + ${n.resendOf} + 'の再送）'"></span>
+                    </td>
+                    <td><a th:href="@{/admin/orders/{id}(id=${n.orderId})}" th:text="${n.orderId}"></a></td>
+                    <td th:text="${n.username}"></td>
+                    <td th:text="${n.eventLabel}"></td>
+                    <td>
+                        <span th:text="${n.statusLabel}" th:classappend="${n.actionRequired} ? 'action-required-danger'"></span>
+                        <span th:if="${n.actionRequired}">（要対応）</span>
+                    </td>
+                    <td th:text="${n.attemptCount}"></td>
+                    <td th:text="${#temporals.format(n.createdAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${n.closedAt == null ? '' : #temporals.format(n.closedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            <a th:if="${result.page > 0}"
+                th:href="@{/admin/customer-notifications(filter=${filter.name()},type=${type},orderId=${orderId},page=${result.page - 1})}">前のページ</a>
+            <a th:if="${result.hasNext}"
+                th:href="@{/admin/customer-notifications(filter=${filter.name()},type=${type},orderId=${orderId},page=${result.page + 1})}">次のページ</a>
+        </p>
+    </main>
+
+</body>
+
+</html>

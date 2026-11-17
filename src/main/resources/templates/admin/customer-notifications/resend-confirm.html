@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>お客様へのメール通知（再送の確認）</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main th:with="o=${detail.original}">
+        <h1>お客様へのメール通知（再送の確認）</h1>
+
+        <p>以下の内容で再送します。よろしければ「再送する」を押してください。</p>
+
+        <dl>
+            <dt>通知ID</dt>
+            <dd th:text="${o.id}"></dd>
+            <dt>注文番号</dt>
+            <dd th:text="${o.orderId}"></dd>
+            <dt>お客様</dt>
+            <dd th:text="${o.username}"></dd>
+            <dt>種類</dt>
+            <dd th:text="${o.eventLabel}"></dd>
+            <dt>再送の回</dt>
+            <dd th:text="${resendForm.expectedResendCount + 1} + ' 回目（上限3回）'"></dd>
+            <dt>再送理由</dt>
+            <dd th:text="${resendForm.reason}"></dd>
+            <dt th:if="${detail.eligibility.riskAcknowledgementRequired}">2通届く可能性</dt>
+            <dd th:if="${detail.eligibility.riskAcknowledgementRequired}">確認済み</dd>
+        </dl>
+
+        <form th:action="@{/admin/customer-notifications/{id}/resend(id=${o.id})}" th:object="${resendForm}" method="post">
+            <input type="hidden" th:field="*{nonce}">
+            <input type="hidden" th:field="*{expectedResendCount}">
+            <input type="hidden" th:field="*{reason}">
+            <input type="hidden" th:field="*{riskAcknowledged}">
+            <button type="submit">再送する</button>
+        </form>
+        <form th:action="@{/admin/customer-notifications/{id}/resend/back(id=${o.id})}" th:object="${resendForm}" method="post">
+            <input type="hidden" th:field="*{nonce}">
+            <input type="hidden" th:field="*{reason}">
+            <input type="hidden" th:field="*{riskAcknowledged}">
+            <button type="submit">入力画面へ戻る</button>
+        </form>
+    </main>
+
+</body>
+
+</html>

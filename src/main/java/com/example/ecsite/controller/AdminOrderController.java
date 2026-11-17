@@ -123,6 +123,18 @@ public class AdminOrderController {
         this.shipmentTracking = shipmentTracking;
     }
 
+    private com.example.ecsite.service.notification.AdminCustomerNotificationQueries customerNotifications;
+
+    /** Feature133-C. Spring always injects it; hand-built unit fixtures predate it and show no notifications. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setCustomerNotifications(com.example.ecsite.service.notification.AdminCustomerNotificationQueries customerNotifications) {
+        this.customerNotifications = customerNotifications;
+    }
+
+    private List<com.example.ecsite.service.notification.AdminCustomerNotificationQueries.Row> customerNotifications(Order order) {
+        return customerNotifications == null ? List.of() : customerNotifications.byOrder(order.getId());
+    }
+
     private com.example.ecsite.service.warehouse.OrderShipmentTrackingReader.Tracking shipmentTracking(Order order) {
         return shipmentTracking == null ? null : shipmentTracking.find(order.getId()).orElse(null);
     }
@@ -249,6 +261,7 @@ public class AdminOrderController {
                 "order",
                 order);
         model.addAttribute("shipmentTracking", shipmentTracking(order));
+        model.addAttribute("customerNotifications", customerNotifications(order));
 
         model.addAttribute(
                 "statusHistories",
