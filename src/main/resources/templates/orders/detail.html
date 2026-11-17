@@ -82,6 +82,21 @@
                 </td>
             </tr>
 
+            <tr th:if="${shipmentTracking != null}">
+                <th>配送業者</th>
+                <td th:text="${shipmentTracking.carrier}"></td>
+            </tr>
+
+            <tr th:if="${shipmentTracking != null}">
+                <th>追跡番号</th>
+                <td th:text="${shipmentTracking.trackingNumber}"></td>
+            </tr>
+
+            <tr th:if="${shipmentTracking != null}">
+                <th>倉庫からの出荷日</th>
+                <td th:text="${#temporals.format(shipmentTracking.csvShippedOn, 'yyyy/MM/dd')}"></td>
+            </tr>
+
             <tr th:if="${order.cancelledAt != null}">
                 <th>キャンセル日時</th>
                 <td th:text="${#temporals.format(order.cancelledAt, 'yyyy/MM/dd HH:mm')}">

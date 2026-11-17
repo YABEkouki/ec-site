@@ -77,6 +77,18 @@ public class OrderController {
         this.paymentAuthorizationService = paymentAuthorizationService;
     }
 
+    private com.example.ecsite.service.warehouse.OrderShipmentTrackingReader shipmentTracking;
+
+    /** Feature132-C. Spring always injects it; hand-built unit fixtures predate it and show no tracking. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setShipmentTracking(com.example.ecsite.service.warehouse.OrderShipmentTrackingReader shipmentTracking) {
+        this.shipmentTracking = shipmentTracking;
+    }
+
+    private com.example.ecsite.service.warehouse.OrderShipmentTrackingReader.Tracking shipmentTracking(Order order) {
+        return shipmentTracking == null ? null : shipmentTracking.find(order.getId()).orElse(null);
+    }
+
     @GetMapping
     public String list(
             @AuthenticationPrincipal CustomUserDetails loginUser,
@@ -147,6 +159,7 @@ public class OrderController {
         model.addAttribute(
                 "canResumePayment",
                 canResumePayment && !requiresPaymentConfirmation);
+        model.addAttribute("shipmentTracking", shipmentTracking(order));
 
         return "orders/detail";
     }

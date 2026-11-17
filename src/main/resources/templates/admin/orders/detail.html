@@ -115,6 +115,23 @@
                 </td>
             </tr>
 
+            <tr th:if="${order.shippedByUsername != null}">
+                <th>発送者</th>
+                <td th:text="${order.shippedByWarehouseImport ? '倉庫出荷取込み' : order.shippedByUsername}"></td>
+            </tr>
+
+            <tr th:if="${shipmentTracking != null}">
+                <th>配送業者・追跡番号</th>
+                <td>
+                    <span th:text="${shipmentTracking.carrier}"></span>
+                    <span th:text="${shipmentTracking.trackingNumber}"></span>
+                    （倉庫からの出荷日 <span th:text="${#temporals.format(shipmentTracking.csvShippedOn, 'yyyy/MM/dd')}"></span>、
+                    <a th:href="@{/admin/warehouse-shipments/{id}(id=${shipmentTracking.importId})}">取込み結果</a>：
+                    <span th:text="${shipmentTracking.lineState.label()}"
+                        th:classappend="${shipmentTracking.lineState.actionRequired()} ? 'action-required-warning'"></span>）
+                </td>
+            </tr>
+
             <tr th:if="${order.cancelledAt != null}">
                 <th>キャンセル日時</th>
                 <td th:text="${#temporals.format(

@@ -115,6 +115,18 @@ public class AdminOrderController {
         this.adminPaymentCancellationService = adminPaymentCancellationService;
     }
 
+    private com.example.ecsite.service.warehouse.OrderShipmentTrackingReader shipmentTracking;
+
+    /** Feature132-C. Spring always injects it; hand-built unit fixtures predate it and show no tracking. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setShipmentTracking(com.example.ecsite.service.warehouse.OrderShipmentTrackingReader shipmentTracking) {
+        this.shipmentTracking = shipmentTracking;
+    }
+
+    private com.example.ecsite.service.warehouse.OrderShipmentTrackingReader.Tracking shipmentTracking(Order order) {
+        return shipmentTracking == null ? null : shipmentTracking.find(order.getId()).orElse(null);
+    }
+
     @GetMapping
     public String list(
             @ModelAttribute("searchForm") AdminOrderSearchForm searchForm,
@@ -236,6 +248,7 @@ public class AdminOrderController {
         model.addAttribute(
                 "order",
                 order);
+        model.addAttribute("shipmentTracking", shipmentTracking(order));
 
         model.addAttribute(
                 "statusHistories",
