@@ -99,6 +99,37 @@
                     <small th:if="${paymentView.recordedPaymentStatus != null}">保存済み決済状態：<span th:text="${paymentView.recordedPaymentStatus}"></span></small>
                 </td>
             </tr>
+            <tr th:if="${authorizationExpiry != null and !authorizationExpiry.payments().isEmpty()}">
+                <th>カード与信期限</th>
+                <td>
+                    <div th:each="item : ${authorizationExpiry.payments()}">
+                        <span class="status-badge"
+                            th:classappend="${item.badge().level().name() == 'EXPIRED'} ? ' expiry-expired'
+                                : (${item.badge().level().name() == 'SOON'} ? ' expiry-soon' : ' expiry-valid')"
+                            th:text="${item.badge().label()}"></span>
+                        <span th:text="${#temporals.format(item.badge().expiresAt(), 'yyyy/MM/dd HH:mm')}"></span>
+                        <small>（<span th:text="${item.sourceLabel()}"></span>・決済ID <span th:text="${item.paymentId()}"></span><span th:unless="${item.active()}">・有効な決済ではありません</span>）</small>
+                    </div>
+                    <p th:if="${authorizationExpiry.payments().?[badge().attention()].size() > 0}" class="message-error">
+                        期限切れ、または期限まで24時間未満の与信は、発送準備・倉庫出力・発送（売上確定）ができません。
+                        お客様への連絡や注文の取消など、個別に対応してください。
+                    </p>
+                </td>
+            </tr>
+            <tr th:if="${authorizationExpiry != null and !authorizationExpiry.openDiscrepancies().isEmpty()}">
+                <th>未解決の決済不整合</th>
+                <td>
+                    <div th:each="d : ${authorizationExpiry.openDiscrepancies()}">
+                        <a th:href="@{/admin/payment-discrepancies/{id}(id=${d.id()})}" th:text="'不整合 #' + ${d.id()}"></a>
+                        決済ID <span th:text="${d.paymentId()}"></span>：
+                        当サイト <span th:text="${d.localStatus()}"></span> / PAY.JP <span th:text="${d.providerStatus()}"></span>
+                        <small>（初回検出 <span th:text="${#temporals.format(d.firstDetectedAt(), 'yyyy/MM/dd HH:mm')}"></span>）</small>
+                    </div>
+                    <small th:if="${authorizationExpiry.openDiscrepancies().?[localStatus() == 'AUTHORIZED' and providerStatus() == 'CANCELED'].size() > 0}">
+                        当サイトで与信中・PAY.JPで取消済みの不整合は、多くの場合、与信期限切れによる自動取消です。
+                    </small>
+                </td>
+            </tr>
             <tr th:if="${order.paidAt != null}">
                 <th>支払日時</th>
                 <td th:text="${#temporals.format(

@@ -666,3 +666,23 @@ nav strong {
         min-width: 6rem;
     }
 }
+
+/* Feature135-A2: card authorization expiry */
+.expiry-expired {
+    color: #a51d1d;
+    background-color: #fdecec;
+    border: 1px solid #e2a0a0;
+}
+
+.expiry-soon {
+    color: #c05a00;
+    background-color: #fff1e0;
+    border: 1px solid #f0b46b;
+}
+
+.expiry-valid {
+    color: #444;
+    background-color: #f2f2f2;
+    border: 1px solid #ccc;
+    font-weight: normal;
+}

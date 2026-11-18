@@ -27,6 +27,16 @@ public class AdminOrderSearchForm {
 
     private Long assignedAdminAccountId;
 
+    private AdminAuthorizationExpiryFilter authorizationExpiry;
+
+    public AdminAuthorizationExpiryFilter getAuthorizationExpiry() {
+        return authorizationExpiry;
+    }
+
+    public void setAuthorizationExpiry(AdminAuthorizationExpiryFilter authorizationExpiry) {
+        this.authorizationExpiry = authorizationExpiry;
+    }
+
     public Long getOrderId() {
         return orderId;
     }

@@ -885,6 +885,37 @@ public class OrderService {
                 .atStartOfDay();
     }
 
+    private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
+
+    /** Feature135-A2. Spring always injects it; hand-built unit fixtures predate it and ignore the expiry filter. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAuthorizationExpiries(com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries) {
+        this.authorizationExpiries = authorizationExpiries;
+    }
+
+    /** Unfiltered searches keep the original repository query; the expiry filter adds an ID restriction. */
+    private Page<Order> search(AdminOrderSearchForm searchForm, Long orderId, Long userId, LocalDateTime from,
+            LocalDateTime toExclusive, OrderStatus status, List<OrderHandlingStatus> handlingStatuses,
+            String assigneeFilter, Long assignedAdminAccountId, Pageable pageable) {
+        if (!expiryFiltered(searchForm)) {
+            return orderRepository.search(orderId, userId, from, toExclusive, status, handlingStatuses,
+                    assigneeFilter, assignedAdminAccountId, pageable);
+        }
+        return orderRepository.search(orderId, userId, from, toExclusive, status, handlingStatuses,
+                assigneeFilter, assignedAdminAccountId, true, expiryOrderIds(searchForm), pageable);
+    }
+
+    private boolean expiryFiltered(AdminOrderSearchForm searchForm) {
+        return searchForm.getAuthorizationExpiry() != null && authorizationExpiries != null;
+    }
+
+    /** Never empty: JPQL "IN ()" is invalid, and no order has a negative ID. */
+    private List<Long> expiryOrderIds(AdminOrderSearchForm searchForm) {
+        if (!expiryFiltered(searchForm)) return List.of(-1L);
+        var ids = authorizationExpiries.orderIds(searchForm.getAuthorizationExpiry());
+        return ids.isEmpty() ? List.of(-1L) : ids;
+    }
+
     private Page<Order> searchOrders(
             AdminOrderSearchForm searchForm,
             List<OrderHandlingStatus> handlingStatuses,
@@ -908,7 +939,7 @@ public class OrderService {
 
         Pageable pageable = PageRequest.of(page, size);
 
-        return orderRepository.search(
+        return search(searchForm,
                 searchForm.getOrderId(),
                 searchForm.getUserId(),
                 from,
@@ -943,7 +974,7 @@ public class OrderService {
                 searchForm.getAssignedAdminAccountId(),
                 loginAdminAccountId);
 
-        Page<Order> orderPage = orderRepository.search(
+        Page<Order> orderPage = search(searchForm,
                 searchForm.getOrderId(),
                 searchForm.getUserId(),
                 from,
