@@ -66,6 +66,35 @@ public class PaymentAuthorizationExpiryStore {
                 .stream().findFirst();
     }
 
+    /** Feature135-B1: true only when the payment has a recorded expiry that has passed at the database clock. */
+    @Transactional(propagation = Propagation.SUPPORTS)
+    public boolean hasExpired(long paymentId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                select exists(select 1 from payment_authorization_expiries
+                              where payment_id = ? and expires_at <= timezone('Asia/Tokyo', clock_timestamp()))
+                """, Boolean.class, paymentId));
+    }
+
+    /** The database's Asia/Tokyo wall clock, as used by every V93/V94 rule. */
+    @Transactional(propagation = Propagation.SUPPORTS)
+    public LocalDateTime databaseNow() {
+        return jdbc.queryForObject("select timezone('Asia/Tokyo', clock_timestamp())", LocalDateTime.class);
+    }
+
+    /**
+     * Feature135-B1: audit record of an expired authorization cancelled from a GET without a cancel POST (V94),
+     * written in the caller's transaction after the CANCEL transaction has been flushed.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordExpiredCancellation(long transactionId, long paymentId, String providerPaymentId) {
+        em.flush();
+        jdbc.update("""
+                insert into payment_expired_cancellation_observations
+                    (transaction_id, payment_id, provider_payment_id, authorization_expires_at, expiry_source, observed_status, observed_at)
+                values (?, ?, ?, timezone('Asia/Tokyo', clock_timestamp()), 'ESTIMATED', 'canceled', timezone('Asia/Tokyo', clock_timestamp()))
+                """, transactionId, paymentId, providerPaymentId);
+    }
+
     /** Shipping preparation: valid for more than 24 hours after the database clock (same rule as V93). */
     @Transactional(propagation = Propagation.MANDATORY)
     public void requireValidForPreparation(long paymentId) {

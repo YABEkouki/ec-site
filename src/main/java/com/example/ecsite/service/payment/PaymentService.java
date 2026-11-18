@@ -405,6 +405,29 @@ public class PaymentService {
     public PaymentCancellationStart startCancellation(
             Order order,
             PaymentTransactionInitiator initiator) {
+        return startCancellation(order, initiator, false);
+    }
+
+    /**
+     * Feature135-B1: a NEW administrator cancellation of an authorization whose recorded expiry has passed.
+     * The same validations and locks as {@link #startCancellation(Order, PaymentTransactionInitiator)}, except that
+     * the order modification window is replaced by the expiry check, and an existing PENDING cancellation is refused
+     * (it converges through reconciliation instead). The caller must already hold the Order lock.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public PaymentCancellationStart startExpiredAuthorizationCancellation(
+            Order order,
+            PaymentTransactionInitiator initiator) {
+        if (initiator == null || initiator.type() != com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN) {
+            throw new IllegalStateException("与信期限切れによる取消は管理者だけが実行できます。");
+        }
+        return startCancellation(order, initiator, true);
+    }
+
+    private PaymentCancellationStart startCancellation(
+            Order order,
+            PaymentTransactionInitiator initiator,
+            boolean expiredAuthorization) {
 
         orderPaymentGuard.requireNoOrderChange(order);
         List<Payment> payments = paymentRepository.findByOrderIdForUpdate(
@@ -449,6 +472,10 @@ public class PaymentService {
                         PaymentTransactionType.CANCEL,
                         PaymentTransactionStatus.PENDING);
 
+        if (existingTransaction.isPresent() && expiredAuthorization) {
+            throw new IllegalStateException("取消処理中の決済があります。結果の反映を待ってください。");
+        }
+
         if (existingTransaction.isPresent()) {
 
             PaymentTransaction transaction = existingTransaction.get();
@@ -464,7 +491,15 @@ public class PaymentService {
 
         // Existing operations above keep their original actor, snapshot and key.
         // Only a new cancellation is subject to the current modification window.
-        LocalDateTime now = orderModificationGuard.requireAllowed(order);
+        LocalDateTime now;
+        if (expiredAuthorization) {
+            if (expiries == null || !expiries.hasExpired(payment.getId())) {
+                throw new AuthorizationExpiryException("カード与信の有効期限が切れていないため、この取消はできません。");
+            }
+            now = expiries.databaseNow();
+        } else {
+            now = orderModificationGuard.requireAllowed(order);
+        }
 
         PaymentTransaction transaction = new PaymentTransaction(
                 payment,

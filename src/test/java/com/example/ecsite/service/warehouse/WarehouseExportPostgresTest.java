@@ -60,6 +60,8 @@ class WarehouseExportPostgresTest {
     @Autowired com.example.ecsite.service.payment.PaymentCaptureStartService captureStarts;
     @Autowired com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries expiryQueries;
     @Autowired com.example.ecsite.service.OrderService orderService;
+    @Autowired com.example.ecsite.service.payment.AdminPaymentCancellationService adminCancellation;
+    @Autowired com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService expiredCancellation;
 
     // ---- Feature135-A1: authorization expiry ----
 
@@ -214,6 +216,139 @@ class WarehouseExportPostgresTest {
         });
         assertThat(detail.openDiscrepancies()).singleElement().satisfies(d -> assertThat(d.providerStatus()).isEqualTo("CANCELED"));
         assertThat(expiryQueries.forOrder(paid.order()).isEmpty()).isTrue();
+    }
+
+    // ---- Feature135-B1: cancelling an order whose authorization has expired ----
+
+    String flow(Fixture f) { return jdbc.queryForObject("select provider_payment_id from payments where id=?", String.class, f.payment()); }
+
+    void stubFlow(Fixture f, com.example.ecsite.payment.PaymentFlowStatus status) {
+        org.mockito.Mockito.when(gateway.retrievePaymentFlow(flow(f)))
+                .thenReturn(new com.example.ecsite.payment.PaymentFlowState(flow(f), status, null, null));
+    }
+
+    void stubCancelPost(Fixture f) {
+        org.mockito.Mockito.when(gateway.cancelAuthorization(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new com.example.ecsite.payment.CancellationResult(com.example.ecsite.payment.CancellationResultStatus.CANCELLED, flow(f)));
+    }
+
+    void assertCancelled(Fixture f, String actorType) {
+        assertThat(orderRow(f.order())).containsEntry("status", "CANCELLED");
+        assertThat(orderRow(f.order()).get("cancelled_at")).isNotNull();
+        assertThat(jdbc.queryForObject("select status from payments where id=?", String.class, f.payment())).isEqualTo("CANCELLED");
+        var cancel = jdbc.queryForMap("select * from payment_transactions where payment_id=? and transaction_type='CANCEL'", f.payment());
+        assertThat(cancel).containsEntry("status", "SUCCEEDED").containsEntry("purpose", "ORDER_CANCELLATION")
+                .containsEntry("provider_transaction_id", flow(f)).containsEntry("initiator_type", actorType);
+        assertThat(jdbc.queryForObject("select count(*) from order_status_histories where order_id=? and to_status='CANCELLED' and changed_by_type=?",
+                Integer.class, f.order(), actorType)).isEqualTo(1);
+    }
+
+    int expiredObservations(Fixture f) {
+        return jdbc.queryForObject("select count(*) from payment_expired_cancellation_observations where payment_id=?", Integer.class, f.payment());
+    }
+
+    @Test void anAdministratorCancelsAnExpiredAuthorizationAfterTheDeadlineWithoutAPost() {
+        var f = card(nextBusinessDate(), 10);
+        authenticate(51, "cancel-admin");
+        // The regular cancellation is closed after the change deadline.
+        assertThatThrownBy(() -> adminCancellation.cancel(f.order(), 51L, "cancel-admin", null))
+                .hasMessageContaining("変更受付は終了");
+        assertThat(expiredCancellation.available(f.order())).isTrue();
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+        int stock = jdbc.queryForObject("select stock from products p join order_items i on i.product_id=p.id where i.order_id=?", Integer.class, f.order());
+
+        var outcome = expiredCancellation.cancel(f.order(), 51L, "cancel-admin", " 期限切れ ");
+
+        assertThat(outcome).isEqualTo(com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService.Outcome.CANCELLED);
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.never()).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        assertCancelled(f, "ADMIN");
+        assertThat(jdbc.queryForObject("select internal_note from payment_transactions where payment_id=? and transaction_type='CANCEL'",
+                String.class, f.payment())).isEqualTo("期限切れ");
+        assertThat(jdbc.queryForObject("select stock from products p join order_items i on i.product_id=p.id where i.order_id=?", Integer.class, f.order()))
+                .isEqualTo(stock + 2);
+        var observed = jdbc.queryForMap("select * from payment_expired_cancellation_observations where payment_id=?", f.payment());
+        assertThat(observed).containsEntry("provider_payment_id", flow(f)).containsEntry("expiry_source", "ESTIMATED")
+                .containsEntry("observed_status", "canceled");
+        assertThat(observed.get("transaction_id")).isEqualTo(jdbc.queryForObject(
+                "select id from payment_transactions where payment_id=? and transaction_type='CANCEL'", Long.class, f.payment()));
+        rejects("55000", () -> jdbc.update("update payment_expired_cancellation_observations set observed_status='canceled' where payment_id=?", f.payment()));
+        rejects("55000", () -> jdbc.update("delete from payment_expired_cancellation_observations where payment_id=?", f.payment()));
+
+        // Idempotent: a repeated request changes nothing.
+        org.mockito.Mockito.clearInvocations(gateway);
+        assertThat(expiredCancellation.cancel(f.order(), 51L, "cancel-admin", null))
+                .isEqualTo(com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService.Outcome.ALREADY_CANCELLED);
+        org.mockito.Mockito.verifyNoInteractions(gateway);
+        assertThat(expiredObservations(f)).isEqualTo(1);
+        assertThat(expiredCancellation.available(f.order())).isFalse();
+    }
+
+    @Test void anExpiredAuthorizationNotYetCanceledAtPayJpOrUnreadableIsLeftUnchanged() {
+        authenticate(52, "cancel-admin");
+        var open = card(nextBusinessDate(), 10);
+        stubFlow(open, com.example.ecsite.payment.PaymentFlowStatus.REQUIRES_CAPTURE);
+        assertThatThrownBy(() -> expiredCancellation.cancel(open.order(), 52L, "cancel-admin", null))
+                .isInstanceOf(com.example.ecsite.service.payment.AuthorizationExpiryException.class)
+                .hasMessageContaining("まだ与信が取り消されていません");
+        var unreadable = card(nextBusinessDate(), 10);
+        org.mockito.Mockito.when(gateway.retrievePaymentFlow(flow(unreadable))).thenThrow(new com.example.ecsite.payment.PaymentGatewayException(
+                com.example.ecsite.payment.PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN, null, null, true));
+        assertThatThrownBy(() -> expiredCancellation.cancel(unreadable.order(), 52L, "cancel-admin", null))
+                .isInstanceOf(com.example.ecsite.payment.PaymentGatewayException.class);
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.never()).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        for (var f : List.of(open, unreadable)) {
+            assertThat(orderRow(f.order())).containsEntry("status", "ORDERED");
+            assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=? and transaction_type='CANCEL'",
+                    Integer.class, f.payment())).isZero();
+            assertThat(expiredObservations(f)).isZero();
+        }
+    }
+
+    @Test void onlyAnUnpreparedOrderWithAnExpiredAuthorizationIsEligible() {
+        authenticate(53, "cancel-admin");
+        var valid = card(nextBusinessDate());
+        assertThat(expiredCancellation.available(valid.order())).isFalse();
+        assertThatThrownBy(() -> expiredCancellation.cancel(valid.order(), 53L, "cancel-admin", null))
+                .isInstanceOf(com.example.ecsite.service.payment.AuthorizationExpiryException.class);
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.never()).retrievePaymentFlow(org.mockito.ArgumentMatchers.anyString());
+
+        // Prepared while valid, then the provider value shows it has expired: shipping preparation blocks this cancellation.
+        var prepared = card(nextBusinessDate(), 3);
+        jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
+                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", prepared.order());
+        jdbc.update("update payment_authorization_expiries set source='PROVIDER', expires_at=authorization_base_at+interval '1 hour'"
+                + " where payment_id=?", prepared.payment());
+        assertThat(expiredCancellation.available(prepared.order())).isFalse();
+        assertThatThrownBy(() -> expiredCancellation.cancel(prepared.order(), 53L, "cancel-admin", null))
+                .hasMessageContaining("発送準備を開始した注文");
+        assertThat(orderRow(prepared.order())).containsEntry("status", "ORDERED");
+    }
+
+    @Test void theDatabaseRefusesAnyOtherCancellationAfterTheDeadline() {
+        var f = card(nextBusinessDate(), 10);
+        // A regular ORDER_CANCELLATION created after the change deadline, without the expired-cancellation record.
+        assertThatThrownBy(() -> tx(() -> {
+            var now = orders.findCurrentTimeInTokyo(); var payment = payments.findById(f.payment()).orElseThrow();
+            paymentTransactions.saveAndFlush(new PaymentTransaction(payment, PaymentTransactionType.CANCEL, payment.getAmount(), 0,
+                    UUID.randomUUID().toString(), now, PaymentTransactionPurpose.ORDER_CANCELLATION));
+            return null;
+        })).hasStackTraceContaining("must be an expired-authorization cancellation");
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=? and transaction_type='CANCEL'",
+                Integer.class, f.payment())).isZero();
+
+        // The audit row itself needs a CANCEL transaction of an expired authorization.
+        var valid = card(nextBusinessDate());
+        long cancel = tx(() -> {
+            var payment = payments.findById(valid.payment()).orElseThrow();
+            var t = new PaymentTransaction(payment, PaymentTransactionType.CANCEL, payment.getAmount(), 0,
+                    UUID.randomUUID().toString(), payment.getOrder().getChangeDeadlineAt().minusHours(1), PaymentTransactionPurpose.ORDER_CANCELLATION);
+            paymentTransactions.saveAndFlush(t);
+            return t.getId();
+        });
+        rejects("23514", () -> jdbc.update("""
+                insert into payment_expired_cancellation_observations
+                    (transaction_id,payment_id,provider_payment_id,authorization_expires_at,expiry_source,observed_status,observed_at)
+                values (?,?,?,now(),'ESTIMATED','canceled',now())""", cancel, valid.payment(), flow(valid)));
     }
 
     Map<String, Object> expiryRow(long payment) {
