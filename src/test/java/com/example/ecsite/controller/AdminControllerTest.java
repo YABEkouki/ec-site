@@ -44,6 +44,9 @@ class AdminControllerTest {
     @MockitoBean
     private com.example.ecsite.service.orderchange.AdminOrderHoldViewService orderHoldViewService;
 
+    @MockitoBean
+    private com.example.ecsite.service.notification.AdminCustomerNotificationQueries customerNotifications;
+
     @Test
     void indexAddsOrderSummariesToModel() throws Exception {
 

@@ -65,7 +65,9 @@ class PaymentDiscrepancyAuditRunPostgresTest {
     void flywayCreatesAuditRunsTable() {
         assertThat(jdbc.queryForObject("select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'payment_discrepancy_audit_runs'", Integer.class)).isEqualTo(1);
         flyway.validate();
-        assertThat(flyway.info().current().getVersion().toString()).isEqualTo("68");
+        // V68 must be applied; the latest version itself is pinned by the dedicated latest-version tests.
+        assertThat(java.util.Arrays.stream(flyway.info().applied()).anyMatch(m -> m.getVersion() != null && m.getVersion().getVersion().equals("68") && m.getState().isApplied() && !m.getState().isFailed())).isTrue();
+        assertThat(flyway.info().current().getVersion().isAtLeast("68")).isTrue();
         assertThat(jdbc.queryForObject("select data_type from information_schema.columns where table_name = 'payment_discrepancy_audit_runs' and column_name = 'started_at'", String.class))
             .isEqualTo("timestamp with time zone");
     }

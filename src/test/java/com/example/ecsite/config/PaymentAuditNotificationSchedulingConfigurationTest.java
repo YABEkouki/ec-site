@@ -23,11 +23,15 @@ class PaymentAuditNotificationSchedulingConfigurationTest {
     @Configuration(proxyBeanMethods=false) @EnableScheduling
     @EnableConfigurationProperties(PaymentDiscrepancyAuditNotificationProperties.class)
     static class Config {
-        @Bean PaymentDiscrepancyAuditService audit() {return mock(PaymentDiscrepancyAuditService.class);}
-        @Bean PaymentReconciliationService reconciliation() {return mock(PaymentReconciliationService.class);}
         @Bean com.example.ecsite.service.orderchange.OrderIncreaseService increases() {return mock(com.example.ecsite.service.orderchange.OrderIncreaseService.class);}
     }
+    // Real @Scheduled threads call these mocks as soon as the context starts, so every stub is set up
+    // before runner.run(...); stubbing a mock while a scheduler thread invokes it is a Mockito race.
+    final PaymentDiscrepancyAuditService audit=mock(PaymentDiscrepancyAuditService.class);
+    final PaymentReconciliationService reconciliation=mock(PaymentReconciliationService.class);
     final ApplicationContextRunner runner=new ApplicationContextRunner()
+        .withBean("audit",PaymentDiscrepancyAuditService.class,()->audit)
+        .withBean("reconciliation",PaymentReconciliationService.class,()->reconciliation)
         .withConfiguration(AutoConfigurations.of(TaskSchedulingAutoConfiguration.class,MailSenderAutoConfiguration.class))
         .withUserConfiguration(Config.class,PaymentAuditNotificationSchedulingConfiguration.class,
             PaymentAuditNotificationScheduler.class,PaymentDiscrepancyAuditScheduler.class,PaymentReconciliationScheduler.class,
@@ -54,6 +58,8 @@ class PaymentAuditNotificationSchedulingConfigurationTest {
             doAnswer(i->{notificationThread.set(Thread.currentThread().getName());entered.countDown();release.await(5,TimeUnit.SECONDS);return null;})
                 .when(delivery).tick();
         } catch(Exception impossible){throw new AssertionError(impossible);}
+        doAnswer(i->{auditThread.set(Thread.currentThread().getName());audited.countDown();return null;}).when(audit).auditPayments();
+        doAnswer(i->{reconcileThread.set(Thread.currentThread().getName());reconciled.countDown();return null;}).when(reconciliation).reconcilePendingTransactions();
         runner.withBean("delivery",PaymentAuditNotificationDeliveryService.class,()->delivery)
             .withPropertyValues("app.payment.discrepancy-audit.notification.enabled=true",
                 "app.payment.discrepancy-audit.notification.recipients=admin@example.com",
@@ -66,8 +72,6 @@ class PaymentAuditNotificationSchedulingConfigurationTest {
                 var notification=c.getBean("paymentAuditNotificationTaskScheduler",ThreadPoolTaskScheduler.class);
                 assertThat(legacy.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(1);
                 assertThat(notification.getScheduledThreadPoolExecutor().getCorePoolSize()).isEqualTo(1);
-                doAnswer(i->{auditThread.set(Thread.currentThread().getName());audited.countDown();return null;}).when(c.getBean(PaymentDiscrepancyAuditService.class)).auditPayments();
-                doAnswer(i->{reconcileThread.set(Thread.currentThread().getName());reconciled.countDown();return null;}).when(c.getBean(PaymentReconciliationService.class)).reconcilePendingTransactions();
                 // The initial real @Scheduled invocation is already blocked on the dedicated notification scheduler.
                 assertThat(entered.await(2,TimeUnit.SECONDS)).isTrue();assertThat(audited.await(2,TimeUnit.SECONDS)).isTrue();
                 assertThat(reconciled.await(2,TimeUnit.SECONDS)).isTrue();
@@ -92,6 +96,8 @@ class PaymentAuditNotificationSchedulingConfigurationTest {
         var p=new PaymentDiscrepancyAuditNotificationProperties(true,List.of("admin@example.com"),Duration.ofSeconds(10),Duration.ofMinutes(15),
             Duration.ofMinutes(5),3,Duration.ofMinutes(3),new PaymentDiscrepancyAuditNotificationProperties.Smtp(
                 Duration.ofSeconds(5),Duration.ofSeconds(10),Duration.ofSeconds(10),Duration.ofMinutes(2)));
+        doAnswer(i->{audited.countDown();return null;}).when(audit).auditPayments();
+        doAnswer(i->{reconciled.countDown();return null;}).when(reconciliation).reconcilePendingTransactions();
         try(var executor=new PaymentAuditNotificationSmtpExecutor(client)) {
             var delivery=new PaymentAuditNotificationDeliveryService(observer,transactions,executor,p);
             runner.withBean("delivery",PaymentAuditNotificationDeliveryService.class,()->delivery)
@@ -100,8 +106,6 @@ class PaymentAuditNotificationSchedulingConfigurationTest {
                     "app.payment.discrepancy-audit.notification.fixed-delay=10s").run(c->{
                 try {
                     assertThat(c).hasNotFailed();
-                    doAnswer(i->{audited.countDown();return null;}).when(c.getBean(PaymentDiscrepancyAuditService.class)).auditPayments();
-                    doAnswer(i->{reconciled.countDown();return null;}).when(c.getBean(PaymentReconciliationService.class)).reconcilePendingTransactions();
                     assertThat(entered.await(3,TimeUnit.SECONDS)).isTrue();
                     assertThat(audited.await(3,TimeUnit.SECONDS)).isTrue();assertThat(reconciled.await(3,TimeUnit.SECONDS)).isTrue();
                     assertThat(smtpThread.get()).isEqualTo("payment-audit-smtp");

@@ -26,7 +26,9 @@ class PaymentAuditNotificationManualResendSchedulingTest {
         .withConfiguration(AutoConfigurations.of(TaskSchedulingAutoConfiguration.class))
         .withUserConfiguration(Beans.class,Scheduling.class,PaymentAuditNotificationSchedulingConfiguration.class,PaymentAuditNotificationManualResendScheduler.class,PaymentAuditNotificationSmtpExecutor.class)
         .withPropertyValues("app.payment.discrepancy-audit.notification.recipients=fixture@example.invalid");
-    @ParameterizedTest @ValueSource(booleans={false,true}) void onAndOffPreserveExistingSchedulers(boolean on){runner.withPropertyValues("app.payment.discrepancy-audit.notification.enabled="+on).run(c->{
+    // The isolated runner passes manual-resend-scheduler-enabled=false as a JVM system property; this case covers the default (true).
+    @ParameterizedTest @ValueSource(booleans={false,true}) void onAndOffPreserveExistingSchedulers(boolean on){runner.withPropertyValues("app.payment.discrepancy-audit.notification.enabled="+on,
+            "app.payment.discrepancy-audit.notification.manual-resend-scheduler-enabled=true").run(c->{
         assertThat(c).hasNotFailed().hasSingleBean(PaymentAuditNotificationManualResendScheduler.class);
         var scheduler=c.getBean(PaymentAuditNotificationManualResendScheduler.class);assertThat(scheduler.isRunning()).isTrue();
         var owned=(ThreadPoolTaskScheduler)org.springframework.test.util.ReflectionTestUtils.getField(scheduler,"scheduler");assertThat(owned.getThreadNamePrefix()).isEqualTo("payment-audit-manual-resend-");assertThat(owned.getPoolSize()).isEqualTo(1);
