@@ -135,6 +135,13 @@ public class AdminOrderController {
         return customerNotifications == null ? List.of() : customerNotifications.byOrder(order.getId());
     }
 
+    private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
+    /** Feature135-A2. Spring always injects it; hand-built unit fixtures predate it and show no expiry. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAuthorizationExpiries(com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries) {
+        this.authorizationExpiries = authorizationExpiries;
+    }
+
     private com.example.ecsite.service.warehouse.OrderShipmentTrackingReader.Tracking shipmentTracking(Order order) {
         return shipmentTracking == null ? null : shipmentTracking.find(order.getId()).orElse(null);
     }
@@ -196,6 +203,10 @@ public class AdminOrderController {
                     searchForm.getAssignedAdminAccountId());
         }
 
+        if (searchForm.getAuthorizationExpiry() != null) {
+            returnUrlBuilder.queryParam("authorizationExpiry", searchForm.getAuthorizationExpiry());
+        }
+
         if (safePage > 0) {
             returnUrlBuilder.queryParam("page", safePage);
         }
@@ -235,6 +246,11 @@ public class AdminOrderController {
                 "returnUrl",
                 returnUrl);
 
+        model.addAttribute("authorizationExpiryFilters",
+                com.example.ecsite.form.AdminAuthorizationExpiryFilter.values());
+        model.addAttribute("expiryBadges", authorizationExpiries == null ? java.util.Map.of()
+                : authorizationExpiries.badges(orderPage.getContent().stream().map(Order::getId).toList()));
+
         return "admin/orders/list";
     }
 
@@ -261,6 +277,7 @@ public class AdminOrderController {
                 "order",
                 order);
         model.addAttribute("shipmentTracking", shipmentTracking(order));
+        model.addAttribute("authorizationExpiry", authorizationExpiries == null ? null : authorizationExpiries.forOrder(order.getId()));
         model.addAttribute("customerNotifications", customerNotifications(order));
 
         model.addAttribute(

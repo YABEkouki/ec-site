@@ -112,6 +112,7 @@ public interface OrderRepository
                         AND o.assignedAdminAccount.id = :assignedAdminAccountId
                     )
                   )
+              AND (:expiryFiltered = false OR o.id IN :expiryOrderIds)
             ORDER BY o.orderedAt DESC, o.id DESC
             """, countQuery = """
             SELECT COUNT(o)
@@ -133,6 +134,7 @@ public interface OrderRepository
                         AND o.assignedAdminAccount.id = :assignedAdminAccountId
                     )
                   )
+              AND (:expiryFiltered = false OR o.id IN :expiryOrderIds)
             """)
     Page<Order> search(
             @Param("orderId") Long orderId,
@@ -143,7 +145,16 @@ public interface OrderRepository
             @Param("handlingStatuses") List<OrderHandlingStatus> handlingStatuses,
             @Param("assigneeFilter") String assigneeFilter,
             @Param("assignedAdminAccountId") Long assignedAdminAccountId,
+            @Param("expiryFiltered") boolean expiryFiltered,
+            @Param("expiryOrderIds") List<Long> expiryOrderIds,
             Pageable pageable);
+
+    /** Without the Feature135-A2 authorization expiry filter. */
+    default Page<Order> search(Long orderId, Long userId, LocalDateTime from, LocalDateTime toExclusive, OrderStatus status,
+            List<OrderHandlingStatus> handlingStatuses, String assigneeFilter, Long assignedAdminAccountId, Pageable pageable) {
+        return search(orderId, userId, from, toExclusive, status, handlingStatuses, assigneeFilter, assignedAdminAccountId,
+                false, List.of(-1L), pageable);
+    }
 
     @Query("""
             SELECT COUNT(o)

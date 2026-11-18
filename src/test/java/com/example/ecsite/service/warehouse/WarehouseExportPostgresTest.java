@@ -58,6 +58,8 @@ class WarehouseExportPostgresTest {
     @Autowired com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore expiries;
     @Autowired com.example.ecsite.service.OrderShippingPreparationService preparations;
     @Autowired com.example.ecsite.service.payment.PaymentCaptureStartService captureStarts;
+    @Autowired com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries expiryQueries;
+    @Autowired com.example.ecsite.service.OrderService orderService;
 
     // ---- Feature135-A1: authorization expiry ----
 
@@ -161,6 +163,57 @@ class WarehouseExportPostgresTest {
         assertThatThrownBy(() -> jdbc.update("update orders set status='SHIPPED', shipped_at=timezone('Asia/Tokyo',clock_timestamp()),"
                 + "shipped_by_account_id=9, shipped_by_username='shipper', shipment_capture_payment_id=? where id=?",
                 prepared.payment(), prepared.order())).hasMessageContaining("shipment capture cannot start");
+    }
+
+    @Test void administratorScreensListAndFilterAuthorizationExpiries() {
+        var date = nextBusinessDate();
+        var valid = card(date); var soon = card(date); var expired = card(date, 10); var paid = order(date, false);
+        providerExpiry(soon.payment(), "interval '5 hours'");
+        jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", paid.order());
+
+        var badges = expiryQueries.badges(List.of(valid.order(), soon.order(), expired.order(), paid.order()));
+        assertThat(badges).doesNotContainKey(paid.order());
+        assertThat(badges.get(valid.order()).level()).isEqualTo(com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries.Level.VALID);
+        assertThat(badges.get(valid.order()).estimated()).isTrue();
+        assertThat(badges.get(soon.order()).level()).isEqualTo(com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries.Level.SOON);
+        assertThat(badges.get(soon.order()).estimated()).isFalse();
+        assertThat(badges.get(soon.order()).label()).matches("与信期限まで[45]時間");
+        assertThat(badges.get(expired.order()).level()).isEqualTo(com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries.Level.EXPIRED);
+        assertThat(expiryQueries.badges(List.of())).isEmpty();
+
+        assertThat(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.ATTENTION))
+                .contains(soon.order(), expired.order()).doesNotContain(valid.order(), paid.order());
+        assertThat(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.EXPIRED))
+                .contains(expired.order()).doesNotContain(soon.order(), valid.order());
+
+        // The order search applies the filter together with its other conditions.
+        var form = new com.example.ecsite.form.AdminOrderSearchForm();
+        form.setFrom(date.minusDays(1)); form.setTo(date.plusDays(1));
+        assertThat(orderService.searchOrders(form, 1L, 0, 100).getContent()).extracting(Order::getId)
+                .contains(valid.order(), soon.order(), expired.order(), paid.order());
+        form.setAuthorizationExpiry(com.example.ecsite.form.AdminAuthorizationExpiryFilter.ATTENTION);
+        assertThat(orderService.searchOrders(form, 1L, 0, 100).getContent()).extracting(Order::getId)
+                .contains(soon.order(), expired.order()).doesNotContain(valid.order(), paid.order());
+        form.setAuthorizationExpiry(com.example.ecsite.form.AdminAuthorizationExpiryFilter.EXPIRED);
+        var page = orderService.searchOrders(form, 1L, 0, 100);
+        assertThat(page.getContent()).extracting(Order::getId).contains(expired.order()).doesNotContain(soon.order());
+        assertThat(page.getTotalElements()).isEqualTo(page.getContent().size());
+        assertThat(orderService.searchAllOrders(form, 1L)).extracting(Order::getId).contains(expired.order()).doesNotContain(soon.order());
+
+        // Detail: every AUTHORIZED payment and the order's open discrepancies.
+        jdbc.update("""
+                insert into payment_discrepancies(payment_id,local_status,provider_status,status,first_detected_at,last_detected_at,
+                    detection_count,created_at,updated_at,handling_status,version)
+                values (?,'AUTHORIZED','CANCELED','OPEN',now(),now(),1,now(),now(),'UNCONFIRMED',0)
+                """, expired.payment());
+        var detail = expiryQueries.forOrder(expired.order());
+        assertThat(detail.payments()).singleElement().satisfies(p -> {
+            assertThat(p.paymentId()).isEqualTo(expired.payment());
+            assertThat(p.badge().attention()).isTrue();
+            assertThat(p.sourceLabel()).contains("推定");
+        });
+        assertThat(detail.openDiscrepancies()).singleElement().satisfies(d -> assertThat(d.providerStatus()).isEqualTo("CANCELED"));
+        assertThat(expiryQueries.forOrder(paid.order()).isEmpty()).isTrue();
     }
 
     Map<String, Object> expiryRow(long payment) {

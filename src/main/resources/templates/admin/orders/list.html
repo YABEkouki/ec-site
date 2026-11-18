@@ -85,6 +85,18 @@
                 </select>
             </div>
 
+            <div class="order-search-field">
+                <label for="authorizationExpiry">カード与信期限</label>
+
+                <select id="authorizationExpiry" th:field="*{authorizationExpiry}">
+                    <option value="">すべて</option>
+
+                    <option th:each="expiry : ${authorizationExpiryFilters}" th:value="${expiry.name()}"
+                        th:text="${expiry.displayName}">
+                    </option>
+                </select>
+            </div>
+
         </div>
 
         <input type="hidden" name="size" th:value="${orderPage.size}">
@@ -107,7 +119,8 @@
         status=${searchForm.status},
         handlingStatus=${searchForm.handlingStatus},
         assigneeFilter=${searchForm.assigneeFilter},
-        assignedAdminAccountId=${searchForm.assignedAdminAccountId})}" class="button button-secondary">
+        assignedAdminAccountId=${searchForm.assignedAdminAccountId},
+        authorizationExpiry=${searchForm.authorizationExpiry})}" class="button button-secondary">
                 CSV出力
             </a>
         </div>
@@ -128,6 +141,7 @@
                 <th>受取人</th>
                 <th>注文合計（税込）</th>
                 <th>状態</th>
+                <th>与信期限</th>
                 <th>対応状況</th>
                 <th>担当者</th>
                 <th>操作</th>
@@ -170,6 +184,16 @@
                         th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
                         th:text="${order.status.displayName}">
                     </span>
+                </td>
+
+                <td th:with="badge=${expiryBadges.get(order.id)}">
+                    <span th:if="${badge != null}" class="status-badge"
+                        th:classappend="${badge.level().name() == 'EXPIRED'} ? ' expiry-expired'
+                            : (${badge.level().name() == 'SOON'} ? ' expiry-soon' : ' expiry-valid')"
+                        th:text="${badge.label()}"
+                        th:title="${#temporals.format(badge.expiresAt(), 'yyyy/MM/dd HH:mm')} + (${badge.estimated()} ? '（推定）' : '')">
+                    </span>
+                    <small th:if="${badge != null and badge.estimated()}">推定</small>
                 </td>
 
                 <td th:text="${order.handlingStatus.displayName}">
