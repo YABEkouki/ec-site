@@ -13,6 +13,8 @@ public class WarehouseExportHoldException extends RuntimeException {
         ORDER_CHANGE_UNRESOLVED,
         /** The payment state does not prove a single valid original authorization (or a settled manual payment). */
         PAYMENT_NOT_READY,
+        /** Feature135: the card authorization expires within 24 hours or has expired (V93). */
+        AUTHORIZATION_EXPIRING,
         /** Not formally accepted, before deadline + 5 minutes, or the deadline is after the batch's business date. */
         NOT_DUE,
         /** The application judged the order exportable but a V86 database guard rejected it. */

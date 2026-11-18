@@ -47,6 +47,14 @@ public class CaptureShipmentOperations {
         this.exportGuard = exportGuard;
     }
 
+    private PaymentAuthorizationExpiryStore expiries;
+
+    /** Feature135: Spring always injects it; hand-built unit fixtures predate V93, which still guards the database. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAuthorizationExpiries(PaymentAuthorizationExpiryStore expiries) {
+        this.expiries = expiries;
+    }
+
     public CaptureShipmentOperations(OrderRepository orders, PaymentRepository payments,
             PaymentTransactionRepository transactions, EntityManager em, OrderWriteContext context,
             OrderShipmentGuard guard, CaptureShipmentPolicy policy, OrderStatusHistoryService histories,
@@ -108,6 +116,8 @@ public class CaptureShipmentOperations {
         Payment payment = data.payments().stream().filter(p -> p.getId().equals(decision.paymentId())).findFirst().orElseThrow();
         // Feature131: an exported order is captured only on the payment the warehouse export recorded.
         if (exportGuard != null && !exportGuard.matchesExport(order, payment.getId())) throw recovery(orderId);
+        // Feature135: an expired authorization cannot be captured; refuse before recording the shipment (V93 re-checks).
+        if (expiries != null) expiries.requireValidForCapture(payment.getId());
         var identity = connection.requireIdentity(activeConnection);
         if (!safety.isValid()) throw recovery(orderId);
         String note = internalNote == null ? null : internalNote.trim();

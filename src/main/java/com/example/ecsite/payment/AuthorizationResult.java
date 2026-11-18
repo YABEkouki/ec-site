@@ -8,5 +8,12 @@ public record AuthorizationResult(
         AuthorizationResultStatus status,
         String providerTransactionId,
         String failureCode,
-        String failureMessage) {
+        String failureMessage,
+        /** Feature135: provider authorization expiry for AUTHORIZED results; null when not returned. */
+        java.time.Instant expiresAt) {
+
+    public AuthorizationResult(AuthorizationResultStatus status, String providerTransactionId,
+            String failureCode, String failureMessage) {
+        this(status, providerTransactionId, failureCode, failureMessage, null);
+    }
 }

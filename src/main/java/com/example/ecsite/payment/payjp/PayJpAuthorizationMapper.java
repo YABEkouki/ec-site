@@ -11,7 +11,7 @@ class PayJpAuthorizationMapper {
     AuthorizationResult map(PayJpPaymentFlowResponse response) {
         return switch (response.status()) {
             case "requires_capture" ->
-                authorized(response.id());
+                authorized(response.id(), response.expiredAt());
 
             case "requires_action" ->
                 result(AuthorizationResultStatus.REQUIRES_ACTION, null);
@@ -41,12 +41,13 @@ class PayJpAuthorizationMapper {
         };
     }
 
-    private AuthorizationResult authorized(String flowId) {
+    private AuthorizationResult authorized(String flowId, java.time.OffsetDateTime expiredAt) {
         // The Gateway verifies this response ID against the requested Payment Flow before mapping.
         if (flowId == null || flowId.isBlank()) {
             throw new IllegalStateException("Authorized Payment Flow ID is required");
         }
-        return new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED, flowId, null, null);
+        return new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED, flowId, null, null,
+                expiredAt == null ? null : expiredAt.toInstant());
     }
 
     private AuthorizationResult result(

@@ -55,6 +55,125 @@ class WarehouseExportPostgresTest {
     @Autowired WarehouseExportCsvService csv;
     @Autowired WarehouseExportShipmentGuard shipmentGuard;
     @Autowired WarehouseExportHoldStore holdStore;
+    @Autowired com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore expiries;
+    @Autowired com.example.ecsite.service.OrderShippingPreparationService preparations;
+    @Autowired com.example.ecsite.service.payment.PaymentCaptureStartService captureStarts;
+
+    // ---- Feature135-A1: authorization expiry ----
+
+    @Test void everyAuthorizationGetsAConservativeEstimateReplacedOnceByTheProviderValue() {
+        var f = card(nextBusinessDate());
+        var row = expiryRow(f.payment());
+        assertThat(row).containsEntry("source", "ESTIMATED").containsEntry("provider_recorded_at", null);
+        assertThat(row.get("estimated_expires_at")).isEqualTo(row.get("expires_at"));
+        assertThat(jdbc.queryForObject("select e.estimated_expires_at = p.created_at + interval '5 days' from payment_authorization_expiries e"
+                + " join payments p on p.id=e.payment_id where e.payment_id=?", Boolean.class, f.payment())).isTrue();
+
+        var provider = java.time.Instant.now().plus(java.time.Duration.ofDays(7)).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        tx(() -> { expiries.recordProvider(f.payment(), provider); return null; });
+        var stored = expiries.find(f.payment()).orElseThrow();
+        assertThat(stored.source()).isEqualTo(com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore.Source.PROVIDER);
+        assertThat(stored.expiresAt()).isEqualTo(LocalDateTime.ofInstant(provider, java.time.ZoneId.of("Asia/Tokyo")));
+        assertThat(expiryRow(f.payment()).get("provider_recorded_at")).isNotNull();
+        // Exactly once: a later value is ignored and the database refuses any other change or deletion.
+        tx(() -> { expiries.recordProvider(f.payment(), provider.plusSeconds(3600)); return null; });
+        assertThat(expiries.find(f.payment()).orElseThrow().expiresAt()).isEqualTo(stored.expiresAt());
+        rejects("55000", () -> jdbc.update("update payment_authorization_expiries set expires_at=expires_at+interval '1 day' where payment_id=?", f.payment()));
+        rejects("55000", () -> jdbc.update("update payment_authorization_expiries set source='ESTIMATED', provider_recorded_at=null,"
+                + " expires_at=estimated_expires_at where payment_id=?", f.payment()));
+        rejects("55000", () -> jdbc.update("delete from payment_authorization_expiries where payment_id=?", f.payment()));
+        rejects("55000", () -> jdbc.execute("truncate payment_authorization_expiries"));
+
+        // Only AUTHORIZED payments get a row, and callers cannot choose its values.
+        var plain = order(nextBusinessDate(), false);
+        long failed = tx(() -> {
+            var now = orders.findCurrentTimeInTokyo(); var order = orders.findById(plain.order()).orElseThrow();
+            var p = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 750, now);
+            p.setProviderPaymentId("pfw_failed_" + plain.order(), now); p.markFailed(now); payments.saveAndFlush(p);
+            return p.getId();
+        });
+        assertThat(expiries.find(failed)).isEmpty();
+        rejects("23514", () -> jdbc.update("insert into payment_authorization_expiries(payment_id,authorization_base_at,estimated_expires_at,"
+                + "expires_at,source,created_at) values (?,now(),now()+interval '5 days',now()+interval '5 days','ESTIMATED',now())", failed));
+
+        // A value outside the plausible range keeps the estimate instead of failing the authorization.
+        var odd = card(nextBusinessDate());
+        tx(() -> { expiries.recordProvider(odd.payment(), java.time.Instant.parse("2000-01-01T00:00:00Z")); return null; });
+        assertThat(expiryRow(odd.payment())).containsEntry("source", "ESTIMATED");
+    }
+
+    @Test void anExpiringAuthorizationIsHeldFromTheExportAndTheDatabaseRefusesIt() {
+        var date = nextBusinessDate(); long batch = batch(date);
+        var soon = card(date);
+        providerExpiry(soon.payment(), "interval '23 hours'");
+        assertHeld(soon, batch, Reason.AUTHORIZATION_EXPIRING);
+        assertThat(jdbc.queryForList("select reason from warehouse_export_holds where order_id=?", String.class, soon.order()))
+                .containsExactly("AUTHORIZATION_EXPIRING");
+        assertThat(WarehouseExportHoldStore.label(Reason.AUTHORIZATION_EXPIRING)).isNotBlank();
+        assertThat(WarehouseExportHoldStore.guidance(Reason.AUTHORIZATION_EXPIRING)).isNotBlank();
+
+        // The runner records the hold; an estimate already in the past is held the same way.
+        var expired = card(date, 10);
+        runner(date).run(date);
+        assertThat(holdStore.pending(soon.order())).singleElement().satisfies(h -> assertThat(h.reason()).isEqualTo(Reason.AUTHORIZATION_EXPIRING));
+        assertThat(holdStore.pending(expired.order())).singleElement().satisfies(h -> assertThat(h.reason()).isEqualTo(Reason.AUTHORIZATION_EXPIRING));
+        assertUnprepared(soon.order()); assertUnprepared(expired.order());
+
+        // Database: the preparation itself is refused ...
+        assertThatThrownBy(() -> tx(() -> jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
+                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", expired.order())))
+                .hasMessageContaining("expires too soon for shipping preparation");
+        // ... and so is the export line when the expiry changes after the preparation in the same transaction.
+        var late = card(date.minusDays(1));
+        long lateBatch = batch(date.minusDays(1));
+        assertThatThrownBy(() -> tx(() -> {
+            jdbc.update("update orders set shipping_preparation_started_at=timezone('Asia/Tokyo',clock_timestamp()),"
+                    + "shipping_preparation_started_by_username='WAREHOUSE_EXPORT' where id=?", late.order());
+            providerExpiry(late.payment(), "interval '1 hour'");
+            return jdbc.update("insert into warehouse_export_lines(batch_id,order_id) values (?,?)", lateBatch, late.order());
+        })).hasMessageContaining("expires too soon for the warehouse export");
+        assertUnprepared(late.order());
+    }
+
+    @Test void administratorPreparationAndCaptureStartRespectTheExpiry() {
+        var date = nextBusinessDate();
+        authenticate(41, "expiry-admin");
+        var soon = card(date);
+        providerExpiry(soon.payment(), "interval '23 hours'");
+        assertThatThrownBy(() -> preparations.start(soon.order()))
+                .isInstanceOf(com.example.ecsite.service.payment.AuthorizationExpiryException.class)
+                .hasMessageContaining("24時間未満");
+        assertUnprepared(soon.order());
+
+        // Prepared while valid (estimate: created 3 days ago + 5 days), then the provider value shows it has expired.
+        var prepared = card(date, 3);
+        assertThat(preparations.start(prepared.order()).status())
+                .isEqualTo(com.example.ecsite.service.ShippingPreparationStartResult.Status.STARTED);
+        jdbc.update("update payment_authorization_expiries set source='PROVIDER', expires_at=authorization_base_at+interval '1 hour'"
+                + " where payment_id=?", prepared.payment());
+        assertThatThrownBy(() -> captureStarts.start(prepared.order(), 41L, "expiry-admin", null))
+                .isInstanceOf(com.example.ecsite.service.payment.AuthorizationExpiryException.class)
+                .hasMessageContaining("有効期限が切れている");
+        assertThat(orderRow(prepared.order())).containsEntry("status", "ORDERED").containsEntry("shipment_capture_payment_id", null);
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=? and transaction_type='CAPTURE'",
+                Integer.class, prepared.payment())).isZero();
+        // The database refuses the card shipment as well.
+        assertThatThrownBy(() -> jdbc.update("update orders set status='SHIPPED', shipped_at=timezone('Asia/Tokyo',clock_timestamp()),"
+                + "shipped_by_account_id=9, shipped_by_username='shipper', shipment_capture_payment_id=? where id=?",
+                prepared.payment(), prepared.order())).hasMessageContaining("shipment capture cannot start");
+    }
+
+    Map<String, Object> expiryRow(long payment) {
+        return jdbc.queryForMap("select * from payment_authorization_expiries where payment_id=?", payment);
+    }
+
+    /** The one allowed replacement: PROVIDER value at the database clock plus {@code interval}. */
+    void providerExpiry(long payment, String interval) {
+        assertThat(jdbc.update("update payment_authorization_expiries set source='PROVIDER',"
+                + " expires_at=timezone('Asia/Tokyo',clock_timestamp())+" + interval + " where payment_id=?", payment)).isEqualTo(1);
+    }
+
+    Fixture card(LocalDate businessDate, int paymentAgeDays) { return order(businessDate, true, paymentAgeDays); }
 
     // ---- C-3: hold history ----
 
@@ -287,7 +406,10 @@ class WarehouseExportPostgresTest {
     /** Card order (AUTHORIZED PAY.JP payment) whose deadline is 14:00 of {@code businessDate}. */
     Fixture card(LocalDate businessDate) { return order(businessDate, true); }
 
-    Fixture order(LocalDate businessDate, boolean card) {
+    Fixture order(LocalDate businessDate, boolean card) { return order(businessDate, card, 0); }
+
+    /** Feature135: {@code paymentAgeDays} moves the payment creation (the V93 estimate base) into the past. */
+    Fixture order(LocalDate businessDate, boolean card, int paymentAgeDays) {
         Fixture f = tx(() -> {
             var now = orders.findCurrentTimeInTokyo(); String key = UUID.randomUUID().toString();
             var user = new User(); user.setUsername("f131-" + key); user.setPassword("unused"); user.setEnabled(true);
@@ -306,7 +428,7 @@ class WarehouseExportPostgresTest {
             histories.record(order, null, OrderStatus.ORDERED, OrderStatusHistoryActorType.USER, user.getId(), user.getUsername(), null);
             long paymentId = 0;
             if (card) {
-                var payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, total, now);
+                var payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, total, now.minusDays(paymentAgeDays));
                 payment.setProviderPaymentId("pfw_" + key, now); payment.markAuthorized(now); payments.saveAndFlush(payment);
                 var auth = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, total, 0, key, now,
                         PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);

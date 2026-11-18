@@ -28,6 +28,21 @@ class PayJpAuthorizationMapperTest {
         assertThat(result.providerTransactionId()).isEqualTo("pf_test_123");
     }
 
+    @Test
+    void requiresCaptureCarriesTheProviderExpiry() {
+        var expiry = java.time.OffsetDateTime.parse("2026-11-13T04:23:13.530971Z");
+        var result = mapper.map(new PayJpPaymentFlowResponse("pf_test_123", null, "requires_capture", null, expiry));
+        assertThat(result.expiresAt()).isEqualTo(expiry.toInstant());
+        assertThat(mapper.map(response("requires_capture", null)).expiresAt()).isNull();
+    }
+
+    @Test
+    void expiredAtIsReadFromTheProviderJson() throws Exception {
+        var json = "{\"id\":\"pfw_1\",\"status\":\"requires_capture\",\"expired_at\":\"2026-11-13T04:23:13.530971Z\",\"other\":1}";
+        var parsed = tools.jackson.databind.json.JsonMapper.builder().build().readValue(json, PayJpPaymentFlowResponse.class);
+        assertThat(parsed.expiredAt()).isEqualTo(java.time.OffsetDateTime.parse("2026-11-13T04:23:13.530971Z"));
+    }
+
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings={" ", "\t\n"})

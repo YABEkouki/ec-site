@@ -587,6 +587,13 @@ public class OrderReauthorizationTransactions {
     private final CaptureConnectionProperties connection;
     private final PayJpProperties provider;
     private final OldCancelRecoveryAuditRepository recoveryAudits;
+    private com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore expiries;
+    /** Feature135: Spring always injects it; V93 still records a conservative estimate without it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAuthorizationExpiries(com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore expiries){this.expiries=expiries;}
+    private void recordExpiry(Payment next,PayJpPaymentFlowObservation observed){
+        if(expiries!=null&&observed!=null&&observed.expiredAt()!=null)expiries.recordProvider(next.getId(),observed.expiredAt().toInstant());
+    }
     public OrderReauthorizationTransactions(OrderRepository orders,PaymentRepository payments,PaymentTransactionRepository transactions,
             OrderContentChangeHistoryRepository histories,ProductRepository products,OrderChangeStore changes,
             OrderChangeFinancialRequestStore requests,JdbcTemplate jdbc,EntityManager em,OrderWriteContext context,
@@ -1042,6 +1049,7 @@ public class OrderReauthorizationTransactions {
             // Record confirmed financial success only. Do not advance the operation, cancel, or release.
             if(authorized(observed,next.getAmount())&&auth.getStatus()==PaymentTransactionStatus.PENDING){
                 auth.markSucceeded(next.getProviderPaymentId(),now());next.markAuthorized(now());
+                recordExpiry(next,observed);
             }
             return view(data);
         }
@@ -1057,7 +1065,7 @@ public class OrderReauthorizationTransactions {
         if(authorized(observed,next.getAmount())){
             if(auth.getStatus()==PaymentTransactionStatus.FAILED)return review(data,"AUTHORIZATION_TERMINAL_CONFLICT");
             if(auth.getStatus()==PaymentTransactionStatus.PENDING)auth.markSucceeded(next.getProviderPaymentId(),now());
-            if(next.getStatus()!=PaymentStatus.AUTHORIZED)next.markAuthorized(now());
+            if(next.getStatus()!=PaymentStatus.AUTHORIZED){next.markAuthorized(now());recordExpiry(next,observed);}
             // Once abort has been requested, authorization events cannot undo that decision.
             if(!List.of("ABORTING","ABORT_UNKNOWN").contains(op.get("state")))state(data,"AUTHORIZED",null);
         }else if(auth.getStatus()!=PaymentTransactionStatus.PENDING){return review(data,"AUTHORIZATION_STATE_REGRESSION");

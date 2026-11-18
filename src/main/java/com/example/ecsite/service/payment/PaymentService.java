@@ -46,6 +46,13 @@ public class PaymentService {
     private final CaptureShipmentOperations captureOperations;
     private final OrderModificationGuard orderModificationGuard;
     private final OrderPaymentGuard orderPaymentGuard;
+    private PaymentAuthorizationExpiryStore expiries;
+
+    /** Feature135: Spring always injects it; hand-built unit fixtures predate V93, which still guards the database. */
+    @Autowired
+    void setAuthorizationExpiries(PaymentAuthorizationExpiryStore expiries) {
+        this.expiries = expiries;
+    }
 
     @Autowired
     public PaymentService(
@@ -122,6 +129,8 @@ public class PaymentService {
         }
         // Preserve the existing decreased-amount policy, including revision changes.
         validateCaptureConsistency(order, payment);
+        // Feature135: never start preparing a shipment whose authorization cannot outlive the shipping lead time.
+        if (expiries != null) expiries.requireValidForPreparation(payment.getId());
     }
 
     @Transactional
@@ -334,7 +343,10 @@ public class PaymentService {
                 if (payment.getStatus() == PaymentStatus.REQUIRES_ACTION) return PaymentResultApplication.ALREADY_APPLIED;
                 payment.markRequiresAction(now);
             }
-            case AUTHORIZED -> { payment.markAuthorized(now); transaction.markSucceeded(result.providerTransactionId(), now); }
+            case AUTHORIZED -> {
+                payment.markAuthorized(now); transaction.markSucceeded(result.providerTransactionId(), now);
+                if (expiries != null) expiries.recordProvider(payment.getId(), result.expiresAt());
+            }
             case FAILED -> { order.clearActivePaymentAfterTermination(payment.getId()); payment.markFailed(now); transaction.markFailed(result.providerTransactionId(), result.failureCode(), result.failureMessage(), now); }
             case PENDING, REQUIRES_PAYMENT_METHOD, REQUIRES_CONFIRMATION -> { }
         }

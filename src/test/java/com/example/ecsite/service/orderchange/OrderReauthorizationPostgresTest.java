@@ -154,6 +154,20 @@ class OrderReauthorizationPostgresTest {
         assertThat(expected.abort().isPresent()).isEqualTo(present);observed.requireMatches(expected);observed.requireFresh();
         assertThat(closureDatabaseSnapshot()).isEqualTo(before);verify(gateway,times(1)).observeNewFlowClosure(any());verifyNoMoreInteractions(gateway);
     }
+    /** Feature135: expired_at added to requires_capture observations built by {@link #jsonObservation}. */
+    String expiredAt;
+    @AfterEach void clearExpiredAt(){expiredAt=null;}
+    @Test void reauthorizationRecordsTheProviderExpiryOfTheNewPayment(){
+        var f=fixture();var op=accept(f,3);
+        expiredAt=java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).plusDays(7).truncatedTo(java.time.temporal.ChronoUnit.MICROS).toString();
+        authorizeWithoutDecision(f,op);
+        long next=jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,op.id());
+        assertThat(jdbc.queryForObject("select status from payments where id=?",String.class,next)).isEqualTo("AUTHORIZED");
+        var row=jdbc.queryForMap("select source,expires_at from payment_authorization_expiries where payment_id=?",next);
+        assertThat(row).containsEntry("source","PROVIDER");
+        assertThat(((java.sql.Timestamp)row.get("expires_at")).toLocalDateTime()).isEqualTo(
+            java.time.OffsetDateTime.parse(expiredAt).atZoneSameInstant(java.time.ZoneId.of("Asia/Tokyo")).toLocalDateTime());
+    }
     @Test void closureGetAllowsUnconfirmedNewPaymentWithoutInventingSuccess(){
         var f=fixture();var op=accept(f,3);mockFlow(f,op);newState.set("requires_payment_method");service.advance(f.order(),op.id());
         resultTransactions.requestAbort(abortCommand(f,op,UUID.randomUUID(),version(op.id())));mockClosureGet();
@@ -1546,6 +1560,7 @@ class OrderReauthorizationPostgresTest {
         var fields=new LinkedHashMap<String,Object>();
         fields.put("id",flow);fields.put("status",status);fields.put("amount",amount);fields.put("currency","jpy");
         fields.put("capture_method","manual");fields.put("livemode",false);fields.put("metadata",metadata);
+        if(expiredAt!=null&&status.equals("requires_capture"))fields.put("expired_at",expiredAt);
         if(!capturable.equals("MISSING"))fields.put("amount_capturable",capturable.equals("NULL")?null:Long.valueOf(capturable));
         if(!received.equals("MISSING"))fields.put("amount_received",received.equals("NULL")?null:Long.valueOf(received));
         var mapper=tools.jackson.databind.json.JsonMapper.builder().build();

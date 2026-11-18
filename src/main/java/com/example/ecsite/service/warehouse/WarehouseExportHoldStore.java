@@ -80,6 +80,7 @@ public class WarehouseExportHoldStore {
         return switch (reason) {
             case ORDER_CHANGE_UNRESOLVED -> "注文変更が未解決";
             case PAYMENT_NOT_READY -> "決済状態を確認できない";
+            case AUTHORIZATION_EXPIRING -> "カード与信の期限切れ・期限間近";
             case NOT_DUE -> "出力時刻・期限の条件外";
             case NOT_EXPORTABLE_STATUS -> "注文状態が出力対象外";
             case MANUALLY_PREPARED -> "管理者が発送準備を開始済み";
@@ -92,6 +93,7 @@ public class WarehouseExportHoldStore {
         return switch (reason) {
             case ORDER_CHANGE_UNRESOLVED -> "注文変更・一括編集の処理が終わっていません。上の「注文変更による出荷保留」に同じ注文があれば、その案内に従ってください。解消すれば翌日の出力で再判定します。";
             case PAYMENT_NOT_READY -> "処理中の決済、有効な与信が複数ある、または与信が確認できない状態です。注文詳細の決済状況を確認してください。決済が確定すれば翌日の出力で再判定します。";
+            case AUTHORIZATION_EXPIRING -> "カード与信の有効期限まで24時間未満、または期限切れです。この与信では売上確定できないため出力しません。注文詳細で与信期限を確認し、お客様への連絡・取消など個別に対応してください。";
             case NOT_DUE -> "正式受注前か、出力対象日より後の変更期限です。通常は翌日以降の出力で自動的に対象になります。";
             case NOT_EXPORTABLE_STATUS -> "出力処理中に注文状態が変わりました。注文詳細を確認してください。";
             case MANUALLY_PREPARED -> "管理者が発送準備を開始した注文は自動出力しません（緊急出荷として個別に対応してください）。";
