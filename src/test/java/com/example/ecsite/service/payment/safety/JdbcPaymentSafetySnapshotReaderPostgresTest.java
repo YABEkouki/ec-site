@@ -21,7 +21,7 @@ class JdbcPaymentSafetySnapshotReaderPostgresTest {
     long order;
     @BeforeAll static void isolatedDatabase() {
         String url=System.getenv("EC_TEST_DB_URL"),user=System.getenv("EC_TEST_DB_USER"),password=System.getenv("EC_TEST_DB_PASSWORD");
-        var env=new MockEnvironment();
+        var env=new MockEnvironment();env.setActiveProfiles("test");env.setProperty("ecsite.test.database-mode",System.getProperty("ecsite.test.database-mode","shared"));
         for(String prefix:List.of("spring.datasource","spring.flyway")) {
             env.setProperty(prefix+".url",Objects.toString(url,""));
             env.setProperty(prefix+(prefix.endsWith("flyway")?".user":".username"),Objects.toString(user,""));

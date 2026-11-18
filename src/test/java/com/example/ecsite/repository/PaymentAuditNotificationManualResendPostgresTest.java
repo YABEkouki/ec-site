@@ -87,7 +87,8 @@ class PaymentAuditNotificationManualResendPostgresTest {
     }
 
     @Test void migrationAndHibernateValidation() {
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success and version is not null", Integer.class)).isEqualTo(68);
+        // V68 must be applied; the latest version itself is pinned by the dedicated latest-version tests.
+        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success and version = '68'", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where not success", Integer.class)).isZero();
     }
     @ParameterizedTest @CsvSource({"PENDING,NONE","CLAIMED,NONE","CANCELLED,NONE","SENDING,IN_PROGRESS","SENT,SUCCESS","FAILED,FAILURE","UNKNOWN,UNKNOWN"})
