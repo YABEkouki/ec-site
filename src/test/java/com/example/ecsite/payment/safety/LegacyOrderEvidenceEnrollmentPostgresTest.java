@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import com.example.ecsite.service.order.evidence.*;
 import com.example.ecsite.payment.*;
 import com.example.ecsite.payment.capture.CaptureConnectionIdentity;
@@ -19,6 +21,7 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 /** Guarded dedicated container only. Real gateway HTTP is replaced by MockRestServiceServer. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class LegacyOrderEvidenceEnrollmentPostgresTest {
     static PaymentSafetyExpandPostgresTest db;static JdbcTemplate jdbc;
     static final CaptureConnectionIdentity C=new CaptureConnectionIdentity("test","merchant","TEST","https://api.pay.jp");

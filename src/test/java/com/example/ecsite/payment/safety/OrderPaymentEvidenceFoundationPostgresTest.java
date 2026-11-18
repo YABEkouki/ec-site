@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import com.example.ecsite.service.order.evidence.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -14,6 +16,7 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.*;
 
 /** Only the existing IsolatedTestLauncher may provide the guarded container connection. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderPaymentEvidenceFoundationPostgresTest {
     static PaymentSafetyExpandPostgresTest db;
     static JdbcTemplate jdbc;

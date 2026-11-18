@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
@@ -14,6 +16,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import static org.assertj.core.api.Assertions.*;
 
 /** Real PostgreSQL transactions; uses the existing separately guarded commit-tracking fixture. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditExecutionFoundationPostgresTest {
     static PaymentSafetyExpandPostgresTest db;
     static JdbcTemplate jdbc;

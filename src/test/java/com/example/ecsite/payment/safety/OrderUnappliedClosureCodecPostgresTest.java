@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.sql.SQLException;
 import org.junit.jupiter.api.*;
@@ -11,6 +13,7 @@ import static com.example.ecsite.service.order.evidence.OrderEditExecution.*;
 import static org.assertj.core.api.Assertions.*;
 
 /** Raw TEXT, not a pre-normalized JSONB parameter: compares the same input on both implementations. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderUnappliedClosureCodecPostgresTest {
     static PaymentSafetyExpandPostgresTest db;static JdbcTemplate jdbc;
     final OrderUnappliedClosureCodec codec=new OrderUnappliedClosureCodec();

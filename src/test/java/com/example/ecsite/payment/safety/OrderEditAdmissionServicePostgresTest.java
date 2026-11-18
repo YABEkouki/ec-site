@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import com.example.ecsite.service.order.evidence.*;
 import static com.example.ecsite.service.order.evidence.OrderEditCandidate.*;
 import static com.example.ecsite.service.order.evidence.OrderEditAdmissionService.*;
@@ -17,6 +19,7 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.*;
 
 /** Real receipt and verification commits on the separately guarded PG17 fixture. No gateway. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditAdmissionServicePostgresTest {
     static PaymentSafetyExpandPostgresTest db;static JdbcTemplate jdbc;
     static final OrderContentSnapshotCodec snapshots=new OrderContentSnapshotCodec();

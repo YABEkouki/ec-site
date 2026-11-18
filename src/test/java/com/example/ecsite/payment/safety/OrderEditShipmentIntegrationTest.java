@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.time.*;
 import org.junit.jupiter.api.*;
@@ -29,6 +31,7 @@ import static org.mockito.ArgumentMatchers.*;
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false","logging.level.org.springframework=WARN","logging.level.org.hibernate=WARN"})
 @CaptureConnectionTest
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditShipmentIntegrationTest {
     @DynamicPropertySource static void isolatedDatabase(DynamicPropertyRegistry properties){
         OrderEditReauthorizationIntegrationTest.dedicatedCommitTrackingDatabase(properties);

@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.*;
@@ -11,6 +13,7 @@ import static com.example.ecsite.service.order.evidence.OrderEditExecution.*;
 import static org.assertj.core.api.Assertions.*;
 
 /** Independent PG17 commit-tracking fixture, no gateway/worker/applier or development DB. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditExecutionCoordinatorPostgresTest {
     static PaymentSafetyExpandPostgresTest db;static JdbcTemplate jdbc;
     @BeforeAll static void database(){OrderEditAdmissionServicePostgresTest.database();db=OrderEditAdmissionServicePostgresTest.db;jdbc=db.jdbc;db.migrate("72");}

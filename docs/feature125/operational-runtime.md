@@ -80,6 +80,8 @@ bash scripts/run-isolated-tests.sh --reset-test-db \
 unset EC_TEST_DB_URL EC_TEST_DB_USER EC_TEST_DB_PASSWORD
 ```
 
+Which mode a class needs is declared with `@IsolatedTestMode` and checked by the runner before anything starts; see `docs/testing/isolated-test-modes.md`.
+
 Supply explicit fully qualified test class names. The runner makes an independent `/tmp/ecsite-tests.*` source copy, excludes `.env`, Compose and the original `target`, and builds/tests only in that copy. Maven is offline: dependencies and the wrapper distribution must already be cached. Reports and logs remain in the copy for review. Tests run one class at a time, with one fork and JUnit parallel execution disabled. Do not run concurrent runners or other consumers of `ecsite_test`.
 
 `--reset-test-db` is destructive: before **each** class it checks the actual database/user and rejects other sessions, then drops every non-system schema in `ecsite_test` and recreates `public`. Each schema drop commits separately to avoid exhausting shared locks. Failure can leave a partially reset test database; stop, inspect the reported remaining schemas, and do not automatically repair or retry. The session check is not a lock against new clients: exclusive test DB use is an operator prerequisite. Omitting the flag preserves existing test data and is appropriate only when the selected test explicitly supports that state.

@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.UUID;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.InvalidOrderStatusException;
@@ -25,6 +27,7 @@ import static org.assertj.core.api.Assertions.*;
 import static com.example.ecsite.payment.safety.OrderEditAdmissionFoundationPostgresTest.*;
 
 /** Uses the existing guarded, commit-tracking PostgreSQL fixture, never development DB configuration. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditAdmissionGuardPostgresTest {
     @BeforeAll static void database() { OrderEditAdmissionFoundationPostgresTest.database(); }
     @AfterAll static void cleanup() { OrderEditAdmissionFoundationPostgresTest.cleanup(); }

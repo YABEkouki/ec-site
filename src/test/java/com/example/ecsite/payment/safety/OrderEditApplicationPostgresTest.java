@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -15,6 +17,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.assertj.core.api.Assertions.*;
 
 /** Atomic RETAIN_AUTH tests, exclusively on the existing isolated PostgreSQL 17 harness. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditApplicationPostgresTest {
     static PaymentSafetyExpandPostgresTest db;
     @BeforeAll static void database(){

@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import org.junit.jupiter.api.*;
 import java.util.UUID;
 import com.example.ecsite.payment.payjp.MockOrderAuthorizationTransport;
@@ -7,6 +9,7 @@ import com.example.ecsite.service.order.evidence.*;
 import static org.assertj.core.api.Assertions.*;
 
 /** Existing isolated PG17 harness; no real provider transport. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditReauthorizationPostgresTest {
     static PaymentSafetyExpandPostgresTest db;
     @BeforeAll static void database(){OrderEditExecutionCoordinatorPostgresTest.database();db=OrderEditExecutionCoordinatorPostgresTest.db;db.migrate("75");}

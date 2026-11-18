@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.util.concurrent.atomic.*;
 import org.junit.jupiter.api.*;
@@ -24,6 +26,7 @@ import static org.mockito.ArgumentMatchers.*;
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
 @com.example.ecsite.support.CaptureConnectionTest
 @org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditCardPostgresTest {
 
     @Autowired org.springframework.test.web.servlet.MockMvc mvc;

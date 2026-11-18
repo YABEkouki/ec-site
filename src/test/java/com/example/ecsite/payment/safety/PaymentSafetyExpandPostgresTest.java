@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import static org.assertj.core.api.Assertions.*;
 
 import java.sql.SQLException;
@@ -16,6 +18,7 @@ import org.springframework.mock.env.MockEnvironment;
 import com.example.ecsite.support.isolation.IsolatedDatabaseGuard;
 
 /** Run through scripts/run-isolated-tests.sh; never uses application/development configuration. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class PaymentSafetyExpandPostgresTest {
     static String url, user, password;
     String schema;

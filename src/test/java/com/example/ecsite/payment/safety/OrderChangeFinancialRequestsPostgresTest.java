@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import static org.assertj.core.api.Assertions.*;
 import java.util.*;
 import java.time.*;
@@ -11,6 +13,7 @@ import com.example.ecsite.payment.orderchange.*;
 import com.example.ecsite.payment.capture.CaptureConnectionIdentity;
 
 /** The launcher Guard verifies Docker provenance before this fixture connects. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderChangeFinancialRequestsPostgresTest {
     PaymentSafetyExpandPostgresTest db;
     JdbcTemplate jdbc;

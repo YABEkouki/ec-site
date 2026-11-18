@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,6 +21,7 @@ import static org.assertj.core.api.Assertions.*;
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
 @com.example.ecsite.support.CaptureConnectionTest
 @org.springframework.test.annotation.DirtiesContext
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditFailureClosureFoundationPostgresTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired AutowireCapableBeanFactory beans;
