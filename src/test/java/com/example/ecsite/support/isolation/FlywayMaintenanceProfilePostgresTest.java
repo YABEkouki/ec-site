@@ -11,6 +11,7 @@ import org.w3c.dom.*;
 import static org.assertj.core.api.Assertions.*;
 
 /** Exercises the actual Maven plugin; never loads a Spring application context. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class FlywayMaintenanceProfilePostgresTest {
     static final Path ROOT=Path.of("").toAbsolutePath();
     static final String PROFILE="f125-db-maintenance";

@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import static org.assertj.core.api.Assertions.*;
 import java.sql.*;
 import java.util.*;
@@ -7,6 +9,7 @@ import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Container-only DDL contract. No application context, financial service or external HTTP. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class PaymentSafetyAuditExpandPostgresTest {
     static PaymentSafetyExpandPostgresTest fixture;
     static JdbcTemplate db;

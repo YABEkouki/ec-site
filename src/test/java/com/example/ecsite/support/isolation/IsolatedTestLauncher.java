@@ -23,6 +23,22 @@ public final class IsolatedTestLauncher {
         if(classes.isEmpty() || containers && reset)throw new IllegalArgumentException();
         return new Plan(containers,reset,List.copyOf(classes));
     }
+    /** Classes whose declared {@link IsolatedTestMode} (default: TESTCONTAINERS only) excludes the requested mode. */
+    static List<String> modeMismatches(Plan plan,ClassLoader loader) {
+        var requested=plan.testcontainers()?IsolatedTestMode.Mode.TESTCONTAINERS:IsolatedTestMode.Mode.SHARED;
+        var problems=new ArrayList<String>();
+        for(String name:plan.classes()) {
+            Class<?> type;
+            // initialize=false: static container fields and other initializers must not run here.
+            try{type=Class.forName(name,false,loader);}
+            catch(ClassNotFoundException|LinkageError missing){problems.add(name+": test class not found");continue;}
+            var declared=type.getDeclaredAnnotation(IsolatedTestMode.class);
+            var allowed=declared==null?List.of(IsolatedTestMode.Mode.TESTCONTAINERS):List.of(declared.value());
+            if(!allowed.contains(requested))problems.add(name+": requires "+(allowed.contains(IsolatedTestMode.Mode.TESTCONTAINERS)
+                ?"--testcontainers":"--reset-test-db (shared ecsite_test)")+" (see docs/testing/isolated-test-modes.md)");
+        }
+        return List.copyOf(problems);
+    }
     private static void requireClass(String value) {
         if(value==null || !value.matches("com\\.example\\.ecsite(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)+Test"))throw new IllegalArgumentException("Explicit test class names are required");
     }
@@ -198,6 +214,13 @@ public final class IsolatedTestLauncher {
             Plan plan=plan(args);
             // Never allocate a container or connect when called from the original workspace.
             requireIndependentCopy(Path.of("").toAbsolutePath(),Path.of(Objects.requireNonNull(System.getenv("EC_TEST_ORIGINAL_PROJECT"))));
+            // Reject a mode mismatch before any database connection or container start.
+            var mismatches=modeMismatches(plan,IsolatedTestLauncher.class.getClassLoader());
+            if(!mismatches.isEmpty()) {
+                mismatches.forEach(problem->System.err.println("Test mode mismatch: "+problem));
+                System.err.println("Nothing was started.");
+                System.exit(2);
+            }
             if(plan.testcontainers()) {
                 String run=UUID.randomUUID().toString().replace("-","");
                 try(var container=new PostgreSQLContainer("postgres:17").withDatabaseName("isolated_"+run)

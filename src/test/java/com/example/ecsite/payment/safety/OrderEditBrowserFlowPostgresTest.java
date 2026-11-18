@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -16,6 +18,7 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 /** Existing guarded isolated PG17 runtime only. Provider calls are mocked, never HTTP. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditBrowserFlowPostgresTest {
     static PaymentSafetyExpandPostgresTest db;
     @BeforeAll static void database(){OrderEditApplicationPostgresTest.database();db=OrderEditApplicationPostgresTest.db;db.migrate("76");}

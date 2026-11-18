@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import static org.assertj.core.api.Assertions.*;
 import java.time.*;
 import java.util.*;
@@ -15,6 +17,7 @@ import com.example.ecsite.repository.orderchange.NewFlowClosureAuditRepository.*
 
 /** Fresh launcher-owned PG17 only; no Spring application, Gateway or SMTP is instantiated. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class ClosureAuditFoundationPostgresTest {
     OrderChangeFinancialRequestsPostgresTest fixture;
     JdbcTemplate jdbc;

@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.*;
 @DataJpaTest(properties={"spring.flyway.enabled=true","spring.jpa.hibernate.ddl-auto=validate","spring.jpa.show-sql=false"})
 @AutoConfigureTestDatabase(replace=AutoConfigureTestDatabase.Replace.NONE)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class IndependentContainerSmokeTest {
     @Autowired JdbcTemplate jdbc;
     @Test void sharedDatabaseUsesGuardedTestConnection(){assertThat(jdbc.queryForObject("select current_database()",String.class)).isEqualTo("ecsite_test");}

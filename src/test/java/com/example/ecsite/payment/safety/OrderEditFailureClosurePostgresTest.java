@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +22,7 @@ import static org.mockito.Mockito.*;
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
 @com.example.ecsite.support.CaptureConnectionTest
 @org.springframework.test.annotation.DirtiesContext
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditFailureClosurePostgresTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired AutowireCapableBeanFactory beans;

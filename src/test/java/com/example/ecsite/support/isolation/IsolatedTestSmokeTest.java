@@ -9,6 +9,7 @@ import org.springframework.context.ApplicationContext;
 import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest
+@IsolatedTestMode({IsolatedTestMode.Mode.SHARED,IsolatedTestMode.Mode.TESTCONTAINERS})
 class IsolatedTestSmokeTest {
     @Autowired DataSource datasource;
     @Autowired JdbcTemplate jdbc;

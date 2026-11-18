@@ -22,6 +22,26 @@ class IsolatedTestLauncherTest {
             new String[]{CLASS,CLASS},new String[]{"--testcontainers","--reset-test-db",CLASS}))
             assertThatThrownBy(()->IsolatedTestLauncher.plan(args)).isInstanceOf(IllegalArgumentException.class);
     }
+    @Test void declaredModeIsCheckedBeforeAnythingStarts() {
+        String shared="com.example.ecsite.support.isolation.FlywayMaintenanceProfilePostgresTest";
+        String containers="com.example.ecsite.config.SecurityConfigTest";
+        // Subclass of the SHARED OrderEditReauthorizationIntegrationTest; the annotation is not inherited.
+        String subclass="com.example.ecsite.payment.safety.CustomerOrderChangeEvidencePostgresTest";
+        var loader=getClass().getClassLoader();
+        java.util.function.BiFunction<Boolean,String,List<String>> check=(tc,name)->
+            IsolatedTestLauncher.modeMismatches(new IsolatedTestLauncher.Plan(tc,!tc,List.of(name)),loader);
+        assertThat(check.apply(false,shared)).isEmpty();
+        assertThat(check.apply(true,shared)).singleElement().asString().contains(shared,"--reset-test-db");
+        assertThat(check.apply(true,containers)).isEmpty();
+        assertThat(check.apply(false,containers)).singleElement().asString().contains(containers,"--testcontainers");
+        assertThat(check.apply(true,CLASS)).isEmpty();
+        assertThat(check.apply(false,CLASS)).isEmpty();
+        assertThat(check.apply(true,subclass)).isEmpty();
+        assertThat(check.apply(false,subclass)).singleElement().asString().contains("--testcontainers");
+        assertThat(check.apply(true,"com.example.ecsite.NoSuchClassTest")).singleElement().asString().contains("not found");
+        assertThat(IsolatedTestLauncher.modeMismatches(new IsolatedTestLauncher.Plan(true,false,List.of(shared,containers,subclass)),loader))
+            .singleElement().asString().startsWith(shared);
+    }
     @Test void mavenCommandIsPinnedAndCannotInjectExtraGoals() {
         var args=IsolatedTestLauncher.command(CLASS,false,"/tmp/unit-settings.xml");
         assertThat(args).contains("-o","-Dtest="+CLASS,"-DforkCount=1","-DreuseForks=false",

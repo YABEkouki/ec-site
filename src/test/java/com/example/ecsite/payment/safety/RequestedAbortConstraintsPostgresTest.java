@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import static org.assertj.core.api.Assertions.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
@@ -8,6 +10,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Direct SQL verifies V63 independently of Java permissions, only after the existing Guard. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class RequestedAbortConstraintsPostgresTest {
     OrderChangeFinancialRequestsPostgresTest fixture;
     JdbcTemplate jdbc;

@@ -1,11 +1,14 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import org.junit.jupiter.api.TestInfo;
 import static org.assertj.core.api.Assertions.*;
 
 /** Runs the existing real-finance/Widget/STOP contract with explicit OPERATIONAL approval.
  * Inherits only the guarded private PostgreSQL container and mocked provider fixture. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditOperationalCardPostgresTest extends OrderEditCardPostgresTest {
     @Override void configureRuntime(TestInfo info){
         stopRuntime();var open=jdbc.queryForList("select distinct db_generation_id from order_edit_admissions where closed_at is null",UUID.class);

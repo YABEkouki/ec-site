@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -8,6 +10,7 @@ import static org.assertj.core.api.Assertions.*;
 import static com.example.ecsite.service.order.evidence.OrderAdmissionFinancialSnapshotCodecTest.*;
 
 /** Guarded PG17, real Tx-A/Tx-B commits, no gateway or development database. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderAdmissionFinancialSnapshotPostgresTest {
     static PaymentSafetyExpandPostgresTest db; static JdbcTemplate jdbc; static UUID legacyReceipt;
     final OrderAdmissionFinancialSnapshotCodec codec=new OrderAdmissionFinancialSnapshotCodec();

@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,6 +25,7 @@ import static org.mockito.Mockito.*;
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false","logging.level.org.springframework=WARN","logging.level.org.hibernate=WARN"})
 @CaptureConnectionTest
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderIncreaseModelCEvidencePostgresTest {
     @DynamicPropertySource static void isolatedDatabase(DynamicPropertyRegistry properties){
         OrderEditReauthorizationIntegrationTest.dedicatedCommitTrackingDatabase(properties);

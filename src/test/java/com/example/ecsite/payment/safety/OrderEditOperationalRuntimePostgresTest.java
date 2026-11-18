@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Supplier;
@@ -12,6 +14,7 @@ import com.example.ecsite.service.order.evidence.*;
 import static org.assertj.core.api.Assertions.*;
 
 /** Guarded ecsite_test normally; only the boot-identity case owns a disposable PostgreSQL. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditOperationalRuntimePostgresTest {
     static PaymentSafetyExpandPostgresTest db;static JdbcTemplate jdbc;
     org.testcontainers.postgresql.PostgreSQLContainer restartContainer;

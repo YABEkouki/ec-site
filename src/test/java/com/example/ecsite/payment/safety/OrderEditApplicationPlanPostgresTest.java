@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.*;
@@ -12,6 +14,7 @@ import static com.example.ecsite.service.order.evidence.OrderEditExecution.*;
 import static org.assertj.core.api.Assertions.*;
 
 /** Existing isolated PG17 fixture only. No provider or order/stock application. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditApplicationPlanPostgresTest {
     static PaymentSafetyExpandPostgresTest db;
     static String legacyBefore,oldClosureDocument;

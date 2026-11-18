@@ -1,5 +1,7 @@
 package com.example.ecsite.payment.safety;
 
+import com.example.ecsite.support.isolation.IsolatedTestMode;
+
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Supplier;
@@ -16,6 +18,7 @@ import com.example.ecsite.support.isolation.IsolatedDatabaseGuard;
 import static org.assertj.core.api.Assertions.*;
 
 /** Real commits on guarded ecsite_test; server-setting cases alone use disposable containers. */
+@IsolatedTestMode(IsolatedTestMode.Mode.SHARED)
 class OrderEditAdmissionFoundationPostgresTest {
     static PostgreSQLContainer container;
     static PaymentSafetyExpandPostgresTest db;
