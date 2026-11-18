@@ -278,6 +278,7 @@ public class AdminOrderController {
                 order);
         model.addAttribute("shipmentTracking", shipmentTracking(order));
         model.addAttribute("authorizationExpiry", authorizationExpiries == null ? null : authorizationExpiries.forOrder(order.getId()));
+        model.addAttribute("canCancelExpiredAuthorization", expiredCancellations != null && expiredCancellations.available(order.getId()));
         model.addAttribute("customerNotifications", customerNotifications(order));
 
         model.addAttribute(
@@ -526,6 +527,48 @@ public class AdminOrderController {
         return redirectToDetail(
                 id,
                 returnUrl);
+    }
+
+    private com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService expiredCancellations;
+    /** Feature135-B1. Spring always injects it; hand-built unit fixtures predate it and never offer it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setExpiredCancellations(com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService expiredCancellations) {
+        this.expiredCancellations = expiredCancellations;
+    }
+
+    @PostMapping("/{id}/cancel-expired-authorization")
+    public String cancelExpiredAuthorization(
+            @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute("errorMessage", "変更理由・備考は500文字以内で入力してください。");
+            return redirectToDetail(id, returnUrl);
+        }
+        if (expiredCancellations == null) {
+            redirectAttributes.addFlashAttribute("errorMessage", "この操作は利用できません。");
+            return redirectToDetail(id, returnUrl);
+        }
+        try {
+            var outcome = expiredCancellations.cancel(id, loginUser.getId(), loginUser.getUsername(), form.getInternalNote());
+            redirectAttributes.addFlashAttribute("successMessage",
+                    outcome == com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService.Outcome.CANCELLED
+                            ? "与信期限切れのため、注文を取り消しました（PAY.JPでは与信は取消済みです）。"
+                            : "この注文は既に取り消されています。");
+        } catch (com.example.ecsite.service.payment.AuthorizationExpiryException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        } catch (PaymentGatewayException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "PAY.JPで与信の状態を確認できませんでした。注文は変更していません。時間をおいて再度お試しください。");
+        } catch (InvalidOrderStatusException | IllegalStateException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "取消できません。注文変更・決済処理の状態をご確認ください。注文は変更していません。");
+        }
+        return redirectToDetail(id, returnUrl);
     }
 
     @PostMapping("/{id}/cancel")

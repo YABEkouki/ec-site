@@ -425,6 +425,28 @@
 
     </div>
 
+    <section id="expired-authorization-cancellation" th:if="${canCancelExpiredAuthorization}">
+        <h3>与信期限切れによる取消</h3>
+        <p>
+            この注文のカード与信は有効期限が切れており、売上確定（発送）できません。
+            PAY.JPで与信が取消済みであることを確認したうえで、注文を取り消します（PAY.JPへの取消依頼は送りません）。
+            変更期限後でも実行できます。在庫は戻り、お客様には注文取消のメールが送られます。
+        </p>
+        <form th:action="@{/admin/orders/{id}/cancel-expired-authorization(id=${order.id})}" method="post">
+            <p>
+                <label for="internalNoteExpired">変更理由・備考（任意）</label>
+            </p>
+            <p>
+                <textarea id="internalNoteExpired" name="internalNote" rows="3" maxlength="500"></textarea>
+            </p>
+            <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+            <button type="submit" class="button-danger"
+                onclick="return confirm('与信期限切れのため、この注文を取り消しますか？この操作は元に戻せません。');">
+                与信期限切れのため注文を取り消す
+            </button>
+        </form>
+    </section>
+
     <div th:if="${canCaptureForShipment}">
 
         <form th:action="@{/admin/orders/{id}/capture-and-ship(id=${order.id})}" method="post">

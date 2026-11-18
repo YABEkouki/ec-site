@@ -31,10 +31,12 @@
 
 | | 内容 | 状態 |
 |---|---|---|
-| A-1 | 期限の記録（V93）と出荷のゲート | 実装 |
-| A-2 | 管理画面の表示（注文一覧・詳細の期限表示、絞り込み） | 未着手 |
-| B | 期限切れの状態反映（AUTHORIZED→CANCELLED）、照合、Webhook、ESTIMATED を PROVIDER へ置き換える GET、出荷済みで売上確定不能のもの | 未着手 |
-| C | 運用（管理者通知、期限切れ注文の取消、お客様への再与信の案内） | 未着手 |
+| A-1 | 期限の記録（V93）と出荷のゲート | 完了 |
+| A-2 | 管理画面の表示（注文一覧の列・絞り込み、詳細の期限・不整合） | 完了 |
+| B-1 | 管理者による「与信期限切れによる取消」（V94） | 完了（ブラウザ確認済み） |
+| B-2 | 出荷済みで売上確定が PENDING のまま Flow が `canceled` のものを FAILED として確定 | 未着手 |
+| B-3 | 推定値の期限を PAY.JP の `expired_at` に置き換える GET（既定で無効） | 未着手 |
+| C | 運用（管理者通知、お客様への再与信の案内など） | 未着手 |
 
 ## 4. A-1 の設計（V93）
 
@@ -63,7 +65,26 @@
 - 出荷取込（Feature132）では、売上確定の開始が拒否されると行が `SHIPMENT_REFUSED` になる。出荷済みで売上確定が PENDING のまま残る状態は作らない。
 - 既存の、出荷済みで CAPTURE が PENDING のものは B で扱う。
 
-## 5. 開発 DB の状況（2026-11-18）
+## 5. B-1 の設計（V94）
+
+### 5.1 方針の経緯
+
+- 安全検査（`PaymentSafetyClassifier`）は、CANCELLED の Payment に「注文 CANCELLED・CANCEL 取引成功・履歴の実行者一致」を求める。Payment だけを CANCELLED にすると不整合になるため、期限切れは**注文の取消**として反映する。
+- 既存の取消（お客様・管理者）は変更期限（`OrderModificationGuard`）までしかできない。与信が期限切れになる時点では変更期限を過ぎているため、管理者専用の操作を新設し、**この操作に限り変更期限後でも取消を認める**（2026-11-18 承認）。
+
+### 5.2 処理（`ExpiredAuthorizationCancellationService`）
+
+1. 読み取りの事前確認：注文が ORDERED、発送準備前、未解決の注文変更なし、期限の記録が切れた AUTHORIZED の PAY.JP カード決済がちょうど 1 件。
+2. トランザクションの外で Payment Flow を GET し、`canceled` であることを確認する。そうでなければ何も変えずに拒否する（期限から PAY.JP の取消まで約 18 分のずれがある）。
+3. 1 回の書き込みトランザクション：Order をロック → Payment を id の昇順でロック（`PaymentService.startExpiredAuthorizationCancellation`）→ すべて再確認 → CANCEL 取引（目的 ORDER_CANCELLATION、実行者 ADMIN）→ V94 の監査行 → 取消結果の反映 → 注文の取消・在庫戻し・履歴・お客様への注文取消メール（既存の `cancelOrderAfterPaymentCancellation`）。
+- PAY.JP への POST は送らない。冪等性：注文が CANCELLED なら ALREADY_CANCELLED を返し、何もしない。
+
+### 5.3 DB の担保（V94）
+
+- `payment_expired_cancellation_observations`：POST なしで確定した取消の監査行。追記専用。CANCEL 取引の Payment の期限が DB の時計で切れている場合だけ書ける。
+- 遅延トリガー `f135_late_cancellation_guard`：変更期限以降に作られた ORDER_CANCELLATION 取引は、コミットまでに監査行が必要。通常の取消は変更期限前にしか作られない。
+
+## 6. 開発 DB の状況（2026-11-18）
 
 - AUTHORIZED 20 件のうち 15 件は PAY.JP 上で `canceled`（不整合監査で OPEN として検出済み）。V93 適用後は推定値で期限切れとなり、出荷できない。B で CANCELLED に反映する。
 - PENDING の Payment 27（注文 17）は、注文変更の再与信でお客様が確認を完了しなかったもの。注文変更は `MANUAL_REVIEW`（`UNSETTLED_AUTH_AFTER_GRACE`）。PAY.JP 上は `requires_payment_method` で、与信枠は確保されていない。注文 8 とともに手動判断とする。
