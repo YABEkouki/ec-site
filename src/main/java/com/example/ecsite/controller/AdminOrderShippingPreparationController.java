@@ -40,6 +40,9 @@ public class AdminOrderShippingPreparationController {
         ShippingPreparationStartResult result;
         try {
             result = shippingPreparationService.start(orderId);
+        } catch (com.example.ecsite.service.payment.AuthorizationExpiryException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+            return redirectToDetail(orderId, returnUrl);
         } catch (IllegalStateException | InvalidOrderStatusException e) {
             redirectAttributes.addFlashAttribute("errorMessage",
                     "発送準備を開始できません。変更期限・注文状態・決済状況をご確認ください。");

@@ -496,6 +496,8 @@ public class AdminOrderController {
         } catch (PaymentSafetyStopException e) {
             redirectAttributes.addFlashAttribute("errorMessage",
                     "決済状態を安全に確認できないため、自動処理を停止しています。管理者による確認が必要です。");
+        } catch (com.example.ecsite.service.payment.AuthorizationExpiryException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
         } catch (InvalidOrderStatusException | IllegalStateException e) {
             redirectAttributes.addFlashAttribute("errorMessage",
                     "発送・売上確定を実行できません。発送準備・注文状態・決済状況をご確認ください。");

@@ -162,6 +162,20 @@ class PaymentResultApplicationPostgresTest {
         assertThat(number("order_status_histories",f)).isEqualTo(status==AuthorizationResultStatus.FAILED?1:0);
         assertThat(number("stock_movements",f)).isEqualTo(status==AuthorizationResultStatus.FAILED?2:0);
     }
+    @Test void authorizedResultRecordsTheProviderExpiryOnce() {
+        Fixture f=fixture(false);var start=authorizationStart.start(f.orderId);
+        assertThat(authResult.setProviderPaymentId(start.snapshot(),f.providerId)).isEqualTo(PaymentResultApplication.APPLIED);
+        var snapshot=snapshots.find(start.transactionId()).orElseThrow();
+        var expiry=java.time.Instant.now().plus(java.time.Duration.ofDays(7)).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        var result=new AuthorizationResult(AuthorizationResultStatus.AUTHORIZED,f.providerId,null,null,expiry);
+        assertThat(authResult.apply(snapshot,result)).isEqualTo(PaymentResultApplication.APPLIED);
+        var row=jdbc.queryForMap("select source,expires_at from payment_authorization_expiries where payment_id=?",start.paymentId());
+        assertThat(row).containsEntry("source","PROVIDER");
+        assertThat(((java.sql.Timestamp)row.get("expires_at")).toLocalDateTime())
+                .isEqualTo(java.time.LocalDateTime.ofInstant(expiry,java.time.ZoneId.of("Asia/Tokyo")));
+        assertThat(authResult.apply(snapshot,result)).isEqualTo(PaymentResultApplication.ALREADY_APPLIED);
+        assertThat(jdbc.queryForObject("select count(*) from payment_authorization_expiries where payment_id=?",Integer.class,start.paymentId())).isEqualTo(1);
+    }
     @Test void providerIdAssignmentIsIdempotentAndRejectsDifferentId() {
         Fixture f=fixture(false);var start=authorizationStart.start(f.orderId);
         assertThat(authResult.setProviderPaymentId(start.snapshot(),f.providerId)).isEqualTo(PaymentResultApplication.APPLIED);

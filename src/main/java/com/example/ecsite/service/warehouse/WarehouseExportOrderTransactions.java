@@ -79,6 +79,8 @@ public class WarehouseExportOrderTransactions {
         try {
             if (order.getStatus() == OrderStatus.ORDERED) payments.validateCardPaymentForShippingPreparation(order);
             else paymentGuard.validateManualShipment(order);
+        } catch (com.example.ecsite.service.payment.AuthorizationExpiryException expiring) {
+            throw hold(Reason.AUTHORIZATION_EXPIRING, expiring);
         } catch (RuntimeException unsafe) {
             throw hold(Reason.PAYMENT_NOT_READY, unsafe);
         }

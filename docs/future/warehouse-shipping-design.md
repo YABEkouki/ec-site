@@ -252,7 +252,7 @@
 9. 緊急出荷の権限・監査・例外ルール
 10. 顧客通知のタイミングと内容
 11. 休日・倉庫非稼働日の扱い
-12. PAY.JPの3DS認証・与信期限に関する実際のAPI制約
+12. PAY.JPの3DS認証・与信期限に関する実際のAPI制約 → Feature135 で確定（`docs/feature135/authorization-expiry.md`）。与信期限は国内 7 日・海外 5 日で `expired_at` を正とし、期限切れの与信は PAY.JP が `canceled`（`cancellation_reason=expired`）にする。出荷準備は期限まで 24 時間超、売上確定の開始は期限前に限る（V93）。
 
 ## 13. Feature124との関係
 

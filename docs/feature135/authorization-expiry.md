@@ -1,0 +1,69 @@
+# Feature135 PAY.JP 与信期限の監視と対応
+
+## 1. PAY.JP の仕様（2026-11-18 確認）
+
+公式ドキュメント・告知と、テストモードへの GET（Payment Flow 2 件）で確認した。
+
+| 項目 | 内容 |
+|---|---|
+| 期限 | 国内発行カード 7 日、海外発行カード 5 日（2026-09-14 以降）。国内は `request_extended_authorization` で 25 日まで延長可（本システムは指定しない）。 |
+| 基準 | 応答の `expired_at` を正とする（カードにより短縮されるため、日数を仮定しない）。 |
+| 期限切れ後 | 2026-10-19 以降、Payment Flow は `canceled`（`cancellation_reason=expired`）になり、Webhook `payment_flow.canceled` が送られる。変更前からの残存分は補正されるが Webhook は送られない。 |
+| 期限切れと取消のずれ | テストモードで `canceled_at` は `expired_at` の約 18 分後。この間 GET では `requires_capture` に見えるため、ローカルで `expired_at` と比較して判定する。 |
+| 売上確定 | 失効した支払いは確定できない（v2 のエラーコードは未記載）。 |
+| 3DS | 記載なし。観測では `expired_at` は与信成立のちょうど 7 日後。 |
+| テストモード | 早送りの手段はない。実際に期限まで待つと自動で `canceled` になる（開発 DB で確認）。 |
+
+参照：
+- https://docs.pay.jp/v2/guide/status-management/auth-capture
+- https://pay.jp/info/2026-10-09-120000
+- https://pay.jp/info/2026-03-03-130000
+
+## 2. 調査時点の問題（Feature135 着手前）
+
+- Payment に期限の記録がなかった。
+- `payment_flow.canceled` は、保留中の CANCEL 取引がないと何もしない（期限切れはこれに当たる）。
+- 照合処理は AUTHORIZED を対象にしない。不整合監査は「AUTHORIZED／CANCELED」を汎用の不整合として検出するだけ。
+- 売上確定は注文を SHIPPED にしてから PAY.JP を呼ぶ。期限切れだと失敗し、照合でも `canceled` を PENDING に変換するため、出荷済みで CAPTURE が永久に PENDING になる。
+- 倉庫出力（V86）・出荷準備は期限を確認しない。
+
+## 3. サブ Feature
+
+| | 内容 | 状態 |
+|---|---|---|
+| A-1 | 期限の記録（V93）と出荷のゲート | 実装 |
+| A-2 | 管理画面の表示（注文一覧・詳細の期限表示、絞り込み） | 未着手 |
+| B | 期限切れの状態反映（AUTHORIZED→CANCELLED）、照合、Webhook、ESTIMATED を PROVIDER へ置き換える GET、出荷済みで売上確定不能のもの | 未着手 |
+| C | 運用（管理者通知、期限切れ注文の取消、お客様への再与信の案内） | 未着手 |
+
+## 4. A-1 の設計（V93）
+
+### 4.1 記録 `payment_authorization_expiries`
+
+- Payment 1 件につき 1 行。payments に列を足さないのは、payments にかかる Feature125 の更新ガードへの影響を避けるため。
+- 不変条件：**AUTHORIZED になった Payment には必ず行がある。** payments の AFTER トリガー `zz_f135_payment_authorized` が、AUTHORIZED への遷移（INSERT を含む）で ESTIMATED 行を作る。
+  - 推定値は `payments.created_at + 5 日`。与信は Flow 作成より前には起きず、5 日は最短の既定期間（海外カード）なので、実際の期限より遅くならない。
+- アプリは与信を反映するのと同じトランザクションで、PAY.JP の `expired_at` に一度だけ置き換える（`source=PROVIDER`）。経路は初回与信（`PaymentService.applyAuthorizationResult`）と注文変更・一括編集の再与信（`OrderReauthorizationTransactions`）。
+  - 値が範囲外（基準時刻以前、または 61 日超）のときは推定値のまま残し、警告ログを出す。与信の反映自体は失敗させない。
+- トリガー `f135_expiry_guard`：
+  - INSERT は AUTHORIZED の Payment だけ。値は常にトリガーが決める。
+  - UPDATE は ESTIMATED → PROVIDER の 1 回だけ。
+  - DELETE は Payment 自体の削除に伴う CASCADE だけ。TRUNCATE は不可。
+- 既存の AUTHORIZED は、マイグレーションで推定値を補う。
+
+### 4.2 ゲート（アプリと DB の両方）
+
+| 段階 | 条件 | アプリ | DB |
+|---|---|---|---|
+| 倉庫出力 | 期限まで 24 時間超 | `validateCardPaymentForShippingPreparation` → 保留理由 `AUTHORIZATION_EXPIRING` | `f135_line_expiry_guard`（出力行） |
+| 管理者の出荷準備 | 期限まで 24 時間超 | 同上（メッセージ表示） | `f135_order_expiry_guard`（準備開始） |
+| 売上確定の開始 | 期限前 | `CaptureShipmentOperations` の NEW 分岐（SHIPPED にする前） | `f135_order_expiry_guard`（ORDERED→SHIPPED） |
+
+- 時刻は DB の時計（`timezone('Asia/Tokyo', clock_timestamp())`）で判定する。アプリも同じ関数 `f135_authorization_valid_beyond` を使う。
+- 出荷取込（Feature132）では、売上確定の開始が拒否されると行が `SHIPMENT_REFUSED` になる。出荷済みで売上確定が PENDING のまま残る状態は作らない。
+- 既存の、出荷済みで CAPTURE が PENDING のものは B で扱う。
+
+## 5. 開発 DB の状況（2026-11-18）
+
+- AUTHORIZED 20 件のうち 15 件は PAY.JP 上で `canceled`（不整合監査で OPEN として検出済み）。V93 適用後は推定値で期限切れとなり、出荷できない。B で CANCELLED に反映する。
+- PENDING の Payment 27（注文 17）は、注文変更の再与信でお客様が確認を完了しなかったもの。注文変更は `MANUAL_REVIEW`（`UNSETTLED_AUTH_AFTER_GRACE`）。PAY.JP 上は `requires_payment_method` で、与信枠は確保されていない。注文 8 とともに手動判断とする。
