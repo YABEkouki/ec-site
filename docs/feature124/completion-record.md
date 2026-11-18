@@ -55,7 +55,7 @@
 - `PostgresTest`名の結合テスト: **54クラス・1,623件、Failures 0、Errors 0、Skipped 0**。
   これはクラス名による集計範囲であり、DBを利用する全テストの総数とは区別する。
 - SKIP: Mailpit手動疎通1件、明示有効化を要するプロセス再起動試験2件。
-- 除外: `OrderPaymentResetPostgresTest`のV53固定試験23件。過去スキーマ固定の契約試験と現行Entityの不一致は別課題として残す。制約を緩和してPASS扱いにはしていない。
+- 除外: `OrderPaymentResetPostgresTest`のV53固定試験23件。過去スキーマ固定の契約試験と現行Entityの不一致は別課題として残す。制約を緩和してPASS扱いにはしていない。（追記：Feature134-B（2026-11-18）でV53専用初期化SQLとこの試験を廃止。`scripts/manual/README.md`参照）
 - WARN/ERRORログには制約拒否・通信失敗・監査失敗等を再現する異常系診断を含む。Maven ERRORは0件。長いindex名の切り詰め通知（SQLSTATE 42622）を含む。
 - 開発DBの保存baselineと実行後の対象行内容・主キー情報は完全一致。
 - 今回の隔離コンテナは終了・削除済み。元リポジトリtarget、保全ファイル、Feature122は不変。

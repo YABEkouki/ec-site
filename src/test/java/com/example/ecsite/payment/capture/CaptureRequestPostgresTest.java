@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.sql.SQLException;
@@ -137,15 +135,6 @@ class CaptureRequestPostgresTest {
         assertThat(jdbc.queryForObject("select count(*) from capture_requests where capture_transaction_id=?",Long.class,f.transaction())).isZero();
         assertThat(jdbc.queryForObject("select status from payment_transactions where id=?",String.class,f.transaction())).isEqualTo("PENDING");
     }
-    @Test void v53ManualResetRejectsNewSchemaBeforeDeletingAnything() throws Exception {
-        var f=fixture();insert(values(f));
-        jdbc.execute("create temporary table order_payment_reset_gate(expected_database text, expected_user text, expected_server_addr inet, expected_server_port int, approval text, backup_reference text) on commit drop");
-        jdbc.execute("insert into order_payment_reset_gate select current_database(),current_user,inet_server_addr(),inet_server_port(),'APPROVE_ORDER_PAYMENT_RESET','isolated-test-only'");
-        String sql=Files.readString(Path.of("scripts/manual/reset-order-payment-data.sql"));
-        rejects(()->jdbc.execute(sql),"P0001");
-        assertThat(jdbc.queryForObject("select count(*) from capture_requests where capture_transaction_id=?",Long.class,f.transaction())).isEqualTo(1);
-    }
-
     @Test @Transactional(propagation=org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void migratesV53DataWithoutBackfillOrStatusRestrictions() {
         String schema="capture_upgrade_"+UUID.randomUUID().toString().replace("-","");
