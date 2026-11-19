@@ -160,8 +160,19 @@ public class OrderController {
                 "canResumePayment",
                 canResumePayment && !requiresPaymentConfirmation);
         model.addAttribute("shipmentTracking", shipmentTracking(order));
+        model.addAttribute("cancelledForExpiredAuthorization", authorizationExpiries != null
+                && order.getStatus() == com.example.ecsite.entity.OrderStatus.CANCELLED
+                && authorizationExpiries.cancelledForExpiredAuthorization(order.getId()));
 
         return "orders/detail";
+    }
+
+    private com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore authorizationExpiries;
+
+    /** Feature135-C2. Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAuthorizationExpiries(com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore authorizationExpiries) {
+        this.authorizationExpiries = authorizationExpiries;
     }
 
     @GetMapping("/{id}/content-changes")

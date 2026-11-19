@@ -157,6 +157,26 @@ class OrderControllerTest {
                         orderPage);
     }
 
+    /** Feature135-C2: a cancelled order says when it was cancelled because the card authorization expired. */
+    @Test
+    void detailTellsTheCustomerAboutAnExpiredAuthorizationCancellation() {
+        Order order = new Order(10L, 2000, LocalDateTime.of(2026, 11, 10, 10, 0), LocalDateTime.of(2026, 11, 10, 14, 0));
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "id", 5L);
+        when(loginUser.getId()).thenReturn(10L);
+        when(orderService.findOrderByIdAndUserId(5L, 10L)).thenReturn(order);
+        var store = mock(com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore.class);
+        when(store.cancelledForExpiredAuthorization(5L)).thenReturn(true);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(orderController, "setAuthorizationExpiries", store);
+
+        orderController.detail(5L, loginUser, model);
+        verify(model).addAttribute("cancelledForExpiredAuthorization", false);
+        verify(store, never()).cancelledForExpiredAuthorization(5L);
+
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "status", com.example.ecsite.entity.OrderStatus.CANCELLED);
+        orderController.detail(5L, loginUser, model);
+        verify(model).addAttribute("cancelledForExpiredAuthorization", true);
+    }
+
     @Test
     void detailDisplaysOrderForLoggedInUser() {
 

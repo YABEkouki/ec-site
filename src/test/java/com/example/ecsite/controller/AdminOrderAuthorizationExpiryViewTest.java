@@ -136,7 +136,7 @@ class AdminOrderAuthorizationExpiryViewTest {
         when(expiries.forOrder(42L)).thenReturn(expired);
         when(expiredCancellations.available(42L)).thenReturn(true);
         var html = mvc.perform(get("/admin/orders/42")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertThat(html).contains("expiry-guidance-cancel", "お客様に再注文をご案内してください").doesNotContain("expiry-guidance-blocked");
+        assertThat(html).contains("expiry-guidance-cancel", "取消のお知らせメールで再注文をご案内します").doesNotContain("expiry-guidance-blocked");
         when(expiredCancellations.available(42L)).thenReturn(false);
         html = mvc.perform(get("/admin/orders/42")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(html).contains("expiry-guidance-blocked", "この画面からは取り消せません").doesNotContain("expiry-guidance-cancel");

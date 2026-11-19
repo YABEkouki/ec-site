@@ -86,6 +86,17 @@ class CustomerOrderNotificationRendererTest {
                 .contains("ご注文をキャンセルいたしました");
     }
 
+    /** Feature135-C2 (V96): an expired-authorization cancellation asks for a new order; older payloads lack the key. */
+    @Test void anExpiredAuthorizationCancellationAsksForANewOrder() {
+        var expired = render("ORDER_CANCELLED", "\"changedByType\":\"ADMIN\",\"accepted\":true,\"authorizationExpired\":true");
+        assertThat(expired.subject()).contains("ご注文をキャンセルいたしました（お支払い期限切れ）");
+        assertThat(expired.body()).contains("有効期限（与信期限）が切れたため", "カードへのご請求はありません", "改めてご注文ください",
+                "キャンセルしたご注文の内容").doesNotContain("誠に勝手ながら");
+        var regular = render("ORDER_CANCELLED", "\"changedByType\":\"ADMIN\",\"accepted\":true,\"authorizationExpired\":false");
+        assertThat(regular.subject()).doesNotContain("お支払い期限切れ");
+        assertThat(regular.body()).contains("誠に勝手ながら");
+    }
+
     @Test void shipmentShowsTrackingOnlyWhenTheWarehouseShippedIt() {
         var tracking = new Tracking("ヤマト運輸", "1234-5678-9012", LocalDate.of(2026, 11, 17), 1L,
                 WarehouseShipmentImportLineState.SHIPPED);

@@ -214,6 +214,10 @@
         <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).CANCELLED}">
             この注文はキャンセルされています。
         </p>
+        <p th:if="${cancelledForExpiredAuthorization}" id="expired-authorization-cancelled">
+            カードのお支払いの有効期限（与信期限）が切れたため、キャンセルされました。カードへのご請求はありません。
+            引き続きご希望の場合は、お手数ですが改めてご注文ください。
+        </p>
 
     </section>
 
