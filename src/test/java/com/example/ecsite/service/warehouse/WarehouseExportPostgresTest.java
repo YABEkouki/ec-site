@@ -62,6 +62,8 @@ class WarehouseExportPostgresTest {
     @Autowired com.example.ecsite.service.OrderService orderService;
     @Autowired com.example.ecsite.service.payment.AdminPaymentCancellationService adminCancellation;
     @Autowired com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService expiredCancellation;
+    @Autowired com.example.ecsite.service.payment.AuthorizationExpiryRefreshService.Transactions refreshTransactions;
+    @Autowired org.springframework.context.ApplicationContext context;
 
     // ---- Feature135-A1: authorization expiry ----
 
@@ -362,6 +364,100 @@ class WarehouseExportPostgresTest {
     }
 
     Fixture card(LocalDate businessDate, int paymentAgeDays) { return order(businessDate, true, paymentAgeDays); }
+
+    // ---- Feature135-B3: replacing ESTIMATED expiries with PAY.JP expired_at ----
+
+    /** A clock the test moves forward, for the in-process retry interval. */
+    static final class MovableClock extends java.time.Clock {
+        java.time.Instant now = java.time.Instant.now();
+        @Override public java.time.ZoneId getZone() { return java.time.ZoneId.of("Asia/Tokyo"); }
+        @Override public java.time.Clock withZone(java.time.ZoneId zone) { return this; }
+        @Override public java.time.Instant instant() { return now; }
+    }
+
+    com.example.ecsite.service.payment.AuthorizationExpiryRefreshService refresher(java.time.Clock clock) {
+        return new com.example.ecsite.service.payment.AuthorizationExpiryRefreshService(refreshTransactions, gateway, clock, 200, java.time.Duration.ofHours(6));
+    }
+
+    void stubAuthorization(Fixture f, com.example.ecsite.payment.AuthorizationResultStatus status, java.time.Instant expiresAt) {
+        org.mockito.Mockito.when(gateway.retrieveAuthorization(flow(f))).thenAnswer(call -> {
+            // The GET is never inside a database transaction.
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return new com.example.ecsite.payment.AuthorizationRecovery(
+                    new com.example.ecsite.payment.AuthorizationResult(status, flow(f), null, null, expiresAt), null);
+        });
+    }
+
+    java.time.Instant inDays(long days) { return java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).plus(java.time.Duration.ofDays(days)); }
+
+    boolean validNow(Fixture f) {
+        return jdbc.queryForObject("select f135_authorization_valid_beyond(?, interval '0 seconds')", Boolean.class, f.payment());
+    }
+
+    @Test void estimatedExpiriesAreReplacedByPayJpExpiredAtOnlyForUncapturedFlows() {
+        var date = nextBusinessDate();
+        var fresh = card(date); var estimatedOut = card(date, 6); var canceled = card(date, 10); var unreadable = card(date, 3); var odd = card(date, 2);
+        var freshValue = inDays(7); var extended = inDays(1);
+        stubAuthorization(fresh, com.example.ecsite.payment.AuthorizationResultStatus.AUTHORIZED, freshValue);
+        stubAuthorization(estimatedOut, com.example.ecsite.payment.AuthorizationResultStatus.AUTHORIZED, extended);
+        stubAuthorization(canceled, com.example.ecsite.payment.AuthorizationResultStatus.FAILED, null);
+        stubAuthorization(odd, com.example.ecsite.payment.AuthorizationResultStatus.AUTHORIZED, inDays(70));
+        org.mockito.Mockito.when(gateway.retrieveAuthorization(flow(unreadable))).thenThrow(new com.example.ecsite.payment.PaymentGatewayException("timeout"));
+        assertThat(validNow(estimatedOut)).isFalse();
+        var clock = new MovableClock(); var service = refresher(clock);
+
+        service.runPass();
+        assertThat(expiryRow(fresh.payment())).containsEntry("source", "PROVIDER")
+                .containsEntry("expires_at", java.sql.Timestamp.valueOf(LocalDateTime.ofInstant(freshValue, java.time.ZoneId.of("Asia/Tokyo"))));
+        assertThat(expiryRow(fresh.payment()).get("provider_recorded_at")).isNotNull();
+        // The estimate had passed, PAY.JP still holds the authorization: valid again from PAY.JP's own value.
+        assertThat(expiryRow(estimatedOut.payment())).containsEntry("source", "PROVIDER");
+        assertThat(validNow(estimatedOut)).isTrue();
+        // Canceled, unreadable and out-of-range answers keep the conservative estimate.
+        for (var kept : List.of(canceled, unreadable, odd)) assertThat(expiryRow(kept.payment())).containsEntry("source", "ESTIMATED");
+        for (var f : List.of(fresh, estimatedOut, canceled, unreadable, odd)) org.mockito.Mockito.verify(gateway).retrieveAuthorization(flow(f));
+
+        // Next pass: recorded ones are no longer candidates; canceled/out-of-range wait 6 hours; a failed GET is retried.
+        service.runPass();
+        for (var f : List.of(fresh, estimatedOut, canceled, odd)) org.mockito.Mockito.verify(gateway, org.mockito.Mockito.times(1)).retrieveAuthorization(flow(f));
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.times(2)).retrieveAuthorization(flow(unreadable));
+        clock.now = clock.now.plus(java.time.Duration.ofHours(6));
+        service.runPass();
+        for (var f : List.of(canceled, odd)) org.mockito.Mockito.verify(gateway, org.mockito.Mockito.times(2)).retrieveAuthorization(flow(f));
+        for (var f : List.of(fresh, estimatedOut)) org.mockito.Mockito.verify(gateway, org.mockito.Mockito.times(1)).retrieveAuthorization(flow(f));
+    }
+
+    @Test void onlyEstimatedAuthorizationsOfLiveCardOrdersWithin25DaysAreAsked() {
+        var date = nextBusinessDate();
+        var estimated = card(date, 3); var provider = card(date); var old = card(date, 26); var paid = order(date, false);
+        providerExpiry(provider.payment(), "interval '3 days'");
+        var cancelled = card(date, 10);
+        stubFlow(cancelled, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+        assertThat(expiredCancellation.cancel(cancelled.order(), 51L, "cancel-admin", null)).isEqualTo(com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService.Outcome.CANCELLED);
+        var ids = refreshTransactions.candidates(10_000).stream().map(c -> c.paymentId()).toList();
+        assertThat(ids).contains(estimated.payment()).doesNotContain(provider.payment(), old.payment(), cancelled.payment());
+        assertThat(jdbc.queryForObject("select count(*) from payments where order_id=?", Integer.class, paid.order())).isZero();
+        // The scheduler is not running unless enabled.
+        assertThat(context.getBeanNamesForType(com.example.ecsite.service.payment.AuthorizationExpiryRefreshScheduler.class)).isEmpty();
+    }
+
+    @Test void aPaymentChangedWhileReadingIsLeftAsTheDatabaseHasIt() {
+        var raced = card(nextBusinessDate(), 3);
+        org.mockito.Mockito.when(gateway.retrieveAuthorization(flow(raced))).thenAnswer(call -> {
+            providerExpiry(raced.payment(), "interval '2 days'"); // a concurrent authorization result recorded PAY.JP's value
+            return new com.example.ecsite.payment.AuthorizationRecovery(new com.example.ecsite.payment.AuthorizationResult(
+                    com.example.ecsite.payment.AuthorizationResultStatus.AUTHORIZED, flow(raced), null, null, inDays(4)), null);
+        });
+        var before = new Object[1];
+        refresher(new MovableClock()).runPass();
+        before[0] = expiryRow(raced.payment());
+        assertThat(expiryRow(raced.payment())).containsEntry("source", "PROVIDER");
+        assertThat((java.sql.Timestamp) expiryRow(raced.payment()).get("expires_at")).isBefore(java.sql.Timestamp.valueOf(LocalDateTime.now().plusDays(3)));
+        assertThat(refreshTransactions.record(new com.example.ecsite.service.payment.AuthorizationExpiryRefreshService.Candidate(
+                raced.order(), raced.payment(), flow(raced)), inDays(4)))
+                .isEqualTo(com.example.ecsite.service.payment.AuthorizationExpiryRefreshService.Outcome.STALE);
+        assertThat(expiryRow(raced.payment())).isEqualTo(before[0]);
+    }
 
     // ---- C-3: hold history ----
 

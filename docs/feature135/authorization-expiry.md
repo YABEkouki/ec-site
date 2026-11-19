@@ -35,7 +35,7 @@
 | A-2 | 管理画面の表示（注文一覧の列・絞り込み、詳細の期限・不整合） | 完了 |
 | B-1 | 管理者による「与信期限切れによる取消」（V94） | 完了（ブラウザ確認済み） |
 | B-2 | 出荷済みで売上確定が PENDING のまま Flow が `canceled` のものを FAILED として確定（V95） | 完了（テストで確認、ブラウザ確認なし） |
-| B-3 | 推定値の期限を PAY.JP の `expired_at` に置き換える GET（既定で無効） | 未着手 |
+| B-3 | 推定値の期限を PAY.JP の `expired_at` に置き換える GET（既定で無効） | 完了（ブラウザ確認済み） |
 | C | 運用（管理者通知、お客様への再与信の案内など） | 未着手 |
 
 ## 4. A-1 の設計（V93）
@@ -94,7 +94,16 @@
 - 同じ `canceled` を再度受けた場合（Webhook と照合の競合）は ALREADY_APPLIED で何も変えない。管理者の再確認は結果 FAILED を表示し、以後の再確認は既存どおり「安全に確認できない」で止まる。
 - お客様への連絡・別の方法での請求は C で扱う。
 
-## 7. 開発 DB の状況（2026-11-18）
+## 7. B-3 の設計（マイグレーションなし）
+
+- `AuthorizationExpiryRefreshScheduler`（`app.payment.authorization-expiry-refresh.enabled=${AUTHORIZATION_EXPIRY_REFRESH_ENABLED:false}`、間隔 `AUTHORIZATION_EXPIRY_REFRESH_FIXED_DELAY`（既定 10 分）、1 回 20 件、再問い合わせ間隔 6 時間）。
+- 対象：与信期限が ESTIMATED、決済が AUTHORIZED の PAY.JP カード決済（PAY.JP の ID あり）、注文が取消済みでない、与信の基準時刻から 25 日以内（国内の延長上限。過ぎたものは確実に失効しているため問い合わせない）。期限の早い順。
+- PAY.JP への GET（`retrieveAuthorization`）はトランザクションの外。`requires_capture` で `expired_at` があるときだけ、短いトランザクションで注文 → 決済（id 昇順）をロックし、同じ PAY.JP ID の AUTHORIZED 決済で ESTIMATED のままであることを再確認してから V93 の一度きりの置き換えを行う。範囲外の値は V93 の範囲チェックで記録されない。
+- `canceled` など記録できない応答や範囲外の値は、同じプロセス内では 6 時間問い合わせない（再起動で消える）。GET の失敗は次回に再試行。
+- 推定で期限切れでも、PAY.JP の値で有効なら、発送準備などのゲートは PAY.JP の値で判定される。
+- 実行ごとに件数（対象・記録・記録対象外・競合・失敗）をログに出す。応答の中身は出さない。
+
+## 8. 開発 DB の状況（2026-11-18）
 
 - AUTHORIZED 20 件のうち 15 件は PAY.JP 上で `canceled`（不整合監査で OPEN として検出済み）。V93 適用後は推定値で期限切れとなり、出荷できない。B で CANCELLED に反映する。
 - PENDING の Payment 27（注文 17）は、注文変更の再与信でお客様が確認を完了しなかったもの。注文変更は `MANUAL_REVIEW`（`UNSETTLED_AUTH_AFTER_GRACE`）。PAY.JP 上は `requires_payment_method` で、与信枠は確保されていない。注文 8 とともに手動判断とする。
