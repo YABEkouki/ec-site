@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(propagation = Propagation.NEVER)
 public class AdminCaptureRequeryService {
-    public enum Result { CONFIRMED, WAITING }
+    public enum Result { CONFIRMED, WAITING, FAILED }
     private final AdminCaptureRequeryPreparationService preparation;
     private final PaymentOperationSyncService synchronization;
     public AdminCaptureRequeryService(AdminCaptureRequeryPreparationService preparation, PaymentOperationSyncService synchronization) {
@@ -27,6 +27,8 @@ public class AdminCaptureRequeryService {
             if (preparation.latest(target.snapshot()) == PaymentStartDisposition.ALREADY_APPLIED) return Result.CONFIRMED;
             throw failure;
         }
+        // Feature135-B2: PAY.JP had canceled the Flow; the capture is now settled as FAILED.
+        if (outcome == PaymentSynchronizationOutcome.APPLIED && preparation.failedByCanceledFlow(target.snapshot())) return Result.FAILED;
         PaymentStartDisposition latest = preparation.latest(target.snapshot());
         if (latest == PaymentStartDisposition.ALREADY_APPLIED) return Result.CONFIRMED;
         if (latest != PaymentStartDisposition.REUSED || outcome != PaymentSynchronizationOutcome.WAITING)

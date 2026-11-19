@@ -25,7 +25,10 @@ public class AdminCaptureRequeryController {
         if (orderId == null || orderId <= 0) throw new InvalidOrderIdException();
         try {
             var result = service.requery(orderId);
-            flash.addFlashAttribute(result == AdminCaptureRequeryService.Result.CONFIRMED ? "successMessage" : "errorMessage",
+            if (result == AdminCaptureRequeryService.Result.FAILED) {
+                flash.addFlashAttribute("errorMessage", "PAY.JP上で与信が取り消されていたため、売上確定を失敗として確定しました。"
+                        + "発送済みのため、お客様への請求方法を確認してください。");
+            } else flash.addFlashAttribute(result == AdminCaptureRequeryService.Result.CONFIRMED ? "successMessage" : "errorMessage",
                     result == AdminCaptureRequeryService.Result.CONFIRMED
                             ? "売上確定済みであることを確認しました。" : "売上確定結果を引き続き確認中です。");
         } catch (CaptureRequeryRejectedException | InvalidOrderStatusException failure) {

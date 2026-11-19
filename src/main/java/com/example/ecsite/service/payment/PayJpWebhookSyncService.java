@@ -39,8 +39,11 @@ public class PayJpWebhookSyncService {
             case "payment_flow.succeeded" ->
                 captureSyncService.synchronize(providerPaymentId);
 
-            case "payment_flow.canceled" ->
-                cancellationSyncService.synchronize(providerPaymentId);
+            case "payment_flow.canceled" -> {
+                // Feature135-B2: without a pending Cancel, a canceled Flow settles a pending shipment capture as FAILED.
+                if (cancellationSyncService.synchronize(providerPaymentId) == PaymentSynchronizationOutcome.SKIPPED)
+                    captureSyncService.synchronize(providerPaymentId);
+            }
 
             default ->
                 authorizationSyncService.synchronize(
