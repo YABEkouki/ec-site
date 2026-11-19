@@ -75,6 +75,16 @@ public class PaymentAuthorizationExpiryStore {
                 """, Boolean.class, paymentId));
     }
 
+    /** Feature135-C2: the order was cancelled by the expired-authorization cancellation (V94 audit row). */
+    @Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
+    public boolean cancelledForExpiredAuthorization(long orderId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                select exists(select 1 from payment_expired_cancellation_observations x
+                              join payments p on p.id = x.payment_id join orders o on o.id = p.order_id
+                              where o.id = ? and o.status = 'CANCELLED')
+                """, Boolean.class, orderId));
+    }
+
     /** The database's Asia/Tokyo wall clock, as used by every V93/V94 rule. */
     @Transactional(propagation = Propagation.SUPPORTS)
     public LocalDateTime databaseNow() {

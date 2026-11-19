@@ -289,6 +289,10 @@ class WarehouseExportPostgresTest {
         org.mockito.Mockito.verifyNoInteractions(gateway);
         assertThat(expiredObservations(f)).isEqualTo(1);
         assertThat(expiredCancellation.available(f.order())).isFalse();
+        // Feature135-C2 (V96): the customer is told why, in the cancellation notification and on the order detail.
+        var notice = jdbc.queryForMap("select payload::text as payload from customer_order_notifications where order_id=? and event_type='ORDER_CANCELLED'", f.order());
+        assertThat((String) notice.get("payload")).contains("\"authorizationExpired\": true").contains("\"changedByType\": \"ADMIN\"");
+        assertThat(expiries.cancelledForExpiredAuthorization(f.order())).isTrue();
         // Feature135-C1: no longer counted; the detail shows why it was cancelled.
         assertThat(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.EXPIRED)).doesNotContain(f.order());
         var record = expiryQueries.forOrder(f.order()).expiredCancellation();

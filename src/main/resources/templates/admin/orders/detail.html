@@ -115,7 +115,7 @@
                         お客様への連絡や注文の取消など、個別に対応してください。
                     </p>
                     <p th:if="${authorizationExpiry.hasExpired() and canCancelExpiredAuthorization}" id="expiry-guidance-cancel">
-                        対応：下の「与信期限切れによる取消」で注文を取り消してください。取消後、お客様に再注文をご案内してください。
+                        対応：下の「与信期限切れによる取消」で注文を取り消してください。お客様には、取消のお知らせメールで再注文をご案内します。
                     </p>
                     <p th:if="${authorizationExpiry.hasExpired() and !canCancelExpiredAuthorization}" id="expiry-guidance-blocked">
                         対応：この画面からは取り消せません。PAY.JP上でまだ与信が取り消されていない（期限切れから取消まで数十分かかります）、

@@ -82,7 +82,12 @@ public class CustomerOrderNotificationRenderer {
             }
             case "ORDER_CANCELLED" -> {
                 String actor = payload.path("changedByType").asString();
-                if ("SYSTEM".equals(actor) && !payload.path("accepted").asBoolean()) {
+                if (payload.path("authorizationExpired").asBoolean()) {
+                    // Feature135-C2 (V96): cancelled after the card authorization expired; ask for a new order.
+                    subject = "ご注文をキャンセルいたしました（お支払い期限切れ）";
+                    lead(text, "カードのお支払いの有効期限（与信期限）が切れたため、ご注文をキャンセルいたしました。カードへのご請求はありません。",
+                            "お手数ですが、引き続きご希望の場合は、改めてご注文ください。");
+                } else if ("SYSTEM".equals(actor) && !payload.path("accepted").asBoolean()) {
                     subject = "ご注文は成立しませんでした";
                     lead(text, "決済が完了しなかったため、ご注文は成立しませんでした。",
                             "カードへのご請求はありません。お手数ですが、改めてご注文ください。");

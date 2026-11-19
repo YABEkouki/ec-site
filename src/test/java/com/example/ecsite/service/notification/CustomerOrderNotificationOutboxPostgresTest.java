@@ -172,6 +172,9 @@ class CustomerOrderNotificationOutboxPostgresTest {
         JsonNode customer=payload(byCustomer,"ORDER_CANCELLED");
         assertThat(customer.path("changedByType").asString()).isEqualTo("USER");
         assertThat(customer.path("accepted").asBoolean()).isTrue();
+        // Feature135-C2 (V96): a regular cancellation is not an expired-authorization cancellation.
+        assertThat(customer.path("authorizationExpired").isBoolean()).isTrue();
+        assertThat(customer.path("authorizationExpired").asBoolean()).isFalse();
         assertThat(customer.at("/order/status").asString()).isEqualTo("CANCELLED");
 
         long byAdmin=order(seed);String adminProvider=authorize(byAdmin,AuthorizationResultStatus.AUTHORIZED);
@@ -181,6 +184,7 @@ class CustomerOrderNotificationOutboxPostgresTest {
                 .isEqualTo(CancellationResultStatus.CANCELLED);
         JsonNode admin=payload(byAdmin,"ORDER_CANCELLED");
         assertThat(admin.path("changedByType").asString()).isEqualTo("ADMIN");
+        assertThat(admin.path("authorizationExpired").asBoolean()).isFalse();
         assertThat(admin.toString()).doesNotContain("admin note").doesNotContain(seed.preparer().username());
     }
 

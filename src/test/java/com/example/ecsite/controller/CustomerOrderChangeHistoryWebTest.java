@@ -47,6 +47,7 @@ class CustomerOrderChangeHistoryWebTest {
     @MockitoBean CustomUserDetailsService customers;
     @MockitoBean AdminAuthenticationSuccessHandler adminSuccess;
     @MockitoBean CustomerAuthenticationSuccessHandler customerSuccess;
+    @MockitoBean com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore authorizationExpiries;
     static final String URL="/orders/1/content-changes";
     final CustomUserDetails customer=new CustomUserDetails(2L,"buyer","unused",true,List.of(new SimpleGrantedAuthority("ROLE_USER")));
     String show(String scenario,String query,int status)throws Exception {
