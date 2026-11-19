@@ -129,6 +129,35 @@ class AdminOrderAuthorizationExpiryViewTest {
         assertThat(run.get()).asString().startsWith("ng:").contains("注文は変更していません");
     }
 
+    /** Feature135-C1: what the administrator should do next, for each situation. */
+    @Test void detailGuidesTheNextStepForEachSituation() throws Exception {
+        var mvc = mvc();
+        var expired = new OrderExpiry(List.of(new PaymentExpiry(7, true, badge(Level.EXPIRED, 0, false))), List.of());
+        when(expiries.forOrder(42L)).thenReturn(expired);
+        when(expiredCancellations.available(42L)).thenReturn(true);
+        var html = mvc.perform(get("/admin/orders/42")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("expiry-guidance-cancel", "お客様に再注文をご案内してください").doesNotContain("expiry-guidance-blocked");
+        when(expiredCancellations.available(42L)).thenReturn(false);
+        html = mvc.perform(get("/admin/orders/42")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("expiry-guidance-blocked", "この画面からは取り消せません").doesNotContain("expiry-guidance-cancel");
+
+        when(expiries.forOrder(42L)).thenReturn(new OrderExpiry(List.of(new PaymentExpiry(7, true, badge(Level.SOON, 5, false))), List.of()));
+        html = mvc.perform(get("/admin/orders/42")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).doesNotContain("expiry-guidance-cancel", "expiry-guidance-blocked");
+
+        when(expiries.forOrder(42L)).thenReturn(new OrderExpiry(List.of(), List.of(),
+                new CaptureCancellation(7, "expired", LocalDateTime.of(2026, 11, 19, 9, 5)), null));
+        html = mvc.perform(get("/admin/orders/42")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("capture-cancellation", "売上未確定（与信取消）", "売上は確定していません", "expired",
+                "2026/11/19 09:05", "別の方法でのお支払いを依頼").doesNotContain("expired-cancellation-record");
+
+        when(expiries.forOrder(42L)).thenReturn(new OrderExpiry(List.of(), List.of(), null,
+                new ExpiredCancellation(7, LocalDateTime.of(2026, 11, 11, 13, 21), LocalDateTime.of(2026, 11, 18, 15, 20))));
+        html = mvc.perform(get("/admin/orders/42")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("expired-cancellation-record", "与信期限切れによる取消", "2026/11/11 13:21", "2026/11/18 15:20")
+                .doesNotContain("id=\"capture-cancellation\"");
+    }
+
     @Test void detailWithoutAuthorizationsShowsNoExpiryRows() throws Exception {
         var mvc = mvc();
         when(expiries.forOrder(42L)).thenReturn(new OrderExpiry(List.of(), List.of()));

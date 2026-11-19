@@ -132,7 +132,24 @@ public class AdminController {
         }
         model.addAttribute("customerNotificationActionCount", customerNotificationActionCount);
 
+        // Feature135-C1: card authorization expiry counts; unavailable counts must not break the dashboard.
+        com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries.Summary authorizationExpirySummary = null;
+        try {
+            if (authorizationExpiries != null) authorizationExpirySummary = authorizationExpiries.summary();
+        } catch (DataAccessException unavailable) {
+            // Rendered as "unavailable".
+        }
+        model.addAttribute("authorizationExpirySummary", authorizationExpirySummary);
+
         return "admin/index";
+    }
+
+    private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
+
+    /** Feature135-C1. Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAuthorizationExpiries(com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries) {
+        this.authorizationExpiries = authorizationExpiries;
     }
 
     private com.example.ecsite.service.notification.AdminCustomerNotificationQueries customerNotifications;

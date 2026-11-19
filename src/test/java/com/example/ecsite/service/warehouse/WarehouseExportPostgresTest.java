@@ -256,6 +256,12 @@ class WarehouseExportPostgresTest {
         assertThatThrownBy(() -> adminCancellation.cancel(f.order(), 51L, "cancel-admin", null))
                 .hasMessageContaining("変更受付は終了");
         assertThat(expiredCancellation.available(f.order())).isTrue();
+        // Feature135-C1: counted on the dashboard and in the filter while it waits for the administrator.
+        assertThat(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.EXPIRED)).contains(f.order());
+        var waiting = expiryQueries.summary();
+        assertThat(waiting.expired()).isEqualTo(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.EXPIRED).size());
+        assertThat(waiting.attention()).isEqualTo(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.ATTENTION).size());
+        assertThat(expiryQueries.forOrder(f.order()).expiredCancellation()).isNull();
         stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
         int stock = jdbc.queryForObject("select stock from products p join order_items i on i.product_id=p.id where i.order_id=?", Integer.class, f.order());
 
@@ -283,6 +289,11 @@ class WarehouseExportPostgresTest {
         org.mockito.Mockito.verifyNoInteractions(gateway);
         assertThat(expiredObservations(f)).isEqualTo(1);
         assertThat(expiredCancellation.available(f.order())).isFalse();
+        // Feature135-C1: no longer counted; the detail shows why it was cancelled.
+        assertThat(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.EXPIRED)).doesNotContain(f.order());
+        var record = expiryQueries.forOrder(f.order()).expiredCancellation();
+        assertThat(record.paymentId()).isEqualTo(f.payment());
+        assertThat(record.authorizationExpiresAt()).isEqualTo(((java.sql.Timestamp) observed.get("authorization_expires_at")).toLocalDateTime());
     }
 
     @Test void anExpiredAuthorizationNotYetCanceledAtPayJpOrUnreadableIsLeftUnchanged() {

@@ -107,6 +107,45 @@
                     </td>
                 </tr>
                 <tr>
+                    <td><strong>カード与信期限切れ（未発送）</strong></td>
+                    <td>
+                        <strong th:if="${authorizationExpirySummary != null}" th:text="${authorizationExpirySummary.expired()}"
+                            th:classappend="${authorizationExpirySummary.expired() > 0} ? 'action-required-danger'">0</strong>
+                        <span th:if="${authorizationExpirySummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/orders(authorizationExpiry='EXPIRED')}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>カード与信期限切れ・24時間未満</strong></td>
+                    <td>
+                        <strong th:if="${authorizationExpirySummary != null}" th:text="${authorizationExpirySummary.attention()}"
+                            th:classappend="${authorizationExpirySummary.attention() > 0} ? 'action-required-warning'">0</strong>
+                        <span th:if="${authorizationExpirySummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/orders(authorizationExpiry='ATTENTION')}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>発送済み・売上未確定（与信取消）</strong></td>
+                    <td>
+                        <strong th:if="${authorizationExpirySummary != null}" th:text="${authorizationExpirySummary.captureCanceled()}"
+                            th:classappend="${authorizationExpirySummary.captureCanceled() > 0} ? 'action-required-danger'">0</strong>
+                        <span th:if="${authorizationExpirySummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/orders(authorizationExpiry='CAPTURE_CANCELED')}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+                <tr>
                     <td><strong>注文変更による出荷保留</strong></td>
                     <td>
                         <th:block th:if="${orderHoldSummary != null}">
