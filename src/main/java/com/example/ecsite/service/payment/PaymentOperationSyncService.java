@@ -65,10 +65,9 @@ public class PaymentOperationSyncService {
                                         snapshot.initiatorId(), snapshot.initiatorUsername())))
                         yield PaymentSynchronizationOutcome.SKIPPED;
                     PaymentFlowState state = gateway.retrievePaymentFlow(snapshot.providerPaymentId());
-                    boolean captured = state.status() == PaymentFlowStatus.SUCCEEDED;
-                    CaptureResult result = new CaptureResult(captured ? CaptureResultStatus.CAPTURED : CaptureResultStatus.PENDING,
-                            state.providerPaymentId(), null, null);
-                    yield classify(capture.apply(snapshot, result), !captured);
+                    // Feature135-B2: a canceled Flow (for example an expired authorization) settles the capture as FAILED.
+                    CaptureResult result = CaptureResult.fromFlowState(state);
+                    yield classify(capture.apply(snapshot, result), result.status() == CaptureResultStatus.PENDING);
                 }
                 case CANCEL -> {
                     if (snapshot.initiatorType() != PaymentTransactionInitiatorType.USER

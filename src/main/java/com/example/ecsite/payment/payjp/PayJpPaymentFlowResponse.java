@@ -13,10 +13,18 @@ public record PayJpPaymentFlowResponse(
         PayJpPaymentErrorResponse lastPaymentError,
         /** Feature135: authorization expiry of an uncaptured Flow; absent or null is allowed. */
         @JsonProperty("expired_at")
-        java.time.OffsetDateTime expiredAt) {
+        java.time.OffsetDateTime expiredAt,
+        /** Feature135-B2: why a canceled Flow was canceled (for example expired); absent or null is allowed. */
+        @JsonProperty("cancellation_reason")
+        String cancellationReason) {
 
     public PayJpPaymentFlowResponse(String id, String clientSecret, String status,
             PayJpPaymentErrorResponse lastPaymentError) {
-        this(id, clientSecret, status, lastPaymentError, null);
+        this(id, clientSecret, status, lastPaymentError, null, null);
+    }
+
+    public PayJpPaymentFlowResponse(String id, String clientSecret, String status,
+            PayJpPaymentErrorResponse lastPaymentError, java.time.OffsetDateTime expiredAt) {
+        this(id, clientSecret, status, lastPaymentError, expiredAt, null);
     }
 }

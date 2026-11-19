@@ -48,6 +48,7 @@ class CaptureShipmentFlowPostgresTest {
     @MockitoSpyBean com.example.ecsite.config.PayJpSafetyProperties safety;
     @Autowired PaymentReconciliationItemService reconciliation;
     @Autowired PayJpWebhookCaptureSyncService webhook;
+    @Autowired PayJpWebhookSyncService webhooks;
     @Autowired OrderRepository orders;
     @Autowired PaymentRepository payments;
     @MockitoSpyBean PaymentTransactionRepository transactions;
@@ -273,7 +274,7 @@ class CaptureShipmentFlowPostgresTest {
         });
         assertThat(row(f)).isEqualTo(before);assertThat(transactionRows(f)).isEqualTo(txBefore);assertThat(historyCount(f)).isZero();verifyNoInteractions(gateway);
     }
-    @ParameterizedTest @ValueSource(strings={"SUCCEEDED","PROCESSING","REQUIRES_CAPTURE","CANCELED","EXCEPTION","TIMEOUT"})
+    @ParameterizedTest @ValueSource(strings={"SUCCEEDED","PROCESSING","REQUIRES_CAPTURE","EXCEPTION","TIMEOUT"})
     void manualRequeryIsGetOnlyOutsideTransactionsAndKeepsShipment(String outcome) {
         Fixture f=fixture();begin(f);var before=row(f);var unchanged=invariant(f);var transactionsBefore=transactionRows(f);
         when(gateway.retrievePaymentFlow(f.provider())).thenAnswer(call -> {
@@ -610,5 +611,66 @@ class CaptureShipmentFlowPostgresTest {
         Fixture f=fixture();var operation=begin(f);
         assertThat(operation.snapshot().purpose()).isEqualTo(PaymentTransactionPurpose.SHIPMENT_CAPTURE);
         assertThat(jdbc.queryForObject("select purpose from payment_transactions where id=?",String.class,operation.transactionId())).isEqualTo("SHIPMENT_CAPTURE");
+    }
+
+    // Feature135-B2: a Flow canceled at PAY.JP (for example an expired authorization) settles the pending capture as FAILED.
+    List<Map<String,Object>> observations(Fixture f) {return jdbc.queryForList("select * from payment_capture_cancellation_observations where payment_id=?",f.payment());}
+    @ParameterizedTest @ValueSource(strings={"reconciliation","webhook","requery","repost"})
+    void aFlowCanceledAtPayJpSettlesThePendingCaptureAsFailedOnce(String source) {
+        Fixture f=fixture();var first=begin(f);var unchanged=invariant(f);var shipped=row(f);
+        when(gateway.retrievePaymentFlow(f.provider())).thenAnswer(call -> {boundary(f);return new PaymentFlowState(f.provider(),PaymentFlowStatus.CANCELED,null,null,"expired");});
+        switch(source){
+            case "reconciliation" -> assertThat(reconciliation.reconcile(first.transactionId())).isEqualTo(PaymentSynchronizationOutcome.APPLIED);
+            case "webhook" -> webhooks.synchronize("payment_flow.canceled",f.provider());
+            case "requery" -> assertThat(requery.requery(f.order())).isEqualTo(AdminCaptureRequeryService.Result.FAILED);
+            default -> assertThat(capture.captureForShipment(f.order(),9L,"shipper","memo").status()).isEqualTo(CaptureResultStatus.FAILED);
+        }
+        var captureRow=transactionRows(f).getLast();
+        assertThat(captureRow).containsEntry("transaction_type","CAPTURE").containsEntry("status","FAILED")
+                .containsEntry("failure_code","payment_flow_canceled").containsEntry("provider_transaction_id",f.provider());
+        assertThat((String)captureRow.get("failure_message")).contains("与信が取り消されている","expired");
+        assertThat(observations(f)).singleElement().satisfies(o -> assertThat(o).containsEntry("transaction_id",first.transactionId())
+                .containsEntry("order_id",f.order()).containsEntry("provider_payment_id",f.provider())
+                .containsEntry("cancellation_reason","expired").containsEntry("observed_status","canceled"));
+        // The shipment stands: SHIPPED, unpaid, payment still AUTHORIZED; nothing else changes.
+        assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("shipped_at",shipped.get("shipped_at")).containsEntry("paid_at",null);
+        assertThat(paymentRows(f).getFirst()).containsEntry("status","AUTHORIZED");
+        assertThat(invariant(f)).isEqualTo(unchanged);assertThat(historyCount(f)).isEqualTo(1);
+        verify(gateway,never()).capture(any());
+        // Observed again (webhook and reconciliation racing): no change and no second audit row.
+        var settled=transactionRows(f);
+        assertThat(reconciliation.reconcile(first.transactionId())).isEqualTo(PaymentSynchronizationOutcome.SKIPPED);
+        webhooks.synchronize("payment_flow.canceled",f.provider());
+        assertThat(results.apply(first.snapshot(),CaptureResult.fromFlowState(new PaymentFlowState(f.provider(),PaymentFlowStatus.CANCELED,null,null,"expired"))))
+                .isEqualTo(PaymentResultApplication.ALREADY_APPLIED);
+        assertThat(transactionRows(f)).isEqualTo(settled);assertThat(observations(f)).hasSize(1);
+        assertThatThrownBy(() -> requery.requery(f.order())).isInstanceOf(CaptureRequeryRejectedException.class);
+    }
+    @Test void aCanceledFlowReasonIsRecordedOnlyInItsSafeForm() {
+        assertThat(CaptureResult.fromFlowState(new PaymentFlowState("pfw_x",PaymentFlowStatus.CANCELED,null,null,null)).cancellationReason()).isEqualTo("unknown");
+        assertThat(CaptureResult.fromFlowState(new PaymentFlowState("pfw_x",PaymentFlowStatus.CANCELED,null,null,"<b>Expired</b>")).cancellationReason()).isEqualTo("unknown");
+        assertThat(CaptureResult.fromFlowState(new PaymentFlowState("pfw_x",PaymentFlowStatus.CANCELED,null,null,"requested_by_customer")).flowCanceled()).isTrue();
+        assertThat(CaptureResult.fromFlowState(new PaymentFlowState("pfw_x",PaymentFlowStatus.REQUIRES_CAPTURE,null,null,"expired")).status()).isEqualTo(CaptureResultStatus.PENDING);
+        assertThat(CaptureResult.fromFlowState(new PaymentFlowState("pfw_x",PaymentFlowStatus.SUCCEEDED,null,null,null)).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+    }
+    @Test void theDatabasePairsACanceledCaptureFailureWithItsAuditRow() {
+        Fixture f=fixture();var first=begin(f);var before=transactionRows(f);
+        String fail="update payment_transactions set status='FAILED',failure_code='payment_flow_canceled',failure_message='x',provider_transaction_id=?,completed_at=timezone('Asia/Tokyo',clock_timestamp()) where id=?";
+        String observe="insert into payment_capture_cancellation_observations(transaction_id,payment_id,order_id,provider_payment_id,cancellation_reason,observed_status,observed_at) values (?,?,0,?,'expired','canceled',now())";
+        // A canceled-flow failure without its audit row is refused at commit.
+        assertThatThrownBy(() -> tx(() -> jdbc.update(fail,f.provider(),first.transactionId()))).hasStackTraceContaining("needs its cancellation observation");
+        // An audit row whose capture is not failed as payment_flow_canceled is refused at commit.
+        assertThatThrownBy(() -> tx(() -> jdbc.update(observe,first.transactionId(),f.payment(),f.provider()))).hasStackTraceContaining("needs its capture failed");
+        // Only the shipment capture, with the payment's own Flow id.
+        long authorization=((Number)before.getFirst().get("id")).longValue();
+        assertThatThrownBy(() -> tx(() -> jdbc.update(observe,authorization,f.payment(),f.provider()))).hasStackTraceContaining("pending shipment capture");
+        assertThatThrownBy(() -> tx(() -> jdbc.update(observe,first.transactionId(),f.payment(),"pfw_other"))).hasStackTraceContaining("pending shipment capture");
+        assertThat(transactionRows(f)).isEqualTo(before);assertThat(observations(f)).isEmpty();
+        // Both together commit; the trigger fixes the order and time; the row is then append-only.
+        tx(() -> {jdbc.update(observe,first.transactionId(),f.payment(),f.provider());return jdbc.update(fail,f.provider(),first.transactionId());});
+        assertThat(observations(f)).singleElement().satisfies(o -> assertThat(o).containsEntry("order_id",f.order()));
+        assertThatThrownBy(() -> jdbc.update("update payment_capture_cancellation_observations set cancellation_reason='other' where payment_id=?",f.payment())).hasStackTraceContaining("append-only");
+        assertThatThrownBy(() -> jdbc.update("delete from payment_capture_cancellation_observations where payment_id=?",f.payment())).hasStackTraceContaining("append-only");
+        assertThatThrownBy(() -> jdbc.execute("truncate payment_capture_cancellation_observations")).hasStackTraceContaining("append-only");
     }
 }

@@ -95,6 +95,20 @@ public class PaymentAuthorizationExpiryStore {
                 """, transactionId, paymentId, providerPaymentId);
     }
 
+    /**
+     * Feature135-B2: audit row of a shipment capture settled as FAILED because PAY.JP canceled the Flow (V95).
+     * Written in the same transaction as the FAILED result; the observation time and order are taken by the trigger.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordCaptureCancellation(long transactionId, long paymentId, String providerPaymentId, String cancellationReason) {
+        em.flush();
+        jdbc.update("""
+                insert into payment_capture_cancellation_observations
+                    (transaction_id, payment_id, order_id, provider_payment_id, cancellation_reason, observed_status, observed_at)
+                values (?, ?, 0, ?, ?, 'canceled', timezone('Asia/Tokyo', clock_timestamp()))
+                """, transactionId, paymentId, providerPaymentId, cancellationReason);
+    }
+
     /** Shipping preparation: valid for more than 24 hours after the database clock (same rule as V93). */
     @Transactional(propagation = Propagation.MANDATORY)
     public void requireValidForPreparation(long paymentId) {

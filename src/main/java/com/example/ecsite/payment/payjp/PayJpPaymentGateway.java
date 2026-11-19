@@ -265,7 +265,8 @@ public class PayJpPaymentGateway implements PaymentGateway {
                     response.id(),
                     mapPaymentFlowStatus(response.status()),
                     error != null ? error.code() : null,
-                    error != null ? error.message() : null);
+                    error != null ? error.message() : null,
+                    response.cancellationReason());
 
         } catch (RestClientException e) {
             throw classify(e);

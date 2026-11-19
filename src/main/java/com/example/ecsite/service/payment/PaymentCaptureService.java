@@ -69,10 +69,8 @@ public class PaymentCaptureService {
         } else {
             requireProviderId(start.providerPaymentId(), orderId);
             PaymentFlowState state = paymentGateway.retrievePaymentFlow(start.providerPaymentId());
-            result = new CaptureResult(state.status() == PaymentFlowStatus.SUCCEEDED
-                    ? CaptureResultStatus.CAPTURED
-                    : CaptureResultStatus.PENDING,
-                    state.providerPaymentId(), null, null);
+            // Feature135-B2: canceled at PAY.JP can never be captured and is applied as FAILED.
+            result = CaptureResult.fromFlowState(state);
             if (result.status() == CaptureResultStatus.PENDING) {
                 return result;
             }

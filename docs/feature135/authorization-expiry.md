@@ -34,7 +34,7 @@
 | A-1 | 期限の記録（V93）と出荷のゲート | 完了 |
 | A-2 | 管理画面の表示（注文一覧の列・絞り込み、詳細の期限・不整合） | 完了 |
 | B-1 | 管理者による「与信期限切れによる取消」（V94） | 完了（ブラウザ確認済み） |
-| B-2 | 出荷済みで売上確定が PENDING のまま Flow が `canceled` のものを FAILED として確定 | 未着手 |
+| B-2 | 出荷済みで売上確定が PENDING のまま Flow が `canceled` のものを FAILED として確定（V95） | 完了（テストで確認、ブラウザ確認なし） |
 | B-3 | 推定値の期限を PAY.JP の `expired_at` に置き換える GET（既定で無効） | 未着手 |
 | C | 運用（管理者通知、お客様への再与信の案内など） | 未着手 |
 
@@ -84,7 +84,17 @@
 - `payment_expired_cancellation_observations`：POST なしで確定した取消の監査行。追記専用。CANCEL 取引の Payment の期限が DB の時計で切れている場合だけ書ける。
 - 遅延トリガー `f135_late_cancellation_guard`：変更期限以降に作られた ORDER_CANCELLATION 取引は、コミットまでに監査行が必要。通常の取消は変更期限前にしか作られない。
 
-## 6. 開発 DB の状況（2026-11-18）
+## 6. B-2 の設計（V95）
+
+- PAY.JP の Flow を GET で読む 3 か所（定期照合・管理者の「売上確定の再確認」・発送の再実行）で、`canceled` は売上確定を FAILED として確定する（`CaptureResult.fromFlowState`）。失敗コードは `payment_flow_canceled`、失敗理由に `cancellation_reason`（英小文字・数字・`_` のみ。それ以外や欠落は `unknown`）を含める。理由は問わない（取り消された与信からは売上確定できないため）。
+- Webhook `payment_flow.canceled` は、従来どおり取消の照合を先に行い、処理中の取消がない（SKIPPED）ときだけ売上確定の照合に回す。
+- 注文は SHIPPED、決済は AUTHORIZED のまま（決済を CANCELLED にすると、注文 CANCELLED を求める安全性チェックの不変条件と矛盾するため）。管理画面は既存の「決済要確認」、倉庫の発送取込の行は既存の流れで CAPTURE_FAILED になる。
+- 監査：`payment_capture_cancellation_observations`（追記のみ、注文 ID・確認日時はトリガーが決める）。書けるのは、発送済み・未入金の注文の売上確定対象の決済で、PENDING/FAILED の CAPTURE 取引のみ。
+- DB の強制（遅延制約トリガー）：失敗コード `payment_flow_canceled` の CAPTURE FAILED と監査行は、コミット時に必ず対になる。それ以外の FAILED（既存の経路）は変えない。
+- 同じ `canceled` を再度受けた場合（Webhook と照合の競合）は ALREADY_APPLIED で何も変えない。管理者の再確認は結果 FAILED を表示し、以後の再確認は既存どおり「安全に確認できない」で止まる。
+- お客様への連絡・別の方法での請求は C で扱う。
+
+## 7. 開発 DB の状況（2026-11-18）
 
 - AUTHORIZED 20 件のうち 15 件は PAY.JP 上で `canceled`（不整合監査で OPEN として検出済み）。V93 適用後は推定値で期限切れとなり、出荷できない。B で CANCELLED に反映する。
 - PENDING の Payment 27（注文 17）は、注文変更の再与信でお客様が確認を完了しなかったもの。注文変更は `MANUAL_REVIEW`（`UNSETTLED_AUTH_AFTER_GRACE`）。PAY.JP 上は `requires_payment_method` で、与信枠は確保されていない。注文 8 とともに手動判断とする。

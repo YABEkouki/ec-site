@@ -55,6 +55,11 @@ public class CaptureShipmentOperations {
         this.expiries = expiries;
     }
 
+    private PaymentAuthorizationExpiryStore requireExpiries() {
+        if (expiries == null) throw new IllegalStateException("Authorization expiry store is not configured");
+        return expiries;
+    }
+
     public CaptureShipmentOperations(OrderRepository orders, PaymentRepository payments,
             PaymentTransactionRepository transactions, EntityManager em, OrderWriteContext context,
             OrderShipmentGuard guard, CaptureShipmentPolicy policy, OrderStatusHistoryService histories,
@@ -199,6 +204,17 @@ public class CaptureShipmentOperations {
         return resolveRequery(orderId, null);
     }
 
+    /** Feature135-B2: read only; the capture of the snapshot is FAILED as payment_flow_canceled with its audit row. */
+    public boolean failedByCanceledFlow(PaymentOperationSnapshot snapshot) {
+        if (snapshot == null || snapshot.transactionId() == null || snapshot.type() != PaymentTransactionType.CAPTURE) return false;
+        return Boolean.TRUE.equals(em.createNativeQuery("""
+                select exists(select 1 from payment_transactions t join payment_capture_cancellation_observations c on c.transaction_id = t.id
+                              where t.id = ?1 and t.payment_id = ?2 and t.transaction_type = 'CAPTURE' and t.status = 'FAILED'
+                                and t.failure_code = ?3)
+                """).setParameter(1, snapshot.transactionId()).setParameter(2, snapshot.paymentId())
+                .setParameter(3, CaptureResult.FLOW_CANCELED).getSingleResult());
+    }
+
     /** Check the original immutable target against the latest state after GET. */
     public PaymentCaptureStart confirmRequery(PaymentOperationSnapshot expected) {
         if (expected == null || expected.type() != PaymentTransactionType.CAPTURE) throw new CaptureRequeryRejectedException();
@@ -240,6 +256,11 @@ public class CaptureShipmentOperations {
         LockedData data = load(order, snapshot);
         var target = data.history().stream().filter(t -> Objects.equals(t.getId(), snapshot.transactionId())).findFirst().orElse(null);
         var targetPayment = data.payments().stream().filter(p -> Objects.equals(p.getId(), snapshot.paymentId())).findFirst().orElse(null);
+        // Feature135-B2: the same canceled Flow observed again (webhook and reconciliation racing) changes nothing.
+        if (target != null && result.flowCanceled() && target.getTransactionType() == PaymentTransactionType.CAPTURE
+                && target.getStatus() == PaymentTransactionStatus.FAILED && CaptureResult.FLOW_CANCELED.equals(target.getFailureCode())
+                && Objects.equals(target.getProviderTransactionId(), result.providerTransactionId()))
+            return PaymentResultApplication.ALREADY_APPLIED;
         if (!new PaymentPurposeResolver().matches(order, targetPayment, target, snapshot, data.payments(), data.history(), paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order), paymentGuard.paymentContentEvidence(order)))
             return PaymentResultApplication.CONFLICT;
         var decision = policy.classify(order, data.payments(), data.history(), snapshot, paymentGuard.completedOrderChanges(order), paymentGuard.abortedOrderChanges(order), paymentGuard.paymentContentEvidence(order));
@@ -258,6 +279,8 @@ public class CaptureShipmentOperations {
             payment.markCaptured(now);
             capture.markSucceeded(result.providerTransactionId(), now);
         } else if (result.status() == CaptureResultStatus.FAILED) {
+            // Feature135-B2: a Flow canceled at PAY.JP is audited in V95 (the database requires the row by commit).
+            if (result.flowCanceled()) requireExpiries().recordCaptureCancellation(capture.getId(), payment.getId(), result.providerTransactionId(), result.cancellationReason());
             capture.markFailed(result.providerTransactionId(), result.failureCode(), result.failureMessage(), now);
         }
         return PaymentResultApplication.APPLIED;
