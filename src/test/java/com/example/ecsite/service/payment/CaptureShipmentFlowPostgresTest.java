@@ -49,6 +49,7 @@ class CaptureShipmentFlowPostgresTest {
     @Autowired PaymentReconciliationItemService reconciliation;
     @Autowired PayJpWebhookCaptureSyncService webhook;
     @Autowired PayJpWebhookSyncService webhooks;
+    @Autowired AdminAuthorizationExpiryQueries expiryQueries;
     @Autowired OrderRepository orders;
     @Autowired PaymentRepository payments;
     @MockitoSpyBean PaymentTransactionRepository transactions;
@@ -645,6 +646,12 @@ class CaptureShipmentFlowPostgresTest {
                 .isEqualTo(PaymentResultApplication.ALREADY_APPLIED);
         assertThat(transactionRows(f)).isEqualTo(settled);assertThat(observations(f)).hasSize(1);
         assertThatThrownBy(() -> requery.requery(f.order())).isInstanceOf(CaptureRequeryRejectedException.class);
+        // Feature135-C1: listed and counted for the administrator, with the reason on the order detail.
+        assertThat(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.CAPTURE_CANCELED)).contains(f.order());
+        assertThat(expiryQueries.summary().captureCanceled())
+                .isEqualTo(expiryQueries.orderIds(com.example.ecsite.form.AdminAuthorizationExpiryFilter.CAPTURE_CANCELED).size());
+        var shown = expiryQueries.forOrder(f.order()).captureCancellation();
+        assertThat(shown.paymentId()).isEqualTo(f.payment());assertThat(shown.cancellationReason()).isEqualTo("expired");
     }
     @Test void aCanceledFlowReasonIsRecordedOnlyInItsSafeForm() {
         assertThat(CaptureResult.fromFlowState(new PaymentFlowState("pfw_x",PaymentFlowStatus.CANCELED,null,null,null)).cancellationReason()).isEqualTo("unknown");

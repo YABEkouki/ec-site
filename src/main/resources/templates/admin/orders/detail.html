@@ -114,6 +114,38 @@
                         期限切れ、または期限まで24時間未満の与信は、発送準備・倉庫出力・発送（売上確定）ができません。
                         お客様への連絡や注文の取消など、個別に対応してください。
                     </p>
+                    <p th:if="${authorizationExpiry.hasExpired() and canCancelExpiredAuthorization}" id="expiry-guidance-cancel">
+                        対応：下の「与信期限切れによる取消」で注文を取り消してください。取消後、お客様に再注文をご案内してください。
+                    </p>
+                    <p th:if="${authorizationExpiry.hasExpired() and !canCancelExpiredAuthorization}" id="expiry-guidance-blocked">
+                        対応：この画面からは取り消せません。PAY.JP上でまだ与信が取り消されていない（期限切れから取消まで数十分かかります）、
+                        発送準備済み、注文変更の処理中、または出荷保留中の可能性があります。
+                        時間をおいて再表示し、それでも取り消せない場合は、出荷保留・注文変更・決済不整合の状況を確認してください。
+                    </p>
+                </td>
+            </tr>
+            <tr th:if="${authorizationExpiry != null and authorizationExpiry.captureCancellation() != null}" id="capture-cancellation">
+                <th>売上確定</th>
+                <td>
+                    <span class="status-badge expiry-expired">売上未確定（与信取消）</span>
+                    <p class="message-error">
+                        商品は発送済みですが、PAY.JP上で与信が取り消されていたため、売上は確定していません
+                        （理由：<span th:text="${authorizationExpiry.captureCancellation().cancellationReason()}"></span>、
+                        確認日時：<span th:text="${#temporals.format(authorizationExpiry.captureCancellation().observedAt(), 'yyyy/MM/dd HH:mm')}"></span>、
+                        決済ID <span th:text="${authorizationExpiry.captureCancellation().paymentId()}"></span>）。
+                    </p>
+                    <p>
+                        対応：お客様に事情をご説明し、別の方法でのお支払いを依頼してください。
+                        対応が済んだら、下の決済不整合の対応状況を「対応完了」に更新してください。
+                    </p>
+                </td>
+            </tr>
+            <tr th:if="${authorizationExpiry != null and authorizationExpiry.expiredCancellation() != null}" id="expired-cancellation-record">
+                <th>取消の理由</th>
+                <td>
+                    与信期限切れによる取消（PAY.JPで取消済みを確認、PAY.JPへの取消依頼なし）
+                    <small>（与信期限 <span th:text="${#temporals.format(authorizationExpiry.expiredCancellation().authorizationExpiresAt(), 'yyyy/MM/dd HH:mm')}"></span>、
+                    確認日時 <span th:text="${#temporals.format(authorizationExpiry.expiredCancellation().observedAt(), 'yyyy/MM/dd HH:mm')}"></span>）</small>
                 </td>
             </tr>
             <tr th:if="${authorizationExpiry != null and !authorizationExpiry.openDiscrepancies().isEmpty()}">

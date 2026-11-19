@@ -47,6 +47,9 @@ class AdminControllerTest {
     @MockitoBean
     private com.example.ecsite.service.notification.AdminCustomerNotificationQueries customerNotifications;
 
+    @MockitoBean
+    private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
+
     @Test
     void indexAddsOrderSummariesToModel() throws Exception {
 
@@ -185,4 +188,28 @@ class AdminControllerTest {
                         .string(org.hamcrest.Matchers.containsString("注文変更による出荷保留")));
     }
 
+    /** Feature135-C1: card authorization expiry counts link to the order list filters; a failure only hides them. */
+    @Test
+    void indexShowsAuthorizationExpiryCountsWithFilterLinks() throws Exception {
+        var empty = new ActionRequiredAgingSummary(0L, 0L);
+        when(orderService.getActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getUnassignedActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getMyAssignedActionRequiredAgingSummary(20L)).thenReturn(empty);
+        AdminUserDetails adminUser = new AdminUserDetails(20L, "admin", "password", true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        var auth = authentication(new UsernamePasswordAuthenticationToken(adminUser, adminUser.getPassword(), adminUser.getAuthorities()));
+        when(authorizationExpiries.summary()).thenReturn(
+                new com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries.Summary(3, 5, 1));
+        String html = mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        org.assertj.core.api.Assertions.assertThat(html).contains("カード与信期限切れ（未発送）", "カード与信期限切れ・24時間未満",
+                "発送済み・売上未確定（与信取消）", "/admin/orders?authorizationExpiry=EXPIRED",
+                "/admin/orders?authorizationExpiry=ATTENTION", "/admin/orders?authorizationExpiry=CAPTURE_CANCELED");
+        org.assertj.core.api.Assertions.assertThat(html).containsPattern("action-required-danger\">3<")
+                .containsPattern("action-required-warning\">5<").containsPattern("action-required-danger\">1<");
+
+        when(authorizationExpiries.summary()).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
+        mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
+                .andExpect(model().attribute("authorizationExpirySummary", (Object) null));
+    }
 }
