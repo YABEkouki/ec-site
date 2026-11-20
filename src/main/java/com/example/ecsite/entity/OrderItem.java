@@ -102,6 +102,7 @@ public class OrderItem {
     }
 
     public void setProductId(Long productId) {
+        if (order != null) order.requireContentMutable(); // Feature136-B (V98)
         this.productId = productId;
     }
 
@@ -110,6 +111,7 @@ public class OrderItem {
     }
 
     public void setProductName(String productName) {
+        if (order != null) order.requireContentMutable(); // Feature136-B (V98)
         this.productName = productName;
     }
 
@@ -118,6 +120,7 @@ public class OrderItem {
     }
 
     public void setCategoryId(Long categoryId) {
+        if (order != null) order.requireContentMutable(); // Feature136-B (V98)
         this.categoryId = categoryId;
     }
 
@@ -126,6 +129,7 @@ public class OrderItem {
     }
 
     public void setCategoryName(String categoryName) {
+        if (order != null) order.requireContentMutable(); // Feature136-B (V98)
         this.categoryName = categoryName;
     }
 
@@ -134,6 +138,7 @@ public class OrderItem {
     }
 
     public void setPrice(int price) {
+        if (order != null) order.requireContentMutable(); // Feature136-B (V98)
         this.price = price;
         calculateSubtotal();
     }
@@ -143,6 +148,7 @@ public class OrderItem {
     }
 
     public void setQuantity(int quantity) {
+        if (order != null) order.requireContentMutable(); // Feature136-B (V98)
         this.quantity = quantity;
         calculateSubtotal();
     }

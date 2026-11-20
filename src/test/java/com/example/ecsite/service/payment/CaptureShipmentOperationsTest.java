@@ -89,7 +89,7 @@ class CaptureShipmentOperationsTest {
             case "provider" -> ReflectionTestUtils.setField(payment,"providerPaymentId",null);
             case "snapshot" -> ReflectionTestUtils.setField(history.getLast(),"idempotencyKey","changed");
             case "amount" -> ReflectionTestUtils.setField(history.getLast(),"amount",300);
-            case "revision" -> order.incrementContentRevision();
+            case "revision" -> ReflectionTestUtils.setField(order,"contentRevision",order.getContentRevision()+1); // Feature136-B: setters refuse prepared orders
             case "partial" -> ReflectionTestUtils.setField(order,"shippingPreparationStartedByUsername",null);
             case "foreign" -> {var other=new Order(1L,200,now.minusDays(1),now);ReflectionTestUtils.setField(other,"id",88L);ReflectionTestUtils.setField(payment,"order",other);}
         }
@@ -135,7 +135,7 @@ class CaptureShipmentOperationsTest {
         sequence.verify(histories).record(order,OrderStatus.ORDERED,OrderStatus.SHIPPED,OrderStatusHistoryActorType.ADMIN,9L,"shipper","memo");
     }
     @Test void decreasedAmountWithOldAuthorizationRevisionIsAllowed() {
-        order.setTotalAmount(100);order.incrementContentRevision();var result=start();
+        ReflectionTestUtils.setField(order,"totalAmount",100);ReflectionTestUtils.setField(order,"contentRevision",order.getContentRevision()+1);var result=start();
         assertThat(result.amount()).isEqualTo(100);assertThat(result.snapshot().orderContentRevision()).isEqualTo(1);
     }
     @ParameterizedTest @ValueSource(strings={"unprepared","partial","increase","revision","unauthorized","pending","paid","cancelled"})
@@ -143,8 +143,8 @@ class CaptureShipmentOperationsTest {
         switch(change) {
             case "unprepared" -> {ReflectionTestUtils.setField(order,"shippingPreparationStartedAt",null);ReflectionTestUtils.setField(order,"shippingPreparationStartedByAccountId",null);ReflectionTestUtils.setField(order,"shippingPreparationStartedByUsername",null);}
             case "partial" -> ReflectionTestUtils.setField(order,"shippingPreparationStartedByUsername",null);
-            case "increase" -> order.setTotalAmount(300);
-            case "revision" -> order.incrementContentRevision();
+            case "increase" -> ReflectionTestUtils.setField(order,"totalAmount",300);
+            case "revision" -> ReflectionTestUtils.setField(order,"contentRevision",order.getContentRevision()+1); // Feature136-B: setters refuse prepared orders
             case "unauthorized" -> payment.markCancelled(now);
             case "pending" -> { var tx=new PaymentTransaction(payment,PaymentTransactionType.REFUND,200,0,"refund",now);ReflectionTestUtils.setField(tx,"id",70L);history.add(tx); }
             case "paid" -> ReflectionTestUtils.setField(order,"status",OrderStatus.PAID);

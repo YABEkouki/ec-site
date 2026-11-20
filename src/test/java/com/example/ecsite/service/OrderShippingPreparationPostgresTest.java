@@ -119,7 +119,7 @@ class OrderShippingPreparationPostgresTest {
         assertThat(withoutPreparation(state(f))).isEqualTo(withoutPreparation(before));
         assertThat(orderRow(f)).containsEntry("status", card ? "ORDERED" : "PAID")
                 .containsEntry("shipment_capture_payment_id", null);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(97);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(98);
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
         assertThat(jdbc.queryForObject("select count(*) from pg_constraint where conrelid='orders'::regclass "
                 + "and conname in ('chk_orders_shipping_preparation_metadata','chk_orders_shipment_metadata') "
@@ -192,6 +192,14 @@ class OrderShippingPreparationPostgresTest {
     void terminalStateRejectsEvenWhenPrepared(OrderStatus status, boolean prepared) {
         Fixture f = fixture(true);
         if (prepared) start(f);
+        if (prepared && status == OrderStatus.CANCELLED) {
+            // Feature136-B (V98): a prepared order cannot be cancelled at all.
+            var frozen = state(f);
+            assertThatThrownBy(() -> jdbc.update("update orders set status=? where id=?", status.name(), f.orderId()))
+                    .hasMessageContaining("frozen once shipping preparation has started");
+            assertThat(state(f)).isEqualTo(frozen);
+            return;
+        }
         jdbc.update("update orders set status=? where id=?", status.name(), f.orderId());
         var before = state(f);
         assertThatThrownBy(() -> start(f)).isInstanceOf(IllegalStateException.class);

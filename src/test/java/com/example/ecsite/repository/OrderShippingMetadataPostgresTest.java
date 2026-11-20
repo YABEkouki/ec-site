@@ -120,9 +120,9 @@ class OrderShippingMetadataPostgresTest {
     @ParameterizedTest
     @ValueSource(strings = {"shipping_preparation_started_at=null", "shipping_preparation_started_by_account_id=null", "shipping_preparation_started_by_username=null", "shipping_preparation_started_by_username=''", "shipping_preparation_started_by_username=E' \\t\\n'"})
     void preparationChecks(String assignment) {
-        // Feature136: an emergency preparation cannot be changed at all (V97, before the V53 check runs).
+        // Feature136-B: a prepared order is frozen (V98, before the V53 check runs).
         long id = order(); prepare(id);
-        rejects(id, assignment, "An emergency shipping preparation cannot be changed", "55000");
+        rejects(id, assignment, "An order is frozen once shipping preparation has started", "55000");
     }
 
     @ParameterizedTest
@@ -146,7 +146,7 @@ class OrderShippingMetadataPostgresTest {
     @Test void shippedEmergencyPreparationCannotBeCleared() {
         long id = order(); ship(id);
         rejects(id, "shipping_preparation_started_at=null,shipping_preparation_started_by_account_id=null,shipping_preparation_started_by_username=null",
-                "An emergency shipping preparation cannot be changed", "55000");
+                "An order is frozen once shipping preparation has started", "55000");
     }
 
     @Test void captureWithoutActorRejected() {
