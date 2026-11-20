@@ -417,6 +417,8 @@
             <dt>開始管理者ID</dt>
             <dd th:text="${shippingPreparationView.startedByAccountId}"></dd>
             <th:block th:if="${emergencyShipping != null}">
+            <dt>緊急出荷の種類</dt>
+            <dd id="emergency-shipping-mode" th:text="${emergencyShipping.mode.label}"></dd>
             <dt>緊急出荷の理由</dt>
             <dd id="emergency-shipping-reason" style="white-space: pre-wrap" th:text="${emergencyShipping.reason}"></dd>
             <dt>操作日時（記録）</dt>
@@ -434,10 +436,12 @@
             th:action="@{/admin/orders/{id}/start-shipping-preparation(id=${order.id})}" method="post">
             <p>通常は14:05の倉庫向け注文データ出力で発送準備に移ります。この操作は個別の緊急出荷として記録され、
                 この注文は自動出力の対象外になります。</p>
+            <p th:if="${shippingPreparationView.sameDay()}" id="emergency-shipping-same-day" class="message-error">
+                変更期限（翌日14時）前の当日出荷です。開始すると、お客様は注文の変更・キャンセルができなくなります。</p>
             <input type="hidden" name="returnUrl" th:value="${returnUrl}">
             <input type="hidden" name="expectedContentRevision" th:value="${order.contentRevision}">
             <p>
-                <label for="emergencyShippingReason">緊急出荷の理由（必須・500文字以内）</label><br>
+                <label for="emergencyShippingReason">緊急出荷の理由・管理者コメント（必須・500文字以内）</label><br>
                 <textarea id="emergencyShippingReason" name="reason" rows="3" cols="60" maxlength="500" required></textarea>
             </p>
             <button type="submit">緊急出荷として発送準備を開始する</button>
