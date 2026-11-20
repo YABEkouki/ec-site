@@ -359,7 +359,7 @@ class PaymentResultApplicationPostgresTest {
     private PaymentCaptureStart beginCapture(Long id,Long actorId,String name,String note) {
         tx(() -> {var order=orders.findByIdForUpdate(id).orElseThrow();
             if(order.getStatus()==OrderStatus.ORDERED && order.getShippingPreparationStartedAt()==null)
-                order.beginShippingPreparation(orders.findCurrentTimeInTokyo(),7L,"preparer");return null;});
+                com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,orders.findCurrentTimeInTokyo());return null;});
         var actor=new com.example.ecsite.security.AdminUserDetails(actorId,name,"password",true,java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
         try{return captureStart.start(id,actorId,name,note);}finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}

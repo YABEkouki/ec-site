@@ -63,7 +63,7 @@ class OrderEditShipmentIntegrationTest {
         h.fixtureDatabase(info);
     }
     @AfterEach void cleanup(){if(h!=null)h.stopRuntime();reset(orders,clock,evidenceGuard);}
-    void admin(){var actor=new com.example.ecsite.security.AdminUserDetails(9L,"shipper","unused",true,
+    void admin(){com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc,9L,"shipper");var actor=new com.example.ecsite.security.AdminUserDetails(9L,"shipper","unused",true,
         List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
             new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));}
@@ -71,7 +71,7 @@ class OrderEditShipmentIntegrationTest {
         admin();var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",LocalDateTime.class,order);
         doReturn(deadline).when(orders).findCurrentTimeInTokyo();
         doReturn(deadline.atZone(ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        shipping.start(order);
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shipping,jdbc,order);
     }
     String activeFlow(long order){return jdbc.queryForObject("select p.provider_payment_id from payments p join orders o on o.active_payment_id=p.id where o.id=?",String.class,order);}
     int total(long order){return jdbc.queryForObject("select total_amount from orders where id=?",Integer.class,order);}

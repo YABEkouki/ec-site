@@ -144,16 +144,17 @@ class WarehouseExportPostgresTest {
     @Test void administratorPreparationAndCaptureStartRespectTheExpiry() {
         var date = nextBusinessDate();
         authenticate(41, "expiry-admin");
+        com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 41L, "expiry-admin");
         var soon = card(date);
         providerExpiry(soon.payment(), "interval '23 hours'");
-        assertThatThrownBy(() -> preparations.start(soon.order()))
+        assertThatThrownBy(() -> com.example.ecsite.support.EmergencyShippingFixtures.start(preparations, jdbc, soon.order()))
                 .isInstanceOf(com.example.ecsite.service.payment.AuthorizationExpiryException.class)
                 .hasMessageContaining("24時間未満");
         assertUnprepared(soon.order());
 
         // Prepared while valid (estimate: created 3 days ago + 5 days), then the provider value shows it has expired.
         var prepared = card(date, 3);
-        assertThat(preparations.start(prepared.order()).status())
+        assertThat(com.example.ecsite.support.EmergencyShippingFixtures.start(preparations, jdbc, prepared.order()).status())
                 .isEqualTo(com.example.ecsite.service.ShippingPreparationStartResult.Status.STARTED);
         jdbc.update("update payment_authorization_expiries set source='PROVIDER', expires_at=authorization_base_at+interval '1 hour'"
                 + " where payment_id=?", prepared.payment());
@@ -331,8 +332,7 @@ class WarehouseExportPostgresTest {
 
         // Prepared while valid, then the provider value shows it has expired: shipping preparation blocks this cancellation.
         var prepared = card(nextBusinessDate(), 3);
-        jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
-                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", prepared.order());
+        adminPrepare(prepared.order());
         jdbc.update("update payment_authorization_expiries set source='PROVIDER', expires_at=authorization_base_at+interval '1 hour'"
                 + " where payment_id=?", prepared.payment());
         assertThat(expiredCancellation.available(prepared.order())).isFalse();
@@ -681,8 +681,7 @@ class WarehouseExportPostgresTest {
         var date = nextBusinessDate(); var paid = order(date, false); var manual = card(date);
         jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", paid.order());
         service.export(batch(date), paid.order());
-        jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
-                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", manual.order());
+        adminPrepare(manual.order());
         tx(() -> {
             assertThat(shipmentGuard.matchesExport(orders.findById(paid.order()).orElseThrow(), null)).isTrue();
             assertThat(shipmentGuard.matchesExport(orders.findById(paid.order()).orElseThrow(), 1L)).isFalse();
@@ -696,6 +695,13 @@ class WarehouseExportPostgresTest {
     record Fixture(long order, long user, long item, long payment, LocalDate businessDate) {}
 
     <T> T tx(Supplier<T> body) { return new TransactionTemplate(manager).execute(s -> body.get()); }
+
+    /** Feature136: an administrator (emergency) preparation 10 minutes after the deadline, with its record (V97). */
+    void adminPrepare(long orderId) {
+        var at = jdbc.queryForObject("select change_deadline_at+interval '10 minutes' from orders where id=?",
+                java.time.LocalDateTime.class, orderId);
+        com.example.ecsite.support.EmergencyShippingFixtures.prepare(jdbc, orderId, com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 7L, "first"), at, null);
+    }
 
     LocalDate nextBusinessDate() {
         return jdbc.queryForObject("select (timezone('Asia/Tokyo',clock_timestamp()))::date - ?", LocalDate.class,
@@ -872,8 +878,7 @@ class WarehouseExportPostgresTest {
     @Test void manualPreparationCancellationAndDeadlinesAreRespected() {
         var date = nextBusinessDate(); long batch = batch(date);
         var manual = card(date);
-        jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
-                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", manual.order());
+        adminPrepare(manual.order());
         var outcome = service.export(batch, manual.order());
         assertThat(outcome.held()).isEqualTo(Reason.MANUALLY_PREPARED);
         assertThat(lines(manual.order())).isZero();
@@ -893,8 +898,7 @@ class WarehouseExportPostgresTest {
     @Test void candidatesAreUnpreparedDueOrdersFromTheStartDate() {
         var date = nextBusinessDate(); var due = card(date); var older = card(date.minusDays(1)); var tooOld = card(date.minusDays(2));
         var later = card(date.plusDays(1)); var manual = card(date);
-        jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
-                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", manual.order());
+        adminPrepare(manual.order());
 
         var found = batches.candidates(date, date.minusDays(1), 0, 1000);
 

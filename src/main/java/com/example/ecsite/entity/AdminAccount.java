@@ -26,6 +26,10 @@ public class AdminAccount {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /** Feature136: granted/revoked by operator SQL only (V97 records the history); never written by the application. */
+    @Column(name = "emergency_shipping_allowed", nullable = false, insertable = false, updatable = false)
+    private boolean emergencyShippingAllowed;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -64,6 +68,10 @@ public class AdminAccount {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public boolean isEmergencyShippingAllowed() {
+        return emergencyShippingAllowed;
     }
 
     public LocalDateTime getCreatedAt() {

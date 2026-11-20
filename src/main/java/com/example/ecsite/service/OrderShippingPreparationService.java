@@ -1,5 +1,7 @@
 package com.example.ecsite.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -11,9 +13,16 @@ import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.security.AdminUserDetails;
+import com.example.ecsite.service.emergency.EmergencyShippingRejectedException;
+import com.example.ecsite.service.emergency.EmergencyShippingStore;
 import com.example.ecsite.service.payment.OrderPaymentGuard;
 import com.example.ecsite.service.payment.PaymentService;
 
+/**
+ * Feature136: an administrator-started shipping preparation is an emergency shipping operation. It needs the
+ * emergency shipping permission (admin_accounts.emergency_shipping_allowed, read from the DB), a reason, and the
+ * content revision the administrator confirmed; it writes the V97 audit record in the same transaction.
+ */
 @Service
 public class OrderShippingPreparationService {
     private final OrderRepository orders;
@@ -21,6 +30,7 @@ public class OrderShippingPreparationService {
     private final OrderPaymentGuard paymentGuard;
     private final OrderModificationPolicy policy;
     private final OrderWriteContext writeContext;
+    private EmergencyShippingStore emergency;
 
     public OrderShippingPreparationService(OrderRepository orders, PaymentService payments,
             OrderPaymentGuard paymentGuard, OrderModificationPolicy policy, OrderWriteContext writeContext) {
@@ -29,6 +39,11 @@ public class OrderShippingPreparationService {
         this.paymentGuard = paymentGuard;
         this.policy = policy;
         this.writeContext = writeContext;
+    }
+
+    @Autowired
+    void setEmergencyShippingStore(EmergencyShippingStore emergency) {
+        this.emergency = emergency;
     }
 
     /**
@@ -40,12 +55,25 @@ public class OrderShippingPreparationService {
      * follow Order -> Payment -> Product lock order for their own earlier writes.
      */
     @Transactional
-    public ShippingPreparationStartResult start(Long orderId) {
+    public ShippingPreparationStartResult start(Long orderId, String reason, Integer expectedContentRevision) {
         if (orderId == null || orderId <= 0) {
             throw new IllegalArgumentException("正の注文IDが必要です。");
         }
+        String trimmedReason = reason == null ? "" : reason.strip();
+        if (trimmedReason.isEmpty() || trimmedReason.length() > EmergencyShippingStore.MAX_REASON_LENGTH) {
+            throw new EmergencyShippingRejectedException("緊急出荷の理由を" + EmergencyShippingStore.MAX_REASON_LENGTH
+                    + "文字以内で入力してください。");
+        }
+        if (expectedContentRevision == null || expectedContentRevision < 0) {
+            throw new IllegalArgumentException("確認した注文内容の版が必要です。");
+        }
         AdminUserDetails actor = requireAdmin();
+        if (emergency == null) throw new IllegalStateException("緊急出荷の記録先が設定されていません。");
         writeContext.requireCleanWritableReadCommitted();
+        // Current DB value, re-checked under lock by V97; a revoked permission takes effect without a new login.
+        if (!emergency.isAllowed(actor.getId())) {
+            throw new AccessDeniedException("緊急出荷の権限がありません。");
+        }
         Order order = orders.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
         writeContext.refreshWritableOrder(order);
@@ -62,13 +90,27 @@ public class OrderShippingPreparationService {
         } else {
             paymentGuard.validateManualShipment(order);
         }
+        if (order.getContentRevision() != expectedContentRevision) {
+            throw new EmergencyShippingRejectedException(
+                    "画面を表示した後に注文内容が変更されました。最新の内容を確認してから操作してください。");
+        }
+        if (emergency.hasOpenPaymentDiscrepancy(order.getId())) {
+            throw new EmergencyShippingRejectedException(
+                    "未解決の決済不整合があるため、緊急出荷できません。決済不整合を確認してください。");
+        }
         // Read after all lock waits and payment validation, before any mutation.
         var now = orders.findCurrentTimeInTokyo();
         if (!policy.allowsPreparationStart(order, now)) {
             throw new IllegalStateException("注文変更期限に到達していないか、注文期限が不正です。");
         }
+        // V97: the record comes first (order still unprepared), then the order preparation that must match it.
+        try {
+            emergency.insert(order.getId(), actor.getId(), actor.getUsername(), trimmedReason, now);
+        } catch (DataAccessException rejected) {
+            throw new IllegalStateException("緊急出荷の記録をデータベースが受け付けませんでした。", rejected);
+        }
         order.beginShippingPreparation(now, actor.getId(), actor.getUsername());
-        // The locked Order is managed; dirty checking persists all three fields together.
+        orders.flush();
         return result(order, ShippingPreparationStartResult.Status.STARTED);
     }
 

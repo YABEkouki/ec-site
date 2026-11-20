@@ -128,7 +128,7 @@ class ShippedCaptureReadModelsPostgresTest {
             assertThat(committed.get().salesAmount()).isEqualTo(baseline.salesAmount()+200);
             return new CaptureResult(result,f.provider(),"test_failure","synthetic result");
         });
-        preparation.start(f.order());
+        com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,f.order());
         assertThat(capture.captureForShipment(f.order(),f.admin(),f.username(),"read-model shipment").status()).isEqualTo(result);
         assertThat(row(f)).containsEntry("status","SHIPPED");
         assertThat(date(f,"paid_at")!=null).isEqualTo(result==CaptureResultStatus.CAPTURED);
@@ -154,7 +154,7 @@ class ShippedCaptureReadModelsPostgresTest {
             User user=new User();user.setUsername("read-model-"+unique);user.setPassword("test");user.setEnabled(true);
             user.setCreatedAt(now);user.setUpdatedAt(now);users.saveAndFlush(user);
             AdminAccount admin=new AdminAccount();admin.setUsername("read-admin-"+unique);admin.setPassword("test");admin.setEnabled(true);
-            admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);
+            admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);com.example.ecsite.support.EmergencyShippingFixtures.grant(jdbc,admin.getId());
             var category=categories.saveAndFlush(new Category(unique));var tax=taxes.findStandardTaxCategory();
             Product product=new Product();product.setName("read product");product.setPrice(100);product.setStock(10);
             product.setCategory(category);product.setTaxCategory(tax);products.saveAndFlush(product);
@@ -174,7 +174,7 @@ class ShippedCaptureReadModelsPostgresTest {
     }
     private void ship(Fixture f,CaptureResultStatus result) {
         when(gateway.capture(any())).thenReturn(new CaptureResult(result,f.provider(),null,null));
-        assertThat(preparation.start(f.order()).status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
+        assertThat(com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,f.order()).status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
         assertThat(capture.captureForShipment(f.order(),f.admin(),f.username(),"read-model shipment").status()).isEqualTo(result);
         assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("shipment_capture_payment_id",f.payment());
         assertThat(date(f,"paid_at")).isNull();

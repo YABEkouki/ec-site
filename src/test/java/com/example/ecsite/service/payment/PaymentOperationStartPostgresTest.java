@@ -145,6 +145,8 @@ class PaymentOperationStartPostgresTest {
         });
         for (boolean captureFirst : new boolean[] {true, false}) {
             Fixture f = fixture(true);
+            // Feature136 (V97): prepare before the capture; a pending cancellation would refuse the preparation.
+            if (captureFirst) prepareCapture(f.order.getId(), 1L, "admin");
             entered = new CountDownLatch(1); release = new CountDownLatch(1);
             Future<?> first = workers.submit(() -> {
                 if (captureFirst) captureAsAdmin(f.order.getId(), 1L, "admin", null);
@@ -155,7 +157,8 @@ class PaymentOperationStartPostgresTest {
                 if (captureFirst) adminCancellation.cancel(f.order.getId(), 1L, "admin", null);
                 else captureAsAdmin(f.order.getId(), 1L, "admin", null);
             }).isInstanceOf(captureFirst ? com.example.ecsite.exception.InvalidOrderStatusException.class
-                    : IllegalStateException.class);
+                    : org.springframework.dao.DataIntegrityViolationException.class)
+                    .satisfies(e -> { if (!captureFirst) assertThat(e).hasMessageContaining("Unresolved order change or payment work"); });
             release.countDown(); first.get(20, TimeUnit.SECONDS);
         }
         verify(gateway).capture(any()); verify(gateway).cancelAuthorization(any());
@@ -220,6 +223,7 @@ class PaymentOperationStartPostgresTest {
         assertThatThrownBy(() -> authorization.prepareAuthorization(f.order)).isInstanceOf(IllegalStateException.class);
         assertRows(f, "AUTHORIZE", 1); verifyNoInteractions(gateway);
         Fixture c = fixture(true);
+        prepareCapture(c.order.getId(), 1L, "admin"); // Feature136: prepared before the pending work exists (V97).
         tx(() -> {
             Payment p = payments.findById(c.paymentId).orElseThrow();
             for (int i = 0; i < 2; i++) transactions.saveAndFlush(new PaymentTransaction(p,
@@ -270,7 +274,7 @@ class PaymentOperationStartPostgresTest {
         tx(() -> {
             Order order=orders.findByIdForUpdate(id).orElseThrow();
             if(order.getStatus()==OrderStatus.ORDERED && order.getShippingPreparationStartedAt()==null)
-                order.beginShippingPreparation(orders.findCurrentTimeInTokyo(),7L,"preparer");
+                com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,orders.findCurrentTimeInTokyo());
             return null;
         });
         var actor=new com.example.ecsite.security.AdminUserDetails(actorId,name,"password",true,java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));

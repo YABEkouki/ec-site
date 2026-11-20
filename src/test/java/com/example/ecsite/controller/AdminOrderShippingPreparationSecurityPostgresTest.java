@@ -72,6 +72,17 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
     }
     private RequestPostProcessor admin() { return admin(7L, "admin-first"); }
+    private static final String REASON = "顧客の要望により至急発送";
+    /** Feature136: the detail form posts the reason and the confirmed content revision (fresh fixtures: 0). */
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder startPost(long id) {
+        return post(postUrl(id)).param("reason", REASON).param("expectedContentRevision", "0");
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void permittedAdmins() {
+        com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 7L, "<script>first</script>");
+        com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 9L, "second");
+    }
     private String postUrl(long id) { return "/admin/orders/" + id + "/start-shipping-preparation"; }
     private String detail(long id, String returnUrl) {
         return "/admin/orders/" + id + "?returnUrl=" + URLEncoder.encode(returnUrl, StandardCharsets.UTF_8);
@@ -93,6 +104,8 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 if (jdbc.queryForObject("select count(*) from capture_requests r join payments p on p.id=r.payment_id where p.order_id=?",Integer.class,id)>0) continue;
                 // Feature133-A customer notifications are never deleted either (V91 guard); keep the order with them.
                 if (jdbc.queryForObject("select count(*) from customer_order_notifications where order_id=?",Integer.class,id)>0) continue;
+                // Feature136 emergency shipping records are append-only (V97); keep the order with them.
+                if (jdbc.queryForObject("select count(*) from emergency_shipping_preparations where order_id=?",Integer.class,id)>0) continue;
                 jdbc.update("update orders set shipment_capture_payment_id=null where id=?", id);
                 jdbc.update("delete from payment_transactions where payment_id in (select id from payments where order_id=?)", id);
                 jdbc.update("delete from payments where order_id=?", id);
@@ -132,21 +145,21 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
 
     @Test
     void unauthenticatedPostWithCsrfRedirectsToAdminLoginWithoutService() throws Exception {
-        mvc.perform(post(postUrl(42)).with(csrf())).andExpect(status().isFound())
+        mvc.perform(startPost((42)).with(csrf())).andExpect(status().isFound())
                 .andExpect(redirectedUrl("/admin/login"));
         verifyNoInteractions(preparation);
     }
 
     @Test
     void customerPostWithCsrfIsForbiddenWithoutService() throws Exception {
-        mvc.perform(post(postUrl(42)).with(user("customer").roles("USER")).with(csrf()))
+        mvc.perform(startPost((42)).with(user("customer").roles("USER")).with(csrf()))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(preparation);
     }
 
     @Test
     void adminWithoutCsrfIsForbiddenWithoutService() throws Exception {
-        mvc.perform(post(postUrl(42)).with(admin())).andExpect(status().isForbidden());
+        mvc.perform(startPost((42)).with(admin())).andExpect(status().isForbidden());
         verifyNoInteractions(preparation);
     }
 
@@ -162,10 +175,10 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         String returnUrl = "/admin/orders?status=PAID&page=2&size=20&sort=id,desc";
         var before = row(id);
         String username = "<script>first</script>";
-        var post = mvc.perform(post(postUrl(id)).with(admin(7L, username)).with(csrf())
+        var post = mvc.perform(startPost((id)).with(admin(7L, username)).with(csrf())
                         .param("returnUrl", returnUrl).param("actorId", "999").param("username", "forged"))
                 .andExpect(status().isFound()).andExpect(redirectedUrl(detail(id, returnUrl)))
-                .andExpect(flash().attribute("successMessage", "発送準備を開始しました。"))
+                .andExpect(flash().attribute("successMessage", "緊急出荷として発送準備を開始しました。"))
                 .andReturn();
         var saved = row(id);
         assertThat(saved).containsEntry("shipping_preparation_started_by_account_id", 7L)
@@ -187,12 +200,12 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         String displayedTime = ((java.sql.Timestamp) saved.get("shipping_preparation_started_at")).toLocalDateTime()
                 .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm"));
         assertThat(html).contains(displayedTime, "開始管理者ID", ">7</dd>");
-        mvc.perform(post(postUrl(id)).with(admin(9L, "second")).with(csrf()).param("returnUrl", returnUrl))
+        mvc.perform(startPost((id)).with(admin(9L, "second")).with(csrf()).param("returnUrl", returnUrl))
                 .andExpect(status().isFound()).andExpect(redirectedUrl(detail(id, returnUrl)))
                 .andExpect(flash().attribute("successMessage", "この注文は既に発送準備を開始しています。"));
         assertThat(row(id)).isEqualTo(saved);
-        verify(preparation, times(2)).start(id);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(96);
+        verify(preparation, times(2)).start(id, REASON, 0);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(97);
     }
 
     @ParameterizedTest
@@ -200,7 +213,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
     void realBusinessRejectionRedirectsWithSafeFlashWithoutDbChanges(String kind) throws Exception {
         long id = fixture(kind);
         var before = row(id);
-        var post = mvc.perform(post(postUrl(id)).with(admin()).with(csrf()))
+        var post = mvc.perform(startPost((id)).with(admin()).with(csrf()))
                 .andExpect(status().isFound()).andExpect(redirectedUrl(detail(id, "/admin/orders")))
                 .andExpect(flash().attribute("errorMessage", FAILURE)).andExpect(flash().attributeCount(1)).andReturn();
         String html = mvc.perform(get(URI.create(post.getResponse().getRedirectedUrl())).with(admin())
@@ -208,21 +221,21 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(html).contains(FAILURE).doesNotContain("IllegalStateException", "InvalidOrderStatusException");
         assertThat(row(id)).isEqualTo(before);
-        verify(preparation).start(id);
+        verify(preparation).start(id, REASON, 0);
     }
 
     @Test
     void serviceAccessDeniedIs403WithoutFlash() throws Exception {
-        doThrow(new AccessDeniedException("private auth detail")).when(preparation).start(42L);
-        mvc.perform(post(postUrl(42)).with(admin()).with(csrf())).andExpect(status().isForbidden())
+        doThrow(new AccessDeniedException("private auth detail")).when(preparation).start(42L, REASON, 0);
+        mvc.perform(startPost((42)).with(admin()).with(csrf())).andExpect(status().isForbidden())
                 .andExpect(flash().attributeCount(0)).andExpect(content().string(""));
-        verify(preparation).start(42L);
+        verify(preparation).start(42L, REASON, 0);
     }
 
     @Test
     void unexpectedServiceExceptionUsesSafe500Page() throws Exception {
-        doThrow(new UnsupportedOperationException("private payment detail")).when(preparation).start(42L);
-        mvc.perform(post(postUrl(42)).with(admin()).with(csrf())).andExpect(status().isInternalServerError())
+        doThrow(new UnsupportedOperationException("private payment detail")).when(preparation).start(42L, REASON, 0);
+        mvc.perform(startPost((42)).with(admin()).with(csrf())).andExpect(status().isInternalServerError())
                 .andExpect(view().name("error/internal-server-error"))
                 .andExpect(flash().attributeCount(0)).andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("private payment detail"))));
@@ -238,14 +251,14 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
 
     @Test
     void missingOrderUsesExisting404Page() throws Exception {
-        mvc.perform(post(postUrl(Long.MAX_VALUE)).with(admin()).with(csrf()))
+        mvc.perform(startPost((Long.MAX_VALUE)).with(admin()).with(csrf()))
                 .andExpect(status().isNotFound()).andExpect(view().name("error/order_not_found"));
     }
 
     @Test
     void externalReturnUrlFallsBackToLocalDetail() throws Exception {
         long id = fixture("manual");
-        mvc.perform(post(postUrl(id)).with(admin()).with(csrf()).param("returnUrl", "https://evil.example/"))
+        mvc.perform(startPost((id)).with(admin()).with(csrf()).param("returnUrl", "https://evil.example/"))
                 .andExpect(status().isFound()).andExpect(redirectedUrl(detail(id, "/admin/orders")));
     }
 
@@ -294,7 +307,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         long id = fixture(kind.equals("manual") ? "manual" : "card");
         new TransactionTemplate(manager).executeWithoutResult(tx -> {
             Order order = orders.findById(id).orElseThrow();
-            if (!kind.equals("legacy")) order.beginShippingPreparation(order.getChangeDeadlineAt(), 7L, "<preparer>");
+            if (!kind.equals("legacy")) com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc, order, new com.example.ecsite.support.EmergencyShippingFixtures.Admin(17L, "<preparer>"), order.getChangeDeadlineAt());
             if (kind.equals("pending") || kind.equals("captured") || kind.equals("failed")) {
                 Payment payment = payments.findByOrderIdOrderByCreatedAtAscIdAsc(id).getFirst();
                 var now = orders.findCurrentTimeInTokyo();
@@ -333,7 +346,7 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
 
     private long pendingCaptureFixture() {
         long id=fixture("card");
-        new TransactionTemplate(manager).executeWithoutResult(tx->{Order order=orders.findById(id).orElseThrow();order.beginShippingPreparation(order.getChangeDeadlineAt(),7L,"preparer");});
+        new TransactionTemplate(manager).executeWithoutResult(tx->{Order order=orders.findById(id).orElseThrow();com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,new com.example.ecsite.support.EmergencyShippingFixtures.Admin(18L,"preparer"),order.getChangeDeadlineAt());});
         var actor=new AdminUserDetails(7L,"original-shipper","password",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         try {
             org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
@@ -393,8 +406,8 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
         String html = mvc.perform(get("/admin/orders/" + id).with(admin())).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(html).contains("発送準備情報に不整合").doesNotContain("発送準備を開始する");
-        doThrow(new IllegalStateException("private partial metadata detail")).when(preparation).start(id);
-        mvc.perform(post(postUrl(id)).with(admin()).with(csrf())).andExpect(status().isFound())
+        doThrow(new IllegalStateException("private partial metadata detail")).when(preparation).start(id, REASON, 0);
+        mvc.perform(startPost((id)).with(admin()).with(csrf())).andExpect(status().isFound())
                 .andExpect(flash().attribute("errorMessage", FAILURE));
     }
 }

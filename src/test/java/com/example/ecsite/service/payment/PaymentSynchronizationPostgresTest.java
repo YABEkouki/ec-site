@@ -460,7 +460,6 @@ class PaymentSynchronizationPostgresTest {
             Category c=categories.saveAndFlush(new Category("f120-"+unique));TaxCategory tax=taxCategories.findAll().getFirst();
             LocalDateTime orderedAt=prepared?now.minusDays(1).toLocalDate().atTime(10,0):now;
             Order o=new Order(u.getId(),3000,orderedAt,deadlines.calculate(orderedAt));
-            if(prepared)o.beginShippingPreparation(now.minusSeconds(1),7L,"preparer");
             List<Long> productIds=new ArrayList<>();
             for(int price:List.of(1000,500)) {
                 Product p=new Product();p.setName("fixture");p.setPrice(price);p.setStock(10);p.setCategory(c);p.setTaxCategory(tax);products.saveAndFlush(p);productIds.add(p.getId());
@@ -470,6 +469,7 @@ class PaymentSynchronizationPostgresTest {
             o.applyAmount(amount(new Fixture(null,null,null,null,null,tax.getId()),3000));
             orders.saveAndFlush(o);String provider="pfw_"+unique;
             if(authorized) createAuthorized(o,provider);
+            if(prepared){com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,o,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,now.minusSeconds(1));orders.saveAndFlush(o);}
             return new Fixture(o.getId(),u.getId(),provider,productIds,o.getItems().stream().map(OrderItem::getId).toList(),tax.getId());
         });
     }

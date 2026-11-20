@@ -92,11 +92,13 @@ class OrderPaymentGuardPostgresTest {
     void pendingOperationRejectsManualShipping(PaymentTransactionType type) {
         Fixture f = pending(type);
         tx(() -> { orders.findByIdForUpdate(f.orderId).orElseThrow().markAsPaid(); return null; });
-        prepareManualShipment(f);
+        // Feature136 (V97): pending payment work blocks the (emergency) preparation itself.
+        assertThatThrownBy(() -> prepareManualShipment(f)).hasMessageContaining("Unresolved order change or payment work");
         authenticateShipmentAdmin();
         Map<String,Object> before = state(f);
+        // The order therefore stays unprepared, and shipping it is refused.
         assertThatThrownBy(() -> orderService.markAsShipped(f.orderId, 1L, "admin", null))
-                .isInstanceOf(InvalidOrderStatusException.class).hasMessageContaining("決済処理中");
+                .isInstanceOf(InvalidOrderStatusException.class).hasMessageContaining("発送準備を開始してから");
         assertThat(state(f)).isEqualTo(before);
     }
     @ParameterizedTest @EnumSource(value = PaymentTransactionType.class, names = {"AUTHORIZE", "CAPTURE", "CANCEL"})
@@ -292,7 +294,7 @@ class OrderPaymentGuardPostgresTest {
             Order order=orders.findByIdForUpdate(f.orderId).orElseThrow();
             var now=LocalDateTime.now(); order.setOrderedAt(now.minusDays(2));
             org.springframework.test.util.ReflectionTestUtils.setField(order,"changeDeadlineAt",now.minusDays(1));
-            order.beginShippingPreparation(now.minusHours(1),7L,"preparer");
+            com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,now.minusHours(1));
             return null;
         });
     }

@@ -410,17 +410,39 @@
             <dd>倉庫向け注文データ出力（自動）</dd>
             </th:block>
             <th:block th:unless="${shippingPreparationView.automatic()}">
+            <dt>開始方法</dt>
+            <dd th:text="${emergencyShipping != null} ? '緊急出荷（管理者）' : '旧手動準備（理由なし）'"></dd>
             <dt>開始管理者username</dt>
             <dd th:text="${shippingPreparationView.startedByUsername}"></dd>
             <dt>開始管理者ID</dt>
             <dd th:text="${shippingPreparationView.startedByAccountId}"></dd>
+            <th:block th:if="${emergencyShipping != null}">
+            <dt>緊急出荷の理由</dt>
+            <dd id="emergency-shipping-reason" style="white-space: pre-wrap" th:text="${emergencyShipping.reason}"></dd>
+            <dt>操作日時（記録）</dt>
+            <dd th:text="${#temporals.format(emergencyShipping.createdAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
+            <dt>操作時点の注文</dt>
+            <dd th:text="|版 ${emergencyShipping.contentRevision} / 合計 ${emergencyShipping.totalAmount}円 / ${emergencyShipping.orderStatus}|"></dd>
+            </th:block>
             </th:block>
         </dl>
-        <form th:if="${shippingPreparationView.canStart()}"
+        <th:block th:if="${shippingPreparationView.canStart()}">
+        <p th:unless="${emergencyShippingAllowed}" id="emergency-shipping-not-allowed">
+            発送準備（緊急出荷）は、緊急出荷権限のある管理者だけが開始できます。
+        </p>
+        <form th:if="${emergencyShippingAllowed}" id="emergency-shipping-form"
             th:action="@{/admin/orders/{id}/start-shipping-preparation(id=${order.id})}" method="post">
+            <p>通常は14:05の倉庫向け注文データ出力で発送準備に移ります。この操作は個別の緊急出荷として記録され、
+                この注文は自動出力の対象外になります。</p>
             <input type="hidden" name="returnUrl" th:value="${returnUrl}">
-            <button type="submit">発送準備を開始する</button>
+            <input type="hidden" name="expectedContentRevision" th:value="${order.contentRevision}">
+            <p>
+                <label for="emergencyShippingReason">緊急出荷の理由（必須・500文字以内）</label><br>
+                <textarea id="emergencyShippingReason" name="reason" rows="3" cols="60" maxlength="500" required></textarea>
+            </p>
+            <button type="submit">緊急出荷として発送準備を開始する</button>
         </form>
+        </th:block>
     </section>
 
     <h2>注文操作</h2>

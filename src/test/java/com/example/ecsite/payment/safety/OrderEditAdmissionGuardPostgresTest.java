@@ -76,7 +76,12 @@ class OrderEditAdmissionGuardPostgresTest {
         var actor=new AdminUserDetails(1L,"test-admin","unused",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(actor,"unused",actor.getAuthorities()));
         switch(operation) {
-            case "shipping"->create(OrderShippingPreparationService.class,dependencies).start(f.order());
+            case "shipping"->{var shipping=create(OrderShippingPreparationService.class,dependencies);
+                // Feature136: a permitted administrator, so the admission gate is what refuses the operation.
+                var emergency=mock(com.example.ecsite.service.emergency.EmergencyShippingStore.class);
+                when(emergency.isAllowed(1L)).thenReturn(true);
+                org.springframework.test.util.ReflectionTestUtils.setField(shipping,"emergency",emergency);
+                shipping.start(f.order(),"test",o.getContentRevision());}
             case "cancel"->create(PaymentService.class,dependencies).startCancellation(o,null);
             case "items"->create(OrderService.class,dependencies).changeItemsForUser(f.order(),f.customer(),"test",null);
             case "address"->create(OrderService.class,dependencies).changeShippingAddressForUser(f.order(),f.customer(),"test",null);

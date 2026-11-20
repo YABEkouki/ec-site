@@ -63,7 +63,11 @@ class ManualOrderShipmentPostgresTest {
     @MockitoBean PaymentGateway gateway;
     private ExecutorService workers;
     private final CountDownLatch release = new CountDownLatch(1);
-    @BeforeEach void setup() { workers=Executors.newFixedThreadPool(2); authenticate(9L,"shipper"); }
+    private static final com.example.ecsite.support.EmergencyShippingFixtures.Admin PREPARER=new com.example.ecsite.support.EmergencyShippingFixtures.Admin(7L,"preparer");
+    @BeforeEach void setup() {
+        workers=Executors.newFixedThreadPool(2); authenticate(9L,"shipper");
+        com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc,7L,"preparer");
+    }
     @AfterEach void cleanup() throws Exception {
         release.countDown(); workers.shutdownNow();
         try { assertThat(workers.awaitTermination(25,TimeUnit.SECONDS)).isTrue(); verifyNoInteractions(gateway); }
@@ -96,9 +100,15 @@ class ManualOrderShipmentPostgresTest {
             order.addItem(new OrderItem(product.getId(),product.getName(),category.getId(),category.getName(),
                     tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));
             if (!status.equals("ORDERED")) order.markAsPaid();
-            ReflectionTestUtils.setField(order,"status",OrderStatus.valueOf(status));
-            if (prepared) order.beginShippingPreparation(ordered.withHour(14),7L,"preparer");
+            boolean candidate=status.equals("ORDERED")||status.equals("PAID");
+            if (candidate) ReflectionTestUtils.setField(order,"status",OrderStatus.valueOf(status));
             orders.saveAndFlush(order);
+            if (prepared) {
+                // Feature136: an administrator preparation needs its emergency record first, on a candidate order (V97).
+                com.example.ecsite.support.EmergencyShippingFixtures.record(jdbc,order.getId(),PREPARER,ordered.withHour(14));
+                order.beginShippingPreparation(ordered.withHour(14),7L,"preparer"); orders.saveAndFlush(order);
+            }
+            if (!candidate) { ReflectionTestUtils.setField(order,"status",OrderStatus.valueOf(status)); orders.saveAndFlush(order); }
             Long paymentId=null;
             if (paymentStatus!=null) {
                 Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);
@@ -167,7 +177,7 @@ class ManualOrderShipmentPostgresTest {
     }
     @Test void preparationWinsOrderLockThenWaitingShipmentUsesNewMetadata() throws Exception {
         Fixture f=fixture(false,"PAID",null); var ready=new CompletableFuture<Integer>();
-        Future<?> first=workers.submit(() -> asAdmin(7,"preparer",() -> tx(() -> { preparation.start(f.id()); ready.complete(pid()); await(release); return null; })));
+        Future<?> first=workers.submit(() -> asAdmin(7,"preparer",() -> tx(() -> { com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,f.id()); ready.complete(pid()); await(release); return null; })));
         int blocker=ready.get(20,TimeUnit.SECONDS);
         Future<?> shipment=workers.submit(() -> asAdmin(9,"shipper",() -> { ship(f); return null; }));
         blockedBy(blocker); release.countDown(); first.get(20,TimeUnit.SECONDS); shipment.get(20,TimeUnit.SECONDS);
@@ -223,7 +233,8 @@ class ManualOrderShipmentPostgresTest {
                 assertThat(pid()).isNotEqualTo(firstPid);
                 orders.findByIdForUpdate(f.id()).orElseThrow(); payments.findByOrderIdForUpdate(f.id());
                 switch(change) {
-                    case "prepared" -> em.find(Order.class,f.id()).beginShippingPreparation(now(),7L,"preparer");
+                    case "prepared" -> { var at=now(); com.example.ecsite.support.EmergencyShippingFixtures.record(jdbc,f.id(),PREPARER,at);
+                        em.find(Order.class,f.id()).beginShippingPreparation(at,7L,"preparer"); }
                     case "cancelled" -> jdbc.update("update orders set status='CANCELLED' where id=?",f.id());
                     case "shipped" -> ship(f);
                     case "payment" -> jdbc.update("update payments set status='AUTHORIZED' where id=?",f.paymentId());

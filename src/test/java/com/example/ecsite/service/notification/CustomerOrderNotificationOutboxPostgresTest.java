@@ -143,7 +143,7 @@ class CustomerOrderNotificationOutboxPostgresTest {
         assertThat(orderService.changeShippingAddressForUser(id,seed.user(),"customer",address)).isFalse();
 
         advance(deadline);authenticate(seed.preparer());
-        preparation.start(id);
+        com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,id);
         assertThat(types(id)).containsExactly("ORDER_ACCEPTED","ITEMS_CHANGED","ADDRESS_CHANGED");
 
         advance(deadline.plusNanos(1000));authenticate(seed.shipper());
@@ -338,7 +338,7 @@ class CustomerOrderNotificationOutboxPostgresTest {
     private long paymentId(long id) { return jdbc.queryForObject("select id from payments where order_id=?",Long.class,id); }
     private Actor admin(String username,LocalDateTime now) {
         AdminAccount admin=new AdminAccount();admin.setUsername(username);admin.setPassword("test");admin.setEnabled(true);
-        admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);return new Actor(admin.getId(),username);
+        admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);com.example.ecsite.support.EmergencyShippingFixtures.grant(jdbc,admin.getId());return new Actor(admin.getId(),username);
     }
     private void authenticate(Actor actor) {
         var details=new AdminUserDetails(actor.id(),actor.username(),"test",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));

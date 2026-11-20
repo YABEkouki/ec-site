@@ -82,7 +82,7 @@ class PayJpAuthorizationCaptureContractPostgresTest {
         assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=?",Integer.class,f.payment())).isEqualTo(1);
         var actor=new AdminUserDetails(f.admin(),f.username(),"test",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
-        preparation.start(f.order());
+        com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,f.order());
         var decision=tx(() -> {
             Order order=orders.findById(f.order()).orElseThrow();
             var current=payments.findByOrderIdOrderByCreatedAtAscIdAsc(f.order());
@@ -123,7 +123,7 @@ class PayJpAuthorizationCaptureContractPostgresTest {
             User user=new User();user.setUsername("http-contract-"+unique);user.setPassword("test");user.setEnabled(true);
             user.setCreatedAt(now);user.setUpdatedAt(now);users.saveAndFlush(user);
             AdminAccount admin=new AdminAccount();admin.setUsername("contract-admin-"+unique);admin.setPassword("test");admin.setEnabled(true);
-            admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);
+            admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);com.example.ecsite.support.EmergencyShippingFixtures.grant(jdbc,admin.getId());
             var ordered=now.minusDays(1).toLocalDate().atTime(10,0);
             Order order=orders.saveAndFlush(new Order(user.getId(),200,ordered,ordered.withHour(14)));
             return new Seed(order.getId(),admin.getId(),admin.getUsername(),"pfw_contract_"+unique);

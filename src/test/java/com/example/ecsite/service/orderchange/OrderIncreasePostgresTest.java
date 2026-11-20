@@ -137,9 +137,9 @@ class OrderIncreasePostgresTest {
         assertThatThrownBy(()->cancellation.start(f.order(),f.user(),"customer")).hasMessageContaining("未解決");
         assertThatThrownBy(()->tx(()->paymentService.startAuthorization(orders.findByIdForUpdate(f.order()).orElseThrow()))).hasMessageContaining("未解決");
         assertThatThrownBy(()->orderService.changeShippingAddressForUser(f.order(),f.user(),"customer",new com.example.ecsite.form.OrderShippingAddressForm())).hasMessageContaining("未解決");
-        var actor=new com.example.ecsite.security.AdminUserDetails(9L,"admin","password",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc,9L,"admin");var actor=new com.example.ecsite.security.AdminUserDetails(9L,"admin","password",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
-        assertThatThrownBy(()->preparation.start(f.order())).hasMessageContaining("未解決");
+        assertThatThrownBy(()->com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,f.order())).hasMessageContaining("未解決");
         verifyNoInteractions(gateway);
     }
     @Test void twoDifferentSubmissionsCannotBothReserve() throws Exception {
@@ -206,9 +206,9 @@ class OrderIncreasePostgresTest {
         try{var candidate=pool.submit(()->service.accept(request(f,UUID.randomUUID(),3)));
             assertThat(entered.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
             var prepEntered=new java.util.concurrent.CountDownLatch(1);
-            var prep=pool.submit(()->{var actor=new com.example.ecsite.security.AdminUserDetails(9L,"admin","password",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+            var prep=pool.submit(()->{com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc,9L,"admin");var actor=new com.example.ecsite.security.AdminUserDetails(9L,"admin","password",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
                 org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));
-                prepEntered.countDown();try{return preparation.start(f.order());}finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}});
+                prepEntered.countDown();try{return com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,f.order());}finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();}});
             assertThat(prepEntered.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();release.countDown();candidate.get(20,java.util.concurrent.TimeUnit.SECONDS);
             assertThatThrownBy(()->prep.get(20,java.util.concurrent.TimeUnit.SECONDS)).hasCauseInstanceOf(com.example.ecsite.exception.InvalidOrderStatusException.class);
             assertThat(jdbc.queryForObject("select shipping_preparation_started_at from orders where id=?",java.time.LocalDateTime.class,f.order())).isNull();

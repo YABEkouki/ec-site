@@ -135,11 +135,24 @@ public class AdminOrderController {
         return customerNotifications == null ? List.of() : customerNotifications.byOrder(order.getId());
     }
 
+    private com.example.ecsite.service.emergency.EmergencyShippingStore emergencyShipping;
+
+    /** Feature136-A. Spring always injects it; hand-built unit fixtures predate it and show no emergency shipping. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setEmergencyShipping(com.example.ecsite.service.emergency.EmergencyShippingStore emergencyShipping) {
+        this.emergencyShipping = emergencyShipping;
+    }
+
     private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
     /** Feature135-A2. Spring always injects it; hand-built unit fixtures predate it and show no expiry. */
     @org.springframework.beans.factory.annotation.Autowired
     void setAuthorizationExpiries(com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries) {
         this.authorizationExpiries = authorizationExpiries;
+    }
+
+    private static Long currentAdminId() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof AdminUserDetails admin ? admin.getId() : null;
     }
 
     private com.example.ecsite.service.warehouse.OrderShipmentTrackingReader.Tracking shipmentTracking(Order order) {
@@ -264,6 +277,10 @@ public class AdminOrderController {
 
         Order order = orderService.findOrderWithItems(id);
         model.addAttribute("shippingPreparationView", shippingPreparationViewFactory.create(order));
+        model.addAttribute("emergencyShipping", emergencyShipping == null ? null
+                : emergencyShipping.find(order.getId()).orElse(null));
+        model.addAttribute("emergencyShippingAllowed", emergencyShipping != null
+                && emergencyShipping.isAllowed(currentAdminId()));
 
         var paymentView = paymentViewReader.read(order);
         model.addAttribute("paymentView", paymentView);

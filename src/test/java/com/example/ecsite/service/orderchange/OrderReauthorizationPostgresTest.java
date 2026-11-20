@@ -1906,7 +1906,12 @@ class OrderReauthorizationPostgresTest {
             case "reservation"->jdbc.update("update inventory_reservations set state='CONSUMED',consumed_at=localtimestamp where operation_id=?",c.operationId());
             case "revision"->jdbc.update("update orders set content_revision=content_revision+1 where id=?",c.orderId());
             case "active"->jdbc.update("update orders set active_payment_id=? where id=?",next,c.orderId());
-            case "shipping"->jdbc.update("update orders set shipping_preparation_started_at=localtimestamp,shipping_preparation_started_by_account_id=9,shipping_preparation_started_by_username='shipper' where id=?",c.orderId());
+            case "shipping"->{
+                // Feature136 (V97): a recovery target with an unfinished change can no longer be prepared at all.
+                assertThatThrownBy(()->com.example.ecsite.support.EmergencyShippingFixtures.prepare(jdbc,c.orderId(),com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc,9L,"shipper"),null,null))
+                    .hasMessageContaining("Unresolved order change or payment work blocks emergency shipping");
+                assertThat(jdbc.queryForObject("select shipping_preparation_started_at is null from orders where id=?",Boolean.class,c.orderId())).isTrue();
+                verifyNoInteractions(gateway);return;}
             case "capture"->tx(()->{transactions.saveAndFlush(new PaymentTransaction(payments.findById(f.base().oldPayment()).orElseThrow(),PaymentTransactionType.CAPTURE,f.op().beforeAmount(),0,UUID.randomUUID().toString(),orders.findCurrentTimeInTokyo(),PaymentTransactionPurpose.SHIPMENT_CAPTURE));return null;});
             case "newAbort"->tx(()->{transactions.saveAndFlush(PaymentTransaction.forOrderChange(payments.findById(next).orElseThrow(),PaymentTransactionType.CANCEL,f.op().afterAmount(),0,UUID.randomUUID().toString(),orders.findCurrentTimeInTokyo(),PaymentTransactionPurpose.ORDER_CHANGE_NEW_AUTH_ABORT,c.operationId()));return null;});
         }
@@ -2005,7 +2010,7 @@ class OrderReauthorizationPostgresTest {
             assertThat(state(c.operationId())).isEqualTo("COMMIT_PENDING");
             assertThat(jdbc.queryForObject("select count(*) from order_content_change_histories where order_id=?",Integer.class,c.orderId())).isZero();
             assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,c.operationId())).isEqualTo("HELD");
-            assertThatThrownBy(()->shippingPreparation.start(c.orderId())).isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(()->com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,c.orderId())).isInstanceOf(RuntimeException.class);
         }finally{removeRecoveryFailure(name);}
         assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);verify(gateway,never()).sendOrderChangeRequest(any());
     }
@@ -2024,7 +2029,7 @@ class OrderReauthorizationPostgresTest {
         var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,c.orderId());
         doReturn(deadline).when(orders).findCurrentTimeInTokyo();
         doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        shippingPreparation.start(c.orderId());clearInvocations(gateway);
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,c.orderId());clearInvocations(gateway);
         var before=recoveryDiagnosticBusiness(f);
         var response=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/"+c.orderId()).with(recoveryAdmin()))
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
@@ -2045,8 +2050,9 @@ class OrderReauthorizationPostgresTest {
         if(phase.equals("RESERVED")){base=fixture(180,1);op=accept(base,2);admin();}
         else{var f=recoveryFixture(fixture(180,1),2);base=f.base();op=f.op();if(phase.equals("COMMIT_PENDING"))seedLegacyRecoveryCancellation(f,recoveryCommand(f));}
         assertThat(state(op.id())).isEqualTo(phase);
-        // Isolated contradictory fixture: even persisted preparation must not override an unfinished change.
-        tx(()->{var order=orders.findByIdForUpdate(base.order()).orElseThrow();order.beginShippingPreparation(op.graceUntil(),9L,"shipper");return null;});
+        // Feature136 (V97): the former contradictory fixture (prepared during an unfinished change) is refused by the DB.
+        assertThatThrownBy(()->tx(()->{var order=orders.findByIdForUpdate(base.order()).orElseThrow();com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,new com.example.ecsite.support.EmergencyShippingFixtures.Admin(9L,"shipper"),op.graceUntil());return null;}))
+            .hasMessageContaining("Unresolved order change or payment work blocks emergency shipping");
         clearInvocations(gateway);
         assertThatThrownBy(()->capture.captureForShipment(base.order(),9L,"shipper",null)).hasMessageContaining("未解決");
         var response=adminMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/"+base.order()).with(recoveryAdmin()))
@@ -2067,7 +2073,7 @@ class OrderReauthorizationPostgresTest {
         var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,c.orderId());
         doReturn(deadline).when(orders).findCurrentTimeInTokyo();
         doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        shippingPreparation.start(c.orderId());clearInvocations(gateway);
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,c.orderId());clearInvocations(gateway);
         assertThat(jdbc.queryForObject("select count(*) from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? and t.transaction_type='CAPTURE'",Integer.class,c.orderId())).isZero();
         var started=diagnosticCaptureStart.start(c.orderId(),9L,"shipper",note);
         assertThat(started.disposition()).isEqualTo(com.example.ecsite.service.payment.PaymentStartDisposition.NEW);
@@ -2098,7 +2104,7 @@ class OrderReauthorizationPostgresTest {
         var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,base.order());
         doReturn(deadline).when(orders).findCurrentTimeInTokyo();
         doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        shippingPreparation.start(base.order());clearInvocations(gateway);
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,base.order());clearInvocations(gateway);
         var stable=List.of(jdbc.queryForList("select to_jsonb(t)::text from products t where id=?",String.class,base.product()),
             jdbc.queryForList("select to_jsonb(t)::text from inventory_reservations t join order_change_operations op on op.id=t.operation_id where op.order_id=?",String.class,base.order()),
             jdbc.queryForList("select to_jsonb(t)::text from order_content_change_histories t where order_id=?",String.class,base.order()));
@@ -2135,7 +2141,7 @@ class OrderReauthorizationPostgresTest {
         var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,base.order());
         doReturn(deadline).when(orders).findCurrentTimeInTokyo();
         doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        shippingPreparation.start(base.order());clearInvocations(gateway);
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,base.order());clearInvocations(gateway);
         var started=diagnosticCaptureStart.start(base.order(),9L,"shipper","original");
         assertThat(jdbc.update("update order_status_histories set internal_note='different' where order_id=? and to_status='SHIPPED'",base.order())).isEqualTo(1);
         assertThatThrownBy(()->diagnosticCapturePreparation.prepare(started.initialPost()))
@@ -2176,7 +2182,7 @@ class OrderReauthorizationPostgresTest {
         var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,base.order());
         doReturn(deadline).when(orders).findCurrentTimeInTokyo();
         doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        shippingPreparation.start(base.order());
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,base.order());
         clearInvocations(gateway);
         when(gateway.capture(any())).thenAnswer(call->{
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
@@ -2209,9 +2215,9 @@ class OrderReauthorizationPostgresTest {
     @Test void recoveredOperationCanConvergeAfterDeadlineAndOnlyNewPaymentCanCapture(){
         var f=recoveryFixture();var c=recoveryCommand(f);doReturn(f.op().graceUntil().plusHours(1)).when(orders).findCurrentTimeInTokyo();
         doReturn(f.op().graceUntil().plusHours(1).atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        assertThatThrownBy(()->shippingPreparation.start(c.orderId())).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(()->com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,c.orderId())).isInstanceOf(RuntimeException.class);
         assertThat(recovery.recover(c)).isEqualTo(OldCancelRecovery.Result.COMPLETED);
-        shippingPreparation.start(c.orderId());when(gateway.capture(any())).thenAnswer(call->{var request=(com.example.ecsite.payment.capture.CaptureHttpRequest)call.getArgument(0);assertThat(request.flowId()).isEqualTo(newFlow);return new CaptureResult(CaptureResultStatus.PENDING,newFlow,null,null);});
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,c.orderId());when(gateway.capture(any())).thenAnswer(call->{var request=(com.example.ecsite.payment.capture.CaptureHttpRequest)call.getArgument(0);assertThat(request.flowId()).isEqualTo(newFlow);return new CaptureResult(CaptureResultStatus.PENDING,newFlow,null,null);});
         assertThat(capture.captureForShipment(c.orderId(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.PENDING);
         verify(gateway,never()).sendOrderChangeRequest(any());
     }
@@ -2612,7 +2618,7 @@ class OrderReauthorizationPostgresTest {
             assertThat(state(op.id())).isEqualTo("COMMIT_PENDING");
             assertThat(jdbc.queryForObject("select quantity from order_items where id=?",Integer.class,f.item())).isEqualTo(2);
             assertThat(jdbc.queryForObject("select state from inventory_reservations where operation_id=?",String.class,op.id())).isEqualTo("HELD");
-            admin();assertThatThrownBy(()->shippingPreparation.start(f.order())).hasMessageContaining("未解決");
+            admin();assertThatThrownBy(()->com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,f.order())).hasMessageContaining("未解決");
             assertThatThrownBy(()->cancellation.start(f.order(),f.user(),"customer")).hasMessageContaining("未解決");
             assertThat(resultTransactions.cancellation(f.order(),op.id(),false,observation(f.oldFlow(),"requires_capture",750,Map.of())).state()).isEqualTo("COMMIT_PENDING");
             assertThat(resultTransactions.failed(f.order(),op.id(),false,PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN).state()).isEqualTo("COMMIT_PENDING");
@@ -2800,7 +2806,7 @@ class OrderReauthorizationPostgresTest {
         var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,f.order());
         doReturn(deadline.plusSeconds(1)).when(orders).findCurrentTimeInTokyo();doReturn(deadline.plusSeconds(1).atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
         assertThat(completionControl().complete(gateway,f.order(),op.id())).isEqualTo(RequestedAbortCompletionControl.Result.COMPLETED);
-        shippingPreparation.start(f.order());
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,f.order());
         when(gateway.capture(any())).thenAnswer(call->{var request=(com.example.ecsite.payment.capture.CaptureHttpRequest)call.getArgument(0);assertThat(request.flowId()).isEqualTo(f.oldFlow());return new CaptureResult(CaptureResultStatus.PENDING,f.oldFlow(),null,null);});
         assertThat(capture.captureForShipment(f.order(),9L,"shipper",null).status()).isEqualTo(CaptureResultStatus.PENDING);
         assertCompletionReplayAfterLaterWork(f,op);
@@ -2858,14 +2864,14 @@ class OrderReauthorizationPostgresTest {
         assertThat(cancellationResults.apply(start.snapshot(),new CancellationResult(CancellationResultStatus.CANCELLED,newFlow)))
             .isEqualTo(com.example.ecsite.service.payment.PaymentResultApplication.ALREADY_APPLIED);
     }
-    void admin(){var actor=new com.example.ecsite.security.AdminUserDetails(9L,"shipper","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+    void admin(){com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc,9L,"shipper");var actor=new com.example.ecsite.security.AdminUserDetails(9L,"shipper","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(actor,"",actor.getAuthorities()));}
     @AfterEach void cleanup(){org.springframework.security.core.context.SecurityContextHolder.clearContext();reset(orders,clock);}
     @Test void newActivePaymentShipsWithV54FixedTargetAndPendingCaptureOnlyGets(){
         var f=fixture();var op=accept(f,3);mockFlow(f,op);service.advance(f.order(),op.id());admin();
         var deadline=jdbc.queryForObject("select change_deadline_at from orders where id=?",java.time.LocalDateTime.class,f.order());
         doReturn(deadline).when(orders).findCurrentTimeInTokyo();doReturn(deadline.atZone(java.time.ZoneId.of("Asia/Tokyo")).toInstant()).when(clock).instant();
-        shippingPreparation.start(f.order());
+        com.example.ecsite.support.EmergencyShippingFixtures.start(shippingPreparation,jdbc,f.order());
         when(gateway.capture(any())).thenAnswer(call->{assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.order())).isEqualTo("SHIPPED");
             var request=(com.example.ecsite.payment.capture.CaptureHttpRequest)call.getArgument(0);assertThat(request.flowId()).isEqualTo(newFlow);

@@ -18,7 +18,7 @@ import com.example.ecsite.service.OrderShippingPreparationService;
 import com.example.ecsite.service.ShippingPreparationStartResult;
 import com.example.ecsite.util.AdminReturnUrlHelper;
 
-/** POST adapter; authentication and transactional business decisions belong to the service. */
+/** Feature136 emergency shipping POST adapter; authentication, permission and business decisions belong to the service. */
 @Controller
 public class AdminOrderShippingPreparationController {
 
@@ -31,16 +31,22 @@ public class AdminOrderShippingPreparationController {
     @PostMapping("/admin/orders/{id}/start-shipping-preparation")
     public String startShippingPreparation(
             @PathVariable("id") Long orderId,
+            @RequestParam(required = false) String reason,
+            @RequestParam(required = false) Integer expectedContentRevision,
             @RequestParam(required = false) String returnUrl,
             RedirectAttributes redirectAttributes) {
         if (orderId == null || orderId <= 0) {
-            throw new InvalidOrderIdException();
+            throw new InvalidRequestException();
+        }
+        if (expectedContentRevision == null || expectedContentRevision < 0) {
+            throw new InvalidRequestException();
         }
 
         ShippingPreparationStartResult result;
         try {
-            result = shippingPreparationService.start(orderId);
-        } catch (com.example.ecsite.service.payment.AuthorizationExpiryException e) {
+            result = shippingPreparationService.start(orderId, reason, expectedContentRevision);
+        } catch (com.example.ecsite.service.payment.AuthorizationExpiryException
+                | com.example.ecsite.service.emergency.EmergencyShippingRejectedException e) {
             redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
             return redirectToDetail(orderId, returnUrl);
         } catch (IllegalStateException | InvalidOrderStatusException e) {
@@ -49,7 +55,7 @@ public class AdminOrderShippingPreparationController {
             return redirectToDetail(orderId, returnUrl);
         }
         String message = switch (result.status()) {
-            case STARTED -> "発送準備を開始しました。";
+            case STARTED -> "緊急出荷として発送準備を開始しました。";
             case ALREADY_STARTED -> "この注文は既に発送準備を開始しています。";
         };
         redirectAttributes.addFlashAttribute("successMessage", message);
@@ -62,8 +68,8 @@ public class AdminOrderShippingPreparationController {
         return ResponseEntity.status(403).build();
     }
 
-    @ExceptionHandler({InvalidOrderIdException.class, MethodArgumentTypeMismatchException.class})
-    public ResponseEntity<Void> handleInvalidOrderId() {
+    @ExceptionHandler({InvalidRequestException.class, MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<Void> handleInvalidRequest() {
         return ResponseEntity.badRequest().build();
     }
 
@@ -73,6 +79,6 @@ public class AdminOrderShippingPreparationController {
                 + URLEncoder.encode(safeReturnUrl, StandardCharsets.UTF_8);
     }
 
-    private static final class InvalidOrderIdException extends RuntimeException {
+    private static final class InvalidRequestException extends RuntimeException {
     }
 }

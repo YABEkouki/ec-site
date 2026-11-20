@@ -193,7 +193,7 @@ class OrderModificationGuardPostgresTest {
     }
 
     private void prepare(Fixture f) {
-        jdbc.update("update orders set shipping_preparation_started_at=timezone('Asia/Tokyo',clock_timestamp()), shipping_preparation_started_by_account_id=1, shipping_preparation_started_by_username='admin' where id=?",f.orderId);
+        com.example.ecsite.support.EmergencyShippingFixtures.prepare(jdbc,f.orderId,com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc,1L,"admin"),null,null);
     }
     private OrderShippingAddressForm address(String name) {
         OrderShippingAddressForm form=new OrderShippingAddressForm();form.setShippingName(name);
