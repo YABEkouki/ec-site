@@ -222,8 +222,10 @@ class WarehouseShipmentSystemActorPostgresTest {
     }
 
     void prepareByAdministrator(long order) {
-        jdbc.update("update orders set shipping_preparation_started_at=change_deadline_at+interval '10 minutes',"
-                + "shipping_preparation_started_by_account_id=7,shipping_preparation_started_by_username='first' where id=?", order);
+        // Feature136: an administrator (emergency) preparation is written with its record (V97).
+        var at = jdbc.queryForObject("select change_deadline_at+interval '10 minutes' from orders where id=?",
+                java.time.LocalDateTime.class, order);
+        com.example.ecsite.support.EmergencyShippingFixtures.prepare(jdbc, order, com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 7L, "first"), at, null);
     }
 
     CaptureResult captured(Fixture f) { return new CaptureResult(CaptureResultStatus.CAPTURED, f.provider(), null, null); }
