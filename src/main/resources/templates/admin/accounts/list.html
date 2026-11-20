@@ -26,12 +26,15 @@
         管理者アカウントはありません。
     </p>
 
+    <p>緊急出荷権限は運用担当がデータベースで付与・取消します（画面からは変更できません。変更履歴は自動で記録されます）。</p>
+
     <table th:unless="${adminAccountPage.empty}">
         <thead>
             <tr>
                 <th>ID</th>
                 <th>ユーザー名</th>
                 <th>状態</th>
+                <th>緊急出荷権限</th>
                 <th>ログイン状況</th>
                 <th>最終ログイン日時</th>
                 <th>操作</th>
@@ -54,6 +57,9 @@
                     <span th:unless="${adminAccount.enabled}">
                         無効
                     </span>
+                </td>
+
+                <td th:text="${adminAccount.emergencyShippingAllowed} ? 'あり' : 'なし'">
                 </td>
 
                 <td>

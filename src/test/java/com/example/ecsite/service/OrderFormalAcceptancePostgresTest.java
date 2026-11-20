@@ -75,7 +75,7 @@ class OrderFormalAcceptancePostgresTest {
         assertThat(order(f.order())).containsEntry("accepted_at", null).containsEntry("change_deadline_at", null);
         assertThat(acceptanceCount(f.order())).isZero();
         authenticateAdmin();
-        assertThatThrownBy(() -> preparation.start(f.order())).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,f.order())).isInstanceOf(IllegalStateException.class);
         assertThat(order(f.order())).containsEntry("shipping_preparation_started_at", null);
 
         result(f, AuthorizationResultStatus.AUTHORIZED);
@@ -219,7 +219,7 @@ class OrderFormalAcceptancePostgresTest {
         var now = orders.findCurrentTimeInTokyo();
         AdminAccount admin = tx(() -> {
             AdminAccount a = new AdminAccount(); a.setUsername("f127-admin-" + UUID.randomUUID()); a.setPassword("test");
-            a.setEnabled(true); a.setCreatedAt(now); a.setUpdatedAt(now); return admins.saveAndFlush(a);
+            a.setEnabled(true); a.setCreatedAt(now); a.setUpdatedAt(now); var saved = admins.saveAndFlush(a); com.example.ecsite.support.EmergencyShippingFixtures.grant(jdbc, saved.getId()); return saved;
         });
         var details = new AdminUserDetails(admin.getId(), admin.getUsername(), "test", true, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(details, "", details.getAuthorities()));

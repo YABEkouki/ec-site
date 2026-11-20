@@ -44,7 +44,9 @@ class OrderShippingMetadataPostgresTest {
     }
 
     void prepare(long id) {
-        jdbc.update("update orders set shipping_preparation_started_at=timestamp '2026-10-16 10:00:00', shipping_preparation_started_by_account_id=7, shipping_preparation_started_by_username='admin' where id=?", id);
+        // Feature136: an administrator preparation is written with its emergency record (V97).
+        com.example.ecsite.support.EmergencyShippingFixtures.prepare(jdbc, id, com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 7L, "admin"),
+                LocalDateTime.of(2026, 10, 16, 10, 0), null);
     }
 
     void ship(long id) {
@@ -118,8 +120,9 @@ class OrderShippingMetadataPostgresTest {
     @ParameterizedTest
     @ValueSource(strings = {"shipping_preparation_started_at=null", "shipping_preparation_started_by_account_id=null", "shipping_preparation_started_by_username=null", "shipping_preparation_started_by_username=''", "shipping_preparation_started_by_username=E' \\t\\n'"})
     void preparationChecks(String assignment) {
+        // Feature136: an emergency preparation cannot be changed at all (V97, before the V53 check runs).
         long id = order(); prepare(id);
-        rejects(id, assignment, "chk_orders_shipping_preparation_metadata", "23514");
+        rejects(id, assignment, "An emergency shipping preparation cannot be changed", "55000");
     }
 
     @ParameterizedTest
@@ -134,10 +137,16 @@ class OrderShippingMetadataPostgresTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"shipped_by_account_id=null", "shipped_by_username=null", "shipped_by_username=''", "shipped_by_username=E' \\t\\n'", "status='PAID'", "shipped_at=null", "shipping_preparation_started_at=null,shipping_preparation_started_by_account_id=null,shipping_preparation_started_by_username=null"})
+    @ValueSource(strings = {"shipped_by_account_id=null", "shipped_by_username=null", "shipped_by_username=''", "shipped_by_username=E' \\t\\n'", "status='PAID'", "shipped_at=null"})
     void shipmentChecks(String assignment) {
         long id = order(); ship(id);
         rejects(id, assignment, "chk_orders_shipment_metadata", "23514");
+    }
+
+    @Test void shippedEmergencyPreparationCannotBeCleared() {
+        long id = order(); ship(id);
+        rejects(id, "shipping_preparation_started_at=null,shipping_preparation_started_by_account_id=null,shipping_preparation_started_by_username=null",
+                "An emergency shipping preparation cannot be changed", "55000");
     }
 
     @Test void captureWithoutActorRejected() {

@@ -44,8 +44,8 @@ class CaptureShipmentPolicyPostgresTest {
             User user=new User(); user.setUsername("capture-policy-"+unique); user.setPassword("password");
             user.setCreatedAt(now); user.setUpdatedAt(now); user.setEnabled(true); users.saveAndFlush(user);
             LocalDateTime ordered=now.minusDays(1).toLocalDate().atTime(10,0);
-            Order order=new Order(user.getId(),200,ordered,ordered.withHour(14)); order.beginShippingPreparation(ordered.withHour(14),7L,"preparer");
-            orders.saveAndFlush(order);
+            Order order=new Order(user.getId(),200,ordered,ordered.withHour(14));
+            orders.saveAndFlush(order); com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,ordered.withHour(14)); orders.saveAndFlush(order);
             Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);
             String provider="policy_"+unique; payment.setProviderPaymentId(provider,now); payment.markAuthorized(now); payments.saveAndFlush(payment);
             var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,"auth_"+unique,now);

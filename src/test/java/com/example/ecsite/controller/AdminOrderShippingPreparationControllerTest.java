@@ -37,64 +37,70 @@ class AdminOrderShippingPreparationControllerTest {
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
 
+    private static final String REASON = "顧客の要望で至急発送";
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder req() {
+        return post(URL).param("reason", REASON).param("expectedContentRevision", "3");
+    }
+
     private ShippingPreparationStartResult result(Status status) {
         return new ShippingPreparationStartResult(status, LocalDateTime.of(2026, 10, 16, 14, 0), 7L, "admin");
     }
 
     @Test
-    void startedRedirectsWithSuccessAndOnlyPassesOrderId() throws Exception {
-        when(service.start(42L)).thenReturn(result(Status.STARTED));
-        mvc.perform(post(URL).param("actorId", "999").param("username", "forged").param("reason", "ignored"))
+    void startedRedirectsWithSuccessAndPassesOnlyOrderReasonAndRevision() throws Exception {
+        when(service.start(42L, REASON, 3)).thenReturn(result(Status.STARTED));
+        mvc.perform(req().param("actorId", "999").param("username", "forged"))
                 .andExpect(status().isFound()).andExpect(redirectedUrl(DETAIL))
-                .andExpect(flash().attribute("successMessage", "発送準備を開始しました。"));
-        verify(service).start(42L);
+                .andExpect(flash().attribute("successMessage", "緊急出荷として発送準備を開始しました。"));
+        verify(service).start(42L, REASON, 3);
         verifyNoMoreInteractions(service);
     }
 
     @Test
     void duplicatePostsReportAlreadyStarted() throws Exception {
-        when(service.start(42L)).thenReturn(result(Status.STARTED), result(Status.ALREADY_STARTED));
-        mvc.perform(post(URL)).andExpect(flash().attribute("successMessage", "発送準備を開始しました。"));
-        mvc.perform(post(URL)).andExpect(status().isFound()).andExpect(redirectedUrl(DETAIL))
+        when(service.start(42L, REASON, 3)).thenReturn(result(Status.STARTED), result(Status.ALREADY_STARTED));
+        mvc.perform(req()).andExpect(flash().attribute("successMessage", "緊急出荷として発送準備を開始しました。"));
+        mvc.perform(req()).andExpect(status().isFound()).andExpect(redirectedUrl(DETAIL))
                 .andExpect(flash().attribute("successMessage", "この注文は既に発送準備を開始しています。"));
-        verify(service, times(2)).start(42L);
+        verify(service, times(2)).start(42L, REASON, 3);
         verifyNoMoreInteractions(service);
     }
 
     @Test
     void illegalStateUsesFixedMessageWithoutInternalDetails() throws Exception {
-        when(service.start(42L)).thenThrow(new IllegalStateException("secret payment data"));
+        when(service.start(42L, REASON, 3)).thenThrow(new IllegalStateException("secret payment data"));
         assertBusinessFailure();
     }
 
     @Test
     void invalidStatusUsesFixedMessage() throws Exception {
-        when(service.start(42L)).thenThrow(new InvalidOrderStatusException("secret status"));
+        when(service.start(42L, REASON, 3)).thenThrow(new InvalidOrderStatusException("secret status"));
         assertBusinessFailure();
     }
 
     private void assertBusinessFailure() throws Exception {
-        mvc.perform(post(URL)).andExpect(status().isFound()).andExpect(redirectedUrl(DETAIL))
+        mvc.perform(req()).andExpect(status().isFound()).andExpect(redirectedUrl(DETAIL))
                 .andExpect(flash().attribute("errorMessage", FAILURE)).andExpect(flash().attributeCount(1));
-        verify(service).start(42L);
+        verify(service).start(42L, REASON, 3);
     }
 
     @Test
     void accessDeniedIs403EvenWithGlobalCatchAllAdvice() throws Exception {
-        when(service.start(42L)).thenThrow(new AccessDeniedException("secret"));
-        mvc.perform(post(URL)).andExpect(status().isForbidden()).andExpect(content().string(""))
+        when(service.start(42L, REASON, 3)).thenThrow(new AccessDeniedException("secret"));
+        mvc.perform(req()).andExpect(status().isForbidden()).andExpect(content().string(""))
                 .andExpect(flash().attributeCount(0));
     }
 
     @Test
     void unexpectedExceptionReachesExistingSafe500Handler() throws Exception {
-        when(service.start(42L)).thenThrow(new UnsupportedOperationException("secret"));
-        mvc.perform(post(URL)).andExpect(status().isInternalServerError())
+        when(service.start(42L, REASON, 3)).thenThrow(new UnsupportedOperationException("secret"));
+        mvc.perform(req()).andExpect(status().isInternalServerError())
                 .andExpect(view().name("error/internal-server-error"))
                 .andExpect(model().attribute("message", "システムエラーが発生しました。しばらくしてから再度お試しください。"))
                 .andExpect(flash().attributeCount(0));
         assertThrows(UnsupportedOperationException.class,
-                () -> controller.startShippingPreparation(42L, null, new RedirectAttributesModelMap()));
+                () -> controller.startShippingPreparation(42L, REASON, 3, null, new RedirectAttributesModelMap()));
     }
 
     @ParameterizedTest
@@ -107,29 +113,47 @@ class AdminOrderShippingPreparationControllerTest {
 
     @Test
     void missingOrderUsesExisting404Handler() throws Exception {
-        when(service.start(42L)).thenThrow(new OrderNotFoundException(42L));
-        mvc.perform(post(URL)).andExpect(status().isNotFound()).andExpect(view().name("error/order_not_found"));
+        when(service.start(42L, REASON, 3)).thenThrow(new OrderNotFoundException(42L));
+        mvc.perform(req()).andExpect(status().isNotFound()).andExpect(view().name("error/order_not_found"));
     }
 
     @Test
     void preservesSearchPagingAndSortInEncodedReturnUrl() throws Exception {
-        when(service.start(42L)).thenReturn(result(Status.STARTED));
-        mvc.perform(post(URL).param("returnUrl", "/admin/orders?status=ORDERED&page=2&size=20&sort=id,desc"))
+        when(service.start(42L, REASON, 3)).thenReturn(result(Status.STARTED));
+        mvc.perform(req().param("returnUrl", "/admin/orders?status=ORDERED&page=2&size=20&sort=id,desc"))
                 .andExpect(redirectedUrl("/admin/orders/42?returnUrl=%2Fadmin%2Forders%3Fstatus%3DORDERED%26page%3D2%26size%3D20%26sort%3Did%2Cdesc"));
     }
 
     @Test
     void preservesPaymentDiscrepancyReturnUrl() throws Exception {
-        when(service.start(42L)).thenReturn(result(Status.STARTED));
-        mvc.perform(post(URL).param("returnUrl", "/admin/payment-discrepancies?page=3"))
+        when(service.start(42L, REASON, 3)).thenReturn(result(Status.STARTED));
+        mvc.perform(req().param("returnUrl", "/admin/payment-discrepancies?page=3"))
                 .andExpect(redirectedUrl("/admin/orders/42?returnUrl=%2Fadmin%2Fpayment-discrepancies%3Fpage%3D3"));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"https://evil.example/", "//evil.example", "/orders", "/admin/orders/42", ""})
     void invalidReturnUrlFallsBackToOrderList(String returnUrl) throws Exception {
-        when(service.start(42L)).thenReturn(result(Status.STARTED));
-        mvc.perform(post(URL).param("returnUrl", returnUrl)).andExpect(redirectedUrl(DETAIL));
+        when(service.start(42L, REASON, 3)).thenReturn(result(Status.STARTED));
+        mvc.perform(req().param("returnUrl", returnUrl)).andExpect(redirectedUrl(DETAIL));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "-1", "abc"})
+    void missingOrInvalidConfirmedRevisionIs400WithoutServiceCall(String revision) throws Exception {
+        mvc.perform(post(URL).param("reason", REASON).param("expectedContentRevision", revision))
+                .andExpect(status().isBadRequest()).andExpect(content().string(""));
+        mvc.perform(post(URL).param("reason", REASON)).andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void emergencyRejectionShowsItsOwnMessage() throws Exception {
+        when(service.start(42L, "", 3)).thenThrow(
+                new com.example.ecsite.service.emergency.EmergencyShippingRejectedException("緊急出荷の理由を入力してください。"));
+        mvc.perform(post(URL).param("reason", "").param("expectedContentRevision", "3"))
+                .andExpect(status().isFound()).andExpect(redirectedUrl(DETAIL))
+                .andExpect(flash().attribute("errorMessage", "緊急出荷の理由を入力してください。"));
     }
 
     @Test

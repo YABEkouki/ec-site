@@ -88,6 +88,7 @@ class OrderShippingPreparationPostgresTest {
         workers = Executors.newFixedThreadPool(2);
         release = new CountDownLatch(1);
         authenticate(7L, "first", "ROLE_ADMIN");
+        ensurePermittedAdmins();
     }
 
     @AfterEach
@@ -107,7 +108,7 @@ class OrderShippingPreparationPostgresTest {
         Fixture f = fixture(card);
         var before = state(f);
         LocalDateTime earliest = dbNow();
-        var result = preparation.start(f.orderId());
+        var result = start(f);
         LocalDateTime latest = dbNow();
         assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
         assertThat(result.startedAt()).isBetween(earliest, latest);
@@ -118,7 +119,7 @@ class OrderShippingPreparationPostgresTest {
         assertThat(withoutPreparation(state(f))).isEqualTo(withoutPreparation(before));
         assertThat(orderRow(f)).containsEntry("status", card ? "ORDERED" : "PAID")
                 .containsEntry("shipment_capture_payment_id", null);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(96);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(97);
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
         assertThat(jdbc.queryForObject("select count(*) from pg_constraint where conrelid='orders'::regclass "
                 + "and conname in ('chk_orders_shipping_preparation_metadata','chk_orders_shipment_metadata') "
@@ -128,14 +129,14 @@ class OrderShippingPreparationPostgresTest {
     @ParameterizedTest @ValueSource(longs = {7, 9})
     void retryKeepsFirstActorAndSkipsPaymentAndDeadlineValidation(long retryActor) {
         Fixture f = fixture(true);
-        var original = preparation.start(f.orderId());
+        var original = start(f);
         // Make a new start ineligible. An accepted preparation must still be reusable.
         jdbc.update("update payments set status='FAILED' where id=?", f.paymentId());
         jdbc.update("update orders set change_deadline_at=? where id=?", dbNow().plusDays(1), f.orderId());
         var before = state(f);
         clearInvocations(orders, paymentService, evaluator);
         authenticate(retryActor, "retry-" + retryActor, "ROLE_ADMIN");
-        var retry = preparation.start(f.orderId());
+        var retry = start(f);
         assertThat(retry.status()).isEqualTo(ShippingPreparationStartResult.Status.ALREADY_STARTED);
         assertThat(retry.startedAt()).isEqualTo(original.startedAt());
         assertThat(retry.startedByAccountId()).isEqualTo(original.startedByAccountId());
@@ -158,7 +159,7 @@ class OrderShippingPreparationPostgresTest {
             if ((mask & 2) != 0) ReflectionTestUtils.setField(order, "shippingPreparationStartedByAccountId", 7L);
             if ((mask & 4) != 0) ReflectionTestUtils.setField(order, "shippingPreparationStartedByUsername", "first");
             clearInvocations(orders);
-            assertThatThrownBy(() -> preparation.start(f.orderId()))
+            assertThatThrownBy(() -> start(f))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("未flush");
             verify(orders, never()).findByIdForUpdate(any());
             assertThat(status.isRollbackOnly()).isTrue();
@@ -190,10 +191,10 @@ class OrderShippingPreparationPostgresTest {
     @ParameterizedTest @CsvSource({"SHIPPED,false", "SHIPPED,true", "CANCELLED,false", "CANCELLED,true"})
     void terminalStateRejectsEvenWhenPrepared(OrderStatus status, boolean prepared) {
         Fixture f = fixture(true);
-        if (prepared) preparation.start(f.orderId());
+        if (prepared) start(f);
         jdbc.update("update orders set status=? where id=?", status.name(), f.orderId());
         var before = state(f);
-        assertThatThrownBy(() -> preparation.start(f.orderId())).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> start(f)).isInstanceOf(IllegalStateException.class);
         assertThat(state(f)).isEqualTo(before);
     }
 
@@ -203,13 +204,13 @@ class OrderShippingPreparationPostgresTest {
         var before = state(f);
         CompletableFuture<Integer> blocker = new CompletableFuture<>();
         Future<ShippingPreparationStartResult> first = workers.submit(() -> asAdmin(7L, "first", () -> tx(() -> {
-            var result = preparation.start(f.orderId());
+            var result = start(f);
             blocker.complete(backendPid());
             await(release);
             return result;
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
-        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second", () -> preparation.start(f.orderId())));
+        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second", () -> start(f)));
         assertBlockedBy(pid);
         // The first call has returned inside its outer transaction, but has not committed.
         assertThat(orderRow(f).get("shipping_preparation_started_at")).isNull();
@@ -236,7 +237,7 @@ class OrderShippingPreparationPostgresTest {
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
         clearInvocations(orders, paymentService);
-        Future<?> second = workers.submit(() -> asAdmin(9L, "second", () -> preparation.start(f.orderId())));
+        Future<?> second = workers.submit(() -> asAdmin(9L, "second", () -> start(f)));
         assertBlockedBy(pid);
         verify(orders, never()).findCurrentTimeInTokyo();
         release.countDown(); first.get(20, TimeUnit.SECONDS);
@@ -256,7 +257,7 @@ class OrderShippingPreparationPostgresTest {
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
         clearInvocations(orders);
-        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second", () -> preparation.start(f.orderId())));
+        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second", () -> start(f)));
         assertBlockedBy(pid);
         verify(orders, never()).findCurrentTimeInTokyo();
         LocalDateTime justBeforeRelease = dbNow();
@@ -271,7 +272,7 @@ class OrderShippingPreparationPostgresTest {
         Fixture f = fixture(true);
         CompletableFuture<Integer> blocker = new CompletableFuture<>();
         Future<ShippingPreparationStartResult> first = workers.submit(() -> asAdmin(7L, "first", () -> tx(() -> {
-            var result = preparation.start(f.orderId());
+            var result = start(f);
             blocker.complete(backendPid()); await(release); return result;
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
@@ -316,7 +317,7 @@ class OrderShippingPreparationPostgresTest {
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
         clearInvocations(orders);
-        Future<?> second = workers.submit(() -> asAdmin(9L, "second", () -> preparation.start(f.orderId())));
+        Future<?> second = workers.submit(() -> asAdmin(9L, "second", () -> start(f)));
         assertBlockedBy(pid);
         verify(orders, never()).findCurrentTimeInTokyo();
         release.countDown(); first.get(20, TimeUnit.SECONDS);
@@ -333,10 +334,10 @@ class OrderShippingPreparationPostgresTest {
         doReturn(f.deadline().plusNanos(offsetMicros * 1000L)).when(orders).findCurrentTimeInTokyo();
         var before = state(f);
         if (offsetMicros < 0) {
-            assertThatThrownBy(() -> preparation.start(f.orderId())).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> start(f)).isInstanceOf(IllegalStateException.class);
             assertThat(state(f)).isEqualTo(before);
         } else {
-            var result = preparation.start(f.orderId());
+            var result = start(f);
             assertThat(result.startedAt()).isEqualTo(f.deadline().plusNanos(offsetMicros * 1000L));
             assertStored(f, result);
         }
@@ -354,7 +355,7 @@ class OrderShippingPreparationPostgresTest {
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
         clearInvocations(orders);
-        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second", () -> preparation.start(f.orderId())));
+        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second", () -> start(f)));
         assertBlockedBy(pid);
         verify(orders, never()).findCurrentTimeInTokyo();
         clock.set(f.deadline()); release.countDown(); first.get(20, TimeUnit.SECONDS);
@@ -377,14 +378,23 @@ class OrderShippingPreparationPostgresTest {
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
         clearInvocations(evaluator);
-        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second", () -> preparation.start(f.orderId())));
+        // Feature136: the administrator confirmed revision 0 on the screen, before the decrease committed.
+        Future<ShippingPreparationStartResult> second = workers.submit(() -> asAdmin(9L, "second",
+                () -> preparation.start(f.orderId(), REASON, 0)));
         assertBlockedBy(pid); clock.set(f.deadline()); release.countDown(); first.get(20, TimeUnit.SECONDS);
-        var result = second.get(20, TimeUnit.SECONDS);
-        assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
-        assertThat(orderRow(f)).containsEntry("total_amount", 1000).containsEntry("content_revision", 1);
+        assertThatThrownBy(() -> second.get(20, TimeUnit.SECONDS))
+                .hasCauseInstanceOf(com.example.ecsite.service.emergency.EmergencyShippingRejectedException.class);
+        assertThat(orderRow(f)).containsEntry("total_amount", 1000).containsEntry("content_revision", 1)
+                .containsEntry("shipping_preparation_started_at", null);
+        // The decrease was seen after the lock wait; the stale confirmation is refused, not the payment.
         verify(evaluator).evaluate(argThat(o -> o.getTotalAmount() == 1000 && o.getContentRevision() == 1),
                 argThat(p -> p.getAmount() == 3000), argThat(t -> t.getOrderContentRevision() == 0));
+        assertThat(jdbc.queryForObject("select count(*) from emergency_shipping_preparations where order_id=?",
+                Integer.class, f.orderId())).isZero();
         assertThat(count("order_content_change_histories", f)).isEqualTo(1);
+        // Confirming the current content succeeds.
+        var result = asAdmin(9L, "second", () -> start(f));
+        assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
         assertStored(f, result);
     }
 
@@ -392,7 +402,7 @@ class OrderShippingPreparationPostgresTest {
     @ParameterizedTest @EnumSource(Modification.class)
     void preparationBlocksExistingModificationAndCancellationRoutes(Modification operation) {
         Fixture f = fixture(true);
-        preparation.start(f.orderId());
+        start(f);
         // Keep deadline open to isolate preparation guards from deadline guards.
         jdbc.update("update orders set change_deadline_at=? where id=?", dbNow().plusDays(1), f.orderId());
         if (operation == Modification.LOCAL_CUSTOMER_CANCEL || operation == Modification.LOCAL_ADMIN_CANCEL)
@@ -439,7 +449,7 @@ class OrderShippingPreparationPostgresTest {
         Fixture f = fixture(true);
         var before = state(f);
         new TransactionTemplate(manager).executeWithoutResult(status -> {
-            var result = preparation.start(f.orderId());
+            var result = start(f);
             orders.flush();
             assertStored(f, result); // JDBC shares this transaction: verifies an UPDATE really reached PostgreSQL.
             status.setRollbackOnly();
@@ -461,7 +471,7 @@ class OrderShippingPreparationPostgresTest {
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void preloadedOrderPreservesAnotherTransactionsPreparation(boolean alsoPayment) throws Exception {
         Fixture f = fixture(true);
-        var call = preloadThenCommit(f, true, alsoPayment, false, () -> preparation.start(f.orderId()));
+        var call = preloadThenCommit(f, true, alsoPayment, false, () -> start(f));
         var result = call.result().get(20, TimeUnit.SECONDS);
         assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.ALREADY_STARTED);
         assertThat(result.startedByAccountId()).isEqualTo(7L);
@@ -541,7 +551,7 @@ class OrderShippingPreparationPostgresTest {
                 long flushes = statistics.getFlushCount();
                 long preparedStatements = statistics.getPrepareStatementCount();
                 clearInvocations(orders, paymentService);
-                assertThatThrownBy(() -> preparation.start(f.orderId()))
+                assertThatThrownBy(() -> start(f))
                         .isInstanceOf(IllegalStateException.class).hasMessageContaining("未flush");
                 assertThat(statistics.getFlushCount()).isEqualTo(flushes);
                 assertThat(statistics.getPrepareStatementCount()).isEqualTo(preparedStatements);
@@ -577,7 +587,7 @@ class OrderShippingPreparationPostgresTest {
             entityManager.flush();
             // Contract limitation: isDirty cannot detect writes already flushed in this transaction.
             assertThat(entityManager.unwrap(Session.class).isDirty()).isFalse();
-            var result = preparation.start(f.orderId());
+            var result = start(f);
             assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
             assertThat(product.getName()).isEqualTo("flushed-but-uncommitted");
             entityManager.flush();
@@ -594,7 +604,7 @@ class OrderShippingPreparationPostgresTest {
         TransactionTemplate transaction = new TransactionTemplate(manager); transaction.setReadOnly(true);
         transaction.executeWithoutResult(status -> {
             clearInvocations(orders);
-            assertThatThrownBy(() -> preparation.start(f.orderId()))
+            assertThatThrownBy(() -> start(f))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("書込み");
             verify(orders, never()).findByIdForUpdate(any());
             assertThat(status.isRollbackOnly()).isTrue(); status.setRollbackOnly();
@@ -610,7 +620,7 @@ class OrderShippingPreparationPostgresTest {
         transaction.executeWithoutResult(status -> {
             assertThat(entityManager.unwrap(Session.class).doReturningWork(Connection::getTransactionIsolation)).isEqualTo(isolation);
             clearInvocations(orders);
-            assertThatThrownBy(() -> preparation.start(f.orderId()))
+            assertThatThrownBy(() -> start(f))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("READ COMMITTED");
             verify(orders, never()).findByIdForUpdate(any());
             assertThat(status.isRollbackOnly()).isTrue(); status.setRollbackOnly();
@@ -628,7 +638,7 @@ class OrderShippingPreparationPostgresTest {
             assertThat(entityManager.unwrap(Session.class).doReturningWork(Connection::getTransactionIsolation))
                     .isEqualTo(Connection.TRANSACTION_REPEATABLE_READ);
             clearInvocations(orders);
-            assertThatThrownBy(() -> preparation.start(f.orderId()))
+            assertThatThrownBy(() -> start(f))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("READ COMMITTED");
             verify(orders, never()).findByIdForUpdate(any());
             status.setRollbackOnly();
@@ -644,7 +654,7 @@ class OrderShippingPreparationPostgresTest {
             assertThat(TransactionSynchronizationManager.isCurrentTransactionReadOnly()).isFalse();
             jdbc.execute("set transaction read only");
             clearInvocations(orders);
-            assertThatThrownBy(() -> preparation.start(f.orderId()))
+            assertThatThrownBy(() -> start(f))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("書込み");
             verify(orders, never()).findByIdForUpdate(any());
             assertThat(status.isRollbackOnly()).isTrue(); status.setRollbackOnly();
@@ -655,7 +665,7 @@ class OrderShippingPreparationPostgresTest {
     @ParameterizedTest @ValueSource(booleans = {false, true})
     void individuallyReadOnlyOrderRejectsBeforeRefreshAndRollsBack(boolean prepared) {
         Fixture f = fixture(true);
-        if (prepared) preparation.start(f.orderId());
+        if (prepared) start(f);
         var before = state(f);
         new TransactionTemplate(manager).executeWithoutResult(status -> {
             Order order = orders.findById(f.orderId()).orElseThrow();
@@ -686,7 +696,7 @@ class OrderShippingPreparationPostgresTest {
             });
             clearInvocations(orders, paymentService);
             try {
-                assertThatThrownBy(() -> preparation.start(f.orderId()))
+                assertThatThrownBy(() -> start(f))
                         .isInstanceOf(IllegalStateException.class).hasMessageContaining("読取り専用");
                 verify(orders).findByIdForUpdate(f.orderId());
                 verify(orders, never()).findCurrentTimeInTokyo();
@@ -720,7 +730,7 @@ class OrderShippingPreparationPostgresTest {
             assertThat(session.isDefaultReadOnly()).isFalse();
             assertThat(session.isReadOnly(product)).isTrue();
             assertThat(session.isReadOnly(order)).isFalse();
-            var started = preparation.start(f.orderId());
+            var started = start(f);
             assertThat(session.isReadOnly(product)).isTrue();
             assertThat(session.isReadOnly(order)).isFalse();
             entityManager.flush(); assertStored(f, started);
@@ -757,7 +767,7 @@ class OrderShippingPreparationPostgresTest {
             if (loadPayment) payments.findById(f.paymentId()).orElseThrow();
             if (loadHistory) transactions.findByPaymentIdOrderByCreatedAtAscIdAsc(f.paymentId()).size();
             ready.complete(backendPid()); await(committed);
-            var started = preparation.start(f.orderId());
+            var started = start(f);
             if (loadOrder && started.status() == ShippingPreparationStartResult.Status.STARTED) {
                 // Refresh keeps object identity and updates the already-initialized cascade collections.
                 assertThat(entityManager.find(Order.class, f.orderId())).isSameAs(order);
@@ -788,7 +798,7 @@ class OrderShippingPreparationPostgresTest {
 
     private void assertRejectedUnchanged(Fixture f, Class<? extends Throwable> error) {
         var before = state(f);
-        assertThatThrownBy(() -> preparation.start(f.orderId())).isInstanceOf(error);
+        assertThatThrownBy(() -> start(f)).isInstanceOf(error);
         assertThat(state(f)).isEqualTo(before);
         assertUnprepared(f);
     }
@@ -888,6 +898,29 @@ class OrderShippingPreparationPostgresTest {
         OrderShippingAddressForm form = new OrderShippingAddressForm(); form.setShippingName(name);
         form.setShippingPostalCode("100-0001"); form.setShippingPrefecture("Tokyo"); form.setShippingCity("Chiyoda");
         form.setShippingAddressLine("1-1"); form.setShippingPhone("09012345678"); return form;
+    }
+
+    private static final String REASON = "緊急出荷テスト";
+
+    /** Feature136: the confirmed revision is read from the DB like the detail screen does. */
+    private ShippingPreparationStartResult start(Fixture f) {
+        return preparation.start(f.orderId(), REASON, revision(f));
+    }
+
+    private int revision(Fixture f) {
+        return jdbc.queryForObject("select content_revision from orders where id=?", Integer.class, f.orderId());
+    }
+
+    /** Feature136: test administrators 7 ("first") and 9 ("second") exist with the emergency shipping permission. */
+    private void ensurePermittedAdmins() {
+        for (var admin : List.of(Map.entry(7L, "first"), Map.entry(9L, "second"))) {
+            jdbc.update("""
+                    insert into admin_accounts(id,username,password,enabled,created_at,updated_at,emergency_shipping_allowed)
+                    select ?,?,'{noop}unused',true,localtimestamp,localtimestamp,true
+                    where not exists(select 1 from admin_accounts where id=?)
+                    """, admin.getKey(), admin.getValue(), admin.getKey());
+        }
+        jdbc.queryForObject("select setval(pg_get_serial_sequence('admin_accounts','id'),(select max(id) from admin_accounts))", Long.class);
     }
 
     private LocalDateTime dbNow() { return jdbc.queryForObject("select clock_timestamp() AT TIME ZONE 'Asia/Tokyo'", LocalDateTime.class); }

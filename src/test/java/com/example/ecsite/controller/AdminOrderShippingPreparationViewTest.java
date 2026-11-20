@@ -32,6 +32,10 @@ class AdminOrderShippingPreparationViewTest {
     private final com.example.ecsite.service.orderchange.AdminOrderHoldViewService holds =
             mock(com.example.ecsite.service.orderchange.AdminOrderHoldViewService.class);
     private final Order order = new Order(1L, 100, DEADLINE.withHour(10), DEADLINE);
+    private final com.example.ecsite.service.emergency.EmergencyShippingStore emergency =
+            mock(com.example.ecsite.service.emergency.EmergencyShippingStore.class);
+    private boolean allowed = true;
+    private java.util.Optional<com.example.ecsite.service.emergency.EmergencyShippingStore.Record> record = java.util.Optional.empty();
     private final String returnUrl = "/admin/orders?page=2&size=20&sort=id,desc";
 
     private MockMvc mvc(LocalDateTime now) {
@@ -45,6 +49,9 @@ class AdminOrderShippingPreparationViewTest {
                 mock(OrderHandlingStatusHistoryService.class), mock(OrderShippingAddressHistoryService.class),
                 mock(OrderAssigneeHistoryService.class), mock(OrderContentChangeHistoryService.class),
                 mock(AdminAccountService.class), payments, captures, cancellations, factory, paymentViewReader, mock(com.example.ecsite.service.orderchange.AdminOldCancelRecoveryViewService.class), holds);
+        when(emergency.isAllowed(org.mockito.ArgumentMatchers.any())).thenReturn(allowed);
+        when(emergency.find(42L)).thenReturn(record);
+        controller.setEmergencyShipping(emergency);
         var resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/"); resolver.setSuffix(".html");
         resolver.setTemplateMode("HTML"); resolver.setCharacterEncoding("UTF-8");
@@ -82,7 +89,7 @@ class AdminOrderShippingPreparationViewTest {
         assertThat(order.getShippingPreparationStartedByUsername()).isEqualTo(originalUsername);
         assertThat(order.getContentRevision()).isZero();
         String html = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
-        if (((OrderShippingPreparationViewFactory.View) model.get("shippingPreparationView")).canStart()) {
+        if (((OrderShippingPreparationViewFactory.View) model.get("shippingPreparationView")).canStart() && allowed) {
             CsrfToken token = (CsrfToken) result.getRequest().getAttribute(CsrfToken.class.getName());
             assertThat(token).isNotNull();
             assertThat(token.getToken()).isNotBlank();
@@ -97,11 +104,40 @@ class AdminOrderShippingPreparationViewTest {
         // canCaptureForShipment defaults false: it must not gate the preparation button.
         String html = render(DEADLINE);
         String section = html.substring(html.indexOf("<section id=\"shipping-preparation\""), html.indexOf("<h2>注文操作</h2>"));
-        assertThat(section).contains("発送準備", "発送準備を開始する", "受付時に", "最終判定",
+        assertThat(section).contains("発送準備", "緊急出荷として発送準備を開始する", "受付時に", "最終判定",
                 "action=\"/admin/orders/42/start-shipping-preparation\"", "method=\"post\"",
-                "name=\"returnUrl\"", "page=2&amp;size=20&amp;sort=id,desc", "name=\"_csrf\"");
-        assertThat(section).doesNotContain("name=\"actorId\"", "name=\"username\"", "name=\"paymentId\"", "textarea");
+                "name=\"returnUrl\"", "page=2&amp;size=20&amp;sort=id,desc", "name=\"_csrf\"",
+                // Feature136: required reason and the revision the administrator is looking at.
+                "<textarea", "name=\"reason\"", "maxlength=\"500\"", "required",
+                "name=\"expectedContentRevision\" value=\"0\"", "自動出力の対象外");
+        assertThat(section).doesNotContain("name=\"actorId\"", "name=\"username\"", "name=\"paymentId\"",
+                "emergency-shipping-not-allowed");
         assertThat(order.getShippingPreparationStartedAt()).isNull();
+    }
+
+    @Test
+    void administratorWithoutPermissionSeesNoForm() throws Exception {
+        allowed = false;
+        String html = render(DEADLINE);
+        String section = html.substring(html.indexOf("<section id=\"shipping-preparation\""), html.indexOf("<h2>注文操作</h2>"));
+        assertThat(section).contains("emergency-shipping-not-allowed", "緊急出荷権限のある管理者だけ")
+                .doesNotContain("<form", "発送準備を開始する");
+    }
+
+    @Test
+    void emergencyRecordShowsEscapedReasonAndOperationTime() throws Exception {
+        order.beginShippingPreparation(DEADLINE, 7L, "admin");
+        record = java.util.Optional.of(new com.example.ecsite.service.emergency.EmergencyShippingStore.Record(
+                1L, 42L, 7L, "admin", "<b>顧客の要望</b>\n至急", DEADLINE, "ORDERED", 3, 1200, 5L, DEADLINE,
+                DEADLINE.plusSeconds(1)));
+        assertThat(render(DEADLINE)).contains("緊急出荷（管理者）", "&lt;b&gt;顧客の要望&lt;/b&gt;", "2026/10/16 14:00:01",
+                "版 3 / 合計 1200円 / ORDERED").doesNotContain("<b>顧客の要望</b>", "旧手動準備");
+    }
+
+    @Test
+    void preparationWithoutRecordIsShownAsLegacy() throws Exception {
+        order.beginShippingPreparation(DEADLINE, 7L, "admin");
+        assertThat(render(DEADLINE)).contains("旧手動準備（理由なし）").doesNotContain("緊急出荷の理由");
     }
 
     @Test

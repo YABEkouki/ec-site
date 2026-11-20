@@ -135,7 +135,7 @@ class OrderToCaptureJourneyPostgresTest {
         advance(deadline);
         unchangedOnRejection(seed,id,()->orderService.changeItemsForUser(id,seed.user(),"customer",items(id,1,1)));
         authenticate(seed.preparer());
-        var started=preparation.start(id);
+        var started=com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,id);
         assertThat(started.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
         assertThat(date(id,"shipping_preparation_started_at")).isEqualTo(deadline);
         assertThat(row(id)).containsEntry("status","ORDERED")
@@ -214,7 +214,7 @@ class OrderToCaptureJourneyPostgresTest {
     }
     private Actor admin(String username,LocalDateTime now) {
         AdminAccount admin=new AdminAccount();admin.setUsername(username);admin.setPassword("test");admin.setEnabled(true);
-        admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);return new Actor(admin.getId(),username);
+        admin.setCreatedAt(now);admin.setUpdatedAt(now);admins.saveAndFlush(admin);com.example.ecsite.support.EmergencyShippingFixtures.grant(jdbc,admin.getId());return new Actor(admin.getId(),username);
     }
     private void authenticate(Actor actor) {
         var details=new AdminUserDetails(actor.id(),actor.username(),"test",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));

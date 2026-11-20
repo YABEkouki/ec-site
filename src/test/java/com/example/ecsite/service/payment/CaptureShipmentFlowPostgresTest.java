@@ -81,8 +81,9 @@ class CaptureShipmentFlowPostgresTest {
             var cat=categories.saveAndFlush(new Category(unique));var tax=taxes.findAll().getFirst();
             Product product=new Product();product.setName("capture product");product.setPrice(100);product.setStock(10);product.setCategory(cat);product.setTaxCategory(tax);products.saveAndFlush(product);
             var ordered=now.minusDays(1).toLocalDate().atTime(10,0);
-            Order order=new Order(user.getId(),200,ordered,ordered.withHour(14));order.beginShippingPreparation(ordered.withHour(14),7L,"preparer");
+            Order order=new Order(user.getId(),200,ordered,ordered.withHour(14));
             order.addItem(new OrderItem(product.getId(),product.getName(),cat.getId(),cat.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));orders.saveAndFlush(order);
+            com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,ordered.withHour(14));orders.saveAndFlush(order);
             Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);payment.setProviderPaymentId("pfw_flow_"+unique,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
             var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,unique,now);auth.markSucceeded(payment.getProviderPaymentId(),now);transactions.saveAndFlush(auth);
             return new Fixture(order.getId(),payment.getId(),product.getId(),payment.getProviderPaymentId());

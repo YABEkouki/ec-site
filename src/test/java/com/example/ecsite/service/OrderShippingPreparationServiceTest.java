@@ -36,6 +36,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.example.ecsite.service.emergency.EmergencyShippingRejectedException;
+import com.example.ecsite.service.emergency.EmergencyShippingStore;
+
 class OrderShippingPreparationServiceTest {
     private static final LocalDateTime DEADLINE = LocalDateTime.of(2026, 10, 16, 14, 0);
     private final OrderRepository orders = mock(OrderRepository.class);
@@ -52,9 +55,13 @@ class OrderShippingPreparationServiceTest {
             orders, payments, manual, new OrderModificationPolicy(), new OrderWriteContext(entityManager,
             paymentRepository, transactionRepository));
     private final Order order = new Order(1L, 1000, DEADLINE.minusHours(4), DEADLINE);
+    private final EmergencyShippingStore emergency = mock(EmergencyShippingStore.class);
+    private static final String REASON = "顧客都合で至急発送";
 
     @BeforeEach void authenticate() throws Exception {
         actor(7L, "first", "ROLE_ADMIN");
+        service.setEmergencyShippingStore(emergency);
+        when(emergency.isAllowed(anyLong())).thenReturn(true);
         TransactionSynchronizationManager.setActualTransactionActive(true);
         ReflectionTestUtils.setField(order, "id", 1L);
         when(entityManager.unwrap(Session.class)).thenReturn(session);
@@ -90,7 +97,7 @@ class OrderShippingPreparationServiceTest {
         ReflectionTestUtils.setField(order, "status", status);
         locked();
         when(orders.findCurrentTimeInTokyo()).thenAnswer(invocation -> { unstarted(); return DEADLINE.plusNanos(nanos); });
-        var result = service.start(1L);
+        var result = service.start(1L, REASON, 0);
         assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
         assertThat(result.startedAt()).isEqualTo(DEADLINE.plusNanos(nanos));
         assertThat(result.startedByAccountId()).isEqualTo(7L);
@@ -108,21 +115,85 @@ class OrderShippingPreparationServiceTest {
         if (status == OrderStatus.ORDERED) sequence.verify(payments).validateCardPaymentForShippingPreparation(order);
         else sequence.verify(manual).validateManualShipment(order);
         sequence.verify(orders).findCurrentTimeInTokyo();
+        sequence.verify(orders).flush();
         verifyNoMoreInteractions(orders, payments, manual);
+        var recordFirst = inOrder(emergency, orders);
+        recordFirst.verify(emergency).isAllowed(7L);
+        recordFirst.verify(orders).findByIdForUpdate(1L);
+        recordFirst.verify(emergency).hasOpenPaymentDiscrepancy(1L);
+        recordFirst.verify(emergency).insert(1L, 7L, "first", REASON, DEADLINE.plusNanos(nanos));
+        recordFirst.verify(orders).flush();
+    }
+
+    @ParameterizedTest @NullSource @ValueSource(strings = {"", " ", "\t\n"})
+    void blankReasonIsRejectedBeforeAnyLookup(String reason) {
+        assertThatThrownBy(() -> service.start(1L, reason, 0)).isInstanceOf(EmergencyShippingRejectedException.class)
+                .hasMessageContaining("理由");
+        verifyNoInteractions(orders, payments, manual, emergency); unstarted();
+    }
+
+    @Test void reasonIsTrimmedAndLimitedTo500Characters() {
+        assertThatThrownBy(() -> service.start(1L, "x".repeat(501), 0)).isInstanceOf(EmergencyShippingRejectedException.class);
+        locked(); when(orders.findCurrentTimeInTokyo()).thenReturn(DEADLINE);
+        service.start(1L, "  " + "y".repeat(500) + "\n", 0);
+        verify(emergency).insert(1L, 7L, "first", "y".repeat(500), DEADLINE);
+    }
+
+    @ParameterizedTest @NullSource @ValueSource(ints = {-1})
+    void missingConfirmedRevisionIsRejected(Integer revision) {
+        assertThatIllegalArgumentException().isThrownBy(() -> service.start(1L, REASON, revision));
+        verifyNoInteractions(orders, emergency); unstarted();
+    }
+
+    @Test void administratorWithoutPermissionIsDeniedBeforeLock() {
+        when(emergency.isAllowed(7L)).thenReturn(false);
+        assertThatThrownBy(() -> service.start(1L, REASON, 0)).isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(orders, payments, manual); unstarted();
+    }
+
+    @Test void changedContentSinceDisplayIsRejectedBeforeDatabaseTime() {
+        locked();
+        assertThatThrownBy(() -> service.start(1L, REASON, 1)).isInstanceOf(EmergencyShippingRejectedException.class)
+                .hasMessageContaining("注文内容が変更されました");
+        verify(orders, never()).findCurrentTimeInTokyo();
+        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any()); unstarted();
+    }
+
+    @Test void openPaymentDiscrepancyIsRejectedBeforeDatabaseTime() {
+        locked(); when(emergency.hasOpenPaymentDiscrepancy(1L)).thenReturn(true);
+        assertThatThrownBy(() -> service.start(1L, REASON, 0)).isInstanceOf(EmergencyShippingRejectedException.class)
+                .hasMessageContaining("決済不整合");
+        verify(orders, never()).findCurrentTimeInTokyo();
+        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any()); unstarted();
+    }
+
+    @Test void databaseRefusalOfTheRecordLeavesTheOrderUnprepared() {
+        locked(); when(orders.findCurrentTimeInTokyo()).thenReturn(DEADLINE);
+        when(emergency.insert(anyLong(), anyLong(), any(), any(), any()))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("refused"));
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0));
+        verify(orders, never()).flush(); unstarted();
+    }
+
+    @Test void retryOfAnAlreadyStartedOrderWritesNoSecondRecord() {
+        order.beginShippingPreparation(DEADLINE, 9L, "other");
+        locked();
+        assertThat(service.start(1L, REASON, 5).status()).isEqualTo(ShippingPreparationStartResult.Status.ALREADY_STARTED);
+        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any());
     }
 
     @ParameterizedTest @EnumSource(value=OrderStatus.class, names={"ORDERED", "PAID"})
     void rejectsOneNanosecondBeforeDeadline(OrderStatus status) {
         ReflectionTestUtils.setField(order, "status", status); locked();
         when(orders.findCurrentTimeInTokyo()).thenReturn(DEADLINE.minusNanos(1));
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)); unstarted();
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)); unstarted();
     }
 
     @ParameterizedTest @CsvSource({"SHIPPED,false", "SHIPPED,true", "CANCELLED,false", "CANCELLED,true"})
     void terminalOrdersAreRejectedEvenIfAlreadyPrepared(OrderStatus status, boolean prepared) {
         if (prepared) order.beginShippingPreparation(DEADLINE, 9L, "original");
         ReflectionTestUtils.setField(order, "status", status); locked();
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L));
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0));
         verify(orders).findByIdForUpdate(1L); verifyNoMoreInteractions(orders);
         verifyNoInteractions(payments, manual);
     }
@@ -133,7 +204,7 @@ class OrderShippingPreparationServiceTest {
         order.beginShippingPreparation(DEADLINE, 9L, "original"); locked();
         for (String username : List.of("first", "another")) {
             actor(7L, username, "ROLE_ADMIN");
-            var result = service.start(1L);
+            var result = service.start(1L, REASON, 0);
             assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.ALREADY_STARTED);
             assertThat(result.startedAt()).isEqualTo(DEADLINE);
             assertThat(result.startedByAccountId()).isEqualTo(9L);
@@ -148,7 +219,7 @@ class OrderShippingPreparationServiceTest {
         if ((mask & 1)!=0) ReflectionTestUtils.setField(order,"shippingPreparationStartedAt",DEADLINE);
         if ((mask & 2)!=0) ReflectionTestUtils.setField(order,"shippingPreparationStartedByAccountId",9L);
         if ((mask & 4)!=0) ReflectionTestUtils.setField(order,"shippingPreparationStartedByUsername","original");
-        locked(); assertThatIllegalStateException().isThrownBy(() -> service.start(1L));
+        locked(); assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0));
         verifyNoInteractions(payments, manual); verify(orders, never()).findCurrentTimeInTokyo();
     }
 
@@ -159,25 +230,25 @@ class OrderShippingPreparationServiceTest {
                 .when(payments).validateCardPaymentForShippingPreparation(order);
         else doAnswer(i -> { unstarted(); throw new IllegalStateException("invalid manual"); })
                 .when(manual).validateManualShipment(order);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)); unstarted();
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)); unstarted();
         verify(orders, never()).findCurrentTimeInTokyo();
     }
 
     @Test void missingOrder() {
         when(orders.findByIdForUpdate(1L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.start(1L)).isInstanceOf(OrderNotFoundException.class);
+        assertThatThrownBy(() -> service.start(1L, REASON, 0)).isInstanceOf(OrderNotFoundException.class);
         verifyNoInteractions(payments, manual);
     }
     @Test void databaseClockFailureDoesNotMutate() {
         locked(); when(orders.findCurrentTimeInTokyo()).thenThrow(new IllegalStateException("DB unavailable"));
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)); unstarted();
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)); unstarted();
     }
     @Test void nullDatabaseTimeFailsClosed() {
-        locked(); assertThatIllegalStateException().isThrownBy(() -> service.start(1L)); unstarted();
+        locked(); assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)); unstarted();
     }
     @ParameterizedTest @NullSource @ValueSource(longs={0,-1})
     void invalidOrderIdBeforeAnyRepositoryCall(Long id) {
-        assertThatIllegalArgumentException().isThrownBy(() -> service.start(id));
+        assertThatIllegalArgumentException().isThrownBy(() -> service.start(id, REASON, 0));
         verifyNoInteractions(orders, payments, manual);
     }
     @Test void noAuthenticationBeforeLock() {
@@ -198,7 +269,7 @@ class OrderShippingPreparationServiceTest {
     @Test void longActorUsernameBeforeLock() { actor(7L,"x".repeat(101),"ROLE_ADMIN"); denied(); }
     @Test void dirtySessionRejectedWithoutQueryFlushOrRefresh() {
         when(session.isDirty()).thenReturn(true);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("未flush");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("未flush");
         verifyNoInteractions(orders, payments, manual, paymentRepository, transactionRepository, connection);
         verify(entityManager, never()).flush();
         verify(entityManager, never()).refresh(any());
@@ -211,7 +282,7 @@ class OrderShippingPreparationServiceTest {
         var beforeId = order.getShippingPreparationStartedByAccountId();
         var beforeName = order.getShippingPreparationStartedByUsername();
         locked(); when(session.isReadOnly(order)).thenReturn(true);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("読取り専用");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("読取り専用");
         verify(orders).findByIdForUpdate(1L); verifyNoMoreInteractions(orders);
         verify(session).isReadOnly(order);
         verify(entityManager, never()).refresh(any());
@@ -226,7 +297,7 @@ class OrderShippingPreparationServiceTest {
     @Test void individuallyWritableOrderProceedsAfterTheReadOnlyCheck() {
         locked(); when(session.isReadOnly(order)).thenReturn(false);
         when(orders.findCurrentTimeInTokyo()).thenReturn(DEADLINE);
-        assertThat(service.start(1L).status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
+        assertThat(service.start(1L, REASON, 0).status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
         var sequence = inOrder(orders, session, entityManager, payments);
         sequence.verify(orders).findByIdForUpdate(1L);
         sequence.verify(session).isReadOnly(order);
@@ -237,45 +308,45 @@ class OrderShippingPreparationServiceTest {
 
     @Test void requiresAnActualTransaction() {
         TransactionSynchronizationManager.setActualTransactionActive(false);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("書込み");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("書込み");
         verifyNoInteractions(entityManager, orders, connection);
     }
     @Test void rejectsReadOnlyTransactionBeforeQueries() {
         TransactionSynchronizationManager.setCurrentTransactionReadOnly(true);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("書込み");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("書込み");
         verifyNoInteractions(entityManager, orders, connection);
     }
     @Test void rejectsReadOnlySession() {
         when(session.isDefaultReadOnly()).thenReturn(true);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("書込み");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("書込み");
         verifyNoInteractions(orders, connection);
     }
     @Test void rejectsManualFlushMode() {
         when(session.getHibernateFlushMode()).thenReturn(FlushMode.MANUAL);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("書込み");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("書込み");
         verifyNoInteractions(orders, connection);
     }
     @ParameterizedTest @NullSource @ValueSource(strings={"repeatable read", "serializable", "", "unknown"})
     void rejectsAnythingOtherThanConfirmedReadCommitted(String isolation) throws Exception {
         when(settings.getString(1)).thenReturn(isolation);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("READ COMMITTED");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("READ COMMITTED");
         verifyNoInteractions(orders, paymentRepository, transactionRepository, payments, manual);
         verify(entityManager, never()).refresh(any()); unstarted();
     }
     @ParameterizedTest @NullSource @ValueSource(strings={"on", "", "unknown"})
     void rejectsAnythingOtherThanConfirmedWritableServer(String readOnly) throws Exception {
         when(settings.getString(2)).thenReturn(readOnly);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("書込み");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("書込み");
         verifyNoInteractions(orders); unstarted();
     }
     @Test void rejectsMissingServerSettings() throws Exception {
         when(settings.next()).thenReturn(false);
-        assertThatIllegalStateException().isThrownBy(() -> service.start(1L)).withMessageContaining("確認できません");
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0)).withMessageContaining("確認できません");
         verifyNoInteractions(orders); unstarted();
     }
     @Test void serverSettingsFailureNeverFallsBackToAssumedDefaults() throws Exception {
         when(statement.executeQuery()).thenThrow(new SQLException("connection failed"));
-        assertThatThrownBy(() -> service.start(1L)).hasMessageContaining("connection failed");
+        assertThatThrownBy(() -> service.start(1L, REASON, 0)).hasMessageContaining("connection failed");
         verifyNoInteractions(orders); unstarted();
     }
     @Test void refreshesParentsAndHistoryBeforeEligibilityAndDatabaseTime() {
@@ -285,7 +356,7 @@ class OrderShippingPreparationServiceTest {
         when(paymentRepository.findByOrderIdForUpdate(1L)).thenReturn(List.of(payment));
         when(transactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(10L)).thenReturn(List.of(transaction));
         locked(); when(orders.findCurrentTimeInTokyo()).thenReturn(DEADLINE);
-        service.start(1L);
+        service.start(1L, REASON, 0);
         var sequence = inOrder(orders, entityManager, paymentRepository, transactionRepository, payments);
         sequence.verify(entityManager).unwrap(Session.class);
         sequence.verify(orders).findByIdForUpdate(1L);
@@ -299,7 +370,7 @@ class OrderShippingPreparationServiceTest {
     }
 
     private void denied() {
-        assertThatThrownBy(() -> service.start(1L)).isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.start(1L, REASON, 0)).isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(orders, payments, manual); unstarted();
     }
 }

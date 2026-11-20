@@ -111,7 +111,7 @@ class OrderIncreaseCustomerPostgresTest {
  @Test void acceptanceRechecksDeadlineAndPreparationAfterPreview() throws Exception {
   for(boolean preparation:List.of(false,true)){
    var f=fixture();var session=new MockHttpSession();var token=quote(f,session);
-   if(preparation)tx(()->{orders.findByIdForUpdate(f.order()).orElseThrow().beginShippingPreparation(orders.findCurrentTimeInTokyo(),7L,"admin");return null;});
+   if(preparation)tx(()->{com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,orders.findByIdForUpdate(f.order()).orElseThrow(),new com.example.ecsite.support.EmergencyShippingFixtures.Admin(7L,"admin"),orders.findCurrentTimeInTokyo());return null;});
    else jdbc.update("update orders set ordered_at=clock_timestamp()-interval '2 hours',change_deadline_at=clock_timestamp()-interval '1 hour' where id=?",f.order());
    mvc.perform(post(root(f)).with(customer(f.user())).with(csrf()).session(session).param("confirmationToken",token)).andExpect(status().isConflict());
    assertThat(jdbc.queryForObject("select count(*) from order_change_operations where order_id=?",Integer.class,f.order())).isZero();
