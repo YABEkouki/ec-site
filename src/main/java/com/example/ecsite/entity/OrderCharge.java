@@ -104,6 +104,7 @@ public class OrderCharge {
     }
 
     public void updateAmount(int amount) {
+        if (order != null) order.requireContentMutable(); // Feature136-B (V98)
         this.amount = amount;
     }
 

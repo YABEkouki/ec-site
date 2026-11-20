@@ -224,13 +224,53 @@ class EmergencyShippingPostgresTest {
         rejects("55000", "append-only", () -> jdbc.update("update emergency_shipping_preparations set reason='changed' where order_id=?", order));
         rejects("55000", "append-only", () -> jdbc.update("delete from emergency_shipping_preparations where order_id=?", order));
         rejects("55000", "append-only", () -> jdbc.execute("truncate emergency_shipping_preparations cascade"));
-        rejects("55000", "cannot be changed", () -> jdbc.update("update orders set shipping_preparation_started_at=null,"
+        rejects("55000", "frozen once shipping preparation has started", () -> jdbc.update("update orders set shipping_preparation_started_at=null,"
                 + "shipping_preparation_started_by_account_id=null,shipping_preparation_started_by_username=null where id=?", order));
-        rejects("55000", "cannot be changed", () -> jdbc.update(
+        rejects("55000", "frozen once shipping preparation has started", () -> jdbc.update(
                 "update orders set shipping_preparation_started_at=shipping_preparation_started_at+interval '1 second' where id=?", order));
         // A second record for the same order is refused (the order is already prepared).
         rejects("55000", "already started", () -> tx(() -> { EmergencyShippingFixtures.record(jdbc, order, admin, dbNow()); return null; }));
         assertThat(preparation(order)).isEqualTo(stored);
         assertThat(jdbc.queryForObject("select count(*) from emergency_shipping_preparations where order_id=?", Integer.class, order)).isOne();
+    }
+
+    private static final String HANDLING = "IN_PROGRESS";
+
+    /** Feature136-B (V98): an emergency-prepared order is frozen like an exported one. */
+    @Test
+    void anEmergencyPreparedOrderIsFrozen() {
+        Admin admin = EmergencyShippingFixtures.permittedAdmin(jdbc, "freeze");
+        long order = order(); long payment = payment(order, "AUTHORIZED");
+        long tax = jdbc.queryForObject("select min(id) from tax_categories", Long.class);
+        long category = jdbc.queryForObject("insert into categories(name) values (?) returning id", Long.class, "f136b-" + UUID.randomUUID());
+        long product = jdbc.queryForObject("insert into products(name,price,category_id,tax_category_id) values ('f136b',600,?,?) returning id",
+                Long.class, category, tax);
+        String itemInsert = "insert into order_items(order_id,product_id,product_name,price,quantity,subtotal,category_id,category_name,"
+                + "tax_category_id,tax_category_code,tax_category_name,tax_rate) values (?,?,'f136b',600,2,1200,?,'c',?,'STANDARD','標準',10)";
+        String chargeInsert = "insert into order_charges(order_id,charge_type,name,amount,tax_category_id,tax_category_code,tax_category_name,tax_rate) "
+                + "values (?,'SHIPPING','送料',0,?,'STANDARD','標準',10)";
+        jdbc.update(itemInsert, order, product, category, tax);
+        jdbc.update(chargeInsert, order, tax);
+        jdbc.update("update orders set active_payment_id=? where id=?", payment, order);
+        EmergencyShippingFixtures.prepare(jdbc, order, admin, null, null);
+        var before = jdbc.queryForMap("select * from orders where id=?", order);
+        String frozen = "frozen once shipping preparation has started";
+        for (String assignment : java.util.List.of("total_amount=total_amount-1", "item_subtotal=item_subtotal+1", "charge_total=charge_total+1",
+                "tax_amount=tax_amount+1", "content_revision=content_revision+1",
+                "shipping_name='changed'", "shipping_postal_code='999-9999'", "shipping_prefecture='x'", "shipping_city='x'",
+                "shipping_address_line='x'", "shipping_phone='000'", "active_payment_id=null",
+                "status='CANCELLED', cancelled_at=localtimestamp")) {
+            rejects("55000", frozen, () -> jdbc.update("update orders set " + assignment + " where id=?", order));
+        }
+        rejects("55000", "Order content is frozen", () -> jdbc.update(itemInsert, order, product, category, tax));
+        rejects("55000", "Order content is frozen", () -> jdbc.update("update order_items set quantity=1 where order_id=?", order));
+        rejects("55000", "Order content is frozen", () -> jdbc.update("delete from order_items where order_id=?", order));
+        rejects("55000", "Order content is frozen", () -> jdbc.update(chargeInsert, order, tax));
+        rejects("55000", "Order content is frozen", () -> jdbc.update("update order_charges set amount=1 where order_id=?", order));
+        rejects("55000", "Order content is frozen", () -> jdbc.update("delete from order_charges where order_id=?", order));
+        assertThat(jdbc.queryForMap("select * from orders where id=?", order)).isEqualTo(before);
+        // Columns outside the frozen content stay writable.
+        jdbc.update("update orders set handling_status=? where id=?", HANDLING, order);
+        assertThat(jdbc.queryForObject("select handling_status from orders where id=?", String.class, order)).isEqualTo(HANDLING);
     }
 }

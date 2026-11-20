@@ -10,6 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 import org.springframework.test.util.ReflectionTestUtils;
 
+// Feature136-B: Order setters refuse prepared orders; these defensive cases write the fields directly.
 class CaptureShipmentPolicyTest {
     private final CaptureShipmentPolicy policy = new CaptureShipmentPolicy(new PaymentConsistencyEvaluator(), new CaptureShipmentSnapshotMatcher());
     private static final LocalDateTime NOW=LocalDateTime.of(2026,10,19,15,0);
@@ -51,7 +52,7 @@ class CaptureShipmentPolicyTest {
         ReflectionTestUtils.setField(cancel,"id",63L);cancel.markSucceeded("provider-id",NOW);transactions.add(cancel);
         payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,NOW);
         ReflectionTestUtils.setField(payment,"id",53L);payment.setProviderPaymentId("new-provider",NOW);payment.markAuthorized(NOW);payments.add(payment);
-        order.bindActivePayment(payment);
+        ReflectionTestUtils.setField(order,"activePaymentId",payment.getId()); // Feature136-B: bound after the (frozen) preparation only in this fixture
         var auth=PaymentTransaction.forOrderChange(payment,PaymentTransactionType.AUTHORIZE,200,0,"changed-auth",NOW,
                 PaymentTransactionPurpose.ORDER_CHANGE_AUTHORIZATION,change);
         ReflectionTestUtils.setField(auth,"id",64L);auth.markSucceeded("new-provider",NOW);transactions.add(auth);
@@ -62,7 +63,7 @@ class CaptureShipmentPolicyTest {
     }
     @ParameterizedTest @ValueSource(booleans={false,true})
     void settledAbortedGenerationDoesNotPreventCapture(boolean authorizationSucceeded) {
-        setupNew();order.bindActivePayment(payment);
+        setupNew();ReflectionTestUtils.setField(order,"activePaymentId",payment.getId()); // Feature136-B: bound after the (frozen) preparation only in this fixture
         var aborted=UUID.randomUUID();
         var closed=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,NOW);
         ReflectionTestUtils.setField(closed,"id",53L);closed.setProviderPaymentId("aborted-provider",NOW);payments.add(closed);
@@ -88,13 +89,13 @@ class CaptureShipmentPolicyTest {
         assertThat(result.paymentId()).isEqualTo(52L); assertThat(result.captureTransactionId()).isNull();
     }
     @Test void decreasedAmountWithDifferentAuthorizationRevisionIsAllowed() {
-        setupNew(); order.setTotalAmount(100); order.incrementContentRevision();
+        setupNew(); ReflectionTestUtils.setField(order,"totalAmount",100); ReflectionTestUtils.setField(order,"contentRevision",order.getContentRevision()+1);
         assertThat(classify().disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.NEW);
     }
     @ParameterizedTest @ValueSource(booleans={false,true})
     void decreasedShipmentKeepsAuthorizationRevisionCompatibility(boolean succeeded) {
         var capture=setupShipped(succeeded);
-        order.setTotalAmount(100); order.incrementContentRevision();
+        ReflectionTestUtils.setField(order,"totalAmount",100); ReflectionTestUtils.setField(order,"contentRevision",order.getContentRevision()+1);
         ReflectionTestUtils.setField(capture,"amount",100);
         ReflectionTestUtils.setField(capture,"orderContentRevision",1);
         expected=PaymentOperationSnapshot.from(capture);
@@ -105,8 +106,8 @@ class CaptureShipmentPolicyTest {
     void invalidNewPaymentRequiresRecovery(String change) {
         setupNew();
         switch(change) {
-            case "increase" -> order.setTotalAmount(300);
-            case "revision" -> order.incrementContentRevision();
+            case "increase" -> ReflectionTestUtils.setField(order,"totalAmount",300);
+            case "revision" -> ReflectionTestUtils.setField(order,"contentRevision",order.getContentRevision()+1);
             case "authorization" -> ReflectionTestUtils.setField(payment,"amount",300);
             case "provider" -> payment.setProviderPaymentId(" ",NOW);
             case "wrong-provider" -> ReflectionTestUtils.setField(payment,"provider",null);
@@ -148,8 +149,8 @@ class CaptureShipmentPolicyTest {
             case "foreign-payment" -> { Order foreign=new Order(); ReflectionTestUtils.setField(foreign,"id",999L); ReflectionTestUtils.setField(payment,"order",foreign); }
             case "multiple-capture" -> { var second=new PaymentTransaction(payment,PaymentTransactionType.CAPTURE,200,0,"other-key",NOW); ReflectionTestUtils.setField(second,"id",64L); transactions.add(second); }
             case "snapshot-null" -> expected=null;
-            case "amount" -> order.setTotalAmount(100);
-            case "revision" -> order.incrementContentRevision();
+            case "amount" -> ReflectionTestUtils.setField(order,"totalAmount",100);
+            case "revision" -> ReflectionTestUtils.setField(order,"contentRevision",order.getContentRevision()+1);
             case "provider" -> payment.setProviderPaymentId("changed-provider",NOW);
             case "paid-pending" -> ReflectionTestUtils.setField(order,"paidAt",NOW);
             case "captured-pending" -> payment.markCaptured(NOW);

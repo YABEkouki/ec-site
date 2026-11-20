@@ -85,7 +85,9 @@ class PaymentResultApplicationPostgresTest {
     }
     @Test void captureRevisionMismatchPreservesCommittedShipmentAndHistory() {
         Fixture f=fixture(true); PaymentCaptureStart start=beginCapture(f.orderId,1L,"admin",null);
-        jdbc.update("update orders set content_revision=content_revision+1 where id=?",f.orderId);
+        // Feature136-B (V98): the revision of a prepared order is frozen.
+        assertThatThrownBy(()->jdbc.update("update orders set content_revision=content_revision+1 where id=?",f.orderId))
+            .hasMessageContaining("frozen once shipping preparation has started");
         captureResult.apply(start.snapshot(),new CaptureResult(CaptureResultStatus.CAPTURED,f.providerId,null,null));
         assertThat(jdbc.queryForObject("select status from orders where id=?",String.class,f.orderId)).isEqualTo("SHIPPED");
         assertThat(number("order_status_histories",f)).isEqualTo(1);
@@ -125,9 +127,12 @@ class PaymentResultApplicationPostgresTest {
     }
     @Test void captureAmountMismatchDoesNotShip() {
         Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);
-        jdbc.update("update orders set total_amount=total_amount-1 where id=?",f.orderId);var before=state(f);
-        assertThat(captureResult.apply(start.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.CONFLICT);
-        assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");
+        // Feature136-B (V98): the shipped (prepared) order's amount can no longer drift from the capture snapshot;
+        // snapshot-side mismatches stay covered by captureRejectsMismatchedIdentityAndRequestValues.
+        var before=state(f);
+        assertThatThrownBy(()->jdbc.update("update orders set total_amount=total_amount-1 where id=?",f.orderId)).hasMessageContaining("frozen once shipping preparation has started");
+        assertThat(state(f)).isEqualTo(before);
+        assertThat(captureResult.apply(start.snapshot(),captured(f))).isEqualTo(PaymentResultApplication.APPLIED);
     }
     @Test void decreasedCaptureUsesCaptureRevisionAndAmount() {
         Fixture f=fixture(true); price(f,1000);change(f);var start=beginCapture(f.orderId,1L,"admin",null);
@@ -213,9 +218,10 @@ class PaymentResultApplicationPostgresTest {
             return new PaymentFlowState(f.providerId,PaymentFlowStatus.SUCCEEDED,null,null);
         });
         Future<?> work=workers.submit(()->reconciliation.reconcile(start.transactionId()));await(entered);
-        tx(()->{jdbc.update("update orders set content_revision=content_revision+1 where id=?",f.orderId);return null;});
-        var before=state(f);release.countDown();assertThat(work.get(20,TimeUnit.SECONDS)).isEqualTo(PaymentSynchronizationOutcome.CONFLICT);
-        assertThat(state(f)).isEqualTo(before);assertThat(txnStatus(start.transactionId())).isEqualTo("PENDING");
+        // Feature136-B (V98): a concurrent revision change of the prepared order is refused, so the result applies.
+        assertThatThrownBy(()->tx(()->{jdbc.update("update orders set content_revision=content_revision+1 where id=?",f.orderId);return null;}))
+            .hasMessageContaining("frozen once shipping preparation has started");
+        release.countDown();assertThat(work.get(20,TimeUnit.SECONDS)).isEqualTo(PaymentSynchronizationOutcome.APPLIED);
     }
     @Test void duplicateResultsOnIndependentConnectionsSerializeAtOrderLock() throws Exception {
         Fixture f=fixture(true);var start=beginCapture(f.orderId,1L,"admin",null);

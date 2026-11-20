@@ -74,7 +74,9 @@ class CaptureShipmentFlowPostgresTest {
     <T>T asAdmin(Supplier<T> action) {try{authenticate(9,"shipper");return action.get();}finally{SecurityContextHolder.clearContext();}}
     <T>T tx(Supplier<T> action) {return new TransactionTemplate(manager).execute(s -> action.get());}
     LocalDateTime now() {return orders.findCurrentTimeInTokyo();}
-    Fixture fixture() {
+    Fixture fixture() {return fixture(order -> {});}
+    /** Feature136-B: content changes must happen before the (frozen) preparation. */
+    Fixture fixture(java.util.function.Consumer<Order> beforePreparation) {
         return tx(() -> {
             var now=now();String unique=UUID.randomUUID().toString();
             User user=new User();user.setUsername("capture-flow-"+unique);user.setPassword("password");user.setEnabled(true);user.setCreatedAt(now);user.setUpdatedAt(now);users.saveAndFlush(user);
@@ -83,6 +85,7 @@ class CaptureShipmentFlowPostgresTest {
             var ordered=now.minusDays(1).toLocalDate().atTime(10,0);
             Order order=new Order(user.getId(),200,ordered,ordered.withHour(14));
             order.addItem(new OrderItem(product.getId(),product.getName(),cat.getId(),cat.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));orders.saveAndFlush(order);
+            beforePreparation.accept(order);orders.saveAndFlush(order);
             com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,ordered.withHour(14));orders.saveAndFlush(order);
             Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);payment.setProviderPaymentId("pfw_flow_"+unique,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
             var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,unique,now);auth.markSucceeded(payment.getProviderPaymentId(),now);transactions.saveAndFlush(auth);
@@ -122,7 +125,7 @@ class CaptureShipmentFlowPostgresTest {
         assertThat(row(f)).containsEntry("status","SHIPPED");assertThat(historyCount(f)).isEqualTo(1);
     }
     @Test void decreasedAmountPostsCurrentAmountWithoutRequiringAuthorizationRevisionEquality() {
-        Fixture f=fixture();tx(() -> {var order=orders.findByIdForUpdate(f.order()).orElseThrow();order.setTotalAmount(100);order.incrementContentRevision();return null;});
+        Fixture f=fixture(order -> {order.setTotalAmount(100);order.incrementContentRevision();});
         var before=invariant(f);when(gateway.capture(any())).thenReturn(captured(f));
         capture.captureForShipment(f.order(),9L,"shipper","memo");
         verify(gateway).capture(argThat(request -> request.amount()==100));
@@ -181,7 +184,7 @@ class CaptureShipmentFlowPostgresTest {
                 case "order" -> session.setReadOnly(em.find(Order.class,f.order()),true);
                 case "payment" -> session.setReadOnly(em.find(Payment.class,f.payment()),true);
                 case "transaction" -> session.setReadOnly(em.find(PaymentTransaction.class,first.transactionId()),true);
-                case "dirty" -> em.find(Order.class,f.order()).setTotalAmount(999);
+                case "dirty" -> org.springframework.test.util.ReflectionTestUtils.setField(em.find(Order.class,f.order()),"totalAmount",999); // Feature136-B: setters refuse prepared orders
             }
             assertThatThrownBy(() -> results.apply(first.snapshot(),captured(f))).isInstanceOf(IllegalStateException.class);assertThat(status.isRollbackOnly()).isTrue();status.setRollbackOnly();
         });
@@ -253,11 +256,14 @@ class CaptureShipmentFlowPostgresTest {
             var order=orders.findByIdForUpdate(f.order()).orElseThrow();payments.findByOrderIdForUpdate(f.order());
             switch(mode) {
                 case "started" -> begin(f);
-                case "cancelled" -> order.cancel(now());
+                // Feature136-B: a prepared order refuses cancellation (entity and V98); the start then proceeds.
+                case "cancelled" -> assertThatThrownBy(() -> order.cancel(now())).isInstanceOf(com.example.ecsite.exception.InvalidOrderStatusException.class);
                 case "authorization" -> em.find(Payment.class,f.payment()).markCancelled(now());
                 case "pending" -> transactions.saveAndFlush(new PaymentTransaction(em.find(Payment.class,f.payment()),PaymentTransactionType.REFUND,200,0,UUID.randomUUID().toString(),now()));
             }return null;
         }));}finally{committed.countDown();}
+        if(mode.equals("cancelled")){assertThat(starting.get(20,TimeUnit.SECONDS)).isNotNull();assertThat(historyCount(f)).isEqualTo(1);
+            assertThat(row(f).get("status")).isEqualTo("SHIPPED");verifyNoInteractions(gateway);return;}
         assertThat(starting.get(20,TimeUnit.SECONDS)).isEqualTo(mode.equals("started")?PaymentStartDisposition.REUSED:null);
         assertThat(historyCount(f)).isEqualTo(mode.equals("started")?1:0);verifyNoInteractions(gateway);
     }
@@ -268,7 +274,7 @@ class CaptureShipmentFlowPostgresTest {
         if(mode.equals("repeatable"))template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         template.executeWithoutResult(status -> {
             switch(mode) {
-                case "dirty" -> em.find(Order.class,f.order()).setTotalAmount(999);
+                case "dirty" -> org.springframework.test.util.ReflectionTestUtils.setField(em.find(Order.class,f.order()),"totalAmount",999); // Feature136-B: setters refuse prepared orders
                 case "order-readonly" -> em.unwrap(Session.class).setReadOnly(em.find(Order.class,f.order()),true);
                 case "db-readonly" -> jdbc.execute("set transaction read only");
             }
@@ -366,7 +372,7 @@ class CaptureShipmentFlowPostgresTest {
     void requeryPreparationPreservesExistingTransactionSafety(String mode) {
         Fixture f=fixture();begin(f);var before=row(f);var template=new TransactionTemplate(manager);
         if(mode.equals("read-only"))template.setReadOnly(true);if(mode.equals("repeatable"))template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
-        template.executeWithoutResult(status->{var entity=em.find(Order.class,f.order());if(mode.equals("dirty"))entity.setTotalAmount(300);if(mode.equals("order-readonly"))em.unwrap(Session.class).setReadOnly(entity,true);
+        template.executeWithoutResult(status->{var entity=em.find(Order.class,f.order());if(mode.equals("dirty"))org.springframework.test.util.ReflectionTestUtils.setField(entity,"totalAmount",300);if(mode.equals("order-readonly"))em.unwrap(Session.class).setReadOnly(entity,true);
             assertThatThrownBy(()->requeryPreparation.prepare(f.order())).isInstanceOf(IllegalStateException.class);assertThat(status.isRollbackOnly()).isTrue();if(mode.equals("dirty"))assertThat(entity.getTotalAmount()).isEqualTo(300);status.setRollbackOnly();});
         assertThat(row(f)).isEqualTo(before);verifyNoInteractions(gateway);
     }
@@ -434,7 +440,7 @@ class CaptureShipmentFlowPostgresTest {
         Fixture f=fixture();var first=begin(f);var template=new TransactionTemplate(manager);
         if(mode.equals("read-only"))template.setReadOnly(true);if(mode.equals("repeatable"))template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         template.executeWithoutResult(status->{
-            switch(mode){case "dirty"->em.find(Order.class,f.order()).setTotalAmount(999);case "order"->em.unwrap(Session.class).setReadOnly(em.find(Order.class,f.order()),true);case "payment"->em.unwrap(Session.class).setReadOnly(em.find(Payment.class,f.payment()),true);case "transaction"->em.unwrap(Session.class).setReadOnly(em.find(PaymentTransaction.class,first.transactionId()),true);}
+            switch(mode){case "dirty"->org.springframework.test.util.ReflectionTestUtils.setField(em.find(Order.class,f.order()),"totalAmount",999);case "order"->em.unwrap(Session.class).setReadOnly(em.find(Order.class,f.order()),true);case "payment"->em.unwrap(Session.class).setReadOnly(em.find(Payment.class,f.payment()),true);case "transaction"->em.unwrap(Session.class).setReadOnly(em.find(PaymentTransaction.class,first.transactionId()),true);}
             assertThatThrownBy(()->initialPreparation.prepare(first.initialPost())).isInstanceOf(IllegalStateException.class);assertThat(status.isRollbackOnly()).isTrue();status.setRollbackOnly();
         });verifyNoInteractions(gateway);assertThat(row(f)).containsEntry("status","SHIPPED").containsEntry("paid_at",null);
     }

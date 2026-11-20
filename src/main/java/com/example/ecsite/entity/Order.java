@@ -171,6 +171,7 @@ public class Order {
     }
 
     public void setTotalAmount(int totalAmount) {
+        requireContentMutable();
         this.totalAmount = totalAmount;
     }
 
@@ -187,6 +188,7 @@ public class Order {
     }
 
     public void applyAmount(OrderAmount amount) {
+        requireContentMutable();
 
         this.itemSubtotal = amount.itemSubtotal();
         this.chargeTotal = amount.chargeTotal();
@@ -248,6 +250,7 @@ public class Order {
     }
 
     public void incrementContentRevision() {
+        requireContentMutable();
         contentRevision++;
     }
 
@@ -453,6 +456,7 @@ public class Order {
 
     /** Only the order-change commit path calls this after old Cancel proof under Order/Payment locks. */
     public void switchActivePaymentAfterOrderChange(Long oldPaymentId,Payment next){
+        requireContentMutable();
         if(status!=OrderStatus.ORDERED||shipmentCapturePaymentId!=null||!java.util.Objects.equals(activePaymentId,oldPaymentId)
             ||next==null||next.getOrder()==null||!java.util.Objects.equals(next.getOrder().getId(),id)
             ||next.getId()==null||next.getId().equals(oldPaymentId)||next.getStatus()!=PaymentStatus.AUTHORIZED)
@@ -468,12 +472,14 @@ public class Order {
         if (status != OrderStatus.ORDERED || shipmentCapturePaymentId != null
                 || (activePaymentId != null && !activePaymentId.equals(payment.getId())))
             throw new IllegalStateException("Active payment cannot be replaced");
+        if (!payment.getId().equals(activePaymentId)) requireContentMutable();
         activePaymentId = payment.getId();
     }
 
     public void clearActivePaymentAfterTermination(Long paymentId) {
         if (paymentId == null || (activePaymentId != null && !activePaymentId.equals(paymentId)))
             throw new IllegalStateException("Active payment mismatch");
+        if (activePaymentId != null) requireContentMutable();
         activePaymentId = null;
     }
 
@@ -486,11 +492,13 @@ public class Order {
     }
 
     public void addItem(OrderItem item) {
+        requireContentMutable();
         items.add(item);
         item.setOrder(this);
     }
 
     public void removeItem(OrderItem item) {
+        requireContentMutable();
         items.remove(item);
     }
 
@@ -499,11 +507,13 @@ public class Order {
     }
 
     public void addCharge(OrderCharge charge) {
+        requireContentMutable();
         charges.add(charge);
         charge.setOrder(this);
     }
 
     public void replaceCharges(List<OrderCharge> newCharges) {
+        requireContentMutable();
         charges.clear();
 
         for (OrderCharge charge : newCharges) {
@@ -522,6 +532,7 @@ public class Order {
             String shippingCity,
             String shippingAddressLine,
             String shippingPhone) {
+        requireContentMutable();
 
         this.shippingName = shippingName;
         this.shippingPostalCode = shippingPostalCode;
@@ -580,6 +591,7 @@ public class Order {
     }
 
     public void cancel(LocalDateTime cancelledAt) {
+        requireContentMutable();
 
         if (!canCancel()) {
             throw new InvalidOrderStatusException(
@@ -589,6 +601,17 @@ public class Order {
 
         status = OrderStatus.CANCELLED;
         this.cancelledAt = cancelledAt;
+    }
+
+    /**
+     * Feature136-B: once shipping preparation has started (warehouse export, emergency shipping or a legacy
+     * administrator preparation) the content, amounts, shipping address and active payment are frozen and the
+     * order can no longer be cancelled. Mirrors f131_order_preparation_guard / f131_prepared_content_guard (V98).
+     */
+    public void requireContentMutable() {
+        if (shippingPreparationStartedAt != null) {
+            throw new InvalidOrderStatusException("発送準備を開始した注文は変更・キャンセルできません。");
+        }
     }
 
     public boolean canCancel() {

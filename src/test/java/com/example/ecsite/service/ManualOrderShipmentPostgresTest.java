@@ -156,7 +156,8 @@ class ManualOrderShipmentPostgresTest {
     }
     @Test void unpreparedPaidIsRejected() { rejected(fixture(false,"PAID",null)); }
     @ParameterizedTest @ValueSource(strings={"ORDERED","SHIPPED","CANCELLED"})
-    void wrongOrderStatusIsRejected(String status) { rejected(fixture(true,status,null)); }
+    // Feature136-B (V98): a prepared order can no longer become CANCELLED, so the cancelled case is unprepared.
+    void wrongOrderStatusIsRejected(String status) { rejected(fixture(!status.equals("CANCELLED"),status,null)); }
     @ParameterizedTest @EnumSource(value=PaymentStatus.class,names={"PENDING","REQUIRES_ACTION","AUTHORIZED"})
     void manualPaymentIneligibilityIsPreserved(PaymentStatus status) { rejected(fixture(true,"PAID",status)); }
     @ParameterizedTest @EnumSource(value=PaymentTransactionType.class,names={"AUTHORIZE","CAPTURE","CANCEL"})
@@ -235,7 +236,7 @@ class ManualOrderShipmentPostgresTest {
                 switch(change) {
                     case "prepared" -> { var at=now(); com.example.ecsite.support.EmergencyShippingFixtures.record(jdbc,f.id(),PREPARER,at);
                         em.find(Order.class,f.id()).beginShippingPreparation(at,7L,"preparer"); }
-                    case "cancelled" -> jdbc.update("update orders set status='CANCELLED' where id=?",f.id());
+                    case "cancelled" -> { } // Feature136-B: attempted below; V98 refuses cancelling a prepared order.
                     case "shipped" -> ship(f);
                     case "payment" -> jdbc.update("update payments set status='AUTHORIZED' where id=?",f.paymentId());
                     case "new-pending" -> transactions.saveAndFlush(new PaymentTransaction(em.find(Payment.class,f.paymentId()),PaymentTransactionType.CAPTURE,200,0,UUID.randomUUID().toString(),now()));
@@ -243,8 +244,10 @@ class ManualOrderShipmentPostgresTest {
                 }
                 return null;
             });
+            if(change.equals("cancelled")) assertThatThrownBy(() -> jdbc.update("update orders set status='CANCELLED' where id=?",f.id()))
+                    .hasMessageContaining("frozen once shipping preparation has started");
         } finally { committed.countDown(); }
-        boolean expected=change.equals("prepared")||change.equals("completed-pending");
+        boolean expected=change.equals("prepared")||change.equals("completed-pending")||change.equals("cancelled");
         assertThat(result.get(20,TimeUnit.SECONDS)).isEqualTo(expected);
         assertThat(historyCount(f)).isEqualTo(expected||change.equals("shipped")?1:0);
     }
@@ -271,7 +274,8 @@ class ManualOrderShipmentPostgresTest {
         new TransactionTemplate(manager).executeWithoutResult(status -> {
             Object changed;
             switch(dirty) {
-                case "order" -> { Order order=em.find(Order.class,f.id()); order.setTotalAmount(999); changed=order; }
+                // Feature136-B: the entity refuses content setters on a prepared order; write the field to stay dirty.
+                case "order" -> { Order order=em.find(Order.class,f.id()); ReflectionTestUtils.setField(order,"totalAmount",999); changed=order; }
                 case "partial" -> { Order order=em.find(Order.class,f.id()); ReflectionTestUtils.setField(order,"shippingPreparationStartedByUsername",null); changed=order; }
                 case "payment" -> { Payment payment=em.find(Payment.class,f.paymentId()); ReflectionTestUtils.setField(payment,"amount",999); changed=payment; }
                 case "transaction" -> { var transaction=transactions.findByPaymentIdOrderByCreatedAtAscIdAsc(f.paymentId()).getFirst(); ReflectionTestUtils.setField(transaction,"amount",999); changed=transaction; }
