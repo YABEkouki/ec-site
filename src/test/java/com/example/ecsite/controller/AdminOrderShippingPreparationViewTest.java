@@ -36,6 +36,9 @@ class AdminOrderShippingPreparationViewTest {
             mock(com.example.ecsite.service.emergency.EmergencyShippingStore.class);
     private boolean allowed = true;
     private java.util.Optional<com.example.ecsite.service.emergency.EmergencyShippingStore.Record> record = java.util.Optional.empty();
+    private final com.example.ecsite.service.emergency.EmergencyShippingCsvService emergencyCsv =
+            mock(com.example.ecsite.service.emergency.EmergencyShippingCsvService.class);
+    private java.util.List<com.example.ecsite.service.emergency.EmergencyShippingCsvService.DownloadRecord> csvDownloads = java.util.List.of();
     private final String returnUrl = "/admin/orders?page=2&size=20&sort=id,desc";
 
     private MockMvc mvc(LocalDateTime now) {
@@ -52,6 +55,8 @@ class AdminOrderShippingPreparationViewTest {
         when(emergency.isAllowed(org.mockito.ArgumentMatchers.any())).thenReturn(allowed);
         when(emergency.find(42L)).thenReturn(record);
         controller.setEmergencyShipping(emergency);
+        when(emergencyCsv.downloads(42L)).thenReturn(csvDownloads);
+        controller.setEmergencyShippingCsv(emergencyCsv);
         var resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/"); resolver.setSuffix(".html");
         resolver.setTemplateMode("HTML"); resolver.setCharacterEncoding("UTF-8");
@@ -137,7 +142,31 @@ class AdminOrderShippingPreparationViewTest {
     @Test
     void preparationWithoutRecordIsShownAsLegacy() throws Exception {
         order.beginShippingPreparation(DEADLINE, 7L, "admin");
-        assertThat(render(DEADLINE)).contains("旧手動準備（理由なし）").doesNotContain("緊急出荷の理由");
+        assertThat(render(DEADLINE)).contains("旧手動準備（理由なし）").doesNotContain("緊急出荷の理由", "emergency-shipping-csv");
+    }
+
+    // Feature136-C2: the per-order warehouse CSV of an emergency-shipped order and its download history.
+    private void emergencyRecord() {
+        order.beginShippingPreparation(DEADLINE, 7L, "admin");
+        record = java.util.Optional.of(new com.example.ecsite.service.emergency.EmergencyShippingStore.Record(
+                1L, 42L, 7L, "admin", "至急", DEADLINE, "ORDERED", 3, 1200, 5L, DEADLINE,
+                DEADLINE.plusSeconds(1), com.example.ecsite.service.emergency.EmergencyShippingMode.AFTER_DEADLINE, null, null));
+    }
+
+    @Test
+    void emergencyRecordOffersTheCsvDownload() throws Exception {
+        emergencyRecord();
+        assertThat(render(DEADLINE)).contains("action=\"/admin/orders/42/emergency-shipping/csv\"", "緊急出荷用CSVをダウンロード",
+                "emergency-shipping-csv-none", "_csrf").doesNotContain("emergency-shipping-csv-downloads");
+    }
+
+    @Test
+    void emergencyCsvDownloadsAreListedEscaped() throws Exception {
+        emergencyRecord();
+        csvDownloads = java.util.List.of(new com.example.ecsite.service.emergency.EmergencyShippingCsvService.DownloadRecord(
+                5L, "<i>admin</i>", DEADLINE.plusMinutes(3).plusSeconds(4), 2, "emergency-shipping-42-20261016-140304.csv"));
+        assertThat(render(DEADLINE)).contains("emergency-shipping-csv-downloads", "2026/10/16 14:03:04", "&lt;i&gt;admin&lt;/i&gt;",
+                "emergency-shipping-42-20261016-140304.csv").doesNotContain("<i>admin</i>", "emergency-shipping-csv-none");
     }
 
     @Test
