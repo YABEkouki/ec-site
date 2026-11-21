@@ -87,7 +87,7 @@
                 <td>
                     <span class="status-badge"
                         th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
-                        th:text="${order.status.displayName}">
+                        th:text="${order.statusDisplayName}">
                     </span>
                 </td>
             </tr>
@@ -428,15 +428,17 @@
             </th:block>
             </th:block>
         </dl>
-        <div th:if="${emergencyShipping != null}" id="emergency-shipping-csv">
-            <h3>緊急出荷用CSV（倉庫向け）</h3>
-            <p>この注文は14:05の倉庫向け注文データ出力の対象外です。14:05と同じ形式のCSVをダウンロードし、倉庫へ個別に連絡してください。
-                ダウンロードはすべて記録されます。</p>
-            <form th:action="@{/admin/orders/{id}/emergency-shipping/csv(id=${order.id})}" method="post" id="emergency-shipping-csv-form">
-                <button type="submit" id="emergency-shipping-csv-download">緊急出荷用CSVをダウンロード</button>
-            </form>
-            <p th:if="${#lists.isEmpty(emergencyShippingCsvDownloads)}" id="emergency-shipping-csv-none">まだダウンロードされていません。</p>
-            <table th:unless="${#lists.isEmpty(emergencyShippingCsvDownloads)}" id="emergency-shipping-csv-downloads">
+        <div th:if="${emergencyShipping != null}" id="emergency-shipping-file">
+            <h3>倉庫向けファイル（緊急出荷）</h3>
+            <p>この注文は14:05の倉庫向け注文データ出力の対象外です。緊急出荷を開始した時点で、倉庫向けファイル（ヘッダ・明細）を
+                倉庫連携用のフォルダーに出力します。出力に失敗した場合は、ここから再出力できます。</p>
+            <p th:if="${emergencyFileOutput == null}" id="emergency-shipping-file-none">
+                この緊急出荷は倉庫向けファイルの出力対象ではありません（ファイル出力を導入する前の緊急出荷です）。</p>
+            <th:block th:if="${emergencyFileOutput != null}"
+                th:insert="~{admin/warehouse-exports/fragments/file-output :: output(${emergencyFileOutput}, ${emergencyFileOutputRetries})}"></th:block>
+            <th:block th:unless="${#lists.isEmpty(emergencyShippingCsvDownloads)}">
+            <h4>CSVダウンロード履歴（ファイル出力の導入前）</h4>
+            <table id="emergency-shipping-csv-downloads">
                 <thead><tr><th>ダウンロード日時</th><th>管理者</th><th>行数</th><th>ファイル名</th></tr></thead>
                 <tbody>
                 <tr th:each="d : ${emergencyShippingCsvDownloads}">
@@ -447,6 +449,7 @@
                 </tr>
                 </tbody>
             </table>
+            </th:block>
         </div>
         <th:block th:if="${shippingPreparationView.canStart()}">
         <p th:unless="${emergencyShippingAllowed}" id="emergency-shipping-not-allowed">
@@ -881,42 +884,6 @@
         </a>
     </p>
 
-    <!-- Feature136-C3: a plain form POST returns an attachment and leaves the page (and its download history) stale.
-         Fetch the CSV, save it, then reload so the newly recorded download is listed. Any non-CSV answer (refusal
-         redirect, 403) falls back to the plain form submission so the server's message is shown as before. -->
-    <script th:if="${emergencyShipping != null}">
-        (function () {
-            const form = document.getElementById("emergency-shipping-csv-form");
-            if (!form || !window.fetch || !window.URL || !URL.createObjectURL) return;
-            const button = document.getElementById("emergency-shipping-csv-download");
-            form.addEventListener("submit", function (event) {
-                event.preventDefault();
-                button.disabled = true;
-                fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin" })
-                    .then(function (response) {
-                        const type = response.headers.get("Content-Type") || "";
-                        if (!response.ok || type.indexOf("text/csv") !== 0) {
-                            button.disabled = false;
-                            form.submit();
-                            return null;
-                        }
-                        const disposition = response.headers.get("Content-Disposition") || "";
-                        const match = /filename="([^"]+)"/.exec(disposition);
-                        const filename = match ? match[1] : "emergency-shipping.csv";
-                        return response.blob().then(function (blob) {
-                            const link = document.createElement("a");
-                            link.href = URL.createObjectURL(blob);
-                            link.download = filename;
-                            document.body.appendChild(link);
-                            link.click();
-                            link.remove();
-                            setTimeout(function () { location.reload(); }, 1000);
-                        });
-                    })
-                    .catch(function () { location.reload(); });
-            });
-        })();
-    </script>
 
 </body>
 

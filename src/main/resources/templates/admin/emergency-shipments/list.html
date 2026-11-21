@@ -36,10 +36,10 @@
                         th:selected="${s == shipment}"></option>
                 </select>
             </label>
-            <label>CSV
-                <select name="csv">
-                    <option th:each="c : ${csvs}" th:value="${c.name()}" th:text="${c.label}"
-                        th:selected="${c == csv}"></option>
+            <label>倉庫ファイル
+                <select name="file">
+                    <option th:each="f : ${files}" th:value="${f.name()}" th:text="${f.label}"
+                        th:selected="${f == file}"></option>
                 </select>
             </label>
             <button type="submit">絞り込む</button>
@@ -58,7 +58,7 @@
                     <th>管理者</th>
                     <th>理由・管理者コメント</th>
                     <th>出荷状態</th>
-                    <th>CSVダウンロード</th>
+                    <th>倉庫ファイル</th>
                 </tr>
             </thead>
             <tbody>
@@ -74,10 +74,10 @@
                         <span th:if="${!r.shipped and !r.unshipped}" th:text="${r.orderStatus}"></span>
                     </td>
                     <td>
-                        <span th:if="${r.downloadCount == 0}"
-                            th:classappend="${r.unshipped} ? 'action-required-danger'">未ダウンロード</span>
-                        <span th:if="${r.downloadCount > 0}"
-                            th:text="|${r.downloadCount}回（最終 ${#temporals.format(r.lastDownloadedAt, 'yyyy/MM/dd HH:mm:ss')}）|"></span>
+                        <span th:text="${r.fileLabel}" th:classappend="${r.fileFailed} ? 'action-required-danger'"></span>
+                        <span th:if="${r.fileWrittenAt != null}"
+                            th:text="|（${#temporals.format(r.fileWrittenAt, 'yyyy/MM/dd HH:mm:ss')}）|"></span>
+                        <span th:if="${r.downloadCount > 0}" th:text="|CSVダウンロード ${r.downloadCount}回（導入前）|"></span>
                     </td>
                 </tr>
             </tbody>
@@ -85,9 +85,9 @@
 
         <p>
             <a th:if="${result.page > 0}"
-                th:href="@{/admin/emergency-shipments(from=${from},to=${to},shipment=${shipment.name()},csv=${csv.name()},page=${result.page - 1})}">前のページ</a>
+                th:href="@{/admin/emergency-shipments(from=${from},to=${to},shipment=${shipment.name()},file=${file.name()},page=${result.page - 1})}">前のページ</a>
             <a th:if="${result.hasNext}"
-                th:href="@{/admin/emergency-shipments(from=${from},to=${to},shipment=${shipment.name()},csv=${csv.name()},page=${result.page + 1})}">次のページ</a>
+                th:href="@{/admin/emergency-shipments(from=${from},to=${to},shipment=${shipment.name()},file=${file.name()},page=${result.page + 1})}">次のページ</a>
         </p>
 
         <section id="emergency-shipping-permissions">

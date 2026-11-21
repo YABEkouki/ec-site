@@ -52,7 +52,6 @@ class WarehouseExportPostgresTest {
     @Autowired PlatformTransactionManager manager;
     @MockitoBean PaymentGateway gateway;
     @Autowired com.example.ecsite.service.orderchange.OrderChangeFinalDecisionService finalDecisions;
-    @Autowired WarehouseExportCsvService csv;
     @Autowired WarehouseFileSource fileSource;
     @Autowired WarehouseFileOutputStore fileOutputs;
     @Autowired WarehouseExportShipmentGuard shipmentGuard;
@@ -926,6 +925,40 @@ class WarehouseExportPostgresTest {
                 .isEqualTo(expected.headerFile().content());
         assertThat(java.nio.file.Files.readAllBytes(dir.resolve("out").resolve(output.detailFilename())))
                 .isEqualTo(expected.detailFile().content());
+    }
+
+    /** Feature137-C (decision 8): a prepared order is shown as 出荷準備中 and the admin order list filters on it. */
+    @Test void aPreparedOrderIsInShippingPreparationAndTheOrderListFiltersOnIt() {
+        var date = nextBusinessDate(); long batch = batch(date);
+        var prepared = card(date); var waiting = card(date);
+        service.export(batch, prepared.order());
+        tx(() -> {
+            var p = orders.findById(prepared.order()).orElseThrow(); var w = orders.findById(waiting.order()).orElseThrow();
+            assertThat(p.isShippingPreparationInProgress()).isTrue();
+            assertThat(p.getStatusDisplayName()).isEqualTo("出荷準備中");
+            assertThat(p.getStatus()).isEqualTo(OrderStatus.ORDERED);
+            assertThat(w.isShippingPreparationInProgress()).isFalse();
+            assertThat(w.getStatusDisplayName()).isEqualTo("注文受付");
+            return null;
+        });
+        assertThat(found(prepared.order(), null, null)).isTrue();
+        assertThat(found(prepared.order(), com.example.ecsite.form.AdminShippingPreparationFilter.PREPARING, null)).isTrue();
+        assertThat(found(prepared.order(), com.example.ecsite.form.AdminShippingPreparationFilter.NOT_PREPARING, null)).isFalse();
+        assertThat(found(waiting.order(), com.example.ecsite.form.AdminShippingPreparationFilter.PREPARING, null)).isFalse();
+        assertThat(found(waiting.order(), com.example.ecsite.form.AdminShippingPreparationFilter.NOT_PREPARING, OrderStatus.ORDERED)).isTrue();
+        assertThat(found(prepared.order(), com.example.ecsite.form.AdminShippingPreparationFilter.PREPARING, OrderStatus.SHIPPED)).isFalse();
+        // Combined with the authorization expiry filter (both optional filters in one query).
+        var both = new com.example.ecsite.form.AdminOrderSearchForm();
+        both.setOrderId(prepared.order());
+        both.setShippingPreparation(com.example.ecsite.form.AdminShippingPreparationFilter.PREPARING);
+        both.setAuthorizationExpiry(com.example.ecsite.form.AdminAuthorizationExpiryFilter.EXPIRED);
+        assertThat(orderService.searchOrders(both, 7L, 0, 10).getContent()).isEmpty();
+    }
+
+    boolean found(long orderId, com.example.ecsite.form.AdminShippingPreparationFilter preparation, OrderStatus status) {
+        var form = new com.example.ecsite.form.AdminOrderSearchForm();
+        form.setOrderId(orderId); form.setShippingPreparation(preparation); form.setStatus(status);
+        return orderService.searchOrders(form, 7L, 0, 10).getContent().stream().anyMatch(o -> o.getId() == orderId);
     }
 
     WarehouseFileOutputService fileService(java.nio.file.Path dir, int maxAttempts) {

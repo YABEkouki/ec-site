@@ -897,12 +897,13 @@ public class OrderService {
     private Page<Order> search(AdminOrderSearchForm searchForm, Long orderId, Long userId, LocalDateTime from,
             LocalDateTime toExclusive, OrderStatus status, List<OrderHandlingStatus> handlingStatuses,
             String assigneeFilter, Long assignedAdminAccountId, Pageable pageable) {
-        if (!expiryFiltered(searchForm)) {
+        if (!expiryFiltered(searchForm) && searchForm.getShippingPreparation() == null) {
             return orderRepository.search(orderId, userId, from, toExclusive, status, handlingStatuses,
                     assigneeFilter, assignedAdminAccountId, pageable);
         }
         return orderRepository.search(orderId, userId, from, toExclusive, status, handlingStatuses,
-                assigneeFilter, assignedAdminAccountId, true, expiryOrderIds(searchForm), pageable);
+                assigneeFilter, assignedAdminAccountId, expiryFiltered(searchForm), expiryOrderIds(searchForm),
+                searchForm.getShippingPreparation() == null ? "ANY" : searchForm.getShippingPreparation().name(), pageable);
     }
 
     private boolean expiryFiltered(AdminOrderSearchForm searchForm) {

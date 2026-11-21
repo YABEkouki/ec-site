@@ -186,27 +186,39 @@
                         <span th:if="${emergencyShippingSummary == null}" class="message-error">取得できませんでした</span>
                     </td>
                     <td>
-                        <a th:href="@{/admin/emergency-shipments(from='',to='',shipment='UNSHIPPED',csv='ALL')}">
+                        <a th:href="@{/admin/emergency-shipments(from='',to='',shipment='UNSHIPPED',file='ALL')}">
                             <strong>一覧を見る</strong>
                         </a>
                     </td>
                 </tr>
-                <tr id="dashboard-emergency-csv">
-                    <td><strong>緊急出荷・CSV未ダウンロード（未出荷）</strong></td>
+                <tr id="dashboard-warehouse-file-failed">
+                    <td><strong>倉庫ファイル・出力失敗</strong></td>
                     <td>
-                        <strong th:if="${emergencyShippingSummary != null}" th:text="${emergencyShippingSummary.unshippedWithoutCsv()}"
-                            th:classappend="${emergencyShippingSummary.unshippedWithoutCsv() > 0} ? 'action-required-danger'">0</strong>
-                        <span th:if="${emergencyShippingSummary == null}" class="message-error">取得できませんでした</span>
+                        <strong th:if="${warehouseFileSummary != null}" th:text="${warehouseFileSummary.failed()}"
+                            th:classappend="${warehouseFileSummary.failed() > 0} ? 'action-required-danger'">0</strong>
+                        <span th:if="${warehouseFileSummary != null}"
+                            th:text="|（14:05 出力 ${warehouseFileSummary.failedRegular()}件・緊急出荷 ${warehouseFileSummary.failedEmergency()}件）|"></span>
+                        <span th:if="${warehouseFileSummary == null}" class="message-error">取得できませんでした</span>
                     </td>
                     <td>
-                        <a th:href="@{/admin/emergency-shipments(from='',to='',shipment='UNSHIPPED',csv='NOT_DOWNLOADED')}">
-                            <strong>一覧を見る</strong>
-                        </a>
+                        <a th:href="@{/admin/warehouse-exports}"><strong>出力バッチ一覧</strong></a>
+                        <a th:href="@{/admin/emergency-shipments(from='',to='',shipment='ALL',file='FAILED')}"><strong>緊急出荷一覧</strong></a>
+                    </td>
+                </tr>
+                <tr id="dashboard-warehouse-file-stale">
+                    <td><strong>倉庫ファイル・出力待ち（30分超）</strong></td>
+                    <td>
+                        <strong th:if="${warehouseFileSummary != null}" th:text="${warehouseFileSummary.stalePending()}"
+                            th:classappend="${warehouseFileSummary.stalePending() > 0} ? 'action-required-danger'">0</strong>
+                        <span th:if="${warehouseFileSummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <span>ファイル出力が無効、または出力処理が止まっている可能性があります</span>
                     </td>
                 </tr>
                 <tr>
                     <td><strong>倉庫向け注文データ出力</strong></td>
-                    <td>14:05の出力バッチとCSV</td>
+                    <td>14:05の出力バッチと倉庫ファイル</td>
                     <td>
                         <a th:href="@{/admin/warehouse-exports}">
                             <strong>一覧を見る</strong>

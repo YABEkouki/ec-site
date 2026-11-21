@@ -9,10 +9,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Feature136-C3: read models of the emergency shipping list/audit screen and the dashboard counts. Read only.
+ * Feature136-C3: read models of the emergency shipping list/audit screen and the dashboard count. Read only.
  * The operation date is the date of the record's created_at (DB clock, V97). "Unshipped" means neither shipped
- * nor cancelled; the CSV-not-downloaded count is limited to unshipped orders, since a shipped order needs no
- * further contact with the warehouse.
+ * nor cancelled. Feature137-C: the per-order CSV download was replaced by the warehouse files written when the
+ * emergency shipping is started (V102); the list shows that output, and past CSV downloads only as a count.
  */
 @Component
 public class AdminEmergencyShippingQueries {
@@ -26,30 +26,36 @@ public class AdminEmergencyShippingQueries {
         public String getLabel() { return label; }
     }
 
-    public enum Csv {
-        ALL("すべて"), NOT_DOWNLOADED("未ダウンロード");
+    /** Feature137-C: the warehouse file output of the emergency shipping (V102). NONE = recorded before V102. */
+    public enum FileOutput {
+        ALL("すべて"), PENDING("出力待ち"), FAILED("出力失敗"), WRITTEN("出力済み"), NONE("対象外（導入前）");
         private final String label;
-        Csv(String label) { this.label = label; }
+        FileOutput(String label) { this.label = label; }
         public String getLabel() { return label; }
     }
 
+    /** {@code fileState} is null for an emergency shipping recorded before V102; {@code downloadCount} is V100 history. */
     public record Row(long orderId, EmergencyShippingMode mode, LocalDateTime operatedAt, String adminUsername, String reason,
-            String orderStatus, LocalDateTime shippedAt, int downloadCount, LocalDateTime lastDownloadedAt) {
+            String orderStatus, LocalDateTime shippedAt, String fileState, LocalDateTime fileWrittenAt, int downloadCount) {
         public boolean isShipped() { return "SHIPPED".equals(orderStatus); }
         public boolean isUnshipped() { return !"SHIPPED".equals(orderStatus) && !"CANCELLED".equals(orderStatus); }
+        public String getFileLabel() {
+            return fileState == null ? FileOutput.NONE.getLabel() : FileOutput.valueOf(fileState).getLabel();
+        }
+        public boolean isFileFailed() { return "FAILED".equals(fileState); }
     }
 
     public record Result(List<Row> rows, int page, long total, boolean hasNext) {}
 
-    public record Summary(long unshipped, long unshippedWithoutCsv) {}
+    public record Summary(long unshipped) {}
 
     public record PermittedAdmin(long id, String username, boolean enabled) {}
 
     public record PermissionHistory(long id, String adminUsername, boolean allowed, LocalDateTime changedAt, String changedByDbUser) {}
 
     private static final String UNSHIPPED = "o.status not in ('SHIPPED','CANCELLED')";
-    private static final String NOT_DOWNLOADED =
-            "not exists(select 1 from emergency_shipping_csv_downloads d where d.order_id=e.order_id)";
+    private static final String FILE_JOIN =
+            " left join warehouse_file_outputs f on f.emergency_shipping_preparation_id=e.id";
 
     private final JdbcTemplate jdbc;
 
@@ -61,7 +67,7 @@ public class AdminEmergencyShippingQueries {
         return jdbc.queryForObject("select timezone('Asia/Tokyo',clock_timestamp())::date", LocalDate.class);
     }
 
-    public Result list(LocalDate from, LocalDate to, Shipment shipment, Csv csv, int page) {
+    public Result list(LocalDate from, LocalDate to, Shipment shipment, FileOutput file, int page) {
         int safePage = Math.max(page, 0);
         var where = new StringBuilder(" where true");
         var args = new ArrayList<Object>();
@@ -69,30 +75,30 @@ public class AdminEmergencyShippingQueries {
         if (to != null) { where.append(" and e.created_at < ?"); args.add(to.plusDays(1).atStartOfDay()); }
         if (shipment == Shipment.UNSHIPPED) where.append(" and ").append(UNSHIPPED);
         if (shipment == Shipment.SHIPPED) where.append(" and o.status = 'SHIPPED'");
-        if (csv == Csv.NOT_DOWNLOADED) where.append(" and ").append(NOT_DOWNLOADED);
-        String base = " from emergency_shipping_preparations e join orders o on o.id=e.order_id" + where;
+        if (file == FileOutput.NONE) where.append(" and f.id is null");
+        else if (file != null && file != FileOutput.ALL) { where.append(" and f.state = ?"); args.add(file.name()); }
+        String base = " from emergency_shipping_preparations e join orders o on o.id=e.order_id" + FILE_JOIN + where;
         long total = jdbc.queryForObject("select count(*)" + base, Long.class, args.toArray());
         var pageArgs = new ArrayList<Object>(args);
         pageArgs.add(PAGE_SIZE);
         pageArgs.add((long) safePage * PAGE_SIZE);
         List<Row> rows = jdbc.query("""
                 select e.order_id,e.mode,e.created_at,e.admin_username,e.reason,o.status,o.shipped_at,
-                  (select count(*) from emergency_shipping_csv_downloads d where d.order_id=e.order_id)::int as download_count,
-                  (select max(d.downloaded_at) from emergency_shipping_csv_downloads d where d.order_id=e.order_id) as last_downloaded_at
+                  f.state as file_state,f.written_at as file_written_at,
+                  (select count(*) from emergency_shipping_csv_downloads d where d.order_id=e.order_id)::int as download_count
                 """ + base + " order by e.id desc limit ? offset ?",
                 (r, n) -> new Row(r.getLong("order_id"), EmergencyShippingMode.valueOf(r.getString("mode")),
                         r.getObject("created_at", LocalDateTime.class), r.getString("admin_username"), r.getString("reason"),
-                        r.getString("status"), r.getObject("shipped_at", LocalDateTime.class), r.getInt("download_count"),
-                        r.getObject("last_downloaded_at", LocalDateTime.class)),
+                        r.getString("status"), r.getObject("shipped_at", LocalDateTime.class), r.getString("file_state"),
+                        r.getObject("file_written_at", LocalDateTime.class), r.getInt("download_count")),
                 pageArgs.toArray());
         return new Result(rows, safePage, total, (long) (safePage + 1) * PAGE_SIZE < total);
     }
 
     public Summary summary() {
-        return jdbc.queryForObject("select count(*) filter (where " + UNSHIPPED + "),"
-                + " count(*) filter (where " + UNSHIPPED + " and " + NOT_DOWNLOADED + ")"
+        return jdbc.queryForObject("select count(*) filter (where " + UNSHIPPED + ")"
                 + " from emergency_shipping_preparations e join orders o on o.id=e.order_id",
-                (r, n) -> new Summary(r.getLong(1), r.getLong(2)));
+                (r, n) -> new Summary(r.getLong(1)));
     }
 
     public List<PermittedAdmin> permittedAdmins() {

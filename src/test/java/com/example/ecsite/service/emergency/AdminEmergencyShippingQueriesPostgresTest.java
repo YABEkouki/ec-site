@@ -21,12 +21,12 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.example.ecsite.security.AdminUserDetails;
-import com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Csv;
+import com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.FileOutput;
 import com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Shipment;
 import com.example.ecsite.support.EmergencyShippingFixtures;
 import com.example.ecsite.support.EmergencyShippingFixtures.Admin;
 
-/** Feature136-C3: emergency shipping list/audit read models, dashboard counts and the list screen. */
+/** Feature136-C3: emergency shipping list/audit read models, dashboard counts and the list screen (Feature137-C: file output). */
 @SpringBootTest(properties = {"logging.level.root=WARN", "spring.jpa.show-sql=false"})
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
@@ -66,6 +66,16 @@ class AdminEmergencyShippingQueriesPostgresTest {
                 + "values (?,?,?,?,?,1,?,'',localtimestamp)", record, order, admin, username, preparedAt.toLocalDate(), new byte[32]);
     }
 
+    /** Feature137-C: outcomes of the V102 output, through the transitions its guard allows. */
+    private void fileWritten(long order) {
+        jdbc.update("update warehouse_file_outputs set state='WRITTEN', attempts=attempts+1, header_sha256=?, detail_sha256=?"
+                + " where order_id=?", new byte[32], new byte[32], order);
+    }
+
+    private void fileFailed(long order) {
+        jdbc.update("update warehouse_file_outputs set state='FAILED', attempts=attempts+1, last_error='x' where order_id=?", order);
+    }
+
     private static List<Long> ids(AdminEmergencyShippingQueries.Result result) {
         return result.rows().stream().map(AdminEmergencyShippingQueries.Row::orderId).toList();
     }
@@ -78,43 +88,55 @@ class AdminEmergencyShippingQueriesPostgresTest {
     void listFiltersAndCountsEmergencyShipments() {
         var before = queries.summary();
         Admin admin = EmergencyShippingFixtures.permittedAdmin(jdbc, "c3-list");
-        long unshippedWithoutCsv = order(), unshippedWithCsv = order(), shippedWithoutCsv = order(), notEmergency = order();
-        for (long id : List.of(unshippedWithoutCsv, unshippedWithCsv, shippedWithoutCsv)) {
+        long pending = order(), failed = order(), written = order(), shipped = order(), notEmergency = order();
+        for (long id : List.of(pending, failed, written, shipped)) {
             EmergencyShippingFixtures.prepare(jdbc, id, admin, null, null);
         }
-        download(unshippedWithCsv, admin.id(), admin.username());
-        download(unshippedWithCsv, admin.id(), admin.username());
-        ship(shippedWithoutCsv);
+        fileFailed(failed); fileWritten(written); fileWritten(shipped);
+        download(written, admin.id(), admin.username());
+        download(written, admin.id(), admin.username());
+        ship(shipped);
 
-        var after = queries.summary();
-        assertThat(after.unshipped() - before.unshipped()).isEqualTo(2);
-        assertThat(after.unshippedWithoutCsv() - before.unshippedWithoutCsv()).isEqualTo(1);
+        assertThat(queries.summary().unshipped() - before.unshipped()).isEqualTo(3);
 
         LocalDate today = queries.today();
-        var all = queries.list(today, today, Shipment.ALL, Csv.ALL, 0);
-        assertThat(ids(all)).containsSubsequence(shippedWithoutCsv, unshippedWithCsv, unshippedWithoutCsv).doesNotContain(notEmergency);
-        assertThat(ids(queries.list(today, today, Shipment.UNSHIPPED, Csv.ALL, 0)))
-                .contains(unshippedWithoutCsv, unshippedWithCsv).doesNotContain(shippedWithoutCsv);
-        assertThat(ids(queries.list(today, today, Shipment.SHIPPED, Csv.ALL, 0)))
-                .contains(shippedWithoutCsv).doesNotContain(unshippedWithoutCsv, unshippedWithCsv);
-        assertThat(ids(queries.list(null, null, Shipment.UNSHIPPED, Csv.NOT_DOWNLOADED, 0)))
-                .contains(unshippedWithoutCsv).doesNotContain(unshippedWithCsv, shippedWithoutCsv);
-        assertThat(ids(queries.list(today.minusDays(2), today.minusDays(1), Shipment.ALL, Csv.ALL, 0)))
-                .doesNotContain(unshippedWithoutCsv, unshippedWithCsv, shippedWithoutCsv);
-        assertThat(ids(queries.list(today.plusDays(1), null, Shipment.ALL, Csv.ALL, 0))).isEmpty();
+        var all = queries.list(today, today, Shipment.ALL, FileOutput.ALL, 0);
+        assertThat(ids(all)).containsSubsequence(shipped, written, failed, pending).doesNotContain(notEmergency);
+        assertThat(ids(queries.list(today, today, Shipment.UNSHIPPED, FileOutput.ALL, 0)))
+                .contains(pending, failed, written).doesNotContain(shipped);
+        assertThat(ids(queries.list(today, today, Shipment.SHIPPED, FileOutput.ALL, 0)))
+                .contains(shipped).doesNotContain(pending, failed, written);
+        assertThat(ids(queries.list(null, null, Shipment.ALL, FileOutput.FAILED, 0)))
+                .contains(failed).doesNotContain(pending, written, shipped);
+        assertThat(ids(queries.list(null, null, Shipment.ALL, FileOutput.PENDING, 0)))
+                .contains(pending).doesNotContain(failed, written, shipped);
+        assertThat(ids(queries.list(null, null, Shipment.ALL, FileOutput.WRITTEN, 0)))
+                .contains(written, shipped).doesNotContain(pending, failed);
+        // Every emergency shipping recorded from V102 on has an output.
+        assertThat(ids(queries.list(null, null, Shipment.ALL, FileOutput.NONE, 0))).doesNotContain(pending, failed, written, shipped);
+        assertThat(ids(queries.list(today.minusDays(2), today.minusDays(1), Shipment.ALL, FileOutput.ALL, 0)))
+                .doesNotContain(pending, failed, written, shipped);
+        assertThat(ids(queries.list(today.plusDays(1), null, Shipment.ALL, FileOutput.ALL, 0))).isEmpty();
 
-        var row = all.rows().stream().filter(r -> r.orderId() == unshippedWithCsv).findFirst().orElseThrow();
+        var row = all.rows().stream().filter(r -> r.orderId() == written).findFirst().orElseThrow();
+        assertThat(row.fileState()).isEqualTo("WRITTEN");
+        assertThat(row.getFileLabel()).isEqualTo("出力済み");
+        assertThat(row.fileWrittenAt()).isNotNull();
         assertThat(row.downloadCount()).isEqualTo(2);
-        assertThat(row.lastDownloadedAt()).isNotNull();
         assertThat(row.isUnshipped()).isTrue();
         assertThat(row.mode()).isEqualTo(EmergencyShippingMode.AFTER_DEADLINE);
         assertThat(row.adminUsername()).isEqualTo(admin.username());
         assertThat(row.reason()).isEqualTo("test fixture");
-        var shipped = all.rows().stream().filter(r -> r.orderId() == shippedWithoutCsv).findFirst().orElseThrow();
-        assertThat(shipped.isShipped()).isTrue();
-        assertThat(shipped.shippedAt()).isNotNull();
-        assertThat(shipped.downloadCount()).isZero();
-        assertThat(shipped.lastDownloadedAt()).isNull();
+        var failedRow = all.rows().stream().filter(r -> r.orderId() == failed).findFirst().orElseThrow();
+        assertThat(failedRow.isFileFailed()).isTrue();
+        assertThat(failedRow.getFileLabel()).isEqualTo("出力失敗");
+        var pendingRow = all.rows().stream().filter(r -> r.orderId() == pending).findFirst().orElseThrow();
+        assertThat(pendingRow.getFileLabel()).isEqualTo("出力待ち");
+        assertThat(pendingRow.fileWrittenAt()).isNull();
+        assertThat(pendingRow.downloadCount()).isZero();
+        var shippedRow = all.rows().stream().filter(r -> r.orderId() == shipped).findFirst().orElseThrow();
+        assertThat(shippedRow.isShipped()).isTrue();
+        assertThat(shippedRow.shippedAt()).isNotNull();
     }
 
     @Test
@@ -127,15 +149,15 @@ class AdminEmergencyShippingQueriesPostgresTest {
             if (i == 0) first = id;
             last = id;
         }
-        var page0 = queries.list(null, null, Shipment.ALL, Csv.ALL, 0);
+        var page0 = queries.list(null, null, Shipment.ALL, FileOutput.ALL, 0);
         assertThat(page0.rows()).hasSize(AdminEmergencyShippingQueries.PAGE_SIZE);
         assertThat(page0.rows().getFirst().orderId()).isEqualTo(last);
         assertThat(page0.hasNext()).isTrue();
         assertThat(page0.total()).isGreaterThanOrEqualTo(AdminEmergencyShippingQueries.PAGE_SIZE + 1);
-        var lastPage = queries.list(null, null, Shipment.ALL, Csv.ALL, (int) ((page0.total() - 1) / AdminEmergencyShippingQueries.PAGE_SIZE));
+        var lastPage = queries.list(null, null, Shipment.ALL, FileOutput.ALL, (int) ((page0.total() - 1) / AdminEmergencyShippingQueries.PAGE_SIZE));
         assertThat(lastPage.hasNext()).isFalse();
-        assertThat(ids(queries.list(null, null, Shipment.ALL, Csv.ALL, 1))).contains(first);
-        assertThat(queries.list(null, null, Shipment.ALL, Csv.ALL, -3).page()).isZero();
+        assertThat(ids(queries.list(null, null, Shipment.ALL, FileOutput.ALL, 1))).contains(first);
+        assertThat(queries.list(null, null, Shipment.ALL, FileOutput.ALL, -3).page()).isZero();
     }
 
     @Test
@@ -166,12 +188,12 @@ class AdminEmergencyShippingQueriesPostgresTest {
         assertThat(defaultResult.getModelAndView().getModel().get("to")).isEqualTo(today);
         String html = defaultResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(html).contains("緊急出荷一覧", "/admin/orders/" + order, "変更期限後", "&lt;b&gt;c3&lt;/b&gt;", "未出荷",
-                "未ダウンロード", "emergency-permitted-admins", "emergency-permission-histories", "付与")
-                .doesNotContain("<b>c3</b>");
+                "倉庫ファイル", "出力待ち", "emergency-permitted-admins", "emergency-permission-histories", "付与")
+                .doesNotContain("<b>c3</b>", "未ダウンロード", "csv=");
 
         // An empty period (the dashboard links) means all days.
         var allDays = mvc.perform(get("/admin/emergency-shipments").param("from", "").param("to", "")
-                .param("shipment", "UNSHIPPED").param("csv", "NOT_DOWNLOADED").with(user(viewer))).andReturn();
+                .param("shipment", "UNSHIPPED").param("file", "PENDING").with(user(viewer))).andReturn();
         assertThat(allDays.getModelAndView().getModel().get("from")).isNull();
         assertThat(allDays.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("/admin/orders/" + order);
 

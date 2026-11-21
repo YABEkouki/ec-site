@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import com.example.ecsite.service.emergency.AdminEmergencyShippingQueries;
-import com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Csv;
+import com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.FileOutput;
 import com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Shipment;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -36,7 +36,7 @@ public class AdminEmergencyShippingController {
     public String list(@RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(name = "shipment", required = false) Shipment shipment,
-            @RequestParam(name = "csv", required = false) Csv csv,
+            @RequestParam(name = "file", required = false) FileOutput file,
             @RequestParam(name = "page", defaultValue = "0") int page,
             HttpServletRequest request, Model model) {
         if (request.getParameterMap().isEmpty()) {
@@ -44,19 +44,19 @@ public class AdminEmergencyShippingController {
             from = to.minusDays(DEFAULT_DAYS - 1);
         }
         Shipment selectedShipment = shipment == null ? Shipment.ALL : shipment;
-        Csv selectedCsv = csv == null ? Csv.ALL : csv;
+        FileOutput selectedFile = file == null ? FileOutput.ALL : file;
         if (from != null && to != null && from.isAfter(to)) {
             model.addAttribute("errorMessage", "期間の開始日が終了日より後になっています。");
             model.addAttribute("result", new AdminEmergencyShippingQueries.Result(java.util.List.of(), 0, 0, false));
         } else {
-            model.addAttribute("result", queries.list(from, to, selectedShipment, selectedCsv, page));
+            model.addAttribute("result", queries.list(from, to, selectedShipment, selectedFile, page));
         }
         model.addAttribute("from", from);
         model.addAttribute("to", to);
         model.addAttribute("shipment", selectedShipment);
-        model.addAttribute("csv", selectedCsv);
+        model.addAttribute("file", selectedFile);
         model.addAttribute("shipments", Shipment.values());
-        model.addAttribute("csvs", Csv.values());
+        model.addAttribute("files", FileOutput.values());
         model.addAttribute("permittedAdmins", queries.permittedAdmins());
         model.addAttribute("permissionHistories", queries.permissionHistories());
         model.addAttribute("permissionHistoryLimit", AdminEmergencyShippingQueries.PERMISSION_HISTORY_LIMIT);

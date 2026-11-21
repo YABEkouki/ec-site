@@ -86,6 +86,18 @@
             </div>
 
             <div class="order-search-field">
+                <label for="shippingPreparation">出荷準備</label>
+
+                <select id="shippingPreparation" th:field="*{shippingPreparation}">
+                    <option value="">すべて</option>
+
+                    <option th:each="preparation : ${shippingPreparationFilters}" th:value="${preparation.name()}"
+                        th:text="${preparation.displayName}">
+                    </option>
+                </select>
+            </div>
+
+            <div class="order-search-field">
                 <label for="authorizationExpiry">カード与信期限</label>
 
                 <select id="authorizationExpiry" th:field="*{authorizationExpiry}">
@@ -120,7 +132,8 @@
         handlingStatus=${searchForm.handlingStatus},
         assigneeFilter=${searchForm.assigneeFilter},
         assignedAdminAccountId=${searchForm.assignedAdminAccountId},
-        authorizationExpiry=${searchForm.authorizationExpiry})}" class="button button-secondary">
+        authorizationExpiry=${searchForm.authorizationExpiry},
+        shippingPreparation=${searchForm.shippingPreparation})}" class="button button-secondary">
                 CSV出力
             </a>
         </div>
@@ -182,7 +195,7 @@
                 <td>
                     <span class="status-badge"
                         th:classappend="' status-' + ${#strings.toLowerCase(order.status.name())}"
-                        th:text="${order.status.displayName}">
+                        th:text="${order.statusDisplayName}">
                     </span>
                 </td>
 
