@@ -1349,24 +1349,36 @@ public class OrderService {
                 .toList();
     }
 
+    // Feature136-C3: a prepared order (emergency shipping, including same-day shipping before the deadline, or the
+    // warehouse export) is frozen (V98), so the customer is offered no change or cancellation.
     public boolean isWithinModificationPeriod(Order order) {
-        return order.isWithinModificationPeriod(
+        return isShippingPreparationUnstarted(order) && order.isWithinModificationPeriod(
                 LocalDateTime.now(clock));
     }
 
     public boolean canCancelByUser(Order order) {
-        return order.canCancelByUser(
+        return isShippingPreparationUnstarted(order) && order.canCancelByUser(
                 LocalDateTime.now(clock));
     }
 
     public boolean canChangeShippingAddress(Order order) {
-        return order.canChangeShippingAddress(
+        return isShippingPreparationUnstarted(order) && order.canChangeShippingAddress(
                 LocalDateTime.now(clock));
     }
 
     public boolean canChangeItemsByUser(Order order) {
-        return order.canChangeItemsByUser(
+        return isShippingPreparationUnstarted(order) && order.canChangeItemsByUser(
                 LocalDateTime.now(clock));
+    }
+
+    /** Feature136-C3: shown to the customer instead of the change/cancel actions. */
+    public boolean isFrozenForShippingPreparation(Order order) {
+        return !isShippingPreparationUnstarted(order)
+                && (order.getStatus() == OrderStatus.ORDERED || order.getStatus() == OrderStatus.PAID);
+    }
+
+    private static boolean isShippingPreparationUnstarted(Order order) {
+        return order.getShippingPreparationStartedAt() == null;
     }
 
     private LocalDateTime resolveFrom(

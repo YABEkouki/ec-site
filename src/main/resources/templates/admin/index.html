@@ -179,6 +179,31 @@
                         </a>
                     </td>
                 </tr>
+                <tr id="dashboard-emergency-unshipped">
+                    <td><strong>緊急出荷・未出荷</strong></td>
+                    <td>
+                        <strong th:if="${emergencyShippingSummary != null}" th:text="${emergencyShippingSummary.unshipped()}">0</strong>
+                        <span th:if="${emergencyShippingSummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/emergency-shipments(from='',to='',shipment='UNSHIPPED',csv='ALL')}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
+                <tr id="dashboard-emergency-csv">
+                    <td><strong>緊急出荷・CSV未ダウンロード（未出荷）</strong></td>
+                    <td>
+                        <strong th:if="${emergencyShippingSummary != null}" th:text="${emergencyShippingSummary.unshippedWithoutCsv()}"
+                            th:classappend="${emergencyShippingSummary.unshippedWithoutCsv() > 0} ? 'action-required-danger'">0</strong>
+                        <span th:if="${emergencyShippingSummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/emergency-shipments(from='',to='',shipment='UNSHIPPED',csv='NOT_DOWNLOADED')}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
                 <tr>
                     <td><strong>倉庫向け注文データ出力</strong></td>
                     <td>14:05の出力バッチとCSV</td>
