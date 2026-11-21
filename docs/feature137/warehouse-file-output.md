@@ -1,6 +1,6 @@
 # Feature137 倉庫向けファイルの形式と出力場所の変更（設計案）
 
-状態：設計承認済み（2026-11-21）。137-A 実装中。基準は main e2f51d3（最新マイグレーション V100）。
+状態：設計承認済み（2026-11-21）。137-A 完了（main 4622b2d、V101）。137-B 実装中（V102）。基準は main e2f51d3（最新マイグレーション V100）。
 
 ## 1. 目的と決定事項（2026-11-21）
 
@@ -93,9 +93,11 @@
 | attempts, next_attempt_at, claimed_until, last_error | 再試行の管理 |
 | header_row_count, detail_row_count, header_sha256, detail_sha256, written_at | `WRITTEN` のときだけ必須 |
 
-- 行を作るのはトリガー：①はバッチを封印したとき（OPEN → SEALED）、②は `emergency_shipping_preparations` に行を追加したとき。どちらも、その処理と同じトランザクションの中で作るので、出力の漏れが起きない。V102 より前のバッチと緊急出荷記録には作らない。
-- `WRITTEN` にするとき、トリガーが行数を元のデータと照合する。ファイル名と時刻は DB の時計で決める。
-- 削除・TRUNCATE はできない（55000）。決めた状態遷移以外は拒否する。
+- 行を作るのはトリガー：①はバッチを封印したとき（OPEN → SEALED）、②は `emergency_shipping_preparations` に行を追加したとき。どちらも、その処理と同じトランザクションの中で作るので、出力の漏れが起きない。V102 より前のバッチと緊急出荷記録には作らない。V101 より前の出力行（旧形式）を含むバッチにも作らない。
+- 実装（137-B、V102）：作成時にトリガーがバッチまたは緊急出荷記録から、出力バッチID（数字／`E`＋記録ID）・業務日・ファイル名・ヘッダの行数・明細の行数を決める（呼び出し側の値は使わない）。ファイル名・行数などの定義は変更できない（55000）。アプリは書き出す前に、作った内容のファイル名と行数がこの記録と一致することを確認する。
+- `WRITTEN` にするには試行回数の加算と 2 ファイルの SHA-256 が必要（23514）。出力時刻（`written_at`）と試行時刻は DB の時計で決める。`WRITTEN` からはどこへも移れない。
+- `FAILED` → `PENDING` は、同じトランザクションで `warehouse_file_output_retries` に管理者の行を追加したときだけ（その行の追加トリガーが戻す）。直接の更新は拒否する（55000）。
+- 削除・TRUNCATE はできない（55000。出力記録だけの TRUNCATE は、再出力の外部キーにより PostgreSQL が先に拒否する）。決めた状態遷移以外は拒否する。
 
 ### 4.2 書き出し（DB トランザクションの外）
 
@@ -120,14 +122,17 @@
 | `app.warehouse-file.enabled` | `WAREHOUSE_FILE_ENABLED` | false |
 | `app.warehouse-file.output-dir` | `WAREHOUSE_FILE_OUTPUT_DIR` | なし（有効にするなら必須） |
 | `app.warehouse-file.work-dir` | `WAREHOUSE_FILE_WORK_DIR` | なし（出力フォルダーと同じファイルシステムで、FTP の対象外の場所） |
-| `app.warehouse-file.fixed-delay` / `retry-delay` / `max-attempts` | — | 1m / 5m / 12 |
+| `app.warehouse-file.fixed-delay` | `WAREHOUSE_FILE_FIXED_DELAY` | 1m |
+| `app.warehouse-file.retry-delay` / `max-attempts` / `claim-lease` / `batch-size` | — | 5m / 12 / 5m / 20 |
 
-無効のあいだも出力記録は `PENDING` で作られ、ダッシュボードで見える。有効にしたら古い順に出力する。
+無効のあいだも出力記録は `PENDING` で作られ、ダッシュボードで見える。有効にしたら古い順に出力する。有効にして出力フォルダーか作業フォルダーが未指定なら、アプリは起動しない（設定の誤り）。フォルダーがない・別のファイルシステムにあるなどの場合は、試行の失敗として記録し、理由を画面に表示する。
+
+実装（137-B）：`WarehouseFileOutputStore`（記録の取得・完了・失敗・再出力）、`WarehouseFileWriter`（ファイルの書き出し）、`WarehouseFileOutputService`（1 回の処理）、`WarehouseFileOutputScheduler`（有効なときだけ動く）、`AdminWarehouseFileOutputController`（`POST /admin/warehouse-file-outputs/{id}/retry`）。失敗理由は、アプリが作った説明文だけを記録・表示する（それ以外の例外は種類名だけ。SQL の本文には注文の情報が含まれうるため）。
 
 ## 5. 画面の変更
 
 - 「出荷準備中」の表示：status が ORDERED で `shipping_preparation_started_at` があれば、管理画面（注文一覧・詳細・ダッシュボード）とお客様の画面（注文一覧・詳細）で「出荷準備中」と表示する。管理画面の注文一覧の絞り込みにも「出荷準備中」を追加する。status の値とトリガーは変えない。
-- ①倉庫出力の詳細：CSV ダウンロードのボタンと URL を削除する。ファイル出力の状態・ファイル名・行数・出力時刻・失敗理由・「再出力」ボタンを表示する。過去のダウンロード履歴（V87）は表示だけ残す。
+- ①倉庫出力の詳細：CSV ダウンロードのボタンと URL を削除する。ファイル出力の状態・ファイル名・行数・出力時刻・失敗理由・「再出力」ボタンを表示する。過去のダウンロード履歴（V87）は表示だけ残す。（137-B で実装。一覧の「ダウンロード」列は「ファイル出力」の状態に置き換えた。ファイル出力の導入前に締めたバッチはその旨を表示する。）
 - ②注文詳細：緊急出荷用 CSV のボタン・URL・JS を削除する。ファイル出力の状態と「再出力」を表示する。過去のダウンロード履歴（V100）は表示だけ残す。
 - 緊急出荷一覧：「CSV ダウンロード回数・最終日時」と絞り込みの「CSV 未ダウンロード」を、「ファイル出力の状態」（出力待ち／出力済み／失敗）に置き換える。
 - ダッシュボード：「緊急出荷・CSV 未ダウンロード」を、「倉庫ファイル・出力失敗」（①②合計）と「倉庫ファイル・出力待ち 30 分超」に置き換える。

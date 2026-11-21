@@ -22,7 +22,8 @@
             以後は内容を変更できません。注文変更や決済の処理が終わっていない注文は出力せず、翌日の出力で再判定します。
         </p>
         <p>
-            CSVは出力処理が完了した（締め済みの）バッチだけダウンロードできます。何度ダウンロードしても同じ内容で、ダウンロードはすべて記録されます。
+            出力処理が完了した（締めた）バッチは、倉庫向けファイル（ヘッダ・明細）として倉庫連携用のフォルダーに出力します。
+            出力に失敗したバッチは、バッチ詳細から再出力できます。
         </p>
         <p th:if="${startDate == null}" class="action-required-warning">
             自動出力の開始日が設定されていないため、自動出力は行われません。
@@ -42,8 +43,7 @@
                     <th>開始日時</th>
                     <th>締め日時</th>
                     <th>注文数</th>
-                    <th>ダウンロード</th>
-                    <th></th>
+                    <th>ファイル出力</th>
                 </tr>
             </thead>
             <tbody>
@@ -58,15 +58,9 @@
                     <td th:text="${item.batch.sealedAt == null ? '' : #temporals.format(item.batch.sealedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
                     <td th:text="${item.currentLines}">0</td>
                     <td>
-                        <span th:text="${item.downloads} + '回'"></span>
-                        <span th:if="${item.lastDownload != null}"
-                            th:text="'（最終 ' + ${#temporals.format(item.lastDownload, 'yyyy/MM/dd HH:mm')} + '）'"></span>
-                    </td>
-                    <td>
-                        <form th:unless="${item.batch.open()}"
-                            th:action="@{/admin/warehouse-exports/{id}/csv(id=${item.batch.id})}" method="post">
-                            <button type="submit">CSVをダウンロード</button>
-                        </form>
+                        <span th:if="${item.outputState == null}">―</span>
+                        <span th:if="${item.outputState != null}" th:text="${item.outputState.label()}"
+                            th:classappend="${item.outputState.name() == 'FAILED'} ? 'action-required-warning' : ''"></span>
                     </td>
                 </tr>
             </tbody>
