@@ -432,7 +432,7 @@
             <h3>緊急出荷用CSV（倉庫向け）</h3>
             <p>この注文は14:05の倉庫向け注文データ出力の対象外です。14:05と同じ形式のCSVをダウンロードし、倉庫へ個別に連絡してください。
                 ダウンロードはすべて記録されます。</p>
-            <form th:action="@{/admin/orders/{id}/emergency-shipping/csv(id=${order.id})}" method="post">
+            <form th:action="@{/admin/orders/{id}/emergency-shipping/csv(id=${order.id})}" method="post" id="emergency-shipping-csv-form">
                 <button type="submit" id="emergency-shipping-csv-download">緊急出荷用CSVをダウンロード</button>
             </form>
             <p th:if="${#lists.isEmpty(emergencyShippingCsvDownloads)}" id="emergency-shipping-csv-none">まだダウンロードされていません。</p>
@@ -880,6 +880,43 @@
             注文一覧へ戻る
         </a>
     </p>
+
+    <!-- Feature136-C3: a plain form POST returns an attachment and leaves the page (and its download history) stale.
+         Fetch the CSV, save it, then reload so the newly recorded download is listed. Any non-CSV answer (refusal
+         redirect, 403) falls back to the plain form submission so the server's message is shown as before. -->
+    <script th:if="${emergencyShipping != null}">
+        (function () {
+            const form = document.getElementById("emergency-shipping-csv-form");
+            if (!form || !window.fetch || !window.URL || !URL.createObjectURL) return;
+            const button = document.getElementById("emergency-shipping-csv-download");
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                button.disabled = true;
+                fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin" })
+                    .then(function (response) {
+                        const type = response.headers.get("Content-Type") || "";
+                        if (!response.ok || type.indexOf("text/csv") !== 0) {
+                            button.disabled = false;
+                            form.submit();
+                            return null;
+                        }
+                        const disposition = response.headers.get("Content-Disposition") || "";
+                        const match = /filename="([^"]+)"/.exec(disposition);
+                        const filename = match ? match[1] : "emergency-shipping.csv";
+                        return response.blob().then(function (blob) {
+                            const link = document.createElement("a");
+                            link.href = URL.createObjectURL(blob);
+                            link.download = filename;
+                            document.body.appendChild(link);
+                            link.click();
+                            link.remove();
+                            setTimeout(function () { location.reload(); }, 1000);
+                        });
+                    })
+                    .catch(function () { location.reload(); });
+            });
+        })();
+    </script>
 
 </body>
 

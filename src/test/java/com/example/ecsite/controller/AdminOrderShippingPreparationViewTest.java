@@ -157,7 +157,9 @@ class AdminOrderShippingPreparationViewTest {
     void emergencyRecordOffersTheCsvDownload() throws Exception {
         emergencyRecord();
         assertThat(render(DEADLINE)).contains("action=\"/admin/orders/42/emergency-shipping/csv\"", "緊急出荷用CSVをダウンロード",
-                "emergency-shipping-csv-none", "_csrf").doesNotContain("emergency-shipping-csv-downloads");
+                "emergency-shipping-csv-none", "_csrf", "id=\"emergency-shipping-csv-form\"",
+                "getElementById(\"emergency-shipping-csv-form\")", "location.reload()")
+                .doesNotContain("emergency-shipping-csv-downloads");
     }
 
     @Test
