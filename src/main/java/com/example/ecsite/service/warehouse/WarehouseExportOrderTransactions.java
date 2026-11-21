@@ -87,6 +87,8 @@ public class WarehouseExportOrderTransactions {
         var batch = jdbc.queryForList("select business_date from warehouse_export_batches where id=? and state='OPEN'",
                 java.time.LocalDate.class, batchId);
         if (batch.size() != 1) throw new IllegalStateException("開いている倉庫出力バッチが必要です。");
+        // Feature137: the warehouse file rows (V101) must add up to the order total and tax.
+        if (!fileLinesMatch(order)) throw hold(Reason.AMOUNT_MISMATCH, null);
         // Read after all lock waits and payment validation, before any mutation.
         LocalDateTime now = orders.findCurrentTimeInTokyo();
         var deadline = order.getChangeDeadlineAt();
@@ -111,6 +113,20 @@ public class WarehouseExportOrderTransactions {
             throw new IllegalStateException("倉庫出力の記録が注文と一致しません。");
         }
         return line;
+    }
+
+    /** Same sums as the V101 snapshot trigger, checked before the order is prepared. */
+    private boolean fileLinesMatch(Order order) {
+        var sums = jdbc.queryForMap("""
+            select count(*) as row_count,
+              count(*) filter (where subtotal is null or tax_amount is null or unit_price is null or quantity is null
+                                 or tax_rate is null or product_name is null) as incomplete,
+              coalesce(sum(subtotal),0) as total, coalesce(sum(tax_amount),0) as tax
+            from f137_order_file_lines(?)
+            """, order.getId());
+        return ((Number) sums.get("row_count")).longValue() > 0 && ((Number) sums.get("incomplete")).longValue() == 0
+                && ((Number) sums.get("total")).longValue() == order.getTotalAmount()
+                && ((Number) sums.get("tax")).longValue() == order.getTaxAmount();
     }
 
     private Exported existing(Order order) {

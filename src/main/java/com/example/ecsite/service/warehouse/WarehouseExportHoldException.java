@@ -15,6 +15,8 @@ public class WarehouseExportHoldException extends RuntimeException {
         PAYMENT_NOT_READY,
         /** Feature135: the card authorization expires within 24 hours or has expired (V93). */
         AUTHORIZATION_EXPIRING,
+        /** Feature137: the warehouse file rows do not add up to the order total and tax (V101). */
+        AMOUNT_MISMATCH,
         /** Not formally accepted, before deadline + 5 minutes, or the deadline is after the batch's business date. */
         NOT_DUE,
         /** The application judged the order exportable but a V86 database guard rejected it. */

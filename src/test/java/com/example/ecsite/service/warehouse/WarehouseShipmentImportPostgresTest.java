@@ -340,6 +340,11 @@ class WarehouseShipmentImportPostgresTest {
                     tax.getName(), tax.getTaxRate(), price, quantity));
             order.addCharge(new OrderCharge(OrderChargeType.SHIPPING, "送料・梱包料", 550, tax.getId(), tax.getCode(), tax.getName(),
                     tax.getTaxRate(), 10));
+            // As checkout does (Feature137: the warehouse file rows must add up to the total and tax, V101).
+            order.applyAmount(new com.example.ecsite.service.pricing.OrderAmount(price * quantity, java.util.List.of(), 550,
+                    java.math.BigDecimal.valueOf(total).multiply(tax.getTaxRate()).divide(
+                            java.math.BigDecimal.valueOf(100).add(tax.getTaxRate()), 0, java.math.RoundingMode.DOWN).intValueExact(),
+                    total));
             orders.saveAndFlush(order);
             histories.record(order, null, OrderStatus.ORDERED, OrderStatusHistoryActorType.USER, user.getId(), user.getUsername(), null);
             long paymentId = 0; String provider = null;
