@@ -13,6 +13,7 @@ import com.example.ecsite.entity.OrderStatus;
 import com.example.ecsite.exception.OrderNotFoundException;
 import com.example.ecsite.repository.OrderRepository;
 import com.example.ecsite.security.AdminUserDetails;
+import com.example.ecsite.service.emergency.EmergencyShippingMode;
 import com.example.ecsite.service.emergency.EmergencyShippingRejectedException;
 import com.example.ecsite.service.emergency.EmergencyShippingStore;
 import com.example.ecsite.service.payment.OrderPaymentGuard;
@@ -100,12 +101,18 @@ public class OrderShippingPreparationService {
         }
         // Read after all lock waits and payment validation, before any mutation.
         var now = orders.findCurrentTimeInTokyo();
-        if (!policy.allowsPreparationStart(order, now)) {
-            throw new IllegalStateException("注文変更期限に到達していないか、注文期限が不正です。");
+        // 136-A: past the change deadline; 136-C1: accepted after 14:00 and shipped on its acceptance day.
+        EmergencyShippingMode mode;
+        if (policy.allowsPreparationStart(order, now)) {
+            mode = EmergencyShippingMode.AFTER_DEADLINE;
+        } else if (policy.allowsSameDayEmergency(order, now)) {
+            mode = EmergencyShippingMode.SAME_DAY;
+        } else {
+            throw new IllegalStateException("注文変更期限に到達しておらず、14時以降受付の当日出荷にも当たりません。");
         }
         // V97: the record comes first (order still unprepared), then the order preparation that must match it.
         try {
-            emergency.insert(order.getId(), actor.getId(), actor.getUsername(), trimmedReason, now);
+            emergency.insert(order.getId(), actor.getId(), actor.getUsername(), trimmedReason, now, mode);
         } catch (DataAccessException rejected) {
             throw new IllegalStateException("緊急出荷の記録をデータベースが受け付けませんでした。", rejected);
         }

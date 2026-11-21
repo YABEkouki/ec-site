@@ -245,4 +245,42 @@ class OrderFormalAcceptancePostgresTest {
     private <T> T tx(Supplier<T> action) { return new TransactionTemplate(manager).execute(s -> action.get()); }
 
     record Fixture(long order, long payment, String provider) {}
+
+    /**
+     * Feature136-C1: a formally accepted order is a same-day emergency only when accepted at or after 14:00
+     * (deadline 14:00 of the next day). Acceptance is stamped with the real DB clock (V81), so the branch taken
+     * depends on the time of day the test runs; each branch is fully asserted.
+     */
+    @Test void sameDayEmergencyFollowsTheRealAcceptanceTime() {
+        var f = checkout();
+        result(f, AuthorizationResultStatus.AUTHORIZED);
+        authorization.refreshAuthorization(f.order(), f.payment());
+        LocalDateTime acceptedAt = date(f.order(), "accepted_at");
+        LocalDateTime deadline = date(f.order(), "change_deadline_at");
+        authenticateAdmin();
+        boolean afterCutoff = !acceptedAt.toLocalTime().isBefore(java.time.LocalTime.of(14, 0));
+        if (afterCutoff && dbNow().toLocalDate().equals(acceptedAt.toLocalDate())) {
+            assertThat(deadline).isEqualTo(acceptedAt.toLocalDate().plusDays(1).atTime(14, 0));
+            var result = com.example.ecsite.support.EmergencyShippingFixtures.start(preparation, jdbc, f.order());
+            assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
+            var record = jdbc.queryForMap("select mode,accepted_at,observed_before_deadline,prepared_at from emergency_shipping_preparations where order_id=?", f.order());
+            assertThat(record).containsEntry("mode", "SAME_DAY").containsEntry("accepted_at", Timestamp.valueOf(acceptedAt))
+                    .containsEntry("observed_before_deadline", true);
+            assertThat(((Timestamp) record.get("prepared_at")).toLocalDateTime().toLocalDate()).isEqualTo(acceptedAt.toLocalDate());
+        } else if (!afterCutoff && dbNow().isBefore(deadline)) {
+            // Accepted before 14:00: today's 14:05 export ships it; no emergency before the deadline.
+            assertThat(deadline).isEqualTo(acceptedAt.toLocalDate().atTime(14, 0));
+            assertThatThrownBy(() -> com.example.ecsite.support.EmergencyShippingFixtures.start(preparation, jdbc, f.order()))
+                    .isInstanceOf(IllegalStateException.class);
+            assertThat(order(f.order())).containsEntry("shipping_preparation_started_at", null);
+            // The database refuses a same-day record for it as well.
+            var admin = com.example.ecsite.support.EmergencyShippingFixtures.permittedAdmin(jdbc, "same-day");
+            assertThatThrownBy(() -> tx(() -> jdbc.update("insert into emergency_shipping_preparations(order_id,admin_account_id,"
+                    + "admin_username,reason,prepared_at,order_status,content_revision,total_amount,change_deadline_at,created_at,mode) "
+                    + "values (?,?,?,'x',timezone('Asia/Tokyo',clock_timestamp()),'ORDERED',0,0,localtimestamp,localtimestamp,'SAME_DAY')",
+                    f.order(), admin.id(), admin.username())))
+                    .hasMessageContaining("Same-day emergency shipping requires an order accepted after 14:00");
+        }
+        // Otherwise the run crossed 14:00 or midnight between acceptance and the check; nothing time-stable to assert.
+    }
 }

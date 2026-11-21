@@ -31,6 +31,23 @@ public class OrderModificationPolicy {
                 && !order.isWithinModificationPeriod(now);
     }
 
+    /**
+     * Feature136-C1: an order formally accepted at or after the 14:00 cutoff (deadline = 14:00 of the next day)
+     * may be shipped in an emergency on its acceptance day, before that deadline. V99 checks the same shape
+     * against the recorded preparation time.
+     */
+    public boolean allowsSameDayEmergency(Order order, LocalDateTime now) {
+        if (!hasValidDeadline(order, now) || !isPreparationUnstarted(order) || order.getAcceptedAt() == null
+                || order.getAcceptanceMode() != com.example.ecsite.entity.OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE) {
+            return false;
+        }
+        LocalDateTime acceptedAt = order.getAcceptedAt();
+        LocalDateTime deadline = order.getChangeDeadlineAt();
+        return deadline.equals(acceptedAt.toLocalDate().plusDays(1).atTime(14, 0))
+                && now.toLocalDate().equals(acceptedAt.toLocalDate())
+                && !now.isBefore(acceptedAt) && now.isBefore(deadline);
+    }
+
     public LocalDateTime changeGraceDeadline(Order order) {
         return order.getChangeDeadlineAt().plusMinutes(10);
     }

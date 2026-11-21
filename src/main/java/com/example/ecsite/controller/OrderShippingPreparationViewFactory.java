@@ -35,19 +35,24 @@ public class OrderShippingPreparationViewFactory {
         else {
             LocalDateTime now = LocalDateTime.now(clock);
             if (policy.allowsPreparationStart(order, now)) state = State.CANDIDATE;
+            else if (policy.allowsSameDayEmergency(order, now)) state = State.SAME_DAY_CANDIDATE;
             else if (policy.allowsModification(order, now)) state = State.BEFORE_DEADLINE;
             else state = State.UNAVAILABLE;
         }
         return new View(state, complete ? startedAt : null, complete ? actorId : null, complete ? username : null);
     }
 
-    public enum State { CANDIDATE, BEFORE_DEADLINE, AWAITING_ACCEPTANCE, STARTED, SHIPPED, CANCELLED, INCONSISTENT, UNAVAILABLE }
+    public enum State { CANDIDATE, SAME_DAY_CANDIDATE, BEFORE_DEADLINE, AWAITING_ACCEPTANCE, STARTED, SHIPPED, CANCELLED, INCONSISTENT, UNAVAILABLE }
 
     public record View(State state, LocalDateTime startedAt, Long startedByAccountId, String startedByUsername) {
-        public boolean canStart() { return state == State.CANDIDATE; }
+        public boolean canStart() { return state == State.CANDIDATE || state == State.SAME_DAY_CANDIDATE; }
+        /** Feature136-C1: before the next day's deadline; starting it ends the customer's change period. */
+        public boolean sameDay() { return state == State.SAME_DAY_CANDIDATE; }
         public String message() {
             return switch (state) {
                 case CANDIDATE -> "発送準備開始の候補です。受付時に変更期限・注文状態・決済状況を確認し、開始可否を最終判定します。";
+                case SAME_DAY_CANDIDATE -> "14時以降に受け付けた注文です。本日中であれば、翌日14時の変更期限を待たずに"
+                        + "緊急出荷として発送準備を開始できます。開始後、お客様は注文の変更・キャンセルができなくなります。";
                 case BEFORE_DEADLINE -> "変更期限前のため、発送準備を開始できません。";
                 case AWAITING_ACCEPTANCE -> "カード与信（3Dセキュア認証を含む）が完了しておらず正式受注前のため、発送準備を開始できません。";
                 case STARTED -> "発送準備開始済みです。";

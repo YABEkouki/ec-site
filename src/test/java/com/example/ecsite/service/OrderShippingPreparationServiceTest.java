@@ -36,6 +36,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.example.ecsite.service.emergency.EmergencyShippingMode;
 import com.example.ecsite.service.emergency.EmergencyShippingRejectedException;
 import com.example.ecsite.service.emergency.EmergencyShippingStore;
 
@@ -121,7 +122,7 @@ class OrderShippingPreparationServiceTest {
         recordFirst.verify(emergency).isAllowed(7L);
         recordFirst.verify(orders).findByIdForUpdate(1L);
         recordFirst.verify(emergency).hasOpenPaymentDiscrepancy(1L);
-        recordFirst.verify(emergency).insert(1L, 7L, "first", REASON, DEADLINE.plusNanos(nanos));
+        recordFirst.verify(emergency).insert(1L, 7L, "first", REASON, DEADLINE.plusNanos(nanos), EmergencyShippingMode.AFTER_DEADLINE);
         recordFirst.verify(orders).flush();
     }
 
@@ -136,7 +137,7 @@ class OrderShippingPreparationServiceTest {
         assertThatThrownBy(() -> service.start(1L, "x".repeat(501), 0)).isInstanceOf(EmergencyShippingRejectedException.class);
         locked(); when(orders.findCurrentTimeInTokyo()).thenReturn(DEADLINE);
         service.start(1L, "  " + "y".repeat(500) + "\n", 0);
-        verify(emergency).insert(1L, 7L, "first", "y".repeat(500), DEADLINE);
+        verify(emergency).insert(1L, 7L, "first", "y".repeat(500), DEADLINE, EmergencyShippingMode.AFTER_DEADLINE);
     }
 
     @ParameterizedTest @NullSource @ValueSource(ints = {-1})
@@ -156,7 +157,7 @@ class OrderShippingPreparationServiceTest {
         assertThatThrownBy(() -> service.start(1L, REASON, 1)).isInstanceOf(EmergencyShippingRejectedException.class)
                 .hasMessageContaining("注文内容が変更されました");
         verify(orders, never()).findCurrentTimeInTokyo();
-        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any()); unstarted();
+        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any(), any()); unstarted();
     }
 
     @Test void openPaymentDiscrepancyIsRejectedBeforeDatabaseTime() {
@@ -164,12 +165,12 @@ class OrderShippingPreparationServiceTest {
         assertThatThrownBy(() -> service.start(1L, REASON, 0)).isInstanceOf(EmergencyShippingRejectedException.class)
                 .hasMessageContaining("決済不整合");
         verify(orders, never()).findCurrentTimeInTokyo();
-        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any()); unstarted();
+        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any(), any()); unstarted();
     }
 
     @Test void databaseRefusalOfTheRecordLeavesTheOrderUnprepared() {
         locked(); when(orders.findCurrentTimeInTokyo()).thenReturn(DEADLINE);
-        when(emergency.insert(anyLong(), anyLong(), any(), any(), any()))
+        when(emergency.insert(anyLong(), anyLong(), any(), any(), any(), any()))
                 .thenThrow(new org.springframework.dao.DataIntegrityViolationException("refused"));
         assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0));
         verify(orders, never()).flush(); unstarted();
@@ -179,7 +180,7 @@ class OrderShippingPreparationServiceTest {
         order.beginShippingPreparation(DEADLINE, 9L, "other");
         locked();
         assertThat(service.start(1L, REASON, 5).status()).isEqualTo(ShippingPreparationStartResult.Status.ALREADY_STARTED);
-        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any());
+        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any(), any());
     }
 
     @ParameterizedTest @EnumSource(value=OrderStatus.class, names={"ORDERED", "PAID"})
@@ -372,5 +373,39 @@ class OrderShippingPreparationServiceTest {
     private void denied() {
         assertThatThrownBy(() -> service.start(1L, REASON, 0)).isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(orders, payments, manual); unstarted();
+    }
+
+    /** Feature136-C1: accepted at 15:00 on day D, deadline 14:00 on D+1. */
+    private void acceptedAfterCutoff() {
+        LocalDateTime accepted = LocalDateTime.of(2026, 11, 20, 15, 0);
+        ReflectionTestUtils.setField(order, "acceptanceMode", com.example.ecsite.entity.OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE);
+        ReflectionTestUtils.setField(order, "orderedAt", accepted.minusMinutes(5));
+        ReflectionTestUtils.setField(order, "acceptedAt", accepted);
+        ReflectionTestUtils.setField(order, "changeDeadlineAt", LocalDateTime.of(2026, 11, 21, 14, 0));
+    }
+
+    @Test void orderAcceptedAfterCutoffShipsSameDayBeforeItsDeadline() {
+        acceptedAfterCutoff(); locked();
+        LocalDateTime now = LocalDateTime.of(2026, 11, 20, 23, 59, 59);
+        when(orders.findCurrentTimeInTokyo()).thenReturn(now);
+        assertThat(service.start(1L, REASON, 0).status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
+        verify(emergency).insert(1L, 7L, "first", REASON, now, EmergencyShippingMode.SAME_DAY);
+        assertThat(order.getShippingPreparationStartedAt()).isEqualTo(now);
+    }
+
+    @ParameterizedTest @ValueSource(strings = {"2026-11-21T00:00", "2026-11-21T09:00", "2026-11-21T13:59:59"})
+    void sameDayEmergencyEndsAtMidnightOfTheAcceptanceDay(String at) {
+        acceptedAfterCutoff(); locked();
+        when(orders.findCurrentTimeInTokyo()).thenReturn(LocalDateTime.parse(at));
+        assertThatIllegalStateException().isThrownBy(() -> service.start(1L, REASON, 0));
+        verify(emergency, never()).insert(anyLong(), anyLong(), any(), any(), any(), any()); unstarted();
+    }
+
+    @Test void orderAcceptedAfterCutoffIsAnOrdinaryEmergencyAfterItsDeadline() {
+        acceptedAfterCutoff(); locked();
+        LocalDateTime now = LocalDateTime.of(2026, 11, 21, 14, 0);
+        when(orders.findCurrentTimeInTokyo()).thenReturn(now);
+        service.start(1L, REASON, 0);
+        verify(emergency).insert(1L, 7L, "first", REASON, now, EmergencyShippingMode.AFTER_DEADLINE);
     }
 }

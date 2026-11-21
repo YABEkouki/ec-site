@@ -40,20 +40,21 @@ public class EmergencyShippingStore {
      * Inserts the record while the order is locked and still unprepared; V97 checks the permission and the
      * order/payment state again, takes the snapshot from the locked rows and fixes created_at to the DB clock.
      */
-    public Record insert(long orderId, long adminAccountId, String adminUsername, String reason, LocalDateTime preparedAt) {
+    public Record insert(long orderId, long adminAccountId, String adminUsername, String reason, LocalDateTime preparedAt,
+            EmergencyShippingMode mode) {
         return jdbc.queryForObject("""
                 insert into emergency_shipping_preparations(order_id,admin_account_id,admin_username,reason,prepared_at,
-                    order_status,content_revision,total_amount,change_deadline_at,created_at)
-                values (?,?,?,?,?,'ORDERED',0,0,localtimestamp,localtimestamp)
+                    order_status,content_revision,total_amount,change_deadline_at,created_at,mode)
+                values (?,?,?,?,?,'ORDERED',0,0,localtimestamp,localtimestamp,?)
                 returning id,order_id,admin_account_id,admin_username,reason,prepared_at,order_status,content_revision,
-                    total_amount,active_payment_id,change_deadline_at,created_at
-                """, (r, n) -> record(r), orderId, adminAccountId, adminUsername, reason, preparedAt);
+                    total_amount,active_payment_id,change_deadline_at,created_at,mode,accepted_at,observed_before_deadline
+                """, (r, n) -> record(r), orderId, adminAccountId, adminUsername, reason, preparedAt, mode.name());
     }
 
     public Optional<Record> find(long orderId) {
         return jdbc.query("""
                 select id,order_id,admin_account_id,admin_username,reason,prepared_at,order_status,content_revision,
-                    total_amount,active_payment_id,change_deadline_at,created_at
+                    total_amount,active_payment_id,change_deadline_at,created_at,mode,accepted_at,observed_before_deadline
                 from emergency_shipping_preparations where order_id=?
                 """, (r, n) -> record(r), orderId).stream().findFirst();
     }
@@ -63,11 +64,13 @@ public class EmergencyShippingStore {
                 r.getString("admin_username"), r.getString("reason"), r.getObject("prepared_at", LocalDateTime.class),
                 r.getString("order_status"), r.getInt("content_revision"), r.getInt("total_amount"),
                 (Long) r.getObject("active_payment_id"), r.getObject("change_deadline_at", LocalDateTime.class),
-                r.getObject("created_at", LocalDateTime.class));
+                r.getObject("created_at", LocalDateTime.class), EmergencyShippingMode.valueOf(r.getString("mode")),
+                r.getObject("accepted_at", LocalDateTime.class), (Boolean) r.getObject("observed_before_deadline"));
     }
 
     public record Record(long id, long orderId, long adminAccountId, String adminUsername, String reason,
             LocalDateTime preparedAt, String orderStatus, int contentRevision, int totalAmount, Long activePaymentId,
-            LocalDateTime changeDeadlineAt, LocalDateTime createdAt) {
+            LocalDateTime changeDeadlineAt, LocalDateTime createdAt, EmergencyShippingMode mode, LocalDateTime acceptedAt,
+            Boolean observedBeforeDeadline) {
     }
 }

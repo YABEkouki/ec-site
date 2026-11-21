@@ -136,4 +136,49 @@ class OrderShippingPreparationViewFactoryTest {
         assertThat(factory(DEADLINE).create(order).state()).isEqualTo(OrderShippingPreparationViewFactory.State.UNAVAILABLE);
         assertThat(factory(DEADLINE).create(null).canStart()).isFalse();
     }
+
+    /** Feature136-C1: accepted 15:00 on 11/20 (deadline 11/21 14:00) is a same-day candidate only on 11/20. */
+    private Order acceptedAfterCutoff() {
+        Order order = order();
+        LocalDateTime accepted = LocalDateTime.of(2026, 11, 20, 15, 0);
+        ReflectionTestUtils.setField(order, "acceptanceMode", com.example.ecsite.entity.OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE);
+        ReflectionTestUtils.setField(order, "orderedAt", accepted.minusMinutes(5));
+        ReflectionTestUtils.setField(order, "acceptedAt", accepted);
+        ReflectionTestUtils.setField(order, "changeDeadlineAt", LocalDateTime.of(2026, 11, 21, 14, 0));
+        return order;
+    }
+
+    @Test
+    void orderAcceptedAfterCutoffIsASameDayCandidateOnItsAcceptanceDayOnly() {
+        var sameDay = factory(LocalDateTime.of(2026, 11, 20, 18, 0)).create(acceptedAfterCutoff());
+        assertThat(sameDay.state()).isEqualTo(OrderShippingPreparationViewFactory.State.SAME_DAY_CANDIDATE);
+        assertThat(sameDay.canStart()).isTrue();
+        assertThat(sameDay.sameDay()).isTrue();
+        assertThat(sameDay.message()).contains("14時以降に受け付けた注文", "変更・キャンセルができなくなります");
+        var nextMorning = factory(LocalDateTime.of(2026, 11, 21, 9, 0)).create(acceptedAfterCutoff());
+        assertThat(nextMorning.state()).isEqualTo(OrderShippingPreparationViewFactory.State.BEFORE_DEADLINE);
+        assertThat(nextMorning.canStart()).isFalse();
+        var afterDeadline = factory(LocalDateTime.of(2026, 11, 21, 14, 0)).create(acceptedAfterCutoff());
+        assertThat(afterDeadline.state()).isEqualTo(OrderShippingPreparationViewFactory.State.CANDIDATE);
+        assertThat(afterDeadline.sameDay()).isFalse();
+    }
+
+    @Test
+    void orderAcceptedBeforeCutoffIsNeverASameDayCandidate() {
+        Order order = order();
+        LocalDateTime accepted = LocalDateTime.of(2026, 11, 20, 13, 59);
+        ReflectionTestUtils.setField(order, "acceptanceMode", com.example.ecsite.entity.OrderAcceptanceMode.AUTHORIZED_ACCEPTANCE);
+        ReflectionTestUtils.setField(order, "orderedAt", accepted.minusMinutes(5));
+        ReflectionTestUtils.setField(order, "acceptedAt", accepted);
+        ReflectionTestUtils.setField(order, "changeDeadlineAt", LocalDateTime.of(2026, 11, 20, 14, 0));
+        assertThat(factory(LocalDateTime.of(2026, 11, 20, 13, 59, 30)).create(order).state())
+                .isEqualTo(OrderShippingPreparationViewFactory.State.BEFORE_DEADLINE);
+    }
+
+    @Test
+    void legacyOrderIsNeverASameDayCandidate() {
+        Order order = new Order(1L, 100, LocalDateTime.of(2026, 11, 20, 15, 0), LocalDateTime.of(2026, 11, 21, 14, 0));
+        assertThat(factory(LocalDateTime.of(2026, 11, 20, 16, 0)).create(order).state())
+                .isEqualTo(OrderShippingPreparationViewFactory.State.BEFORE_DEADLINE);
+    }
 }

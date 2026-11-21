@@ -129,8 +129,8 @@ class AdminOrderShippingPreparationViewTest {
         order.beginShippingPreparation(DEADLINE, 7L, "admin");
         record = java.util.Optional.of(new com.example.ecsite.service.emergency.EmergencyShippingStore.Record(
                 1L, 42L, 7L, "admin", "<b>顧客の要望</b>\n至急", DEADLINE, "ORDERED", 3, 1200, 5L, DEADLINE,
-                DEADLINE.plusSeconds(1)));
-        assertThat(render(DEADLINE)).contains("緊急出荷（管理者）", "&lt;b&gt;顧客の要望&lt;/b&gt;", "2026/10/16 14:00:01",
+                DEADLINE.plusSeconds(1), com.example.ecsite.service.emergency.EmergencyShippingMode.AFTER_DEADLINE, null, null));
+        assertThat(render(DEADLINE)).contains("緊急出荷（管理者）", "変更期限後", "&lt;b&gt;顧客の要望&lt;/b&gt;", "2026/10/16 14:00:01",
                 "版 3 / 合計 1200円 / ORDERED").doesNotContain("<b>顧客の要望</b>", "旧手動準備");
     }
 

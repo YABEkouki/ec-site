@@ -273,4 +273,34 @@ class EmergencyShippingPostgresTest {
         jdbc.update("update orders set handling_status=? where id=?", HANDLING, order);
         assertThat(jdbc.queryForObject("select handling_status from orders where id=?", String.class, order)).isEqualTo(HANDLING);
     }
+
+    /** Feature136-C1 (V99): mode, acceptance snapshot and the DB-clock observation. */
+    @Test
+    void modeIsRecordedAndSameDayRequiresAnOrderAcceptedAfterTheCutoff() {
+        Admin admin = EmergencyShippingFixtures.permittedAdmin(jdbc, "mode");
+        long legacy = order();
+        String insert = "insert into emergency_shipping_preparations(order_id,admin_account_id,admin_username,reason,prepared_at,"
+                + "order_status,content_revision,total_amount,change_deadline_at,created_at,mode) "
+                + "values (?,?,?,'same day',?,'ORDERED',0,0,localtimestamp,localtimestamp,?)";
+        // A legacy order (no formal acceptance) can never be a same-day emergency.
+        rejects("23514", "Same-day emergency shipping requires an order accepted after 14:00",
+                () -> tx(() -> jdbc.update(insert, legacy, admin.id(), admin.username(), dbNow(), "SAME_DAY")));
+        rejects("23514", "Unknown emergency shipping mode",
+                () -> tx(() -> jdbc.update(insert, legacy, admin.id(), admin.username(), dbNow(), "EARLY")));
+        assertUnprepared(legacy);
+        // The default (and 136-A) mode records the observation from the DB clock: this deadline has passed.
+        EmergencyShippingFixtures.prepare(jdbc, legacy, admin, null, null);
+        var row = jdbc.queryForMap("select mode,accepted_at,observed_before_deadline from emergency_shipping_preparations where order_id=?", legacy);
+        assertThat(row).containsEntry("mode", "AFTER_DEADLINE").containsEntry("accepted_at", null)
+                .containsEntry("observed_before_deadline", false);
+        assertThat(store.find(legacy).orElseThrow().mode()).isEqualTo(EmergencyShippingMode.AFTER_DEADLINE);
+        // The mode is part of the append-only record.
+        rejects("55000", "append-only", () -> jdbc.update("update emergency_shipping_preparations set mode='SAME_DAY' where order_id=?", legacy));
+        // An unexpired legacy deadline is observed as before the deadline (the application decides the window).
+        long open = order();
+        jdbc.update("update orders set change_deadline_at=timezone('Asia/Tokyo',clock_timestamp())+interval '1 day' where id=?", open);
+        EmergencyShippingFixtures.prepare(jdbc, open, admin, null, null);
+        assertThat(jdbc.queryForObject("select observed_before_deadline from emergency_shipping_preparations where order_id=?",
+                Boolean.class, open)).isTrue();
+    }
 }
