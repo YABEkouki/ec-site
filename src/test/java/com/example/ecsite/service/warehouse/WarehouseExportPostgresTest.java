@@ -53,6 +53,7 @@ class WarehouseExportPostgresTest {
     @MockitoBean PaymentGateway gateway;
     @Autowired com.example.ecsite.service.orderchange.OrderChangeFinalDecisionService finalDecisions;
     @Autowired WarehouseExportCsvService csv;
+    @Autowired WarehouseFileSource fileSource;
     @Autowired WarehouseExportShipmentGuard shipmentGuard;
     @Autowired WarehouseExportHoldStore holdStore;
     @Autowired com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore expiries;
@@ -605,6 +606,172 @@ class WarehouseExportPostgresTest {
         assertThat(WarehouseExportRunner.dueBusinessDate(day.atTime(14, 5))).isEqualTo(day);
     }
 
+    // ---- Feature137-A: warehouse file rows (V101) ----
+
+    @Test void fileRowsAllocateTheTaxOfEachRateAndAddUpToTheOrder() {
+        var f = mixed(nextBusinessDate(), 550);
+        assertThat(orderRow(f.order())).containsEntry("total_amount", 758).containsEntry("tax_amount", 66);
+        // 10%: 54 + 54 + 550 -> floor(658*10/110)=59, rows 4+4+50 plus the remainder 1 on the largest (the fee).
+        assertThat(fileRows(f.order())).containsExactly(
+                "1|item|商品A|10.00|27|2|54|4", "2|item|商品B, 特別|10.00|54|1|54|4", "3|item|食品C|8.00|100|1|100|7",
+                "4|charge|送料・梱包料|10.00|550|1|550|51");
+        // Free shipping: no fee row; the 10% remainder goes to the first of the equal largest rows.
+        var free = mixed(nextBusinessDate(), 0);
+        assertThat(orderRow(free.order())).containsEntry("total_amount", 208).containsEntry("tax_amount", 16);
+        assertThat(fileRows(free.order())).containsExactly(
+                "1|item|商品A|10.00|27|2|54|5", "2|item|商品B, 特別|10.00|54|1|54|4", "3|item|食品C|8.00|100|1|100|7");
+    }
+
+    @Test void anExportLineStoresTheFileRowsAndASealedBatchBecomesTwoFiles() {
+        var date = nextBusinessDate(); long batch = batch(date);
+        var plain = card(date); var mixed = mixed(date, 550);
+        jdbc.update("update orders set shipping_address_line='千代田1-1, ビル\"A\"' where id=?", mixed.order());
+        assertThat(service.export(batch, plain.order()).isExported()).isTrue();
+        assertThat(service.export(batch, mixed.order()).isExported()).isTrue();
+        var stored = jdbc.queryForMap("select tax_amount, jsonb_array_length(file_lines) as rows from warehouse_export_lines where order_id=?", mixed.order());
+        assertThat(stored).containsEntry("tax_amount", 66).containsEntry("rows", 4);
+        assertThatThrownBy(() -> fileSource.forBatch(batch)).isInstanceOf(WarehouseFileSource.NotWritableException.class);
+        batches.seal(batch);
+
+        var content = fileSource.forBatch(batch);
+        String day = date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        String basic = date.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        long product = jdbc.queryForObject("select product_id from order_items where id=?", Long.class, plain.item());
+        var mixedProducts = jdbc.queryForList("select product_id from order_items where order_id=? order by id", Long.class, mixed.order());
+        var header = content.headerFile(); var detail = content.detailFile();
+        assertThat(header.filename()).isEqualTo("warehouse-header-" + basic + "-" + batch + ".csv");
+        assertThat(detail.filename()).isEqualTo("warehouse-detail-" + basic + "-" + batch + ".csv");
+        assertThat(text(header.content())).isEqualTo(WarehouseFileFormat.HEADER_COLUMNS + "\r\n"
+                + batch + "," + day + "," + plain.order() + ",山田 太郎,100-0001,東京都,千代田区,千代田1-1,0312345678,682,68,750\r\n"
+                + batch + "," + day + "," + mixed.order() + ",山田 太郎,100-0001,東京都,千代田区,\"千代田1-1, ビル\"\"A\"\"\",0312345678,692,66,758\r\n");
+        assertThat(text(detail.content())).isEqualTo(WarehouseFileFormat.DETAIL_COLUMNS + "\r\n"
+                + batch + "," + plain.order() + ",1," + product + ",ordered,10%,100,2,200,18\r\n"
+                + batch + "," + plain.order() + ",2,,送料・梱包料,10%,550,1,550,50\r\n"
+                + batch + "," + mixed.order() + ",1," + mixedProducts.get(0) + ",商品A,10%,27,2,54,4\r\n"
+                + batch + "," + mixed.order() + ",2," + mixedProducts.get(1) + ",\"商品B, 特別\",10%,54,1,54,4\r\n"
+                + batch + "," + mixed.order() + ",3," + mixedProducts.get(2) + ",食品C,8%,100,1,100,7\r\n"
+                + batch + "," + mixed.order() + ",4,,送料・梱包料,10%,550,1,550,51\r\n");
+        assertThat(header.rowCount()).isEqualTo(2); assertThat(detail.rowCount()).isEqualTo(6);
+        // The same rows every time (the snapshot never changes).
+        assertThat(fileSource.forBatch(batch).detailFile().content()).isEqualTo(detail.content());
+        rejects("55000", () -> jdbc.update("update warehouse_export_lines set tax_amount=0 where order_id=?", mixed.order()));
+    }
+
+    @Test void callersCannotChooseTheStoredFileRows() {
+        var date = nextBusinessDate(); var f = card(date); long batch = batch(date);
+        tx(() -> {
+            jdbc.update("update orders set shipping_preparation_started_at=timezone('Asia/Tokyo',clock_timestamp()),"
+                    + "shipping_preparation_started_by_username='WAREHOUSE_EXPORT' where id=?", f.order());
+            return jdbc.update("insert into warehouse_export_lines(batch_id,order_id,tax_amount,file_lines) values (?,?,1,'[{}]'::jsonb)",
+                    batch, f.order());
+        });
+        var stored = jdbc.queryForMap("select tax_amount, file_lines->1->>'productName' as fee, jsonb_array_length(file_lines) as rows"
+                + " from warehouse_export_lines where order_id=?", f.order());
+        assertThat(stored).containsEntry("tax_amount", 68).containsEntry("fee", "送料・梱包料").containsEntry("rows", 2);
+    }
+
+    @Test void anOrderWhoseRowsDoNotAddUpIsHeldAndTheDatabaseRefusesItsLine() {
+        var date = nextBusinessDate(); long batch = batch(date);
+        var wrongTax = card(date);
+        jdbc.update("update orders set tax_amount=tax_amount+1 where id=?", wrongTax.order());
+        assertHeld(wrongTax, batch, Reason.AMOUNT_MISMATCH);
+        assertThat(jdbc.queryForList("select reason from warehouse_export_holds where order_id=?", String.class, wrongTax.order()))
+                .containsExactly("AMOUNT_MISMATCH");
+        var wrongItem = card(date);
+        jdbc.update("update order_items set subtotal=subtotal+1 where order_id=?", wrongItem.order());
+        assertHeld(wrongItem, batch, Reason.AMOUNT_MISMATCH);
+        assertThat(WarehouseExportHoldStore.label(Reason.AMOUNT_MISMATCH)).isNotBlank();
+        assertThat(WarehouseExportHoldStore.guidance(Reason.AMOUNT_MISMATCH)).isNotBlank();
+
+        // Database: the same sums are checked when the line is written.
+        var late = card(date.minusDays(1)); long lateBatch = batch(date.minusDays(1));
+        jdbc.update("update orders set tax_amount=tax_amount-1 where id=?", late.order());
+        assertThatThrownBy(() -> tx(() -> {
+            jdbc.update("update orders set shipping_preparation_started_at=timezone('Asia/Tokyo',clock_timestamp()),"
+                    + "shipping_preparation_started_by_username='WAREHOUSE_EXPORT' where id=?", late.order());
+            return jdbc.update("insert into warehouse_export_lines(batch_id,order_id) values (?,?)", lateBatch, late.order());
+        })).hasMessageContaining("do not match the order amounts");
+        assertUnprepared(late.order());
+    }
+
+    @Test void aSealedEmptyBatchBecomesHeaderOnlyFiles() {
+        var date = nextBusinessDate(); long batch = batch(date);
+        assertThatThrownBy(() -> fileSource.forBatch(batch)).isInstanceOf(WarehouseFileSource.NotWritableException.class);
+        batches.seal(batch);
+        var content = fileSource.forBatch(batch);
+        assertThat(text(content.headerFile().content())).isEqualTo(WarehouseFileFormat.HEADER_COLUMNS + "\r\n");
+        assertThat(text(content.detailFile().content())).isEqualTo(WarehouseFileFormat.DETAIL_COLUMNS + "\r\n");
+        assertThatThrownBy(() -> fileSource.forBatch(Long.MAX_VALUE)).isInstanceOf(WarehouseFileSource.NotWritableException.class);
+    }
+
+    @Test void anEmergencyOutputComesFromTheFrozenOrderWithItsEBatchId() {
+        var f = mixed(nextBusinessDate(), 550);
+        adminPrepare(f.order());
+        var record = jdbc.queryForMap("select id, prepared_at from emergency_shipping_preparations where order_id=?", f.order());
+        long id = ((Number) record.get("id")).longValue();
+        var day = ((java.sql.Timestamp) record.get("prepared_at")).toLocalDateTime().toLocalDate();
+
+        var content = fileSource.forEmergency(id);
+        assertThat(content.batchId()).isEqualTo("E" + id);
+        assertThat(content.businessDate()).isEqualTo(day);
+        assertThat(content.headerFile().filename())
+                .isEqualTo("warehouse-header-" + day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE) + "-E" + id + ".csv");
+        assertThat(text(content.headerFile().content()).split("\r\n")[1]).isEqualTo("E" + id + ","
+                + day.format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd")) + "," + f.order()
+                + ",山田 太郎,100-0001,東京都,千代田区,千代田1-1,0312345678,692,66,758");
+        var detailLines = text(content.detailFile().content()).split("\r\n");
+        assertThat(detailLines).hasSize(5);
+        assertThat(detailLines[4]).isEqualTo("E" + id + "," + f.order() + ",4,,送料・梱包料,10%,550,1,550,51");
+        assertThatThrownBy(() -> fileSource.forEmergency(Long.MAX_VALUE)).isInstanceOf(WarehouseFileSource.NotWritableException.class);
+    }
+
+    List<String> fileRows(long order) {
+        return jdbc.queryForList("select line_no||'|'||case when order_item_id is null then 'charge' else 'item' end||'|'||product_name"
+                + "||'|'||tax_rate||'|'||unit_price||'|'||quantity||'|'||subtotal||'|'||tax_amount from f137_order_file_lines(?)",
+                String.class, order);
+    }
+
+    static String text(byte[] content) {
+        assertThat(content).startsWith(0xEF, 0xBB, 0xBF);
+        return new String(content, 3, content.length - 3, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Card order with two 10% items, one 8% item and a 10% shipping fee; amounts as checkout computes them. */
+    Fixture mixed(LocalDate businessDate, int shippingFee) {
+        Fixture f = tx(() -> {
+            var now = orders.findCurrentTimeInTokyo(); String key = UUID.randomUUID().toString();
+            var user = new User(); user.setUsername("f137-" + key); user.setPassword("unused"); user.setEnabled(true);
+            user.setCreatedAt(now); user.setUpdatedAt(now); users.saveAndFlush(user);
+            var category = categories.saveAndFlush(new Category(key));
+            var standard = taxes.findAll().stream().filter(t -> "STANDARD".equals(t.getCode())).findFirst().orElseThrow();
+            var reduced = taxes.findAll().stream().filter(t -> "REDUCED".equals(t.getCode())).findFirst().orElseThrow();
+            var order = new Order(user.getId(), 0, now, now.plusHours(1));
+            order.setShippingAddress("山田 太郎", "100-0001", "東京都", "千代田区", "千代田1-1", "0312345678");
+            record Line(String name, TaxCategory tax, int price, int quantity) {}
+            for (var l : List.of(new Line("商品A", standard, 27, 2), new Line("商品B, 特別", standard, 54, 1), new Line("食品C", reduced, 100, 1))) {
+                var product = new Product(); product.setName(l.name()); product.setPrice(l.price()); product.setStock(20);
+                product.setCategory(category); product.setTaxCategory(l.tax()); products.saveAndFlush(product);
+                order.addItem(new OrderItem(product.getId(), l.name(), category.getId(), category.getName(), l.tax().getId(),
+                        l.tax().getCode(), l.tax().getName(), l.tax().getTaxRate(), l.price(), l.quantity()));
+            }
+            order.addCharge(new OrderCharge(OrderChargeType.SHIPPING, "送料・梱包料", shippingFee, standard.getId(), standard.getCode(),
+                    standard.getName(), standard.getTaxRate(), 10));
+            int items = 54 + 54 + 100, total = items + shippingFee;
+            int tax = (108 + shippingFee) * 10 / 110 + 100 * 8 / 108;
+            order.applyAmount(new com.example.ecsite.service.pricing.OrderAmount(items, List.of(), shippingFee, tax, total));
+            orders.saveAndFlush(order);
+            histories.record(order, null, OrderStatus.ORDERED, OrderStatusHistoryActorType.USER, user.getId(), user.getUsername(), null);
+            var payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, total, now);
+            payment.setProviderPaymentId("pfw_" + key, now); payment.markAuthorized(now); payments.saveAndFlush(payment);
+            var auth = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, total, 0, key, now,
+                    PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);
+            auth.markSucceeded(payment.getProviderPaymentId(), now); paymentTransactions.saveAndFlush(auth);
+            return new Fixture(order.getId(), user.getId(), order.getItems().getFirst().getId(), payment.getId(), businessDate);
+        });
+        moveDeadline(f.order(), businessDate.atTime(14, 0));
+        return f;
+    }
+
     // ---- C-2: CSV delivery ----
 
     @Test void onlyASealedBatchIsDownloadedAndEveryDownloadIsIdenticalAndRecorded() {
@@ -729,6 +896,11 @@ class WarehouseExportPostgresTest {
                     tax.getName(), tax.getTaxRate(), price, quantity));
             order.addCharge(new OrderCharge(OrderChargeType.SHIPPING, "送料・梱包料", 550, tax.getId(), tax.getCode(), tax.getName(),
                     tax.getTaxRate(), 10));
+            // As checkout does (Feature137: the warehouse file rows must add up to the total and tax, V101).
+            order.applyAmount(new com.example.ecsite.service.pricing.OrderAmount(price * quantity, java.util.List.of(), 550,
+                    java.math.BigDecimal.valueOf(total).multiply(tax.getTaxRate()).divide(
+                            java.math.BigDecimal.valueOf(100).add(tax.getTaxRate()), 0, java.math.RoundingMode.DOWN).intValueExact(),
+                    total));
             orders.saveAndFlush(order);
             histories.record(order, null, OrderStatus.ORDERED, OrderStatusHistoryActorType.USER, user.getId(), user.getUsername(), null);
             long paymentId = 0;
