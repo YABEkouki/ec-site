@@ -50,6 +50,8 @@ class OrderShippingMetadataPostgresTest {
     }
 
     void ship(long id) {
+        // Feature138-A (V103): an order prepared while ORDERED ships with its capture payment; this one has none, so paid.
+        jdbc.update("update orders set status='PAID', paid_at=localtimestamp where id=?", id);
         prepare(id);
         jdbc.update("update orders set status='SHIPPED', shipped_at=localtimestamp, shipped_by_account_id=8, shipped_by_username='shipper' where id=?", id);
     }

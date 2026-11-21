@@ -33,6 +33,7 @@ import com.example.ecsite.service.payment.PaymentSynchronizationOutcome;
 /**
  * Feature132-A: an exported order can be shipped by the warehouse shipment import as the system
  * (no logged-in administrator), and every shipment record then carries the same system shipper (V89).
+ * Feature138-A: so can an emergency-shipped order, only with its recorded payment and content (V103).
  */
 @SpringBootTest(properties = {"logging.level.root=WARN", "spring.jpa.show-sql=false",
         "app.payment.reconciliation.enabled=false", "app.payment.discrepancy-audit.enabled=false"})
@@ -46,6 +47,7 @@ class WarehouseShipmentSystemActorPostgresTest {
     @Autowired PaymentReconciliationItemService reconciliation;
     @Autowired WarehouseExportService exports;
     @Autowired WarehouseExportBatchStore batches;
+    @Autowired WarehouseExportShipmentGuard exportGuard;
     @Autowired JdbcTemplate jdbc;
     @Autowired OrderRepository orders;
     @Autowired UserRepository users;
@@ -112,21 +114,112 @@ class WarehouseShipmentSystemActorPostgresTest {
         assertWarehouseShipmentNotification(f);
     }
 
-    @Test void onlyAnOrderPreparedByTheWarehouseExportShipsAsTheSystem() {
+    @Test void anEmergencyShippedCardOrderShipsAndCapturesAsTheSystem() {
+        // Feature138-A: an emergency-shipped order is handed to the warehouse as files and may be shipped by the import.
+        var f = order(nextBusinessDate(), true);
+        prepareByAdministrator(f.order());
+        when(gateway.capture(any())).thenReturn(captured(f));
+
+        assertThat(capture.captureForWarehouseImport(f.order(), SYSTEM).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+
+        assertSystemShipment(f, "SHIPPED");
+        assertThat(order(f)).containsEntry("shipment_capture_payment_id", f.payment())
+                .containsEntry("shipping_preparation_started_by_account_id", 7L);
+        assertThat(captureRow(f)).containsEntry("status", "SUCCEEDED").containsEntry("initiator_type", "SYSTEM")
+                .containsEntry("initiator_id", null).containsEntry("initiator_username", IMPORTER);
+        assertThat(capture.captureForWarehouseImport(f.order(), SYSTEM).status()).isEqualTo(CaptureResultStatus.CAPTURED);
+        assertThat(captures(f)).isEqualTo(1);
+        assertWarehouseShipmentNotification(f);
+    }
+
+    @Test void anEmergencyShippedPaidOrderShipsAsTheSystemWithoutACapture() {
+        var f = order(nextBusinessDate(), false);
+        jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", f.order());
+        prepareByAdministrator(f.order());
+
+        tx(() -> { manualShipments.shipAsWarehouseImport(f.order(), SYSTEM); return null; });
+
+        assertSystemShipment(f, "SHIPPED");
+        assertThat(order(f)).containsEntry("shipment_capture_payment_id", null);
+        assertWarehouseShipmentNotification(f);
+    }
+
+    @Test void anUnpreparedOrderDoesNotShipAsTheSystem() {
         var card = order(nextBusinessDate(), true);
-        prepareByAdministrator(card.order());
-        assertThatThrownBy(() -> capture.captureForWarehouseImport(card.order(), SYSTEM)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> capture.captureForWarehouseImport(card.order(), SYSTEM)).isInstanceOf(RuntimeException.class);
         assertThat(order(card)).containsEntry("status", "ORDERED").containsEntry("shipped_by_username", null);
 
         var paid = order(nextBusinessDate(), false);
         jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", paid.order());
-        prepareByAdministrator(paid.order());
         assertThatThrownBy(() -> tx(() -> { manualShipments.shipAsWarehouseImport(paid.order(), SYSTEM); return null; }))
                 .isInstanceOf(com.example.ecsite.exception.InvalidOrderStatusException.class);
         assertThat(order(paid)).containsEntry("status", "PAID");
 
         assertThatThrownBy(() -> capture.captureForWarehouseImport(card.order(), null))
                 .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test void anEmergencyShippedOrderShipsOnlyWithItsRecordedPaymentAndContent() {
+        String ship = "update orders set status='SHIPPED', shipped_at=timezone('Asia/Tokyo',clock_timestamp()),"
+                + "shipped_by_account_id=7, shipped_by_username='first', shipment_capture_payment_id=? where id=?";
+        String message = "An emergency-shipped order must ship with its recorded payment and content";
+
+        // Recorded while ORDERED: a card shipment needs a capture payment, the recorded active payment when one was set.
+        var card = order(nextBusinessDate(), true);
+        jdbc.update("update orders set active_payment_id=? where id=?", card.payment(), card.order());
+        prepareByAdministrator(card.order());
+        rejects("23514", message, () -> jdbc.update(ship, null, card.order()));
+        // A capture payment other than the recorded active payment (here the active payment is another, failed one).
+        var switched = order(nextBusinessDate(), true);
+        long other = jdbc.queryForObject("insert into payments(order_id,provider,payment_method,status,amount) "
+                + "values (?,'PAYJP','CARD','FAILED',750) returning id", Long.class, switched.order());
+        jdbc.update("update orders set active_payment_id=? where id=?", other, switched.order());
+        prepareByAdministrator(switched.order());
+        rejects("23514", message, () -> jdbc.update(ship, switched.payment(), switched.order()));
+
+        // Recorded while PAID: shipped without a capture.
+        var paid = order(nextBusinessDate(), true);
+        jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", paid.order());
+        prepareByAdministrator(paid.order());
+        rejects("23514", message, () -> jdbc.update(ship, paid.payment(), paid.order()));
+        jdbc.update(ship, null, paid.order());
+        assertThat(order(paid)).containsEntry("status", "SHIPPED");
+    }
+
+    @Test void theGuardMatchesAnEmergencyShippedOrderWithItsRecordAndRefusesALegacyPreparation() {
+        var card = order(nextBusinessDate(), true);
+        jdbc.update("update orders set active_payment_id=? where id=?", card.payment(), card.order());
+        prepareByAdministrator(card.order());
+        Order loaded = orders.findById(card.order()).orElseThrow();
+        assertThat(exportGuard.allowsSystemShipment(loaded)).isTrue();
+        assertThat(exportGuard.matchesExport(loaded, card.payment())).isTrue();
+        assertThat(exportGuard.matchesExport(loaded, null)).isFalse();
+        assertThat(exportGuard.matchesExport(loaded, card.payment() + 1)).isFalse();
+        // The database freezes the content (V98); the guard still compares it with the record.
+        org.springframework.test.util.ReflectionTestUtils.setField(loaded, "contentRevision", loaded.getContentRevision() + 1);
+        assertThat(exportGuard.matchesExport(loaded, card.payment())).isFalse();
+
+        var paid = order(nextBusinessDate(), false);
+        jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", paid.order());
+        prepareByAdministrator(paid.order());
+        Order paidOrder = orders.findById(paid.order()).orElseThrow();
+        assertThat(exportGuard.matchesExport(paidOrder, null)).isTrue();
+        assertThat(exportGuard.matchesExport(paidOrder, 1L)).isFalse();
+
+        // A legacy administrator preparation (before V97, no record) cannot be created any more; in memory only.
+        var legacy = order(nextBusinessDate(), true);
+        Order legacyOrder = orders.findById(legacy.order()).orElseThrow();
+        org.springframework.test.util.ReflectionTestUtils.setField(legacyOrder, "shippingPreparationStartedAt", LocalDateTime.of(2026, 1, 5, 15, 0));
+        org.springframework.test.util.ReflectionTestUtils.setField(legacyOrder, "shippingPreparationStartedByAccountId", 7L);
+        org.springframework.test.util.ReflectionTestUtils.setField(legacyOrder, "shippingPreparationStartedByUsername", "first");
+        assertThat(legacyOrder.isShippingPreparedForSystemShipment()).isTrue();
+        assertThat(exportGuard.allowsSystemShipment(legacyOrder)).isFalse();
+        assertThat(exportGuard.matchesExport(legacyOrder, legacy.payment())).isTrue();
+        // A record of another preparation does not count either.
+        Order moved = orders.findById(card.order()).orElseThrow();
+        org.springframework.test.util.ReflectionTestUtils.setField(moved, "shippingPreparationStartedAt",
+                moved.getShippingPreparationStartedAt().plusSeconds(1));
+        assertThat(exportGuard.allowsSystemShipment(moved)).isFalse();
     }
 
     @Test void anExportedOrderStillShipsByAnAdministrator() {
@@ -145,12 +238,17 @@ class WarehouseShipmentSystemActorPostgresTest {
         String ship = "update orders set status='SHIPPED', shipped_at=timezone('Asia/Tokyo',clock_timestamp()),"
                 + "shipped_by_account_id=?, shipped_by_username=?, shipment_capture_payment_id=? where id=?";
 
-        // Only the warehouse export's preparation can carry a system shipper (CHECK).
+        // A system shipper needs the warehouse export's preparation or an emergency (administrator) one (CHECK),
+        // and the export line or the emergency record of that preparation (trigger).
+        var unprepared = order(nextBusinessDate(), false);
+        jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", unprepared.order());
+        rejects("23514", () -> jdbc.update(ship, null, IMPORTER, null, unprepared.order()));
         var manual = order(nextBusinessDate(), false);
         jdbc.update("update orders set status='PAID', paid_at=ordered_at where id=?", manual.order());
         prepareByAdministrator(manual.order());
-        rejects("23514", () -> jdbc.update(ship, null, IMPORTER, null, manual.order()));
         rejects("23514", () -> jdbc.update(ship, null, "SOMEONE", null, manual.order()));
+        jdbc.update(ship, null, IMPORTER, null, manual.order());
+        assertSystemShipmentRow(manual);
 
         // A card shipment needs exactly one system shipment capture on the shipped payment (trigger).
         var card = exported(true);
@@ -297,6 +395,16 @@ class WarehouseShipmentSystemActorPostgresTest {
         LocalDateTime deadline = businessDate.atTime(14, 0);
         jdbc.update("update orders set ordered_at=?, change_deadline_at=? where id=?", deadline.minusHours(2), deadline, f.order());
         return f;
+    }
+
+    static void rejects(String sqlState, String message, ThrowingCallable call) {
+        assertThatThrownBy(call).satisfies(e -> {
+            Throwable t = e;
+            while (t != null && !(t instanceof java.sql.SQLException)) t = t.getCause();
+            assertThat(t).as("SQLException in %s", e).isNotNull();
+            assertThat(((java.sql.SQLException) t).getSQLState()).as("%s", t).isEqualTo(sqlState);
+            assertThat(t.getMessage()).contains(message);
+        });
     }
 
     static void rejects(String sqlState, ThrowingCallable call) {

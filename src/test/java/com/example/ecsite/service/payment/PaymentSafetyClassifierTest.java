@@ -90,12 +90,21 @@ class PaymentSafetyClassifierTest {
     }
 
     @Test
-    void warehouseImportShipmentRequiresTheWarehouseExportPreparation() {
-        var f = systemShipped("PENDING");
+    void warehouseImportShipmentRequiresTheWarehouseExportOrAnEmergencyPreparation() {
+        // Feature138-A: an administrator (emergency) preparation may be shipped by the import; the record is a DB rule (V103).
+        var f = withPreparation(systemShipped("PENDING"), preparation(true));
+        var result = classify(f);
+        assertEquals(ActivePaymentDisposition.SELECTED, result.disposition(), result.toString());
+        review(withPreparation(systemShipped("PENDING"), preparation(false)));
+        review(withPreparation(systemShipped("PENDING"), new ShippingPreparationFacts(T.plusMinutes(1), null, "SOMEONE")));
+        review(withPreparation(systemShipped("PENDING"), new ShippingPreparationFacts(T.plusMinutes(1), 0L, "preparer")));
+    }
+
+    private static Fixture withPreparation(Fixture f, ShippingPreparationFacts preparation) {
         var o = f.order;
         f.order = new OrderFacts(o.id(), o.status(), o.totalAmount(), o.contentRevision(), o.paidAt(), o.cancelledAt(),
-                o.shippedAt(), preparation(true), o.shipmentCapturePaymentId(), null, com.example.ecsite.entity.Order.WAREHOUSE_SHIPMENT_IMPORTER);
-        review(f);
+                o.shippedAt(), preparation, o.shipmentCapturePaymentId(), null, com.example.ecsite.entity.Order.WAREHOUSE_SHIPMENT_IMPORTER);
+        return f;
     }
 
     @Test

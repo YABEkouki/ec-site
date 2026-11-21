@@ -119,7 +119,7 @@ class OrderShippingPreparationPostgresTest {
         assertThat(withoutPreparation(state(f))).isEqualTo(withoutPreparation(before));
         assertThat(orderRow(f)).containsEntry("status", card ? "ORDERED" : "PAID")
                 .containsEntry("shipment_capture_payment_id", null);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(102);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(103);
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
         assertThat(jdbc.queryForObject("select count(*) from pg_constraint where conrelid='orders'::regclass "
                 + "and conname in ('chk_orders_shipping_preparation_metadata','chk_orders_shipment_metadata') "
@@ -200,7 +200,13 @@ class OrderShippingPreparationPostgresTest {
             assertThat(state(f)).isEqualTo(frozen);
             return;
         }
-        jdbc.update("update orders set status=? where id=?", status.name(), f.orderId());
+        if (prepared) {
+            // Feature138-A (V103): a card order emergency-shipped while ORDERED ships with its capture payment.
+            jdbc.update("update orders set status='SHIPPED', shipped_at=localtimestamp, shipped_by_account_id=7,"
+                    + " shipped_by_username='first', shipment_capture_payment_id=? where id=?", f.paymentId(), f.orderId());
+        } else {
+            jdbc.update("update orders set status=? where id=?", status.name(), f.orderId());
+        }
         var before = state(f);
         assertThatThrownBy(() -> start(f)).isInstanceOf(IllegalStateException.class);
         assertThat(state(f)).isEqualTo(before);

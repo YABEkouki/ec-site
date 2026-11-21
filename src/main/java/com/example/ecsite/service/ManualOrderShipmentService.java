@@ -47,7 +47,8 @@ public class ManualOrderShipmentService {
 
     /**
      * Feature132-A: ships an exported paid order as the system (warehouse shipment import), with no logged-in
-     * administrator. Only the warehouse package can hold a {@link WarehouseShipmentActor}.
+     * administrator. Only the warehouse package can hold a {@link WarehouseShipmentActor}. Feature138-A: an
+     * emergency-shipped order may ship this way as well.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void shipAsWarehouseImport(Long id, WarehouseShipmentActor actor) {
@@ -64,12 +65,14 @@ public class ManualOrderShipmentService {
         if (order.getStatus() != OrderStatus.PAID)
             throw new InvalidOrderStatusException("支払済みの注文だけを発送済みに変更できます。");
         shipmentGuard.requirePrepared(order);
-        if (system && (!order.isShippingPreparedByWarehouseExport() || exportGuard == null))
-            throw new InvalidOrderStatusException("倉庫出力で出荷準備に移った注文だけを倉庫出荷取込みで発送できます。");
+        // Feature138-A: the system ships an exported order or an emergency-shipped order (V89/V103).
+        if (system && (exportGuard == null || !exportGuard.allowsSystemShipment(order)))
+            throw new InvalidOrderStatusException("倉庫出力または緊急出荷で出荷準備に移った注文だけを倉庫出荷取込みで発送できます。");
         paymentGuard.requireNoOrderChange(order);
         context.refreshPayments(order);
         paymentGuard.validateManualShipment(order);
-        // Feature131: an exported paid order ships only as exported (no payment, same revision and amount).
+        // Feature131/138: an exported or emergency-shipped paid order ships only as handed to the warehouse
+        // (no payment, same revision and amount).
         if (exportGuard != null && !exportGuard.matchesExport(order, null))
             throw new InvalidOrderStatusException("倉庫へ出力した内容と注文が一致しないため、発送できません。");
         var now = orders.findCurrentTimeInTokyo();
