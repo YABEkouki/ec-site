@@ -86,19 +86,19 @@ public class WarehouseExportBatchStore {
             """, Long.class, startDate, businessDate, afterId, limit);
     }
 
-    /** Batches newest first, with how often each was downloaded. */
+    /** Batches newest first, with the state of their warehouse file output (Feature137-B; null when none). */
     public List<Listed> list(int limit) {
         return jdbc.query("""
             select b.id,b.business_date,b.state,b.opened_at,b.sealed_at,b.line_count,
               (select count(*) from warehouse_export_lines l where l.batch_id=b.id) as current_lines,
-              (select count(*) from warehouse_export_downloads d where d.batch_id=b.id) as downloads,
-              (select max(d.downloaded_at) from warehouse_export_downloads d where d.batch_id=b.id) as last_download
+              (select o.state from warehouse_file_outputs o where o.batch_id=b.id) as output_state
             from warehouse_export_batches b order by b.business_date desc, b.id desc limit ?
-            """, (r, n) -> new Listed(batch(r, n), r.getInt("current_lines"), r.getInt("downloads"),
-                r.getObject("last_download", LocalDateTime.class)), limit);
+            """, (r, n) -> new Listed(batch(r, n), r.getInt("current_lines"),
+                r.getString("output_state") == null ? null : WarehouseFileOutputStore.State.valueOf(r.getString("output_state"))),
+            limit);
     }
 
-    public record Listed(Batch batch, int currentLines, int downloads, LocalDateTime lastDownload) {}
+    public record Listed(Batch batch, int currentLines, WarehouseFileOutputStore.State outputState) {}
 
     /** An export line as shown to administrators. */
     public record Line(long orderId, String orderStatus, int contentRevision, int totalAmount, Long paymentId,

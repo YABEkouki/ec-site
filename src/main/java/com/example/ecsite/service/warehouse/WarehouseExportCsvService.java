@@ -7,18 +7,16 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.example.ecsite.security.AdminUserDetails;
 
 /**
- * Feature131 C-2: the warehouse CSV of a sealed batch. One file, one row per order item; order columns repeat on
- * every row. UTF-8 with BOM and CRLF like the existing order CSV. The rows come only from the immutable export
- * lines, so every download of a batch is byte-identical; each download is recorded with its SHA-256.
+ * Feature131 C-2: the warehouse CSV format (one file, one row per order item). Feature137-B replaced the download
+ * of a batch by the two warehouse files ({@link WarehouseFileFormat}); the format remains for the Feature136
+ * emergency CSV until Feature137-C, and the download audit (V87) remains as history.
  */
 @Service
 public class WarehouseExportCsvService {
@@ -28,8 +26,6 @@ public class WarehouseExportCsvService {
     private static final byte[] UTF_8_BOM = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-    public record Download(String filename, byte[] content, int lineCount, int rowCount) {}
-
     public static class NotDownloadableException extends RuntimeException {
         public NotDownloadableException(String message) { super(message); }
     }
@@ -37,52 +33,6 @@ public class WarehouseExportCsvService {
     /** One CSV row. The batch ID is text so that Feature136 emergency CSVs can use 'E' + record id. */
     public record Row(String batchId, LocalDate businessDate, long orderId, int itemNo, String name, String postalCode,
             String prefecture, String city, String addressLine, String phone, long productId, String productName, int quantity) {}
-
-    private final JdbcTemplate jdbc;
-
-    public WarehouseExportCsvService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
-
-    /** Renders and records one administrator download. Only a SEALED batch is downloadable (also enforced by V87). */
-    @Transactional
-    public Download download(long batchId) {
-        AdminUserDetails actor = requireAdmin();
-        var batch = jdbc.query("select business_date,state,line_count from warehouse_export_batches where id=? for share",
-                (r, n) -> new Object[] {r.getObject("business_date", LocalDate.class), r.getString("state"), r.getObject("line_count")},
-                batchId);
-        if (batch.isEmpty()) throw new NotDownloadableException("倉庫出力バッチが見つかりません。");
-        if (!"SEALED".equals(batch.getFirst()[1])) {
-            throw new NotDownloadableException("出力処理が完了していないバッチはダウンロードできません。");
-        }
-        LocalDate businessDate = (LocalDate) batch.getFirst()[0];
-        int lineCount = (Integer) batch.getFirst()[2];
-        var rows = rows(batchId);
-        byte[] content = render(rows);
-        jdbc.update("""
-            insert into warehouse_export_downloads(batch_id,admin_account_id,admin_username,line_count,row_count,content_sha256)
-            values (?,?,?,?,?,?)
-            """, batchId, actor.getId(), actor.getUsername(), lineCount, rows.size(), sha256(content));
-        String filename = "warehouse-export-" + businessDate.format(DateTimeFormatter.BASIC_ISO_DATE) + "-" + batchId + ".csv";
-        return new Download(filename, content, lineCount, rows.size());
-    }
-
-    private List<Row> rows(long batchId) {
-        return jdbc.query("""
-            select l.batch_id,b.business_date,l.order_id,e.n::int as item_no,l.shipping_name,l.shipping_postal_code,
-              l.shipping_prefecture,l.shipping_city,l.shipping_address_line,l.shipping_phone,
-              (e.i->>'productId')::bigint as product_id,e.i->>'productName' as product_name,(e.i->>'quantity')::int as quantity
-            from warehouse_export_lines l
-            join warehouse_export_batches b on b.id=l.batch_id
-            cross join lateral jsonb_array_elements(l.items) with ordinality as e(i,n)
-            where l.batch_id=?
-            order by l.order_id, e.n
-            """, (r, n) -> new Row(String.valueOf(r.getLong("batch_id")), r.getObject("business_date", LocalDate.class), r.getLong("order_id"),
-                r.getInt("item_no"), r.getString("shipping_name"), r.getString("shipping_postal_code"),
-                r.getString("shipping_prefecture"), r.getString("shipping_city"), r.getString("shipping_address_line"),
-                r.getString("shipping_phone"), r.getLong("product_id"), r.getString("product_name"), r.getInt("quantity")),
-            batchId);
-    }
 
     public static byte[] render(List<Row> rows) {
         var csv = new StringBuilder(HEADER).append("\r\n");

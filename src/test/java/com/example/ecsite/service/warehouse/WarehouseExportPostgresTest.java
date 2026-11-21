@@ -54,6 +54,7 @@ class WarehouseExportPostgresTest {
     @Autowired com.example.ecsite.service.orderchange.OrderChangeFinalDecisionService finalDecisions;
     @Autowired WarehouseExportCsvService csv;
     @Autowired WarehouseFileSource fileSource;
+    @Autowired WarehouseFileOutputStore fileOutputs;
     @Autowired WarehouseExportShipmentGuard shipmentGuard;
     @Autowired WarehouseExportHoldStore holdStore;
     @Autowired com.example.ecsite.service.payment.PaymentAuthorizationExpiryStore expiries;
@@ -772,51 +773,180 @@ class WarehouseExportPostgresTest {
         return f;
     }
 
-    // ---- C-2: CSV delivery ----
+    // ---- Feature137-B: warehouse file outputs (V102) ----
 
-    @Test void onlyASealedBatchIsDownloadedAndEveryDownloadIsIdenticalAndRecorded() {
-        var date = nextBusinessDate(); var f = card(date); var g = card(date);
-        jdbc.update("update orders set shipping_address_line='千代田1-1, ビル\"A\"' where id=?", g.order());
-        long batch = batch(date);
-        service.export(batch, f.order()); service.export(batch, g.order());
-        authenticate(7, "downloader");
-
-        assertThatThrownBy(() -> csv.download(batch)).isInstanceOf(WarehouseExportCsvService.NotDownloadableException.class);
+    @Test void sealingABatchRecordsItsFileOutputOnceWithFixedNamesAndCounts() {
+        var date = nextBusinessDate(); long batch = batch(date);
+        var plain = card(date); var mixed = mixed(date, 550);
+        service.export(batch, plain.order()); service.export(batch, mixed.order());
+        assertThat(fileOutputs.forBatch(batch)).isEmpty();
+        // The CSV download audit (V87) stays guarded as history.
         rejects("23514", () -> jdbc.update("insert into warehouse_export_downloads(batch_id,admin_account_id,admin_username,line_count,row_count,content_sha256)"
                 + " values (?,7,'x',0,0,sha256('x'))", batch));
-        batches.seal(batch);
+        batches.seal(batch); batches.seal(batch);
 
-        var first = csv.download(batch); var second = csv.download(batch);
-        assertThat(second.content()).isEqualTo(first.content());
-        assertThat(first.lineCount()).isEqualTo(2);
-        assertThat(first.rowCount()).isEqualTo(2);
-        assertThat(first.filename()).isEqualTo("warehouse-export-" + date.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE) + "-" + batch + ".csv");
-        assertThat(java.util.Arrays.copyOf(first.content(), 3)).containsExactly(0xEF, 0xBB, 0xBF);
-        String text = new String(first.content(), 3, first.content().length - 3, java.nio.charset.StandardCharsets.UTF_8);
-        var rows = text.split("\r\n");
-        assertThat(rows).hasSize(3);
-        assertThat(rows[0]).isEqualTo(WarehouseExportCsvService.HEADER);
-        String day = date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"));
-        assertThat(rows[1]).isEqualTo(batch + "," + day + "," + f.order() + ",1,山田 太郎,100-0001,東京都,千代田区,千代田1-1,0312345678,"
-                + jdbc.queryForObject("select product_id from order_items where id=?", Long.class, f.item()) + ",ordered,2");
-        assertThat(rows[2]).contains(",\"千代田1-1, ビル\"\"A\"\"\",");
-        var recorded = batches.downloads(batch);
-        assertThat(recorded).hasSize(2);
-        assertThat(recorded).extracting(WarehouseExportBatchStore.DownloadRecord::sha256).containsOnly(recorded.getFirst().sha256());
-        assertThat(recorded.getFirst().adminUsername()).isEqualTo("downloader");
-        rejects("55000", () -> jdbc.update("update warehouse_export_downloads set admin_username='other' where batch_id=?", batch));
-        rejects("55000", () -> jdbc.update("delete from warehouse_export_downloads where batch_id=?", batch));
-        assertThat(batches.list(1000)).anySatisfy(listed -> {
-            assertThat(listed.batch().id()).isEqualTo(batch);
-            assertThat(listed.downloads()).isEqualTo(2);
-            assertThat(listed.currentLines()).isEqualTo(2);
+        var output = fileOutputs.forBatch(batch).orElseThrow();
+        String basic = date.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        assertThat(output.kind()).isEqualTo(WarehouseFileOutputStore.Kind.REGULAR);
+        assertThat(output.state()).isEqualTo(WarehouseFileOutputStore.State.PENDING);
+        assertThat(output.outputBatchId()).isEqualTo(String.valueOf(batch));
+        assertThat(output.businessDate()).isEqualTo(date);
+        assertThat(output.headerFilename()).isEqualTo("warehouse-header-" + basic + "-" + batch + ".csv");
+        assertThat(output.detailFilename()).isEqualTo("warehouse-detail-" + basic + "-" + batch + ".csv");
+        assertThat(output.headerRows()).isEqualTo(2);
+        assertThat(output.detailRows()).isEqualTo(6);
+        assertThat(output.attempts()).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from warehouse_file_outputs where batch_id=?", Integer.class, batch)).isEqualTo(1);
+
+        // An empty batch gets an output too (header-only files, decision C).
+        long empty = batch(nextBusinessDate()); batches.seal(empty);
+        assertThat(fileOutputs.forBatch(empty).orElseThrow()).satisfies(o -> {
+            assertThat(o.headerRows()).isZero(); assertThat(o.detailRows()).isZero();
         });
+
+        // Only the database creates outputs, once per source, and what an output is never changes.
+        rejects("23505", () -> jdbc.update("insert into warehouse_file_outputs(kind,batch_id,output_batch_id,business_date,header_filename,"
+                + "detail_filename,header_row_count,detail_row_count,next_attempt_at,created_at) values ('REGULAR',?,'1',now(),'a','b',0,0,now(),now())", batch));
+        long open = batch(nextBusinessDate());
+        rejects("23514", () -> jdbc.update("insert into warehouse_file_outputs(kind,batch_id,output_batch_id,business_date,header_filename,"
+                + "detail_filename,header_row_count,detail_row_count,next_attempt_at,created_at) values ('REGULAR',?,'1',now(),'a','b',0,0,now(),now())", open));
+        rejects("55000", () -> jdbc.update("update warehouse_file_outputs set header_filename='x.csv' where id=?", output.id()));
+        rejects("55000", () -> jdbc.update("update warehouse_file_outputs set detail_row_count=1 where id=?", output.id()));
+        rejects("23514", () -> jdbc.update("update warehouse_file_outputs set state='WRITTEN', attempts=attempts+1 where id=?", output.id()));
+        rejects("23514", () -> jdbc.update("update warehouse_file_outputs set state='FAILED', last_error='x' where id=?", output.id()));
+        rejects("55000", () -> jdbc.update("update warehouse_file_outputs set attempts=attempts+2 where id=?", output.id()));
+        rejects("55000", () -> jdbc.update("delete from warehouse_file_outputs where id=?", output.id()));
+        // A plain TRUNCATE is already refused by the retries foreign key (0A000); together, the triggers refuse it.
+        rejects("0A000", () -> jdbc.execute("truncate warehouse_file_outputs"));
+        rejects("55000", () -> jdbc.execute("truncate warehouse_file_outputs, warehouse_file_output_retries"));
+        rejects("55000", () -> jdbc.execute("truncate warehouse_file_output_retries"));
     }
 
-    @Test void downloadRequiresAnAdministrator() {
-        var date = nextBusinessDate(); card(date); long batch = runner(date).run(date).batchId();
-        assertThatThrownBy(() -> csv.download(batch)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
-        assertThat(batches.downloads(batch)).isEmpty();
+    @Test void aPassWritesBothFilesOnceAndRecordsTheirDigests(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        var writer = fileService(dir, 3);
+        var date = nextBusinessDate(); long batch = batch(date);
+        var f = mixed(date, 550);
+        service.export(batch, f.order()); batches.seal(batch);
+        long id = fileOutputs.forBatch(batch).orElseThrow().id();
+
+        drain(writer, id);
+
+        var output = fileOutputs.find(id).orElseThrow();
+        assertThat(output.state()).isEqualTo(WarehouseFileOutputStore.State.WRITTEN);
+        assertThat(output.attempts()).isEqualTo(1);
+        assertThat(output.writtenAt()).isNotNull();
+        var expected = fileSource.forBatch(batch);
+        byte[] header = java.nio.file.Files.readAllBytes(dir.resolve("out").resolve(output.headerFilename()));
+        byte[] detail = java.nio.file.Files.readAllBytes(dir.resolve("out").resolve(output.detailFilename()));
+        assertThat(header).isEqualTo(expected.headerFile().content());
+        assertThat(detail).isEqualTo(expected.detailFile().content());
+        assertThat(output.headerSha256()).isEqualTo(java.util.HexFormat.of().formatHex(WarehouseExportCsvService.sha256(header)));
+        assertThat(output.detailSha256()).isEqualTo(java.util.HexFormat.of().formatHex(WarehouseExportCsvService.sha256(detail)));
+        try (var left = java.nio.file.Files.list(dir.resolve("work"))) { assertThat(left).isEmpty(); }
+
+        // WRITTEN is final: never written again, never re-output.
+        writer.runPass();
+        assertThat(fileOutputs.find(id).orElseThrow().attempts()).isEqualTo(1);
+        rejects("55000", () -> jdbc.update("update warehouse_file_outputs set state='PENDING' where id=?", id));
+        var admin = com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 7L, "first");
+        authenticate(admin.id(), admin.username());
+        assertThatThrownBy(() -> fileOutputs.retry(id)).isInstanceOf(WarehouseFileOutputStore.NotRetryableException.class);
+        rejects("55000", () -> jdbc.update("insert into warehouse_file_output_retries(output_id,admin_account_id,admin_username,previous_attempts,requested_at)"
+                + " values (?,?,?,0,now())", id, admin.id(), admin.username()));
+    }
+
+    @Test void aConflictingFileFailsTheAttemptsAndAnAdministratorReOutputsIt(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        var writer = fileService(dir, 2);
+        var date = nextBusinessDate(); long batch = batch(date);
+        var f = card(date);
+        service.export(batch, f.order()); batches.seal(batch);
+        var output = fileOutputs.forBatch(batch).orElseThrow();
+        var conflicting = dir.resolve("out").resolve(output.detailFilename());
+        java.nio.file.Files.writeString(conflicting, "other");
+
+        drain(writer, output.id());
+        var first = fileOutputs.find(output.id()).orElseThrow();
+        assertThat(first.state()).isEqualTo(WarehouseFileOutputStore.State.PENDING);
+        assertThat(first.attempts()).isEqualTo(1);
+        assertThat(first.lastError()).contains("上書きしません").contains(output.detailFilename());
+        assertThat(first.nextAttemptAt()).isAfter(first.lastAttemptedAt());
+        assertThat(java.nio.file.Files.readString(conflicting)).isEqualTo("other");
+        assertThat(java.nio.file.Files.exists(dir.resolve("out").resolve(output.headerFilename()))).isFalse();
+
+        // Not retried before the retry delay; the last attempt makes it FAILED.
+        writer.runPass();
+        assertThat(fileOutputs.find(output.id()).orElseThrow().attempts()).isEqualTo(1);
+        jdbc.update("update warehouse_file_outputs set next_attempt_at=next_attempt_at-interval '1 hour' where id=?", output.id());
+        drain(writer, output.id());
+        var failed = fileOutputs.find(output.id()).orElseThrow();
+        assertThat(failed.state()).isEqualTo(WarehouseFileOutputStore.State.FAILED);
+        assertThat(failed.attempts()).isEqualTo(2);
+        rejects("55000", () -> jdbc.update("update warehouse_file_outputs set state='PENDING' where id=?", output.id()));
+
+        // Re-output: an administrator only, recorded, then written by the next pass once the conflict is resolved.
+        assertThatThrownBy(() -> fileOutputs.retry(output.id())).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        rejects("42501", () -> jdbc.update("insert into warehouse_file_output_retries(output_id,admin_account_id,admin_username,previous_attempts,requested_at)"
+                + " values (?,?,'nobody',0,now())", output.id(), Long.MAX_VALUE - 1));
+        var admin = com.example.ecsite.support.EmergencyShippingFixtures.ensurePermittedAdmin(jdbc, 7L, "first");
+        authenticate(admin.id(), admin.username());
+        var reset = fileOutputs.retry(output.id());
+        assertThat(reset.state()).isEqualTo(WarehouseFileOutputStore.State.PENDING);
+        assertThat(reset.attempts()).isZero();
+        assertThat(reset.lastError()).isNull();
+        assertThat(fileOutputs.retries(output.id())).singleElement().satisfies(r -> {
+            assertThat(r.adminUsername()).isEqualTo("first");
+            assertThat(r.previousAttempts()).isEqualTo(2);
+            assertThat(r.previousError()).contains("上書きしません");
+        });
+        rejects("55000", () -> jdbc.update("update warehouse_file_output_retries set admin_username='x' where output_id=?", output.id()));
+        rejects("55000", () -> jdbc.update("delete from warehouse_file_output_retries where output_id=?", output.id()));
+
+        java.nio.file.Files.delete(conflicting);
+        drain(writer, output.id());
+        assertThat(fileOutputs.find(output.id()).orElseThrow().state()).isEqualTo(WarehouseFileOutputStore.State.WRITTEN);
+        assertThat(java.nio.file.Files.readAllBytes(conflicting)).isEqualTo(fileSource.forBatch(batch).detailFile().content());
+    }
+
+    @Test void anEmergencyShippingRecordsItsOutputAndThePassWritesIt(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        var writer = fileService(dir, 3);
+        var f = mixed(nextBusinessDate(), 550);
+        adminPrepare(f.order());
+        long record = jdbc.queryForObject("select id from emergency_shipping_preparations where order_id=?", Long.class, f.order());
+        var output = fileOutputs.forOrder(f.order()).orElseThrow();
+        assertThat(output.kind()).isEqualTo(WarehouseFileOutputStore.Kind.EMERGENCY);
+        assertThat(output.outputBatchId()).isEqualTo("E" + record);
+        assertThat(output.headerFilename()).endsWith("-E" + record + ".csv");
+        assertThat(output.headerRows()).isEqualTo(1);
+        assertThat(output.detailRows()).isEqualTo(4);
+
+        drain(writer, output.id());
+        assertThat(fileOutputs.find(output.id()).orElseThrow().state()).isEqualTo(WarehouseFileOutputStore.State.WRITTEN);
+        var expected = fileSource.forEmergency(record);
+        assertThat(java.nio.file.Files.readAllBytes(dir.resolve("out").resolve(output.headerFilename())))
+                .isEqualTo(expected.headerFile().content());
+        assertThat(java.nio.file.Files.readAllBytes(dir.resolve("out").resolve(output.detailFilename())))
+                .isEqualTo(expected.detailFile().content());
+    }
+
+    WarehouseFileOutputService fileService(java.nio.file.Path dir, int maxAttempts) {
+        try {
+            java.nio.file.Files.createDirectories(dir.resolve("out")); java.nio.file.Files.createDirectories(dir.resolve("work"));
+        } catch (java.io.IOException e) { throw new java.io.UncheckedIOException(e); }
+        var properties = new com.example.ecsite.config.WarehouseFileProperties(false, dir.resolve("out").toString(),
+                dir.resolve("work").toString(), java.time.Duration.ofMinutes(1), java.time.Duration.ofSeconds(10), maxAttempts,
+                java.time.Duration.ofMinutes(5), 100);
+        return new WarehouseFileOutputService(fileOutputs, fileSource, new WarehouseFileWriter(), properties);
+    }
+
+    /** Runs passes until the output has been attempted once more (other tests' outputs are written as well). */
+    void drain(WarehouseFileOutputService writer, long outputId) {
+        int before = fileOutputs.find(outputId).orElseThrow().attempts();
+        for (int pass = 0; pass < 20; pass++) {
+            writer.runPass();
+            var now = fileOutputs.find(outputId).orElseThrow();
+            if (now.attempts() != before || now.state() != WarehouseFileOutputStore.State.PENDING) return;
+        }
+        throw new AssertionError("output " + outputId + " was not attempted");
     }
 
     // ---- C-2: shipment must match the export ----
