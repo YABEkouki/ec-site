@@ -143,6 +143,14 @@ public class AdminOrderController {
         this.emergencyShipping = emergencyShipping;
     }
 
+    private com.example.ecsite.service.emergency.EmergencyShippingCsvService emergencyShippingCsv;
+
+    /** Feature136-C2. Spring always injects it; hand-built unit fixtures predate it and show no CSV downloads. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setEmergencyShippingCsv(com.example.ecsite.service.emergency.EmergencyShippingCsvService emergencyShippingCsv) {
+        this.emergencyShippingCsv = emergencyShippingCsv;
+    }
+
     private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
     /** Feature135-A2. Spring always injects it; hand-built unit fixtures predate it and show no expiry. */
     @org.springframework.beans.factory.annotation.Autowired
@@ -279,6 +287,8 @@ public class AdminOrderController {
         model.addAttribute("shippingPreparationView", shippingPreparationViewFactory.create(order));
         model.addAttribute("emergencyShipping", emergencyShipping == null ? null
                 : emergencyShipping.find(order.getId()).orElse(null));
+        model.addAttribute("emergencyShippingCsvDownloads", emergencyShippingCsv == null ? List.of()
+                : emergencyShippingCsv.downloads(order.getId()));
         model.addAttribute("emergencyShippingAllowed", emergencyShipping != null
                 && emergencyShipping.isAllowed(currentAdminId()));
 

@@ -428,6 +428,26 @@
             </th:block>
             </th:block>
         </dl>
+        <div th:if="${emergencyShipping != null}" id="emergency-shipping-csv">
+            <h3>緊急出荷用CSV（倉庫向け）</h3>
+            <p>この注文は14:05の倉庫向け注文データ出力の対象外です。14:05と同じ形式のCSVをダウンロードし、倉庫へ個別に連絡してください。
+                ダウンロードはすべて記録されます。</p>
+            <form th:action="@{/admin/orders/{id}/emergency-shipping/csv(id=${order.id})}" method="post">
+                <button type="submit" id="emergency-shipping-csv-download">緊急出荷用CSVをダウンロード</button>
+            </form>
+            <p th:if="${#lists.isEmpty(emergencyShippingCsvDownloads)}" id="emergency-shipping-csv-none">まだダウンロードされていません。</p>
+            <table th:unless="${#lists.isEmpty(emergencyShippingCsvDownloads)}" id="emergency-shipping-csv-downloads">
+                <thead><tr><th>ダウンロード日時</th><th>管理者</th><th>行数</th><th>ファイル名</th></tr></thead>
+                <tbody>
+                <tr th:each="d : ${emergencyShippingCsvDownloads}">
+                    <td th:text="${#temporals.format(d.downloadedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${d.adminUsername}"></td>
+                    <td th:text="${d.rowCount}"></td>
+                    <td th:text="${d.filename}"></td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
         <th:block th:if="${shippingPreparationView.canStart()}">
         <p th:unless="${emergencyShippingAllowed}" id="emergency-shipping-not-allowed">
             発送準備（緊急出荷）は、緊急出荷権限のある管理者だけが開始できます。

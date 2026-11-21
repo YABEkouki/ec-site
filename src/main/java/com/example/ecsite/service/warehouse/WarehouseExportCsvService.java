@@ -34,7 +34,8 @@ public class WarehouseExportCsvService {
         public NotDownloadableException(String message) { super(message); }
     }
 
-    private record Row(long batchId, LocalDate businessDate, long orderId, int itemNo, String name, String postalCode,
+    /** One CSV row. The batch ID is text so that Feature136 emergency CSVs can use 'E' + record id. */
+    public record Row(String batchId, LocalDate businessDate, long orderId, int itemNo, String name, String postalCode,
             String prefecture, String city, String addressLine, String phone, long productId, String productName, int quantity) {}
 
     private final JdbcTemplate jdbc;
@@ -76,17 +77,17 @@ public class WarehouseExportCsvService {
             cross join lateral jsonb_array_elements(l.items) with ordinality as e(i,n)
             where l.batch_id=?
             order by l.order_id, e.n
-            """, (r, n) -> new Row(r.getLong("batch_id"), r.getObject("business_date", LocalDate.class), r.getLong("order_id"),
+            """, (r, n) -> new Row(String.valueOf(r.getLong("batch_id")), r.getObject("business_date", LocalDate.class), r.getLong("order_id"),
                 r.getInt("item_no"), r.getString("shipping_name"), r.getString("shipping_postal_code"),
                 r.getString("shipping_prefecture"), r.getString("shipping_city"), r.getString("shipping_address_line"),
                 r.getString("shipping_phone"), r.getLong("product_id"), r.getString("product_name"), r.getInt("quantity")),
             batchId);
     }
 
-    static byte[] render(List<Row> rows) {
+    public static byte[] render(List<Row> rows) {
         var csv = new StringBuilder(HEADER).append("\r\n");
         for (var r : rows) {
-            csv.append(r.batchId()).append(',').append(DATE.format(r.businessDate())).append(',').append(r.orderId())
+            csv.append(escape(r.batchId())).append(',').append(DATE.format(r.businessDate())).append(',').append(r.orderId())
                     .append(',').append(r.itemNo()).append(',').append(escape(r.name())).append(',')
                     .append(escape(r.postalCode())).append(',').append(escape(r.prefecture())).append(',')
                     .append(escape(r.city())).append(',').append(escape(r.addressLine())).append(',')
@@ -108,7 +109,7 @@ public class WarehouseExportCsvService {
         return value;
     }
 
-    private static byte[] sha256(byte[] content) {
+    public static byte[] sha256(byte[] content) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(content);
         } catch (NoSuchAlgorithmException impossible) {
@@ -116,7 +117,7 @@ public class WarehouseExportCsvService {
         }
     }
 
-    private static AdminUserDetails requireAdmin() {
+    public static AdminUserDetails requireAdmin() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()
                 || authentication.getAuthorities().stream().noneMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()))
