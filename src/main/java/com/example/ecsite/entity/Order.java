@@ -320,6 +320,16 @@ public class Order {
                 && WAREHOUSE_EXPORT_PREPARER.equals(shippingPreparationStartedByUsername);
     }
 
+    /**
+     * Feature138-A: a preparation the warehouse shipment import may ship from: the warehouse export, or an
+     * administrator (emergency shipping). Whether the administrator preparation has its emergency record is
+     * checked by the shipping services and by the database (V103), not here.
+     */
+    public boolean isShippingPreparedForSystemShipment() {
+        return isShippingPreparedByWarehouseExport() || (shippingPreparationStartedAt != null
+                && validShipmentActor(shippingPreparationStartedByAccountId, shippingPreparationStartedByUsername));
+    }
+
     /** Fixed shipper name of a shipment recorded by the warehouse shipment import (account id is NULL; V89). */
     public static final String WAREHOUSE_SHIPMENT_IMPORTER = "WAREHOUSE_SHIPMENT_IMPORT";
 
@@ -397,8 +407,8 @@ public class Order {
         if (at == null || !isValidShipmentActor(actorId, username)) {
             throw new IllegalArgumentException("有効な発送日時と管理者情報が必要です。");
         }
-        if (isWarehouseShipmentImportActor(actorId, username) && !isShippingPreparedByWarehouseExport()) {
-            throw new IllegalStateException("倉庫出力で出荷準備に移った注文だけを倉庫出荷取込みで発送できます。");
+        if (isWarehouseShipmentImportActor(actorId, username) && !isShippingPreparedForSystemShipment()) {
+            throw new IllegalStateException("倉庫出力または緊急出荷で出荷準備に移った注文だけを倉庫出荷取込みで発送できます。");
         }
         if (status != sourceStatus) throw new InvalidOrderStatusException("この注文状態では発送できません。");
         if (!hasCompleteShippingPreparation()) throw new IllegalStateException("有効な発送準備情報が必要です。");

@@ -82,7 +82,8 @@ public class CaptureShipmentOperations {
     /**
      * Feature132-A: ships an exported order as the system (warehouse shipment import), with no logged-in
      * administrator. Only the warehouse package can hold a {@link WarehouseShipmentActor}; the order must have
-     * been prepared by the warehouse export and must still match its export line (V87/V89 re-check both).
+     * been prepared by the warehouse export and must still match its export line (V87/V89 re-check both), or
+     * (Feature138-A) be emergency-shipped and match its emergency record (V103).
      */
     public PaymentCaptureStart startAsWarehouseImport(Long orderId, WarehouseShipmentActor actor) {
         if (orderId == null || orderId <= 0) throw new IllegalArgumentException("正の注文IDが必要です。");
@@ -103,7 +104,8 @@ public class CaptureShipmentOperations {
         if (order.getStatus() != OrderStatus.ORDERED && order.getStatus() != OrderStatus.SHIPPED) throw recovery(orderId);
         if (order.getStatus()==OrderStatus.ORDERED) paymentGuard.requireNoOrderChange(order);
         guard.requirePrepared(order);
-        if (actor.system() && (!order.isShippingPreparedByWarehouseExport() || exportGuard == null)) throw recovery(orderId);
+        // Feature138-A: the system ships an exported order or an emergency-shipped order (V89/V103).
+        if (actor.system() && (exportGuard == null || !exportGuard.allowsSystemShipment(order))) throw recovery(orderId);
         LockedData data = load(order, null);
         PaymentOperationSnapshot saved = null;
         if (order.getStatus() == OrderStatus.SHIPPED) {
@@ -119,7 +121,7 @@ public class CaptureShipmentOperations {
                     ? PaymentStartDisposition.REUSED : PaymentStartDisposition.ALREADY_APPLIED);
         }
         Payment payment = data.payments().stream().filter(p -> p.getId().equals(decision.paymentId())).findFirst().orElseThrow();
-        // Feature131: an exported order is captured only on the payment the warehouse export recorded.
+        // Feature131/138: an exported or emergency-shipped order is captured only on the payment the warehouse received.
         if (exportGuard != null && !exportGuard.matchesExport(order, payment.getId())) throw recovery(orderId);
         // Feature135: an expired authorization cannot be captured; refuse before recording the shipment (V93 re-checks).
         if (expiries != null) expiries.requireValidForCapture(payment.getId());

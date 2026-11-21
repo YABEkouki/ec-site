@@ -89,6 +89,8 @@ class AdminEmergencyShippingQueriesPostgresTest {
         var before = queries.summary();
         Admin admin = EmergencyShippingFixtures.permittedAdmin(jdbc, "c3-list");
         long pending = order(), failed = order(), written = order(), shipped = order(), notEmergency = order();
+        // Feature138-A (V103): this order has no card payment, so it is emergency-shipped as paid and ships without a capture.
+        jdbc.update("update orders set status='PAID', paid_at=localtimestamp where id=?", shipped);
         for (long id : List.of(pending, failed, written, shipped)) {
             EmergencyShippingFixtures.prepare(jdbc, id, admin, null, null);
         }

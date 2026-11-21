@@ -62,7 +62,7 @@ public class CaptureShipmentPolicy {
         }
         if(!Objects.equals(order.getShipmentCapturePaymentId(),payment.getId()) || order.getShippedAt()==null
                 || !Order.isValidShipmentActor(order.getShippedByAccountId(),order.getShippedByUsername())
-                || (order.isShippedByWarehouseImport() && !order.isShippingPreparedByWarehouseExport()))
+                || (order.isShippedByWarehouseImport() && !order.isShippingPreparedForSystemShipment()))
             return recovery(Reason.INVALID_SHIPMENT);
         var candidates=history.stream().filter(t -> t.getTransactionType()==PaymentTransactionType.CAPTURE
                 && Objects.equals(t.getPayment().getId(),payment.getId())).toList();

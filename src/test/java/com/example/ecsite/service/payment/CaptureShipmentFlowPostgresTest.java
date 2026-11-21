@@ -222,7 +222,8 @@ class CaptureShipmentFlowPostgresTest {
     void unsafeOrLegacyDataNeverTriggersGatewayPost(String mode) {
         Fixture f=fixture();
         if(mode.equals("legacy-pending"))tx(() -> {transactions.saveAndFlush(new PaymentTransaction(em.find(Payment.class,f.payment()),PaymentTransactionType.CAPTURE,200,0,UUID.randomUUID().toString(),now()));return null;});
-        else if(mode.equals("legacy-shipped"))jdbc.update("update orders set status='SHIPPED',shipped_at=localtimestamp where id=?",f.order());
+        else if(mode.equals("legacy-shipped"))// Feature138-A (V103): an emergency-shipped card order ships with its capture payment; here no capture operation exists.
+            jdbc.update("update orders set status='SHIPPED',shipped_at=localtimestamp,shipped_by_account_id=9,shipped_by_username='shipper',shipment_capture_payment_id=? where id=?",f.payment(),f.order());
         else {var first=begin(f);if(mode.equals("failed"))results.apply(first.snapshot(),new CaptureResult(CaptureResultStatus.FAILED,f.provider(),"failed","reason"));
             if(mode.equals("duplicate"))tx(() -> {transactions.saveAndFlush(new PaymentTransaction(em.find(Payment.class,f.payment()),PaymentTransactionType.CAPTURE,200,0,UUID.randomUUID().toString(),now()));return null;});
             if(mode.equals("wrong-target"))jdbc.update("update orders set shipment_capture_payment_id=null where id=?",f.order());}

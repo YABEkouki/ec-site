@@ -433,15 +433,18 @@ public final class PaymentSafetyClassifier {
     }
     /**
      * "ADMIN" for an administrator shipment, "SYSTEM" for the warehouse shipment import (Feature132-A; only on an
-     * order the warehouse export prepared), otherwise null. Capture initiator and SHIPPED history must carry it.
+     * order the warehouse export prepared, or since Feature138-A an order an administrator prepared for emergency
+     * shipping, whose record the database requires, V103), otherwise null. Capture initiator and SHIPPED history
+     * must carry it.
      */
     private String shipperType(OrderFacts o) {
         if (positive(o.shippedByAccountId()) && nonblank(o.shippedByUsername()) && o.shippedByUsername().length() <= 100)
             return "ADMIN";
         var p = o.shippingPreparation();
         if (com.example.ecsite.entity.Order.isWarehouseShipmentImportActor(o.shippedByAccountId(), o.shippedByUsername())
-                && p != null && p.startedAt() != null && p.actorId() == null
-                && com.example.ecsite.entity.Order.WAREHOUSE_EXPORT_PREPARER.equals(p.actorUsername()))
+                && p != null && p.startedAt() != null
+                && ((p.actorId() == null && com.example.ecsite.entity.Order.WAREHOUSE_EXPORT_PREPARER.equals(p.actorUsername()))
+                    || (positive(p.actorId()) && nonblank(p.actorUsername()) && p.actorUsername().length() <= 100)))
             return "SYSTEM";
         return null;
     }
