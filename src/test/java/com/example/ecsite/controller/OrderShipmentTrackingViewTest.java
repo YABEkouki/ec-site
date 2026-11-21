@@ -105,4 +105,33 @@ class OrderShipmentTrackingViewTest {
         assertThat(html).contains("発送者", "倉庫出荷取込み", "配送業者・追跡番号", "ヤマト運輸&lt;b&gt;", "1234-5678",
                 "/admin/warehouse-shipments/3", WarehouseShipmentImportLineState.CAPTURE_FAILED.label());
     }
+
+    /** Feature136-C3: a prepared, unshipped order tells the customer why it can no longer be changed. */
+    @Controller static class FrozenView {
+        final boolean frozen;
+        FrozenView(boolean frozen) { this.frozen = frozen; }
+        @GetMapping("/test-frozen") String view(Model model) {
+            var order = new Order(1L, 3000, AT.minusHours(2), AT.plusDays(1).withHour(14).withMinute(0));
+            ReflectionTestUtils.setField(order, "id", 43L);
+            order.setShippingAddress("山田 太郎", "100-0001", "東京都", "千代田区", "千代田1-1", "03-0000-0000");
+            model.addAttribute("order", order); model.addAttribute("statusHistories", List.of());
+            model.addAttribute("shippingAddressHistories", List.of());
+            model.addAttribute("canResumePayment", false); model.addAttribute("requiresPaymentConfirmation", false);
+            model.addAttribute("withinModificationPeriod", !frozen); model.addAttribute("canCancelByUser", !frozen);
+            model.addAttribute("canChangeShippingAddress", !frozen); model.addAttribute("frozenForShippingPreparation", frozen);
+            return "orders/detail";
+        }
+    }
+
+    String frozenHtml(boolean frozen) throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(new FrozenView(frozen)).setViewResolvers(views()).build();
+        return mvc.perform(get("/test-frozen")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    @Test void aPreparedOrderShowsTheFreezeMessageInsteadOfTheActions() throws Exception {
+        assertThat(frozenHtml(true)).contains("order-frozen-for-shipping-preparation", "出荷準備に入ったため、注文の変更・キャンセルはできません。")
+                .doesNotContain("注文内容を変更する", "注文をキャンセルする", "配送先を変更する", "まで変更できます", "この注文の変更受付は終了しました");
+        assertThat(frozenHtml(false)).contains("注文内容を変更する", "注文をキャンセルする", "配送先を変更する")
+                .doesNotContain("出荷準備に入ったため");
+    }
 }

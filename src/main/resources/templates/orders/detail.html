@@ -175,7 +175,11 @@
             カード決済（3Dセキュア認証を含む）の完了後に、注文の変更を受け付けます。
         </p>
 
-        <p th:if="${withinModificationPeriod != true and !order.awaitingAcceptance}">
+        <p th:if="${frozenForShippingPreparation == true}" id="order-frozen-for-shipping-preparation">
+            出荷準備に入ったため、注文の変更・キャンセルはできません。
+        </p>
+
+        <p th:if="${withinModificationPeriod != true and !order.awaitingAcceptance and frozenForShippingPreparation != true}">
             この注文の変更受付は終了しました。
         </p>
 

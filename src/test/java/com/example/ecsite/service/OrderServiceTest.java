@@ -4362,6 +4362,29 @@ class OrderServiceTest {
                 clock);
     }
 
+    /** Feature136-C3: a prepared order (e.g. same-day emergency shipping before the deadline) offers no customer action. */
+    @Test
+    void preparedOrderOffersTheCustomerNoChangeOrCancellationEvenBeforeTheDeadline() {
+        Order order = createOrder(10L, 1000);
+        assertTrue(orderService.isWithinModificationPeriod(order));
+        assertTrue(orderService.canCancelByUser(order));
+        assertTrue(orderService.canChangeShippingAddress(order));
+        assertTrue(orderService.canChangeItemsByUser(order));
+        assertFalse(orderService.isFrozenForShippingPreparation(order));
+
+        order.beginShippingPreparation(LocalDateTime.now(clock), 7L, "admin");
+        assertFalse(orderService.isWithinModificationPeriod(order));
+        assertFalse(orderService.canCancelByUser(order));
+        assertFalse(orderService.canChangeShippingAddress(order));
+        assertFalse(orderService.canChangeItemsByUser(order));
+        assertTrue(orderService.isFrozenForShippingPreparation(order));
+
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "status", OrderStatus.PAID);
+        assertTrue(orderService.isFrozenForShippingPreparation(order));
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "status", OrderStatus.SHIPPED);
+        assertFalse(orderService.isFrozenForShippingPreparation(order));
+    }
+
     private Order createOrder(
             Long userId,
             int totalAmount) {

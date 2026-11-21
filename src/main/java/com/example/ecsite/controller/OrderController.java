@@ -141,6 +141,10 @@ public class OrderController {
                 orderService.canCancelByUser(order));
 
         model.addAttribute(
+                "frozenForShippingPreparation",
+                orderService.isFrozenForShippingPreparation(order));
+
+        model.addAttribute(
                 "canChangeItemsByUser",
                 orderService.canChangeItemsByUser(order));
 

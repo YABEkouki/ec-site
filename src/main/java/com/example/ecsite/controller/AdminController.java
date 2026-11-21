@@ -141,7 +141,24 @@ public class AdminController {
         }
         model.addAttribute("authorizationExpirySummary", authorizationExpirySummary);
 
+        // Feature136-C3: emergency shipping counts; unavailable counts must not break the dashboard.
+        com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Summary emergencyShippingSummary = null;
+        try {
+            if (emergencyShippings != null) emergencyShippingSummary = emergencyShippings.summary();
+        } catch (DataAccessException unavailable) {
+            // Rendered as "unavailable".
+        }
+        model.addAttribute("emergencyShippingSummary", emergencyShippingSummary);
+
         return "admin/index";
+    }
+
+    private com.example.ecsite.service.emergency.AdminEmergencyShippingQueries emergencyShippings;
+
+    /** Feature136-C3. Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setEmergencyShippings(com.example.ecsite.service.emergency.AdminEmergencyShippingQueries emergencyShippings) {
+        this.emergencyShippings = emergencyShippings;
     }
 
     private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
