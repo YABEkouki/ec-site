@@ -44,6 +44,11 @@ public class WarehouseFileOutputStore {
         public boolean failed() { return state == State.FAILED; }
     }
 
+    /** Feature137-C dashboard: failed outputs by kind, and outputs still pending after {@code staleAfter}. */
+    public record Summary(long failedRegular, long failedEmergency, long stalePending) {
+        public long failed() { return failedRegular + failedEmergency; }
+    }
+
     public record Retry(long id, String adminUsername, LocalDateTime requestedAt, int previousAttempts, String previousError) {}
 
     public static class NotRetryableException extends RuntimeException {
@@ -117,6 +122,16 @@ public class WarehouseFileOutputStore {
     public Optional<Output> forOrder(long orderId) {
         return jdbc.query("select " + COLUMNS + " from warehouse_file_outputs where order_id=? order by id desc limit 1",
                 WarehouseFileOutputStore::output, orderId).stream().findFirst();
+    }
+
+    public Summary summary(Duration staleAfter) {
+        return jdbc.queryForObject("""
+                select count(*) filter (where state='FAILED' and kind='REGULAR'),
+                  count(*) filter (where state='FAILED' and kind='EMERGENCY'),
+                  count(*) filter (where state='PENDING' and created_at < %s - make_interval(secs => ?))
+                from warehouse_file_outputs
+                """.formatted(NOW), (r, n) -> new Summary(r.getLong(1), r.getLong(2), r.getLong(3)),
+                (double) staleAfter.toSeconds());
     }
 
     public List<Retry> retries(long outputId) {

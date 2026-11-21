@@ -38,59 +38,8 @@
         <p th:if="${output == null and !batch.open()}">
             このバッチは倉庫向けファイルの出力対象ではありません（ファイル出力を導入する前のバッチです）。
         </p>
-        <th:block th:if="${output != null}">
-            <dl>
-                <dt>状態</dt>
-                <dd>
-                    <span th:text="${output.state.label()}"
-                        th:classappend="${output.state.name() == 'FAILED'} ? 'action-required-warning' : ''"></span>
-                </dd>
-                <dt>ヘッダファイル</dt>
-                <dd><code th:text="${output.headerFilename}"></code>（<span th:text="${output.headerRows}"></span>件）</dd>
-                <dt>明細ファイル</dt>
-                <dd><code th:text="${output.detailFilename}"></code>（<span th:text="${output.detailRows}"></span>行）</dd>
-                <dt>出力日時</dt>
-                <dd th:text="${output.writtenAt == null ? '' : #temporals.format(output.writtenAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
-                <dt>試行回数</dt>
-                <dd th:text="${output.attempts}"></dd>
-                <th:block th:if="${output.state.name() == 'PENDING' and output.attempts > 0}">
-                    <dt>次の試行</dt>
-                    <dd th:text="${#temporals.format(output.nextAttemptAt, 'yyyy/MM/dd HH:mm:ss')}"></dd>
-                </th:block>
-                <th:block th:if="${output.lastError != null}">
-                    <dt>失敗の理由</dt>
-                    <dd th:text="${output.lastError}"></dd>
-                </th:block>
-                <th:block th:if="${output.writtenAt != null}">
-                    <dt>SHA-256（ヘッダ／明細）</dt>
-                    <dd><code th:text="${output.headerSha256}"></code><br><code th:text="${output.detailSha256}"></code></dd>
-                </th:block>
-            </dl>
-            <form th:if="${output.failed()}" th:action="@{/admin/warehouse-file-outputs/{id}/retry(id=${output.id})}" method="post">
-                <button type="submit">再出力する</button>
-            </form>
-            <th:block th:unless="${#lists.isEmpty(outputRetries)}">
-                <h3>再出力の履歴</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>日時</th>
-                            <th>管理者</th>
-                            <th>それまでの試行回数</th>
-                            <th>それまでの失敗理由</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr th:each="r : ${outputRetries}">
-                            <td th:text="${#temporals.format(r.requestedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
-                            <td th:text="${r.adminUsername}"></td>
-                            <td th:text="${r.previousAttempts}"></td>
-                            <td th:text="${r.previousError}"></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </th:block>
-        </th:block>
+        <th:block th:if="${output != null}"
+            th:insert="~{admin/warehouse-exports/fragments/file-output :: output(${output}, ${outputRetries})}"></th:block>
 
         <h2>出力した注文</h2>
         <p th:if="${#lists.isEmpty(lines)}">このバッチで出力した注文はありません。</p>

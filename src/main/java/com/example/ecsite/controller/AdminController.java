@@ -150,10 +150,30 @@ public class AdminController {
         }
         model.addAttribute("emergencyShippingSummary", emergencyShippingSummary);
 
+        // Feature137-C: warehouse file outputs; unavailable counts must not break the dashboard.
+        com.example.ecsite.service.warehouse.WarehouseFileOutputStore.Summary warehouseFileSummary = null;
+        try {
+            if (warehouseFileOutputs != null) warehouseFileSummary = warehouseFileOutputs.summary(WAREHOUSE_FILE_STALE_AFTER);
+        } catch (DataAccessException unavailable) {
+            // Rendered as "unavailable".
+        }
+        model.addAttribute("warehouseFileSummary", warehouseFileSummary);
+
         return "admin/index";
     }
 
     private com.example.ecsite.service.emergency.AdminEmergencyShippingQueries emergencyShippings;
+
+    /** Feature137-C: a warehouse file output still pending this long is shown on the dashboard. */
+    static final java.time.Duration WAREHOUSE_FILE_STALE_AFTER = java.time.Duration.ofMinutes(30);
+
+    private com.example.ecsite.service.warehouse.WarehouseFileOutputStore warehouseFileOutputs;
+
+    /** Feature137-C. Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setWarehouseFileOutputs(com.example.ecsite.service.warehouse.WarehouseFileOutputStore warehouseFileOutputs) {
+        this.warehouseFileOutputs = warehouseFileOutputs;
+    }
 
     /** Feature136-C3. Spring always injects it; hand-built unit fixtures predate it. */
     @org.springframework.beans.factory.annotation.Autowired

@@ -424,6 +424,22 @@ public class Order {
         return shippingPreparationStartedAt;
     }
 
+    /**
+     * Feature137 (decision 8): an ORDERED or PAID order whose shipping preparation has started (14:05 export or
+     * emergency shipping) is shown as 出荷準備中. The status itself is unchanged.
+     */
+    public boolean isShippingPreparationInProgress() {
+        return (status == OrderStatus.ORDERED || status == OrderStatus.PAID) && shippingPreparationStartedAt != null;
+    }
+
+    /** The status as shown to administrators and customers (Feature137: 出荷準備中 while preparing). */
+    public String getStatusDisplayName() {
+        if (isShippingPreparationInProgress()) return SHIPPING_PREPARATION_DISPLAY_NAME;
+        return status == null ? "" : status.getDisplayName();
+    }
+
+    public static final String SHIPPING_PREPARATION_DISPLAY_NAME = "出荷準備中";
+
     public Long getShippingPreparationStartedByAccountId() {
         return shippingPreparationStartedByAccountId;
     }

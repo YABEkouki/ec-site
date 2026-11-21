@@ -151,6 +151,14 @@ public class AdminOrderController {
         this.emergencyShippingCsv = emergencyShippingCsv;
     }
 
+    private com.example.ecsite.service.warehouse.WarehouseFileOutputStore warehouseFileOutputs;
+
+    /** Feature137-C: the warehouse file output of an emergency-shipped order. Hand-built fixtures show none. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setWarehouseFileOutputs(com.example.ecsite.service.warehouse.WarehouseFileOutputStore warehouseFileOutputs) {
+        this.warehouseFileOutputs = warehouseFileOutputs;
+    }
+
     private com.example.ecsite.service.payment.AdminAuthorizationExpiryQueries authorizationExpiries;
     /** Feature135-A2. Spring always injects it; hand-built unit fixtures predate it and show no expiry. */
     @org.springframework.beans.factory.annotation.Autowired
@@ -228,6 +236,10 @@ public class AdminOrderController {
             returnUrlBuilder.queryParam("authorizationExpiry", searchForm.getAuthorizationExpiry());
         }
 
+        if (searchForm.getShippingPreparation() != null) {
+            returnUrlBuilder.queryParam("shippingPreparation", searchForm.getShippingPreparation());
+        }
+
         if (safePage > 0) {
             returnUrlBuilder.queryParam("page", safePage);
         }
@@ -269,6 +281,8 @@ public class AdminOrderController {
 
         model.addAttribute("authorizationExpiryFilters",
                 com.example.ecsite.form.AdminAuthorizationExpiryFilter.values());
+        model.addAttribute("shippingPreparationFilters",
+                com.example.ecsite.form.AdminShippingPreparationFilter.values());
         model.addAttribute("expiryBadges", authorizationExpiries == null ? java.util.Map.of()
                 : authorizationExpiries.badges(orderPage.getContent().stream().map(Order::getId).toList()));
 
@@ -289,6 +303,11 @@ public class AdminOrderController {
                 : emergencyShipping.find(order.getId()).orElse(null));
         model.addAttribute("emergencyShippingCsvDownloads", emergencyShippingCsv == null ? List.of()
                 : emergencyShippingCsv.downloads(order.getId()));
+        var emergencyFileOutput = warehouseFileOutputs == null ? null
+                : warehouseFileOutputs.forOrder(order.getId()).orElse(null);
+        model.addAttribute("emergencyFileOutput", emergencyFileOutput);
+        model.addAttribute("emergencyFileOutputRetries", emergencyFileOutput == null ? List.of()
+                : warehouseFileOutputs.retries(emergencyFileOutput.id()));
         model.addAttribute("emergencyShippingAllowed", emergencyShipping != null
                 && emergencyShipping.isAllowed(currentAdminId()));
 

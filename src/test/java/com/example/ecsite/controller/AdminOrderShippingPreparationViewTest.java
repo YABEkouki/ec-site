@@ -39,6 +39,9 @@ class AdminOrderShippingPreparationViewTest {
     private final com.example.ecsite.service.emergency.EmergencyShippingCsvService emergencyCsv =
             mock(com.example.ecsite.service.emergency.EmergencyShippingCsvService.class);
     private java.util.List<com.example.ecsite.service.emergency.EmergencyShippingCsvService.DownloadRecord> csvDownloads = java.util.List.of();
+    private final com.example.ecsite.service.warehouse.WarehouseFileOutputStore fileOutputs =
+            mock(com.example.ecsite.service.warehouse.WarehouseFileOutputStore.class);
+    private java.util.Optional<com.example.ecsite.service.warehouse.WarehouseFileOutputStore.Output> fileOutput = java.util.Optional.empty();
     private final String returnUrl = "/admin/orders?page=2&size=20&sort=id,desc";
 
     private MockMvc mvc(LocalDateTime now) {
@@ -57,6 +60,9 @@ class AdminOrderShippingPreparationViewTest {
         controller.setEmergencyShipping(emergency);
         when(emergencyCsv.downloads(42L)).thenReturn(csvDownloads);
         controller.setEmergencyShippingCsv(emergencyCsv);
+        when(fileOutputs.forOrder(42L)).thenReturn(fileOutput);
+        when(fileOutputs.retries(9L)).thenReturn(java.util.List.of());
+        controller.setWarehouseFileOutputs(fileOutputs);
         var resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/"); resolver.setSuffix(".html");
         resolver.setTemplateMode("HTML"); resolver.setCharacterEncoding("UTF-8");
@@ -142,7 +148,7 @@ class AdminOrderShippingPreparationViewTest {
     @Test
     void preparationWithoutRecordIsShownAsLegacy() throws Exception {
         order.beginShippingPreparation(DEADLINE, 7L, "admin");
-        assertThat(render(DEADLINE)).contains("旧手動準備（理由なし）").doesNotContain("緊急出荷の理由", "emergency-shipping-csv");
+        assertThat(render(DEADLINE)).contains("旧手動準備（理由なし）").doesNotContain("緊急出荷の理由", "emergency-shipping-file");
     }
 
     // Feature136-C2: the per-order warehouse CSV of an emergency-shipped order and its download history.
@@ -153,22 +159,48 @@ class AdminOrderShippingPreparationViewTest {
                 DEADLINE.plusSeconds(1), com.example.ecsite.service.emergency.EmergencyShippingMode.AFTER_DEADLINE, null, null));
     }
 
+    /** Feature137-C: the file output replaces the CSV download; a failed output offers the re-output. */
     @Test
-    void emergencyRecordOffersTheCsvDownload() throws Exception {
+    void emergencyRecordShowsItsWarehouseFileOutputWithoutAnyDownload() throws Exception {
         emergencyRecord();
-        assertThat(render(DEADLINE)).contains("action=\"/admin/orders/42/emergency-shipping/csv\"", "緊急出荷用CSVをダウンロード",
-                "emergency-shipping-csv-none", "_csrf", "id=\"emergency-shipping-csv-form\"",
-                "getElementById(\"emergency-shipping-csv-form\")", "location.reload()")
-                .doesNotContain("emergency-shipping-csv-downloads");
+        fileOutput = java.util.Optional.of(new com.example.ecsite.service.warehouse.WarehouseFileOutputStore.Output(9L,
+                com.example.ecsite.service.warehouse.WarehouseFileOutputStore.Kind.EMERGENCY, null, 42L, "E1", DEADLINE.toLocalDate(),
+                "warehouse-header-20261016-E1.csv", "warehouse-detail-20261016-E1.csv", 1, 2,
+                com.example.ecsite.service.warehouse.WarehouseFileOutputStore.State.FAILED, 12, DEADLINE, DEADLINE,
+                "<i>出力フォルダーがありません</i>", null, null, null, DEADLINE));
+        assertThat(render(DEADLINE)).contains("emergency-shipping-file", "warehouse-header-20261016-E1.csv",
+                "warehouse-detail-20261016-E1.csv", "出力失敗", "&lt;i&gt;出力フォルダーがありません&lt;/i&gt;",
+                "action=\"/admin/warehouse-file-outputs/9/retry\"", "_csrf")
+                .doesNotContain("<i>出力フォルダーがありません</i>", "emergency-shipping/csv", "location.reload()",
+                        "emergency-shipping-csv-downloads", "emergency-shipping-file-none", "ダウンロードする");
     }
 
     @Test
-    void emergencyCsvDownloadsAreListedEscaped() throws Exception {
+    void anEmergencyRecordedBeforeTheFileOutputSaysSo() throws Exception {
+        emergencyRecord();
+        assertThat(render(DEADLINE)).contains("emergency-shipping-file-none").doesNotContain("/retry");
+    }
+
+    @Test
+    void pastEmergencyCsvDownloadsRemainListedEscapedAsHistory() throws Exception {
         emergencyRecord();
         csvDownloads = java.util.List.of(new com.example.ecsite.service.emergency.EmergencyShippingCsvService.DownloadRecord(
                 5L, "<i>admin</i>", DEADLINE.plusMinutes(3).plusSeconds(4), 2, "emergency-shipping-42-20261016-140304.csv"));
-        assertThat(render(DEADLINE)).contains("emergency-shipping-csv-downloads", "2026/10/16 14:03:04", "&lt;i&gt;admin&lt;/i&gt;",
-                "emergency-shipping-42-20261016-140304.csv").doesNotContain("<i>admin</i>", "emergency-shipping-csv-none");
+        assertThat(render(DEADLINE)).contains("emergency-shipping-csv-downloads", "CSVダウンロード履歴（ファイル出力の導入前）",
+                "2026/10/16 14:03:04", "&lt;i&gt;admin&lt;/i&gt;", "emergency-shipping-42-20261016-140304.csv")
+                .doesNotContain("<i>admin</i>");
+    }
+
+    /** Feature137 decision 8: a prepared ORDERED order is shown as 出荷準備中. */
+    @Test
+    void aPreparedOrderIsShownAsInShippingPreparation() throws Exception {
+        emergencyRecord();
+        assertThat(render(DEADLINE)).contains(">出荷準備中<");
+    }
+
+    @Test
+    void anUnpreparedOrderIsShownWithItsStatus() throws Exception {
+        assertThat(render(DEADLINE)).doesNotContain(">出荷準備中<");
     }
 
     @Test

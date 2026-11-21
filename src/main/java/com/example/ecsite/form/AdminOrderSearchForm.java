@@ -29,6 +29,16 @@ public class AdminOrderSearchForm {
 
     private AdminAuthorizationExpiryFilter authorizationExpiry;
 
+    private AdminShippingPreparationFilter shippingPreparation;
+
+    public AdminShippingPreparationFilter getShippingPreparation() {
+        return shippingPreparation;
+    }
+
+    public void setShippingPreparation(AdminShippingPreparationFilter shippingPreparation) {
+        this.shippingPreparation = shippingPreparation;
+    }
+
     public AdminAuthorizationExpiryFilter getAuthorizationExpiry() {
         return authorizationExpiry;
     }

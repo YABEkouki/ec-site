@@ -113,6 +113,10 @@ public interface OrderRepository
                     )
                   )
               AND (:expiryFiltered = false OR o.id IN :expiryOrderIds)
+              AND (:preparation = 'ANY'
+                    OR (:preparation = 'PREPARING' AND o.shippingPreparationStartedAt IS NOT NULL
+                        AND o.status IN (com.example.ecsite.entity.OrderStatus.ORDERED, com.example.ecsite.entity.OrderStatus.PAID))
+                    OR (:preparation = 'NOT_PREPARING' AND o.shippingPreparationStartedAt IS NULL))
             ORDER BY o.orderedAt DESC, o.id DESC
             """, countQuery = """
             SELECT COUNT(o)
@@ -135,6 +139,10 @@ public interface OrderRepository
                     )
                   )
               AND (:expiryFiltered = false OR o.id IN :expiryOrderIds)
+              AND (:preparation = 'ANY'
+                    OR (:preparation = 'PREPARING' AND o.shippingPreparationStartedAt IS NOT NULL
+                        AND o.status IN (com.example.ecsite.entity.OrderStatus.ORDERED, com.example.ecsite.entity.OrderStatus.PAID))
+                    OR (:preparation = 'NOT_PREPARING' AND o.shippingPreparationStartedAt IS NULL))
             """)
     Page<Order> search(
             @Param("orderId") Long orderId,
@@ -147,13 +155,14 @@ public interface OrderRepository
             @Param("assignedAdminAccountId") Long assignedAdminAccountId,
             @Param("expiryFiltered") boolean expiryFiltered,
             @Param("expiryOrderIds") List<Long> expiryOrderIds,
+            @Param("preparation") String preparation,
             Pageable pageable);
 
-    /** Without the Feature135-A2 authorization expiry filter. */
+    /** Without the Feature135-A2 authorization expiry filter and the Feature137 shipping preparation filter. */
     default Page<Order> search(Long orderId, Long userId, LocalDateTime from, LocalDateTime toExclusive, OrderStatus status,
             List<OrderHandlingStatus> handlingStatuses, String assigneeFilter, Long assignedAdminAccountId, Pageable pageable) {
         return search(orderId, userId, from, toExclusive, status, handlingStatuses, assigneeFilter, assignedAdminAccountId,
-                false, List.of(-1L), pageable);
+                false, List.of(-1L), "ANY", pageable);
     }
 
     @Query("""

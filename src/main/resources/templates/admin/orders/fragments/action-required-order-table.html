@@ -60,7 +60,7 @@
                     <td>
                         <span class="status-badge"
                             th:classappend="' status-' + ${#strings.toLowerCase(item.order.status.name())}"
-                            th:text="${item.order.status.displayName}">
+                            th:text="${item.order.statusDisplayName}">
                         </span>
                     </td>
 

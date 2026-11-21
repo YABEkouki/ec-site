@@ -53,6 +53,9 @@ class AdminControllerTest {
     @MockitoBean
     private com.example.ecsite.service.emergency.AdminEmergencyShippingQueries emergencyShippings;
 
+    @MockitoBean
+    private com.example.ecsite.service.warehouse.WarehouseFileOutputStore warehouseFileOutputs;
+
     @Test
     void indexAddsOrderSummariesToModel() throws Exception {
 
@@ -227,19 +230,43 @@ class AdminControllerTest {
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         var auth = authentication(new UsernamePasswordAuthenticationToken(adminUser, adminUser.getPassword(), adminUser.getAuthorities()));
         when(emergencyShippings.summary()).thenReturn(
-                new com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Summary(4, 2));
+                new com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Summary(4));
         String html = mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-        org.assertj.core.api.Assertions.assertThat(html).contains("緊急出荷・未出荷", "緊急出荷・CSV未ダウンロード（未出荷）",
-                "/admin/emergency-shipments?from=&amp;to=&amp;shipment=UNSHIPPED&amp;csv=ALL",
-                "/admin/emergency-shipments?from=&amp;to=&amp;shipment=UNSHIPPED&amp;csv=NOT_DOWNLOADED");
-        org.assertj.core.api.Assertions.assertThat(html).containsPattern("<strong>4</strong>")
-                .containsPattern("action-required-danger\">2<");
+        org.assertj.core.api.Assertions.assertThat(html).contains("緊急出荷・未出荷",
+                "/admin/emergency-shipments?from=&amp;to=&amp;shipment=UNSHIPPED&amp;file=ALL")
+                .doesNotContain("CSV未ダウンロード", "csv=");
+        org.assertj.core.api.Assertions.assertThat(html).containsPattern("<strong>4</strong>");
 
         when(emergencyShippings.summary()).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
         String failed = mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
                 .andExpect(model().attribute("emergencyShippingSummary", (Object) null))
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         org.assertj.core.api.Assertions.assertThat(failed).contains("緊急出荷・未出荷");
+    }
+
+    /** Feature137-C: warehouse file output counts (failed by kind, pending over 30 minutes); a failure only hides them. */
+    @Test
+    void indexShowsWarehouseFileOutputCounts() throws Exception {
+        var empty = new ActionRequiredAgingSummary(0L, 0L);
+        when(orderService.getActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getUnassignedActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getMyAssignedActionRequiredAgingSummary(20L)).thenReturn(empty);
+        AdminUserDetails adminUser = new AdminUserDetails(20L, "admin", "password", true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        var auth = authentication(new UsernamePasswordAuthenticationToken(adminUser, adminUser.getPassword(), adminUser.getAuthorities()));
+        when(warehouseFileOutputs.summary(java.time.Duration.ofMinutes(30))).thenReturn(
+                new com.example.ecsite.service.warehouse.WarehouseFileOutputStore.Summary(2, 1, 5));
+        String html = mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        org.assertj.core.api.Assertions.assertThat(html).contains("倉庫ファイル・出力失敗", "（14:05 出力 2件・緊急出荷 1件）",
+                "倉庫ファイル・出力待ち（30分超）", "/admin/warehouse-exports",
+                "/admin/emergency-shipments?from=&amp;to=&amp;shipment=ALL&amp;file=FAILED")
+                .containsPattern("action-required-danger\">3<").containsPattern("action-required-danger\">5<");
+
+        when(warehouseFileOutputs.summary(java.time.Duration.ofMinutes(30)))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
+        mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
+                .andExpect(model().attribute("warehouseFileSummary", (Object) null));
     }
 }
