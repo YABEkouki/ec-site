@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>カードの登録</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body class="flow-page">
+<header th:replace="~{fragments/header :: header}"></header>
+<main class="flow-main">
+<h1>カードの登録</h1>
+<p>登録するカードの情報を入力してください。カード番号は当サイトのサーバーには送られず、決済代行会社（PAY.JP）に登録されます。登録のときに本人認証（3D セキュア）を行います。</p>
+<div id="setup-form" class="flow-payment-form"></div>
+<p class="flow-message-warning" id="setup-error" role="alert"></p>
+<button type="button" id="setup-submit" class="button-primary">このカードを登録する</button>
+<script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
+<script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
+(() => {
+    const button = document.getElementById('setup-submit');
+    const message = document.getElementById('setup-error');
+    const stopped = () => { button.disabled = true; message.textContent = '登録の画面を表示できませんでした。カード一覧からやり直してください。'; };
+    let widgets;
+    try {
+        const payments = PayjpPayments(/*[[${card.publicKey}]]*/ '', {locale: 'ja'});
+        widgets = payments.widgets({clientSecret: /*[[${card.clientSecret}]]*/ ''});
+        widgets.createForm('payment', {paymentMethodOrder: ['card']}).mount('#setup-form');
+    } catch (_) { stopped(); return; }
+    let submitted = false;
+    button.addEventListener('click', async () => {
+        if (submitted) return;
+        submitted = true;
+        button.disabled = true;
+        message.textContent = '';
+        try {
+            const result = await widgets.confirmSetup({return_url: new URL(/*[[@{/mypage/cards/return}]]*/ '', window.location.origin).toString()});
+            if (result && result.error) {
+                // Input errors stay on this page; never expose SDK details, URLs or credentials.
+                submitted = false;
+                button.disabled = false;
+                message.textContent = 'カード情報を確認して、もう一度お試しください。';
+            }
+        } catch (_) {
+            message.textContent = '登録の結果を確認できませんでした。カード一覧で結果をご確認ください。';
+        }
+    });
+})();
+</script>
+<p class="actions"><a th:href="@{/mypage/cards}" class="button button-secondary">カード一覧へ戻る</a></p>
+</main>
+</body></html>

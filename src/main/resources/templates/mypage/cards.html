@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>登録カード</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+    <header th:replace="~{fragments/header :: header}"></header>
+
+    <h1>登録カード</h1>
+
+    <p th:if="${successMessage}" th:text="${successMessage}" class="message-success"></p>
+    <p th:if="${errorMessage}" th:text="${errorMessage}" class="message-error"></p>
+    <p th:if="${unavailableMessage}" th:text="${unavailableMessage}" class="message-error"></p>
+
+    <section th:if="${view != null}">
+        <p>決済のときに選べるクレジットカードです。カード番号は当サイトでは保存せず、決済代行会社（PAY.JP）に登録します。</p>
+        <p th:if="${view.busy}" class="message-error">前回の操作の結果を確認しています。しばらくしてから、もう一度お試しください。</p>
+        <p th:if="${view.defaultMissing}" class="message-error">既定のカードが設定されていません。既定にするカードを選んでください。</p>
+
+        <p th:if="${view.cards.isEmpty()}">登録されたカードはありません。</p>
+
+        <table th:if="${!view.cards.isEmpty()}">
+            <thead>
+                <tr>
+                    <th>カード</th>
+                    <th>有効期限</th>
+                    <th>既定</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="card : ${view.cards}">
+                    <td th:text="${card.brand + ' **** ' + card.last4}"></td>
+                    <td>
+                        <span th:text="${#numbers.formatInteger(card.expMonth, 2)} + '/' + ${card.expYear}"></span>
+                        <span th:if="${card.expired}" class="message-error">（期限切れ）</span>
+                    </td>
+                    <td th:text="${card.defaultCard ? '既定' : '-'}"></td>
+                    <td>
+                        <form th:if="${!card.defaultCard and !view.busy}"
+                              th:action="@{/mypage/cards/{id}/default(id=${card.id})}" method="post">
+                            <button type="submit" class="button button-secondary">既定にする</button>
+                        </form>
+                        <form th:if="${!view.busy}" th:action="@{/mypage/cards/{id}/delete(id=${card.id})}" method="post">
+                            <button type="submit" class="button button-secondary">削除</button>
+                        </form>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <form th:if="${view.canAdd()}" th:action="@{/mypage/cards/new}" method="post">
+            <button type="submit" class="button button-primary">カードを登録する</button>
+        </form>
+        <p th:if="${!view.busy and !view.canAdd()}"
+           th:text="${'登録できるカードは ' + maxCards + ' 枚までです。'}"></p>
+    </section>
+
+    <p class="actions"><a th:href="@{/mypage}" class="button button-secondary">マイページへ戻る</a></p>
+</body>
+</html>

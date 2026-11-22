@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer">
+<script th:attr="nonce=${paymentScriptNonce}">history.replaceState(null, '', window.location.pathname);</script>
+<title>カード登録の確認</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body class="flow-page">
+<header th:replace="~{fragments/header :: header}"></header>
+<main class="flow-main">
+<h1>カード登録の確認</h1>
+<noscript><p>一時的な認証情報を URL から取り除くため、JavaScript を有効にしてください。URL を共有しないでください。</p></noscript>
+<form id="card-complete" th:if="${setupFlowId != null}" th:action="@{/mypage/cards/complete}" method="post">
+<input type="hidden" name="setupFlowId" th:value="${setupFlowId}">
+<p class="flow-message-info">登録の結果を確認しています。</p>
+<button type="submit" class="button-secondary">登録の結果を確認する</button>
+</form>
+<p th:if="${setupFlowId == null}" class="message-error">登録の手続きが見つかりません。</p>
+<script th:attr="nonce=${paymentScriptNonce}">
+(() => { const form = document.getElementById('card-complete'); if (form) form.submit(); })();
+</script>
+<p class="actions"><a th:href="@{/mypage/cards}" class="button button-secondary">カード一覧へ戻る</a></p>
+</main>
+</body></html>
