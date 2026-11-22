@@ -84,3 +84,11 @@ docs/feature132 はないので、ここに要点を残す。
 - WarehouseShipmentImportPostgresTest：E の行の判定（WRITTEN のカード・PAID → PENDING、PENDING / FAILED → FILE_NOT_WRITTEN、管理者が発送済み → ALREADY_SHIPPED、別の注文・存在しない記録・数字のバッチID → NOT_EXPORTED、形式の誤り）、ワーカーによる出荷（システム出荷・Capture・追跡番号・緊急出荷一覧の発送者）、DB ガード。
 - AdminWarehouseShipmentControllerTest（E のバッチID と FILE_NOT_WRITTEN の表示）、AdminEmergencyShippingControllerTest（新規。発送者の表示）、AdminEmergencyShippingQueriesPostgresTest（発送者）、最新版数の 3 テスト（104）。
 - 回帰（2026-11-22）：138-A と同じ 67 クラスに上の新規・変更クラスを加えた 70 クラスがすべて成功（計画 ~/.cache/ec-site-f138/plan-b1.txt、plan-b-regress.txt）。CaptureShipmentFlowPostgresTest も固定の管理者 ID 7 を使うため、ほかのクラスと同じコンテナで実行すると「admin id 7 is already used」で失敗する。単独で実行して成功を確認した。
+
+## 6. 開発環境での確認記録（2026-11-22）
+
+- アプリを `WAREHOUSE_SHIPMENT_IMPORT_ENABLED=true` で起動し、V103・V104 を開発 DB に適用した（v104）。.env は変えていない。
+- 取込んだ CSV（shipped-emergency-test.csv）：E1・E2（注文 24・25。V102 より前の緊急出荷で、出力記録がなく CSV ダウンロード記録がある）、E3・E4（注文 27・28。出力記録 WRITTEN）、`e3`（INVALID_FORMAT）、`E99`（存在しない記録、NOT_EXPORTED）。
+- 結果：E1〜E4 は PENDING → ワーカーが SYSTEM として出荷し、PAY.JP のテストモードで Capture が成功（4 行とも SHIPPED）。拒否の 2 行は想定どおり。取込結果のバッチID の表示（E1〜E4）、管理者・顧客の注文詳細（倉庫出荷取込み、配送業者・追跡番号・出荷日）、緊急出荷一覧の発送者の表示を、ブラウザで確認した（利用者の確認：OK）。
+- 出荷メール：最初は顧客向けメールの送信（`CUSTOMER_NOTIFICATION_ENABLED`、既定 false）を有効にせずに起動したため届かなかった。通知は 4 件とも記録されていた（ORDER_SHIPPED、SYSTEM、warehouseImport=true、PENDING）。`CUSTOMER_NOTIFICATION_ENABLED=true` を加えて再起動したところ、4 件とも mailpit に届き、本文に配送業者・追跡番号・出荷日が入っていることを確認した。同時に、PENDING だった注文 25・27・28 の注文受付メールも送られた。
+- 確認後、アプリは停止した。
