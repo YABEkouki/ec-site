@@ -21,9 +21,16 @@ public class WarehouseShipmentImportQueries {
     public record Listed(Import importRecord, int pending, int shipped, int unconfirmed, int alreadyShipped,
             int actionRequired) {}
 
-    public record Line(long id, int lineNo, String lineText, Long batchId, Long orderId, LocalDate csvShippedOn,
-            String carrier, String trackingNumber, WarehouseShipmentImportLineState state,
-            WarehouseShipmentImportReason reason, int attempts, LocalDateTime processedAt) {}
+    /** {@code emergencyShippingPreparationId} is the record of an 'E' batch id row (Feature138-B). */
+    public record Line(long id, int lineNo, String lineText, Long batchId, Long emergencyShippingPreparationId, Long orderId,
+            LocalDate csvShippedOn, String carrier, String trackingNumber, WarehouseShipmentImportLineState state,
+            WarehouseShipmentImportReason reason, int attempts, LocalDateTime processedAt) {
+        /** The batch id as the warehouse files carry it: "3" for a 14:05 batch, "E3" for an emergency shipping. */
+        public String batchLabel() {
+            if (batchId != null) return batchId.toString();
+            return emergencyShippingPreparationId == null ? "" : "E" + emergencyShippingPreparationId;
+        }
+    }
 
     private final JdbcTemplate jdbc;
 
@@ -52,7 +59,7 @@ public class WarehouseShipmentImportQueries {
     public List<Line> lines(long importId) {
         return jdbc.query("select * from warehouse_shipment_import_lines where import_id=? order by line_no", (r, n) -> new Line(
                 r.getLong("id"), r.getInt("line_no"), r.getString("line_text"), r.getObject("batch_id", Long.class),
-                r.getObject("order_id", Long.class), r.getObject("csv_shipped_on", LocalDate.class), r.getString("carrier"),
+                r.getObject("emergency_shipping_preparation_id", Long.class), r.getObject("order_id", Long.class), r.getObject("csv_shipped_on", LocalDate.class), r.getString("carrier"),
                 r.getString("tracking_number"), WarehouseShipmentImportLineState.valueOf(r.getString("state")),
                 r.getString("reason") == null ? null : WarehouseShipmentImportReason.valueOf(r.getString("reason")),
                 r.getInt("attempts"), r.getObject("processed_at", LocalDateTime.class)), importId);

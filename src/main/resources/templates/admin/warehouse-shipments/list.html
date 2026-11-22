@@ -19,11 +19,12 @@
         <p th:if="${message}" th:text="${message}" class="message-success"></p>
 
         <p>
-            倉庫から届いた出荷済CSVを取り込むと、倉庫へ出力した注文を順に「発送済み」にします（カード決済は売上確定まで行います）。
+            倉庫から届いた出荷済CSVを取り込むと、倉庫へ出力した注文（緊急出荷の注文を含む）を順に「発送済み」にします（カード決済は売上確定まで行います）。
             発送処理はバックグラウンドで行い、発送者は「倉庫出荷取込み」として記録されます。
         </p>
         <p>
-            CSVの形式：UTF-8、1行目は見出し「<span th:text="${header}"></span>」、出荷日は yyyy-MM-dd、
+            CSVの形式：UTF-8、1行目は見出し「<span th:text="${header}"></span>」、
+            バッチIDは14:05の倉庫出力ならバッチ番号（数字）、緊急出荷なら「E＋緊急出荷記録の番号」（例：E3）、出荷日は yyyy-MM-dd、
             1ファイル <span th:text="${maxRows}"></span> 行・1MBまで。同じ内容のファイルは1回だけ取り込まれます。
         </p>
         <p th:unless="${workerEnabled}" class="action-required-warning">

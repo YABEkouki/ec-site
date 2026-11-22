@@ -129,6 +129,7 @@ class AdminEmergencyShippingQueriesPostgresTest {
         assertThat(row.mode()).isEqualTo(EmergencyShippingMode.AFTER_DEADLINE);
         assertThat(row.adminUsername()).isEqualTo(admin.username());
         assertThat(row.reason()).isEqualTo("test fixture");
+        assertThat(row.getShipperLabel()).isEmpty();
         var failedRow = all.rows().stream().filter(r -> r.orderId() == failed).findFirst().orElseThrow();
         assertThat(failedRow.isFileFailed()).isTrue();
         assertThat(failedRow.getFileLabel()).isEqualTo("出力失敗");
@@ -139,6 +140,9 @@ class AdminEmergencyShippingQueriesPostgresTest {
         var shippedRow = all.rows().stream().filter(r -> r.orderId() == shipped).findFirst().orElseThrow();
         assertThat(shippedRow.isShipped()).isTrue();
         assertThat(shippedRow.shippedAt()).isNotNull();
+        // Feature138-B: the shipper of a shipped emergency order (here an administrator).
+        assertThat(shippedRow.shippedByAccountId()).isEqualTo(8L);
+        assertThat(shippedRow.getShipperLabel()).isEqualTo("shipper");
     }
 
     @Test

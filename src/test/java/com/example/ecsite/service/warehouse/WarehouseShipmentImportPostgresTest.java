@@ -47,6 +47,7 @@ class WarehouseShipmentImportPostgresTest {
     @Autowired PaymentReconciliationItemService reconciliation;
     @Autowired WarehouseExportService exports;
     @Autowired WarehouseExportBatchStore batches;
+    @Autowired com.example.ecsite.service.emergency.AdminEmergencyShippingQueries emergencyShippings;
     @Autowired JdbcTemplate jdbc;
     @Autowired OrderRepository orders;
     @Autowired UserRepository users;
@@ -272,7 +273,134 @@ class WarehouseShipmentImportPostgresTest {
                 + "csv_shipped_on,carrier,tracking_number,state) values (?,97,'x',?,?,current_date,'a','1','PENDING')", id, f.batch(), f.order()));
     }
 
+    // ---- Feature138-B: emergency shipping rows ('E' + record id) ----
+
+    @Test void emergencyRowsAreJudgedByTheirEmergencyShippingRecord() {
+        var card = emergency(true, "WRITTEN"); var paid = emergency(false, "WRITTEN");
+        var pending = emergency(true, "PENDING"); var failed = emergency(true, "FAILED");
+        var byAdmin = emergency(false, "WRITTEN");
+        jdbc.update(SHIP_AS_ADMIN, byAdmin.order());
+        var stranger = order(nextBusinessDate(), true);
+        var numeric = emergency(true, "WRITTEN"); var asBatch = emergency(true, "WRITTEN");
+
+        long id = upload(
+                erow(card, card.order(), "ヤマト運輸", "1"),
+                erow(paid, paid.order(), "佐川急便", "2"),
+                erow(pending, pending.order(), "a", "3"),
+                erow(failed, failed.order(), "a", "4"),
+                erow(byAdmin, byAdmin.order(), "a", "5"),
+                erow(card, stranger.order(), "a", "6"),
+                "E999999999999," + numeric.order() + ",2026-11-17,a,7",
+                asBatch.batch() + "," + asBatch.order() + ",2026-11-17,a,8",
+                "e" + numeric.batch() + "," + numeric.order() + ",2026-11-17,a,9",
+                "E0," + numeric.order() + ",2026-11-17,a,10",
+                "E" + numeric.batch() + "x," + numeric.order() + ",2026-11-17,a,11");
+
+        var lines = queries.lines(id);
+        assertThat(lines).extracting(l -> l.state() + (l.reason() == null ? "" : ":" + l.reason())).containsExactly(
+                "PENDING", "PENDING", "REJECTED:FILE_NOT_WRITTEN", "REJECTED:FILE_NOT_WRITTEN", "ALREADY_SHIPPED",
+                "REJECTED:NOT_EXPORTED", "REJECTED:NOT_EXPORTED", "REJECTED:NOT_EXPORTED",
+                "REJECTED:INVALID_FORMAT", "REJECTED:INVALID_FORMAT", "REJECTED:INVALID_FORMAT");
+        assertThat(lines.getFirst()).satisfies(l -> {
+            assertThat(l.batchId()).isNull();
+            assertThat(l.emergencyShippingPreparationId()).isEqualTo(card.batch());
+            assertThat(l.batchLabel()).isEqualTo("E" + card.batch());
+        });
+        // Rejected rows keep only existing references: the record of a wrong order, never an unknown record id.
+        assertThat(lines.get(2).batchLabel()).isEqualTo("E" + pending.batch());
+        assertThat(lines.get(5).emergencyShippingPreparationId()).isEqualTo(card.batch());
+        assertThat(lines.get(6).emergencyShippingPreparationId()).isNull();
+        assertThat(lines.get(6).orderId()).isEqualTo(numeric.order());
+        // A numeric batch id is a 14:05 batch: an emergency-shipped order is not in one.
+        assertThat(lines.get(7).emergencyShippingPreparationId()).isNull();
+        assertThat(lines.get(8).orderId()).isNull();
+        verifyNoInteractions(gateway);
+    }
+
+    @Test void theWorkerShipsEmergencyOrdersAsTheSystem() {
+        var card = emergency(true, "WRITTEN"); var paid = emergency(false, "WRITTEN");
+        when(gateway.capture(any())).thenReturn(new CaptureResult(CaptureResultStatus.CAPTURED, card.provider(), null, null));
+        long id = upload(erow(card, card.order(), "ヤマト運輸", "1"), erow(paid, paid.order(), "佐川急便", "2"));
+
+        assertThat(worker.runPass().processed()).isEqualTo(2);
+
+        assertThat(states(id)).containsExactly("SHIPPED", "SHIPPED");
+        for (var f : List.of(card, paid)) {
+            assertThat(jdbc.queryForMap("select status, shipped_by_account_id, shipped_by_username, shipping_preparation_started_by_account_id "
+                    + "from orders where id=?", f.order()))
+                    .containsEntry("status", "SHIPPED").containsEntry("shipped_by_account_id", null)
+                    .containsEntry("shipped_by_username", Order.WAREHOUSE_SHIPMENT_IMPORTER);
+            assertThat(jdbc.queryForObject("select shipping_preparation_started_by_account_id from orders where id=?", Long.class, f.order()))
+                    .isNotNull();
+        }
+        assertThat(jdbc.queryForObject("select shipment_capture_payment_id from orders where id=?", Long.class, card.order()))
+                .isEqualTo(card.payment());
+        assertThat(jdbc.queryForObject("select status from payment_transactions where payment_id=? and transaction_type='CAPTURE'",
+                String.class, card.payment())).isEqualTo("SUCCEEDED");
+        assertThat(tracking.find(card.order()).map(OrderShipmentTrackingReader.Tracking::trackingNumber)).contains("1");
+        assertThat(tracking.find(paid.order()).map(OrderShipmentTrackingReader.Tracking::trackingNumber)).contains("2");
+        // The emergency shipping list shows the import as the shipper.
+        var today = emergencyShippings.today();
+        var rows = emergencyShippings.list(null, null,
+                com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Shipment.SHIPPED,
+                com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.FileOutput.ALL, 0).rows();
+        assertThat(rows).filteredOn(r -> r.orderId() == card.order()).singleElement()
+                .satisfies(r -> assertThat(r.getShipperLabel()).isEqualTo("倉庫出荷取込み"));
+        assertThat(today).isNotNull();
+        verify(gateway, times(1)).capture(any());
+    }
+
+    @Test void theDatabaseGuardsEmergencyImportLines() {
+        var written = emergency(true, "WRITTEN"); var notWritten = emergency(true, "PENDING");
+        long id = upload(erow(written, written.order(), "ヤマト運輸", "1"));
+        long line = jdbc.queryForObject("select id from warehouse_shipment_import_lines where import_id=?", Long.class, id);
+        String insert = "insert into warehouse_shipment_import_lines(import_id,line_no,line_text,batch_id,emergency_shipping_preparation_id,"
+                + "order_id,csv_shipped_on,carrier,tracking_number,state) values (?,?,'x',?,?,?,current_date,'a','1','PENDING')";
+        // Files not written, a record of another order, or both sources at once are refused.
+        rejects("23514", () -> jdbc.update(insert, id, 90, null, notWritten.batch(), notWritten.order()));
+        rejects("23514", () -> jdbc.update(insert, id, 91, null, written.batch(), notWritten.order()));
+        var exported = sealedExport(true);
+        rejects("23514", () -> jdbc.update(insert, id, 92, exported.batch(), written.batch(), exported.order()));
+        rejects("23514", () -> jdbc.update("insert into warehouse_shipment_import_lines(import_id,line_no,line_text,batch_id,"
+                + "emergency_shipping_preparation_id,order_id,state,reason) values (?,93,'x',?,?,?,'REJECTED','NOT_EXPORTED')",
+                id, exported.batch(), written.batch(), exported.order()));
+        // The record reference is part of the immutable content.
+        rejects("55000", () -> jdbc.update("update warehouse_shipment_import_lines set emergency_shipping_preparation_id=? where id=?",
+                notWritten.batch(), line));
+        rejects("55000", () -> jdbc.update("update warehouse_shipment_import_lines set emergency_shipping_preparation_id=null, batch_id=? "
+                + "where id=?", exported.batch(), line));
+    }
+
     // ---- fixtures ----
+
+    /**
+     * An emergency-shipped order (Feature136) whose warehouse file output (V102) is in {@code fileState}.
+     * {@code batch} holds the emergency shipping record id.
+     */
+    Fixture emergency(boolean card, String fileState) {
+        var f = order(nextBusinessDate(), card);
+        if (!card) paid(f);
+        var at = jdbc.queryForObject("select change_deadline_at+interval '10 minutes' from orders where id=?", LocalDateTime.class, f.order());
+        com.example.ecsite.support.EmergencyShippingFixtures.prepare(jdbc, f.order(),
+                com.example.ecsite.support.EmergencyShippingFixtures.permittedAdmin(jdbc, "f138b"), at, null);
+        long record = jdbc.queryForObject("select id from emergency_shipping_preparations where order_id=?", Long.class, f.order());
+        switch (fileState) {
+            case "WRITTEN" -> jdbc.update("update warehouse_file_outputs set state='WRITTEN', attempts=attempts+1, header_sha256=?, "
+                    + "detail_sha256=? where emergency_shipping_preparation_id=?", new byte[32], new byte[32], record);
+            case "FAILED" -> jdbc.update("update warehouse_file_outputs set state='FAILED', attempts=attempts+1, last_error='disk full' "
+                    + "where emergency_shipping_preparation_id=?", record);
+            default -> { }
+        }
+        assertThat(jdbc.queryForObject("select state from warehouse_file_outputs where emergency_shipping_preparation_id=?",
+                String.class, record)).isEqualTo(fileState);
+        return new Fixture(f.order(), f.payment(), f.provider(), record);
+    }
+
+    /** A shipped CSV row with the emergency batch id of {@code f} ('E' + record id) and the given order. */
+    static String erow(Fixture f, long order, String carrier, String tracking) {
+        return "E" + f.batch() + "," + order + ",2026-11-17," + carrier + "," + tracking;
+    }
+
 
     static final String SHIP_AS_ADMIN = "update orders set status='SHIPPED', shipped_at=timezone('Asia/Tokyo',clock_timestamp()),"
             + "shipped_by_account_id=7, shipped_by_username='admin' where id=?";

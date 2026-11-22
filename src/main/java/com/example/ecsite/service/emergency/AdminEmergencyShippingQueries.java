@@ -34,10 +34,20 @@ public class AdminEmergencyShippingQueries {
         public String getLabel() { return label; }
     }
 
-    /** {@code fileState} is null for an emergency shipping recorded before V102; {@code downloadCount} is V100 history. */
+    /**
+     * {@code fileState} is null for an emergency shipping recorded before V102; {@code downloadCount} is V100 history.
+     * {@code shippedByAccountId} / {@code shippedByUsername} are the shipper (Feature138-B: the import ships as the system).
+     */
     public record Row(long orderId, EmergencyShippingMode mode, LocalDateTime operatedAt, String adminUsername, String reason,
-            String orderStatus, LocalDateTime shippedAt, String fileState, LocalDateTime fileWrittenAt, int downloadCount) {
+            String orderStatus, LocalDateTime shippedAt, Long shippedByAccountId, String shippedByUsername,
+            String fileState, LocalDateTime fileWrittenAt, int downloadCount) {
         public boolean isShipped() { return "SHIPPED".equals(orderStatus); }
+        /** 「倉庫出荷取込み」for a shipment by the warehouse shipment import, otherwise the administrator's name. */
+        public String getShipperLabel() {
+            if (com.example.ecsite.entity.Order.isWarehouseShipmentImportActor(shippedByAccountId, shippedByUsername))
+                return "倉庫出荷取込み";
+            return shippedByUsername == null ? "" : shippedByUsername;
+        }
         public boolean isUnshipped() { return !"SHIPPED".equals(orderStatus) && !"CANCELLED".equals(orderStatus); }
         public String getFileLabel() {
             return fileState == null ? FileOutput.NONE.getLabel() : FileOutput.valueOf(fileState).getLabel();
@@ -84,12 +94,14 @@ public class AdminEmergencyShippingQueries {
         pageArgs.add((long) safePage * PAGE_SIZE);
         List<Row> rows = jdbc.query("""
                 select e.order_id,e.mode,e.created_at,e.admin_username,e.reason,o.status,o.shipped_at,
+                  o.shipped_by_account_id,o.shipped_by_username,
                   f.state as file_state,f.written_at as file_written_at,
                   (select count(*) from emergency_shipping_csv_downloads d where d.order_id=e.order_id)::int as download_count
                 """ + base + " order by e.id desc limit ? offset ?",
                 (r, n) -> new Row(r.getLong("order_id"), EmergencyShippingMode.valueOf(r.getString("mode")),
                         r.getObject("created_at", LocalDateTime.class), r.getString("admin_username"), r.getString("reason"),
-                        r.getString("status"), r.getObject("shipped_at", LocalDateTime.class), r.getString("file_state"),
+                        r.getString("status"), r.getObject("shipped_at", LocalDateTime.class),
+                        r.getObject("shipped_by_account_id", Long.class), r.getString("shipped_by_username"), r.getString("file_state"),
                         r.getObject("file_written_at", LocalDateTime.class), r.getInt("download_count")),
                 pageArgs.toArray());
         return new Result(rows, safePage, total, (long) (safePage + 1) * PAGE_SIZE < total);

@@ -69,7 +69,7 @@
                     <td th:text="${r.adminUsername}"></td>
                     <td style="white-space: pre-wrap" th:text="${r.reason}"></td>
                     <td>
-                        <span th:if="${r.shipped}" th:text="|出荷済み（${#temporals.format(r.shippedAt, 'yyyy/MM/dd HH:mm')}）|"></span>
+                        <span th:if="${r.shipped}" th:text="|出荷済み（${#temporals.format(r.shippedAt, 'yyyy/MM/dd HH:mm')}・${r.shipperLabel}）|"></span>
                         <span th:if="${r.unshipped}">未出荷</span>
                         <span th:if="${!r.shipped and !r.unshipped}" th:text="${r.orderStatus}"></span>
                     </td>

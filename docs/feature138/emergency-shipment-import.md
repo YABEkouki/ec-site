@@ -1,6 +1,6 @@
 # Feature138 出荷実績 CSV の取込で緊急出荷の注文を扱う
 
-状態：138-A 実装中。基準は main 5311492（最新マイグレーション V102）。
+状態：138-A 完了（2026-11-22、main 30eca60、V103）。138-B 実装中。基準は main 5311492（最新マイグレーション V102）。
 
 ## 1. 目的
 
@@ -59,3 +59,28 @@ docs/feature132 はないので、ここに要点を残す。
 - PaymentSafetyClassifierTest、最新版数の 3 テスト（103）。
 - V103 で、緊急出荷した ORDERED の注文を Capture なしで SHIPPED にできなくなったため、SQL で直接発送していたフィクスチャを直した：OrderShippingMetadataPostgresTest（PAID にしてから準備する）、AdminEmergencyShippingQueriesPostgresTest（発送する注文を PAID にしてから準備する）、OrderShippingPreparationPostgresTest.terminalStateRejectsEvenWhenPrepared と CaptureShipmentFlowPostgresTest.unsafeOrLegacyDataNeverTriggersGatewayPost（legacy-shipped）（発送者と Capture の対象 Payment を付けて発送する。後者は Capture 操作がないまま）。
 - 回帰（2026-11-22）：緊急出荷の準備・Capture・出荷・取込に関わる 67 クラスがすべて成功（計画 ~/.cache/ec-site-f138/plan-a1.txt、plan-a-regress.txt）。
+
+## 5. 138-B：取込で E の行を受け付ける（V104）
+
+### 5.1 DB（V104__emergency_shipment_import_lines.sql）
+
+- `warehouse_shipment_import_lines.emergency_shipping_preparation_id`（緊急出荷記録への外部キー）を追加。
+- `chk_warehouse_shipment_import_line_content`：拒否以外の行は、`batch_id` と `emergency_shipping_preparation_id` のちょうど一方を持つ（V90 の無名の CHECK を置き換え）。`chk_warehouse_shipment_import_line_source`：拒否の行も両方は持たない。
+- `f132_import_line_guard`：E の行（PENDING / ALREADY_SHIPPED）は、記録の注文が行の注文と一致し、出力記録が WRITTEN、または出力記録がなく V100 の CSV ダウンロード記録があること。追加した列も内容として変更不可。
+
+### 5.2 アプリ
+
+- WarehouseShipmentImportService：バッチID が `[1-9][0-9]{0,17}` なら 14:05 のバッチ、`E[1-9][0-9]{0,17}` なら緊急出荷記録で判定する（小文字の e、E0 などは INVALID_FORMAT）。緊急出荷の判定は、記録がない・注文が違う → NOT_EXPORTED、出力記録が PENDING / FAILED → FILE_NOT_WRITTEN、出力記録もダウンロード記録もない → NOT_EXPORTED。それ以降（取込済み・注文の状態）は 14:05 の行と同じ。拒否した行には、存在する記録の id だけを残す。
+- WarehouseShipmentImportReason：FILE_NOT_WRITTEN を追加。INVALID_FORMAT の文言に「数字、または E＋数字」を追加。
+- ワーカーは変更なし（138-A で緊急出荷の注文もシステムとして出荷できる）。
+- 画面：取込結果のバッチID を "3" / "E3" で表示（`Line.batchLabel()`）。取込画面の説明に E のバッチID を追加。緊急出荷一覧の出荷状態に発送者（「倉庫出荷取込み」または管理者名）を表示。注文詳細は変更なし（取込で出荷した注文の配送業者・追跡番号は今までどおり表示される）。
+
+### 5.3 テストで確認できないこと
+
+- 出力記録がない緊急出荷（V102 より前）は、V102 のトリガーで必ず出力記録が作られるため、テストでは作れない（トリガーは無効にしない）。開発 DB の E1・E2（注文 24・25）でブラウザ確認する。
+
+### 5.4 テスト
+
+- WarehouseShipmentImportPostgresTest：E の行の判定（WRITTEN のカード・PAID → PENDING、PENDING / FAILED → FILE_NOT_WRITTEN、管理者が発送済み → ALREADY_SHIPPED、別の注文・存在しない記録・数字のバッチID → NOT_EXPORTED、形式の誤り）、ワーカーによる出荷（システム出荷・Capture・追跡番号・緊急出荷一覧の発送者）、DB ガード。
+- AdminWarehouseShipmentControllerTest（E のバッチID と FILE_NOT_WRITTEN の表示）、AdminEmergencyShippingControllerTest（新規。発送者の表示）、AdminEmergencyShippingQueriesPostgresTest（発送者）、最新版数の 3 テスト（104）。
+- 回帰（2026-11-22）：138-A と同じ 67 クラスに上の新規・変更クラスを加えた 70 クラスがすべて成功（計画 ~/.cache/ec-site-f138/plan-b1.txt、plan-b-regress.txt）。CaptureShipmentFlowPostgresTest も固定の管理者 ID 7 を使うため、ほかのクラスと同じコンテナで実行すると「admin id 7 is already used」で失敗する。単独で実行して成功を確認した。

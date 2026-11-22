@@ -72,13 +72,20 @@ class AdminWarehouseShipmentControllerTest {
     void detailShowsEachLineWithItsOutcome() throws Exception {
         when(queries.find(3)).thenReturn(Optional.of(IMPORT));
         when(queries.lines(3)).thenReturn(List.of(
-                new WarehouseShipmentImportQueries.Line(1, 2, "12,1043,2026-11-17,ヤマト運輸,1234", 12L, 1043L,
+                new WarehouseShipmentImportQueries.Line(1, 2, "12,1043,2026-11-17,ヤマト運輸,1234", 12L, null, 1043L,
                         LocalDate.of(2026, 11, 17), "ヤマト運輸", "1234", WarehouseShipmentImportLineState.SHIPPED, null, 1, AT),
-                new WarehouseShipmentImportQueries.Line(2, 3, "<b>x</b>", null, null, null, null, null,
-                        WarehouseShipmentImportLineState.REJECTED, WarehouseShipmentImportReason.INVALID_FORMAT, 0, AT)));
+                new WarehouseShipmentImportQueries.Line(2, 3, "<b>x</b>", null, null, null, null, null, null,
+                        WarehouseShipmentImportLineState.REJECTED, WarehouseShipmentImportReason.INVALID_FORMAT, 0, AT),
+                // Feature138-B: an emergency row shows its batch id as the warehouse files carry it.
+                new WarehouseShipmentImportQueries.Line(3, 4, "E7,2044,2026-11-17,佐川急便,99", null, 7L, 2044L,
+                        LocalDate.of(2026, 11, 17), "佐川急便", "99", WarehouseShipmentImportLineState.REJECTED,
+                        WarehouseShipmentImportReason.FILE_NOT_WRITTEN, 0, AT)));
         mockMvc.perform(get("/admin/warehouse-shipments/3").with(user("admin").roles("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("/admin/orders/1043")))
+                .andExpect(content().string(containsString("<td>12</td>")))
+                .andExpect(content().string(containsString("<td>E7</td>")))
+                .andExpect(content().string(containsString(WarehouseShipmentImportReason.FILE_NOT_WRITTEN.label())))
                 .andExpect(content().string(containsString("発送完了")))
                 .andExpect(content().string(containsString(WarehouseShipmentImportReason.INVALID_FORMAT.label())))
                 .andExpect(content().string(containsString("&lt;b&gt;x&lt;/b&gt;")))

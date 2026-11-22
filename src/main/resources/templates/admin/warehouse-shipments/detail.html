@@ -55,7 +55,7 @@
             <tbody>
                 <tr th:each="line : ${lines}">
                     <td th:text="${line.lineNo}"></td>
-                    <td th:text="${line.batchId}"></td>
+                    <td th:text="${line.batchLabel()}"></td>
                     <td>
                         <a th:if="${line.orderId != null}" th:href="@{/admin/orders/{id}(id=${line.orderId})}" th:text="${line.orderId}"></a>
                     </td>
