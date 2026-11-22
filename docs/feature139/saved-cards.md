@@ -1,6 +1,6 @@
 # Feature139 クレジットカードの登録（保存）
 
-状態：139-A 実装中（2026-11-22、ブランチ feature/139-a-saved-cards-mypage、V105）。基準は main eb19697（最新マイグレーション V104）。
+状態：139-A 完了（2026-11-22、V105、ブラウザで確認した（9 章））。139-B・139-C は未着手。基準は main eb19697（最新マイグレーション V104）。
 
 ## 1. 目的
 
@@ -45,7 +45,7 @@
 3. 顧客のない決済にはカードを指定できない（422）。単独で作ったカードは、あとから attach できる。**決済画面で入力したカードが、顧客付きの決済で自動的に紐付くかは未確認**（ブラウザが必要。139-B のブラウザ確認で見る）。
 4. カードを削除しても、削除前の仮売上は売上確定・取消ができる。削除したカードで新しく決済すると 400 `detached_payment_method_not_usable`。同じカードを再度削除すると 400 `payment_method_already_detached`、再度紐付けると 400 `payment_method_already_attached`。
 5. 同じカードの重複登録を PAY.JP は断らない（fingerprint は同じ値）。
-6. 既定カード：attach で最初に紐付けたカードが自動で既定になる。2 枚目以降の attach では変わらない。既定カードを削除すると `default_payment_method_id` は null になる。Setup Flow で登録したときの変化は未確認（ブラウザ確認で見る）。
+6. 既定カード：attach、または Setup Flow で最初に登録したカードが自動で既定になる（Setup Flow は 139-A のブラウザ確認で確認）。2 枚目以降では変わらない。既定カードを削除すると `default_payment_method_id` は null になる。
 7. 顧客 ID の重複作成は 400 `already_exists_id`。顧客を削除すると、その顧客のカードはすべて削除状態になる（`customer_id` は null、`detached_at` あり）。削除前の仮売上は売上確定できる。
 8. 決済の失敗：
    - 3D セキュアの失敗 → `requires_payment_method`、`last_payment_error.code=three_d_secure_failed`。
@@ -191,5 +191,20 @@ DB トリガーで守ること：
 
 ## 8. 未確認のこと（ブラウザ確認で見る）
 
-- Setup Flow で登録したとき、既定カードが自動で設定されるか（139-A）。
 - 決済画面で入力したカードが、`customer_id` 付きの決済で自動的に顧客に紐付くか（139-B）。
+
+## 9. 139-A のブラウザ確認（2026-11-22、テストモード）
+
+アプリを `PAYJP_CUSTOMER_ID_PREFIX=ecu-dev1-` で起動した（開発 DB に V105 を適用）。一般ユーザー（users.id 2）で次を確認し、すべて期待どおりだった。
+
+1. 4242 のカードを登録（3D セキュアあり）→「カードを登録しました。」、既定になる。
+2. 同じ 4242 をもう一度登録 →「このカードはすでに登録されています。」（新しいカードは DETACH / DUPLICATE で削除）。
+3. 5555…4444 を追加し、「既定にする」で既定を切り替え。
+4. 既定のカードを削除 → 残りの 4242 が既定になる（SET_DEFAULT / DEFAULT_REPLACEMENT）。
+
+照合：
+- saved_card_operations の 11 行（CUSTOMER_CREATE 1、SETUP_START 3、SETUP_COMPLETE 3、DETACH 2、SET_DEFAULT 2）はすべて SUCCEEDED。
+- PAY.JP の顧客 `ecu-dev1-2` は、既定カードが残った 4242。重複した 4242 と削除した 4444 には `detached_at` があり、Setup Flow 3 件は succeeded。Setup Flow の `metadata.saved_card_operation_id` は操作記録の id と一致する。
+- 1 枚目のあとに当サイトから既定を設定した記録がない → Setup Flow で最初に登録したカードは、PAY.JP が自動で既定にする（3.1 の 6）。
+- 顧客の作成時に送った `metadata.user_id` は、PAY.JP の顧客では空だった。当サイトはこの値を使わないので影響はない。
+
