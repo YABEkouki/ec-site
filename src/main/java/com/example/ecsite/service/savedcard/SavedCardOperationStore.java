@@ -20,7 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Repository
 public class SavedCardOperationStore {
 
-    public enum Type { CUSTOMER_CREATE, SETUP_START, SETUP_COMPLETE, DETACH, SET_DEFAULT }
+    public enum Type { CUSTOMER_CREATE, SETUP_START, SETUP_COMPLETE, DETACH, SET_DEFAULT, ATTACH }
 
     public enum Reason { USER, DUPLICATE, LIMIT, DEFAULT_REPLACEMENT }
 

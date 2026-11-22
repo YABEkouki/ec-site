@@ -388,5 +388,83 @@ class SavedCardPostgresTest {
                 return new Customer(customer, pm);
             });
         }
+
+        // ---- Feature139-B: checkout Payment Flows ------------------------------------------------------------
+        final Map<String, FlowState> flows = new LinkedHashMap<>();
+        /** Cards that already did 3-D Secure (later confirms authorize at once). */
+        final java.util.Set<String> secured = new java.util.HashSet<>();
+        /** Cards PAY.JP declines on confirm (402). */
+        final java.util.Set<String> declining = new java.util.HashSet<>();
+        int updateCalls;
+        int confirmCalls;
+
+        void newFlow(String id) {
+            flows.put(id, new FlowState(id, "requires_payment_method", null, null));
+        }
+
+        /** The browser finished 3-D Secure (or confirmed a new card) on the flow. */
+        void browserCompletes(String flowId, String status, String paymentMethodId) {
+            var f = flows.get(flowId);
+            flows.put(flowId, new FlowState(flowId, status, f.customerId(), paymentMethodId != null ? paymentMethodId : f.paymentMethodId()));
+        }
+
+        private static SavedCardGatewayException rejected(int status, String code) {
+            return new SavedCardGatewayException(SavedCardGatewayException.Kind.REJECTED, status, code);
+        }
+
+        @Override public FlowState updateFlowCustomer(String flowId, String customerId, String pm, String key) {
+            return write("flowUpdate", () -> {
+                updateCalls++;
+                var f = flows.get(flowId);
+                if (!f.status().equals("requires_payment_method") && !f.status().equals("requires_confirmation"))
+                    throw rejected(400, "fields_not_updatable_in_status");
+                if (pm != null && (cards.get(pm) == null || !cards.get(pm).attachedTo(customerId)))
+                    throw rejected(400, "payment_method_not_owned_by_customer");
+                var next = new FlowState(flowId, pm != null ? "requires_confirmation" : f.status(), customerId,
+                        pm != null ? pm : f.paymentMethodId());
+                flows.put(flowId, next);
+                return next;
+            });
+        }
+
+        @Override public FlowState confirmFlow(String flowId, String returnUrl, String key) {
+            return write("confirm", () -> {
+                confirmCalls++;
+                var f = flows.get(flowId);
+                if (!f.status().equals("requires_payment_method") && !f.status().equals("requires_confirmation"))
+                    throw rejected(400, "invalid_status");
+                if (declining.contains(f.paymentMethodId())) {
+                    flows.put(flowId, new FlowState(flowId, "requires_payment_method", f.customerId(), f.paymentMethodId()));
+                    throw rejected(402, "card_declined");
+                }
+                var next = new FlowState(flowId, secured.contains(f.paymentMethodId()) ? "requires_capture" : "requires_action",
+                        f.customerId(), f.paymentMethodId());
+                flows.put(flowId, next);
+                return next;
+            });
+        }
+
+        @Override public Optional<FlowState> findFlow(String flowId) {
+            read();
+            return Optional.ofNullable(flows.get(flowId));
+        }
+
+        @Override public Card attach(String id, String customer, String key) {
+            return write("attach", () -> {
+                var c = cards.get(id);
+                if (c.customerId() != null) throw rejected(400, "payment_method_already_attached");
+                cards.put(id, new Card(id, customer, c.brand(), c.last4(), c.expMonth(), c.expYear(), c.fingerprint(),
+                        c.createdAt(), null));
+                return cards.get(id);
+            });
+        }
+
+        /** A card entered in payments.js on a checkout (not attached to any customer). */
+        String browserCard(String fingerprint) {
+            String id = "pm_" + (++sequence) + "_" + UUID.randomUUID().toString().replace("-", "");
+            clock = clock.plusMinutes(1);
+            cards.put(id, new Card(id, null, "Visa", "4242", 12, 2030, fingerprint, clock, null));
+            return id;
+        }
     }
 }

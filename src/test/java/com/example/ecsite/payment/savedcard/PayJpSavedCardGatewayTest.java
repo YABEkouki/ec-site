@@ -150,4 +150,49 @@ class PayJpSavedCardGatewayTest {
         assertThatThrownBy(() -> gateway.findCustomer("a b")).isInstanceOf(IllegalArgumentException.class);
         server.verify();
     }
+
+    @Test
+    void checkoutFlowUpdateConfirmAndAttachUseDocumentedFields() {
+        String flow = "{\"id\":\"pfw_1\",\"status\":\"requires_confirmation\",\"customer_id\":\"ecu-t-7\","
+                + "\"payment_method_id\":\"pm_a\",\"client_secret\":\"pfw_1_secret_x\"}";
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_1")).andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "f139b-k1"))
+                .andExpect(content().json("{\"customer_id\":\"ecu-t-7\",\"payment_method_id\":\"pm_a\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(flow, MediaType.APPLICATION_JSON));
+        var updated = gateway.updateFlowCustomer("pfw_1", "ecu-t-7", "pm_a", "f139b-k1");
+        assertThat(updated).isEqualTo(new SavedCardGateway.FlowState("pfw_1", "requires_confirmation", "ecu-t-7", "pm_a"));
+        assertThat(updated.toString()).doesNotContain("secret");
+        next();
+
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_1")).andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"customer_id\":\"ecu-t-7\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess("{\"id\":\"pfw_1\",\"status\":\"requires_payment_method\",\"customer_id\":\"ecu-t-7\","
+                        + "\"payment_method_id\":null}", MediaType.APPLICATION_JSON));
+        assertThat(gateway.updateFlowCustomer("pfw_1", "ecu-t-7", null, "f139b-k2").paymentMethodId()).isNull();
+        next();
+
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_1/confirm")).andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "f139b-k3"))
+                .andExpect(content().json("{\"return_url\":\"http://localhost:8080/checkout/payment/return\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.PAYMENT_REQUIRED).body("{\"code\":\"card_declined\"}").contentType(MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> gateway.confirmFlow("pfw_1", "http://localhost:8080/checkout/payment/return", "f139b-k3"))
+                .isInstanceOfSatisfying(SavedCardGatewayException.class, e -> {
+                    assertThat(e.kind()).isEqualTo(SavedCardGatewayException.Kind.REJECTED);
+                    assertThat(e.code()).isEqualTo("card_declined");
+                });
+        next();
+
+        server.expect(requestTo("https://api.pay.jp/v2/payment_methods/pm_a/attach")).andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "f139b-k4"))
+                .andExpect(content().json("{\"customer_id\":\"ecu-t-7\"}", org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess(card("pm_a", "ecu-t-7", null, "2026-11-22T01:00:00Z"), MediaType.APPLICATION_JSON));
+        assertThat(gateway.attach("pm_a", "ecu-t-7", "f139b-k4").customerId()).isEqualTo("ecu-t-7");
+        next();
+
+        server.expect(requestTo("https://api.pay.jp/v2/payment_flows/pfw_2")).andRespond(withResourceNotFound());
+        assertThat(gateway.findFlow("pfw_2")).isEmpty();
+        assertThatThrownBy(() -> gateway.confirmFlow("pfw_1", "javascript:alert(1)", "f139b-k5")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> gateway.updateFlowCustomer("pfw_1/../x", "ecu-t-7", null, "f139b-k6")).isInstanceOf(IllegalArgumentException.class);
+        server.verify();
+    }
 }

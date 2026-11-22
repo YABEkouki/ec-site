@@ -34,7 +34,22 @@ public interface SavedCardGateway {
 
     Customer setDefaultCard(String customerId, String paymentMethodId, String idempotencyKey);
 
+    /** Feature139-B: set the customer (and the saved card) on a checkout Payment Flow. */
+    FlowState updateFlowCustomer(String flowId, String customerId, String paymentMethodId, String idempotencyKey);
+
+    /** Feature139-B: confirm a checkout Payment Flow whose saved card is already set. 402 is REJECTED. */
+    FlowState confirmFlow(String flowId, String returnUrl, String idempotencyKey);
+
+    /** Feature139-B: status, customer and card of a Payment Flow. Empty when PAY.JP answers 404. */
+    Optional<FlowState> findFlow(String flowId);
+
+    /** Feature139-B: attach the card of a checkout to the customer. */
+    Card attach(String paymentMethodId, String customerId, String idempotencyKey);
+
     record Customer(String id, String defaultPaymentMethodId) {}
+
+    /** Only what the saved card sends need; authorization results are still read by the payment gateway. */
+    record FlowState(String id, String status, String customerId, String paymentMethodId) {}
 
     /** Display facts only; the fingerprint is used in memory to refuse duplicate cards and is never stored. */
     record Card(String id, String customerId, String brand, String last4, int expMonth, int expYear,

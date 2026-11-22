@@ -6,10 +6,64 @@
 <main class="flow-main">
 <h1>お支払い</h1>
 <p>注文番号：<strong th:text="${orderId}"></strong></p>
+<p class="message-error" th:if="${errorMessage}" th:text="${errorMessage}" role="alert"></p>
+<section th:if="${savedCards != null and !savedCards.isEmpty() and confirmationTarget != null}">
+<h2>登録済みのカードで支払う</h2>
+<form id="saved-card-form" th:action="@{/checkout/payment/saved-card}" method="post">
+<input type="hidden" name="expectedOrderId" th:value="${confirmationTarget.orderId}">
+<input type="hidden" name="expectedPaymentId" th:value="${confirmationTarget.paymentId}">
+<input type="hidden" name="expectedTransactionId" th:value="${confirmationTarget.transactionId}">
+<fieldset>
+<legend>お支払いに使うカード</legend>
+<div th:each="saved, st : ${savedCards}">
+<label>
+<input type="radio" name="paymentMethodId" th:value="${saved.id}" required
+       th:checked="${saved.defaultCard or (st.first and #lists.isEmpty(savedCards.?[defaultCard]))}">
+<span th:text="${saved.brand + ' **** ' + saved.last4}"></span>
+<span th:text="${'（有効期限 ' + #numbers.formatInteger(saved.expMonth, 2) + '/' + saved.expYear + '）'}"></span>
+<span th:if="${saved.defaultCard}">既定</span>
+</label>
+</div>
+</fieldset>
+<button type="submit" class="button-primary">このカードで支払う</button>
+</form>
+</section>
+<section th:if="${nextAction != null}">
+<p>カードの本人認証（3D セキュア）が必要です。下のボタンから認証を完了してください。</p>
+<p class="flow-message-warning" id="next-action-error" role="alert"></p>
+<button type="button" id="next-action" class="button-primary">本人認証へ進む</button>
+<script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
+<script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
+(() => {
+    const button = document.getElementById('next-action');
+    const message = document.getElementById('next-action-error');
+    button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+            const payments = PayjpPayments(/*[[${nextAction.publicKey}]]*/ '', {locale: 'ja'});
+            await payments.handleNextAction({clientSecret: /*[[${nextAction.clientSecret}]]*/ ''});
+        } catch (_) {
+            // Never expose SDK errors, URLs or credentials.
+            message.textContent = '本人認証の画面を開けませんでした。下のボタンで結果をご確認ください。';
+        }
+    });
+})();
+</script>
+</section>
 <section th:if="${card != null}">
+<h2 th:if="${savedCards != null and !savedCards.isEmpty()}">新しいカードで支払う</h2>
 <p>カード情報を入力してください。</p>
 <div id="payment-form" class="flow-payment-form"></div>
 <p class="flow-message-warning" id="payment-error" role="alert"></p>
+<p th:if="${cardRegistrationAllowed != null and cardRegistrationAllowed and confirmationTarget != null}">
+<label><input type="checkbox" id="register-card"> このカードを登録する（次回から入力不要）</label>
+</p>
+<form id="register-intent" th:if="${cardRegistrationAllowed != null and cardRegistrationAllowed and confirmationTarget != null}"
+      th:action="@{/checkout/payment/register-intent}" method="post">
+<input type="hidden" name="expectedOrderId" th:value="${confirmationTarget.orderId}">
+<input type="hidden" name="expectedPaymentId" th:value="${confirmationTarget.paymentId}">
+<input type="hidden" name="expectedTransactionId" th:value="${confirmationTarget.transactionId}">
+</form>
 <button type="button" id="payment-submit" class="button-primary">カードで支払う</button>
 <script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
 <script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
@@ -30,10 +84,27 @@
         widgets.createForm('payment', {paymentMethodOrder: ['card']}).mount('#payment-form');
     } catch (_) { waiting(); return; }
     window.addEventListener('storage', e => { if(e.key === marker && e.newValue === '1') { attempted = true; waiting(); } });
+    // Feature139-B: set the customer on the Payment Flow before confirming a card the user wants to register.
+    const prepareRegistration = async () => {
+        const box = document.getElementById('register-card');
+        const form = document.getElementById('register-intent');
+        if (!box || !box.checked || !form) return true;
+        try {
+            const response = await fetch(form.action, {method: 'POST', body: new FormData(form), credentials: 'same-origin',
+                headers: {'Accept': 'application/json'}});
+            const body = await response.json();
+            if (response.ok && body.ready === true) return true;
+            message.textContent = typeof body.message === 'string' ? body.message : 'カードを登録する準備ができませんでした。';
+        } catch (_) {
+            message.textContent = 'カードを登録する準備ができませんでした。登録しない場合はチェックを外してお支払いください。';
+        }
+        return false;
+    };
     button.addEventListener('click', async () => {
         if(attempted) return;
         attempted = true;
         button.disabled = true;
+        if (!(await prepareRegistration())) { attempted = false; button.disabled = false; return; }
         // Web Locks serialize the check/set across same-origin tabs. Storage events alone are not atomic.
         try {
             await navigator.locks.request(marker, async () => {
@@ -51,7 +122,7 @@
 })();
 </script>
 </section>
-<p class="flow-message-warning" th:if="${card == null}">カード決済の状態を確認中です。認証の中断・通信断後の再認証は自動実行しません。</p>
+<p class="flow-message-warning" th:if="${card == null and (savedCards == null or savedCards.isEmpty()) and nextAction == null}">カード決済の状態を確認中です。認証の中断・通信断後の再認証は自動実行しません。</p>
 <form th:if="${confirmationTarget != null}" th:action="@{/checkout/payment/continue}" method="post">
 <input type="hidden" name="expectedOrderId" th:value="${confirmationTarget.orderId}">
 <input type="hidden" name="expectedPaymentId" th:value="${confirmationTarget.paymentId}">
