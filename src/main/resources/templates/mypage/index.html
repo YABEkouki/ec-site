@@ -135,6 +135,14 @@
     </section>
 
     <section>
+        <h2>登録カード</h2>
+        <p>決済のときに選べるクレジットカードを登録・削除できます。</p>
+        <p class="actions">
+            <a th:href="@{/mypage/cards}" class="button button-secondary">登録カードを管理する</a>
+        </p>
+    </section>
+
+    <section>
         <h2>配送先</h2>
 
         <p th:if="${#lists.isEmpty(addresses)}">
