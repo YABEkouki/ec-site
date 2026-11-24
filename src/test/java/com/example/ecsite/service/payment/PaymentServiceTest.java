@@ -732,6 +732,8 @@ class PaymentServiceTest {
 
         when(order.getId()).thenReturn(100L);
         when(order.getContentRevision()).thenReturn(3);
+        when(order.getTotalAmount()).thenReturn(12_345);
+        when(order.getStatus()).thenReturn(com.example.ecsite.entity.OrderStatus.ORDERED);
 
         Payment payment = createPayment(order);
 
@@ -752,6 +754,8 @@ class PaymentServiceTest {
                         PaymentTransactionType.CANCEL,
                         PaymentTransactionStatus.PENDING))
                 .thenReturn(Optional.empty());
+
+        savedCancellationJoinsAuthorization(payment);
 
         LocalDateTime databaseNow = LocalDateTime.of(2026, 10, 1, 10, 7);
         when(orderModificationGuard.requireAllowed(order)).thenReturn(databaseNow);
@@ -818,6 +822,42 @@ class PaymentServiceTest {
                 transaction.getIdempotencyKey(),
                 result.idempotencyKey());
         assertEquals(PaymentStartDisposition.NEW, result.disposition());
+    }
+
+    /** The stored history the pre-send check reads: the authorization, then the cancellation being started. */
+    private void savedCancellationJoinsAuthorization(Payment payment) {
+        var authorization = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, 12_345, 3,
+                "authorize-key", LocalDateTime.of(2026, 10, 1, 9, 0));
+        org.springframework.test.util.ReflectionTestUtils.setField(authorization, "id", 501L);
+        authorization.markSucceeded("pf_test_123", LocalDateTime.of(2026, 10, 1, 9, 20));
+        var history = new java.util.ArrayList<>(List.of(authorization));
+        when(paymentTransactionRepository.save(any(PaymentTransaction.class))).thenAnswer(call -> {
+            PaymentTransaction saved = call.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", 502L);
+            history.add(saved);
+            return saved;
+        });
+        when(paymentTransactionRepository.findByPaymentIdOrderByCreatedAtAscIdAsc(payment.getId())).thenAnswer(call -> List.copyOf(history));
+    }
+
+    @Test
+    void startCancellationRejectsContentTheResultCouldNotBeAppliedTo() {
+        Order order = legacyOrder();
+        when(order.getActivePaymentId()).thenReturn(null);
+        when(order.getId()).thenReturn(100L);
+        when(order.getContentRevision()).thenReturn(3);
+        when(order.getTotalAmount()).thenReturn(12_346);
+        when(order.getStatus()).thenReturn(com.example.ecsite.entity.OrderStatus.ORDERED);
+        Payment payment = createPayment(order);
+        payment.setProviderPaymentId("pf_test_123", LocalDateTime.of(2026, 10, 1, 9, 10));
+        payment.markAuthorized(LocalDateTime.of(2026, 10, 1, 9, 20));
+        when(paymentRepository.findByOrderIdForUpdate(100L)).thenReturn(List.of(payment));
+        savedCancellationJoinsAuthorization(payment);
+        when(orderModificationGuard.requireAllowed(order)).thenReturn(LocalDateTime.of(2026, 10, 1, 10, 7));
+
+        var failure = assertThrows(com.example.ecsite.exception.InvalidOrderStatusException.class,
+                () -> paymentService.startCancellation(order, TEST_INITIATOR));
+        assertEquals("注文内容とカード決済の内容を確認できないため、キャンセルを受け付けられません。注文番号「100」を添えてお問い合わせください。", failure.getMessage());
     }
 
     @Test

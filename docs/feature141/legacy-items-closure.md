@@ -1,6 +1,6 @@
 # Feature141 従来の商品変更（/orders/{id}/items）を閉じる
 
-状態：141-A は main に統合済み（d62f249、2026-11-24）。V109 を開発 DB に適用し、ブラウザで確認済み。141-B は実装中。141-A の基準は main a098936（V108）。
+状態：141-A は main に統合済み（d62f249、2026-11-24）。V109 を開発 DB に適用し、ブラウザで確認済み。141-B は実装・テスト済み（2026-11-25、main への統合前）。141-A の基準は main a098936（V108）。
 
 ## 1. 目的
 
@@ -197,3 +197,18 @@
 - B（PAY.JP テストモードで新しく作った注文 34、期限 2026-11-25 14:00）：`/items` の案内と「注文内容を変更する」の併存、キャンセル確認画面の案内、一括編集の画面。期待どおり。
 - 確認後の DB：注文 34 は ORDERED・AUTHORIZED・5,980 円・版 0 で、変更操作・変更履歴はない。`ORDER_ITEM_CHANGE` は 0 件。起動中の ERROR はない。
 - 確認の前に作られた注文 33 は、決済が未完了（AUTHORIZE PENDING）のまま残っている。141-A の変更には関係しない。
+
+## 11. 141-B の実装結果（2026-11-25）
+
+### 11.1 実装と設計との差
+
+- `PaymentService.startCancellation` の新しい取消で、CANCEL の行を保存したあと、同じトランザクションで `PaymentPurposeResolver.matches` を確認する。反映（`target`）と同じ private メソッドに判定と入力をまとめた。反映の判定は変えていない。
+- 7.2 との差はない。設計時に挙げていなかった点として、過去に FAILED の取消がある注文は `matches` が不成立になる。今も反映で CONFLICT になる状態で、本番コードに取消を FAILED にする処理はない。
+- 7.5 の 4（evidence が壊れている登録済みの注文）は、evidence の表を壊せないため、`OrderPaymentEvidenceGuard.inspect` の結果を BLOCKED に差し替えて検証した。
+- 7.5 の 2 の一括編集後の取消（RETAIN_AUTH・REAUTHORIZE）は、既存の OrderEditShipmentIntegrationTest、7.5 の 3 の与信期限切れの取消は、既存の WarehouseExportPostgresTest が検証する。期限切れの取消を確認の対象から外す条件そのものを外す試験はしていない。
+
+### 11.2 テスト結果
+
+- 新しいテスト：CancellationPrecheckPostgresTest 8 件、PaymentServiceTest に 1 件追加・1 件更新。
+- 回帰：152 クラス・3,297 件がすべて PASS（新しいテストを含む）。
+- 修正を外した確認：スクラッチのコピーで送信前の確認を外すと、CancellationPrecheckPostgresTest の拒否 3 件と PaymentServiceTest の追加 1 件が失敗する。
