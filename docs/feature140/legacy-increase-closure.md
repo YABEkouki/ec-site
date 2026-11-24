@@ -1,6 +1,6 @@
 # Feature140 従来の数量増加（Feature124）を閉じる
 
-状態：140-A 実装・テスト完了（2026-11-24）。main 統合と開発 DB への適用は未実施。基準は main eec40c8（最新マイグレーション V107）。
+状態：140-A 実装・テスト完了（2026-11-24）。main 統合（66db97a）、開発 DB は V108、ブラウザ確認済み。基準は main eec40c8（最新マイグレーション V107）。
 
 ## 1. 目的
 
@@ -129,8 +129,52 @@
 2. `./start-dev.sh` で V108 を開発 DB に適用する（実行前に確認する）。PostgreSQL は再起動しないので、runtime の再承認は要らない。
 3. ブラウザ確認：`/increase` の直接入力の案内、注文 1・3 の状態画面と変更履歴、通常の一括編集の画面。PAY.JP を呼ぶ操作は行う前に確認する。
 
+- ブラウザ確認（2026-11-24）：未ログイン・所有者・他人での `/increase` の直接入力、注文 1・3 の状態画面と変更履歴、注文 31 の一括編集の開始。すべて問題なし。
+
 - 戻すとき：V108 は削除せず、新しいマイグレーションで外す。
 
 ## 8. 対象外
 
 - 画面・回復コードの撤去（案 b）、`/orders/{id}/items`、注文 8・17 の一括編集の MANUAL_REVIEW。
+
+## 9. 140-B：legacy の画面・候補を legacy の変更に限定する
+
+状態：実装・テスト完了（2026-11-24）。main 統合とブラウザ確認は未実施。基準は main 66db97a。マイグレーションはなし（V108 のまま）。
+
+### 9.1 現状
+
+- `OrderIncreaseService.status` は注文・所有者・変更 ID だけを確かめる。そのため、顧客は自分の一括編集の変更 ID を使い、legacy の状態画面・取下げ・決済の URL を開ける。`observe` は PAY.JP の照会まで進む。
+- `expiredReserved` は execution_version を見ない。候補になった一括編集の変更には予約がなく、解放できない。発生すると、照合のたびに WARN が出る。
+- `AdminOldCancelRecoveryViewService` は一括編集の変更も対象にする。実行は `rejectOwnedLegacy` が拒否するので、使えない案内だけが出る。
+
+### 9.2 変更
+
+| 場所 | 変更 |
+|---|---|
+| `OrderChangeStore.legacyOperation`（新規） | `operation` に `execution_version is null` を加えたもの。`OrderIncreaseService`（status・abort・withdrawReserved・expireReserved）はこちらを使う。`operation` は一括編集と共用の完了処理（OrderReauthorizationTransactions）でも使うので変えない |
+| `OrderChangeStore.expiredReserved` | `o.execution_version is null` を条件に加える |
+| `AdminOldCancelRecoveryViewService.targets` | 同じ条件を加える |
+
+- 顧客の legacy の URL（状態、取下げの GET・POST、決済の 4 つ）は、どれも最初に `status` を呼ぶ。一括編集の変更では OrderNotFoundException（404）になり、PAY.JP を呼ばない。
+- 管理者の回復画面も 404 になり、注文詳細の案内にも出ない。
+- 判定に `f125_reauth_is_owned` は使わない。RETAIN_AUTH の変更は owned にならず、一括編集なのに対象に残るため。
+- 変えないもの：`completedOperationIds`・`abortedOperationIds`・`unresolved`（一括編集を含める必要がある）、回復の実行側の拒否、ロック順。
+
+### 9.3 テスト
+
+1. 最新版の DB で一括編集の変更（REAUTHORIZE、RETAIN_AUTH）を作る。legacy の URL は、所有者でもすべて 404。PAY.JP を呼ばず、DB も変わらない。
+2. 一括編集の変更は期限切れの候補に出ない。legacy の変更は出る（target=107 の既存テスト）。
+3. 回復条件を満たす一括編集の変更は、案内にも回復画面にも出ない。legacy の回復は動く（target=107 の既存テスト）。
+4. 回帰：legacy の表示・取下げ・期限切れ・回復、一括編集の再与信、照合スケジューラー、管理画面の注文詳細。
+
+### 9.4 適用と確認
+
+- main に統合する前に結果を報告する。
+- ブラウザ確認：注文 8・17（MANUAL_REVIEW の一括編集）の変更 ID で legacy の URL を開くと 404。注文 1・3 の legacy の状態画面は表示される。PAY.JP は呼ばない。
+
+### 9.5 結果（2026-11-24）
+
+- 63 クラス・1,410 件：失敗 0、エラー 0、スキップ 0。
+- 新しいテストは LegacyChangeScopePostgresTest（最新版の DB、4 件）。修正を外すと 4 件とも失敗することを確かめた。
+- 期限切れの候補は、RETAIN_AUTH の RESERVED を記録したトランザクションの中で確かめ、ロールバックした。
+- 画面の JS は変えていないので、JS テストは再実行していない。
