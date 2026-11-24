@@ -151,7 +151,7 @@
 
 | 場所 | 変更 |
 |---|---|
-| `OrderChangeStore.operation` | `execution_version is null` を条件に加える。使うのは `OrderIncreaseService`（status・abort・withdrawReserved・expireReserved）だけ |
+| `OrderChangeStore.legacyOperation`（新規） | `operation` に `execution_version is null` を加えたもの。`OrderIncreaseService`（status・abort・withdrawReserved・expireReserved）はこちらを使う。`operation` は一括編集と共用の完了処理（OrderReauthorizationTransactions）でも使うので変えない |
 | `OrderChangeStore.expiredReserved` | `o.execution_version is null` を条件に加える |
 | `AdminOldCancelRecoveryViewService.targets` | 同じ条件を加える |
 
