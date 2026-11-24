@@ -24,6 +24,10 @@ public class OrderEditController {
     public record Row(String productName,Integer unitPrice,boolean existing,int beforeQuantity){}
     private final OrderEditBrowserService service;
     public OrderEditController(OrderEditBrowserService service){this.service=service;}
+    /** Feature139-C: display hints for a saved card payment of the change (saved rows only, no provider call). */
+    private com.example.ecsite.service.savedcard.OrderChangeSavedCardService savedCards;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    public void setSavedCards(com.example.ecsite.service.savedcard.OrderChangeSavedCardService savedCards){this.savedCards=savedCards;}
     @InitBinder("editForm") void binder(WebDataBinder binder){
         binder.setAllowedFields("revision","lines[*].existingItemId","lines[*].productId","lines[*].quantity");
         binder.setAutoGrowCollectionLimit(1000);
@@ -128,6 +132,13 @@ public class OrderEditController {
             // A subsequently proven terminal result takes precedence over this URL hint.
             model.addAttribute("failureClosurePending",closurePending&&result!=null
                 &&!Set.of("未適用終了","変更完了").contains(result.label()));
+            if(savedCards!=null&&user!=null&&result!=null){
+                var step=savedCards.nextStep(user.getId(),id,admission);
+                if(step!=com.example.ecsite.service.savedcard.OrderChangeSavedCardService.NextStep.NONE){
+                    model.addAttribute("savedCardStep",step.name());
+                    savedCards.selectedCard(user.getId(),id,admission).ifPresent(card->model.addAttribute("savedCardMethod",card));
+                }
+            }
             return "orders/edit-result";
         }
         if(preview==null||quote(session,preview,id,user.getId())==null)throw new IllegalArgumentException("保存済みの確認内容が必要です。");

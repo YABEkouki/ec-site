@@ -32,6 +32,7 @@ class OrderEditPaymentControllerTest {
     @MockitoBean com.example.ecsite.service.orderchange.OrderIncreaseService increases;
     @MockitoBean AdminUserDetailsService adminUserDetailsService;@MockitoBean CustomUserDetailsService customUserDetailsService;
     @MockitoBean AdminAuthenticationSuccessHandler adminAuthenticationSuccessHandler;@MockitoBean CustomerAuthenticationSuccessHandler customerAuthenticationSuccessHandler;
+    @MockitoBean com.example.ecsite.service.savedcard.OrderChangeSavedCardService savedCards;
     UUID receipt=UUID.randomUUID();String url(){return "/orders/1/edit/"+receipt+"/payment";}
     final CustomUserDetails customer=new CustomUserDetails(2L,"buyer","unused",true,List.of(new SimpleGrantedAuthority("ROLE_USER")));
     @Test void explicitPostUsesExistingWidgetAndTrustedContinuation()throws Exception{
@@ -158,4 +159,66 @@ class OrderEditPaymentControllerTest {
         verifyNoInteractions(closures);
     }
 
+
+    // ---- Feature139-C: saved cards -------------------------------------------------------------------------------
+    com.example.ecsite.service.savedcard.SavedCardService.CardView savedView(String id,boolean isDefault){
+        return new com.example.ecsite.service.savedcard.SavedCardService.CardView(id,"Visa","4242",12,2030,isDefault,false);
+    }
+    void authenticationAvailable(){
+        when(savedCards.enabled()).thenReturn(true);
+        when(browser.result(1,receipt)).thenReturn(new OrderEditBrowserService.BrowserResult(receipt,"カード認証待ち",false,true));
+    }
+    @Test void usableSavedCardsAreOfferedBeforeAnyConfirmationStart()throws Exception{
+        authenticationAvailable();when(savedCards.options(2L)).thenReturn(List.of(savedView("pm_default",true),savedView("pm_other",false)));
+        mvc.perform(post(url()).with(user(customer)).with(csrf())).andExpect(status().isOk()).andExpect(view().name("orders/increase-payment-choice"))
+            .andExpect(content().string(containsString(url()+"/saved-card"))).andExpect(content().string(containsString(url()+"/manual")))
+            .andExpect(content().string(org.hamcrest.Matchers.matchesPattern("(?s).*value=\"pm_default\" required\\s+checked=\"checked\".*")))
+            .andExpect(content().string(not(org.hamcrest.Matchers.matchesPattern("(?s).*value=\"pm_other\" required\\s+checked.*"))))
+            .andExpect(content().string(not(containsString("PayjpPayments"))));
+        verify(browser,never()).startCard(anyLong(),any());
+    }
+    @Test void withoutSavedCardsTheCardEntryStartsAsBefore()throws Exception{
+        authenticationAvailable();when(savedCards.options(2L)).thenReturn(List.of());
+        when(browser.startCard(1,receipt)).thenReturn(Optional.of(new Card("pk_test_dummy","widget_secret","http://localhost:8080"+url()+"/return")));
+        mvc.perform(post(url()).with(user(customer)).with(csrf())).andExpect(view().name("orders/increase-payment"));
+        mvc.perform(post(url()+"/manual").with(user(customer)).with(csrf())).andExpect(view().name("orders/increase-payment"));
+        verify(browser,times(2)).startCard(1,receipt);
+    }
+    @Test void savedCardThreeDSecureUsesHandleNextActionAndTheExistingContinuation()throws Exception{
+        var card=new Card("pk_test_dummy","action_secret","http://localhost:8080"+url()+"/return");
+        when(savedCards.pay(2L,1L,receipt,"pm_saved")).thenReturn(new com.example.ecsite.service.savedcard.OrderChangeSavedCardService.Result(
+            com.example.ecsite.service.savedcard.OrderChangeSavedCardService.Outcome.REQUIRES_ACTION,card));
+        var response=mvc.perform(post(url()+"/saved-card").param("paymentMethodId","pm_saved").param("cardNumber","4242424242424242")
+                .with(user(customer)).with(csrf()))
+            .andExpect(status().isOk()).andExpect(view().name("orders/increase-payment-action"))
+            .andExpect(header().string("Cache-Control","no-store")).andExpect(header().string("Referrer-Policy","no-referrer"))
+            .andExpect(content().string(containsString("handleNextAction"))).andExpect(content().string(containsString(url()+"/continue")))
+            .andReturn().getResponse();
+        org.assertj.core.api.Assertions.assertThat(response.getHeader("Content-Security-Policy")).contains("https://js.pay.jp");
+        org.assertj.core.api.Assertions.assertThat(response.getContentAsString()).doesNotContain("4242424242424242");
+    }
+    @Test void savedCardOutcomesWithoutActionContinueOrExplain()throws Exception{
+        when(savedCards.pay(2L,1L,receipt,"pm_saved")).thenReturn(new com.example.ecsite.service.savedcard.OrderChangeSavedCardService.Result(
+            com.example.ecsite.service.savedcard.OrderChangeSavedCardService.Outcome.CONTINUE,null));
+        mvc.perform(post(url()+"/saved-card").param("paymentMethodId","pm_saved").with(user(customer)).with(csrf()))
+            .andExpect(view().name("orders/increase-payment-return"));
+        when(savedCards.pay(2L,1L,receipt,"pm_saved")).thenReturn(new com.example.ecsite.service.savedcard.OrderChangeSavedCardService.Result(
+            com.example.ecsite.service.savedcard.OrderChangeSavedCardService.Outcome.CARD_NOT_USABLE,null));
+        mvc.perform(post(url()+"/saved-card").param("paymentMethodId","pm_saved").with(user(customer)).with(csrf()))
+            .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt)).andExpect(flash().attributeExists("errorMessage"));
+    }
+    @Test void savedCardNeedsCsrfAndAWellFormedCard()throws Exception{
+        mvc.perform(post(url()+"/saved-card").param("paymentMethodId","pm_saved").with(user(customer))).andExpect(status().isForbidden());
+        for(var bad:List.of("not-a-card",""))
+            mvc.perform(post(url()+"/saved-card").param("paymentMethodId",bad).with(user(customer)).with(csrf()))
+                .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt)).andExpect(flash().attributeExists("errorMessage"));
+        mvc.perform(post(url()+"/authenticate").with(user(customer))).andExpect(status().isForbidden());
+        verifyNoInteractions(savedCards);
+    }
+    @Test void authenticationRestartNeverResendsAndExplainsWhenUnavailable()throws Exception{
+        when(savedCards.authenticate(2L,1L,receipt)).thenReturn(Optional.empty());
+        mvc.perform(post(url()+"/authenticate").with(user(customer)).with(csrf()))
+            .andExpect(redirectedUrl("/orders/1/edit/result?admission="+receipt)).andExpect(flash().attributeExists("errorMessage"));
+        verify(savedCards,never()).pay(anyLong(),anyLong(),any(),any());
+    }
 }

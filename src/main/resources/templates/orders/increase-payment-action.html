@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>注文変更の本人認証</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body class="flow-page">
+<header th:replace="~{fragments/header :: header}"></header>
+<main class="flow-main">
+<h1>注文変更の本人認証</h1>
+<p class="flow-message-info">登録済みのカードの本人認証（3D セキュア）が必要です。下のボタンから認証を完了してください。</p>
+<p>認証後もサーバーで結果を確認するまで、注文変更は完了していません。</p>
+<p class="flow-message-warning" id="next-action-error" role="alert"></p>
+<button type="button" id="next-action" class="button-primary">本人認証へ進む</button>
+<form id="payment-continue" th:action="@{${paymentContinueUrl}}" method="post">
+    <button type="submit" class="button-secondary">サーバーで結果を確認して続行する</button>
+</form>
+<p class="flow-message-info" id="payment-continuation-status" role="status" aria-live="polite"></p>
+<th:block th:replace="~{fragments/order-edit-payment-continuation :: automaticContinuation}"></th:block>
+<p class="actions"><a th:href="@{${paymentStatusUrl}}" class="button button-secondary">変更候補の状態へ戻る</a></p>
+<script src="https://js.pay.jp/payments.js" th:attr="nonce=${paymentScriptNonce}"></script>
+<script th:inline="javascript" th:attr="nonce=${paymentScriptNonce}">
+(() => {
+    const button = document.getElementById('next-action');
+    const message = document.getElementById('next-action-error');
+    let attempted = false;
+    button.addEventListener('click', async () => {
+        if (attempted) return;
+        attempted = true;
+        button.disabled = true;
+        try {
+            const payments = PayjpPayments(/*[[${card.publicKey}]]*/ '', {locale: 'ja'});
+            await payments.handleNextAction({clientSecret: /*[[${card.clientSecret}]]*/ ''});
+        } catch (_) { /* Never expose SDK errors, URLs or credentials. */ }
+        message.textContent = '認証結果をサーバーで確認してください。通信断後の再認証や別タブからの重複送信は行わないでください。';
+        // SDK outcomes are not evidence. Reconcile through the existing POST.
+        if (typeof window.orderEditPaymentContinue === 'function') window.orderEditPaymentContinue();
+    });
+})();
+</script>
+</main>
+</body></html>

@@ -852,6 +852,15 @@ public class OrderReauthorizationTransactions {
         });
         return issued;
     }
+    /** Feature139-C: the same one-time confirmation start as the card entry screen, used for a saved card. The
+     * caller's record (the saved card update send) is written in this transaction, under the same locks, only when
+     * the start was recorded. Nothing here calls PAY.JP. */
+    public <T> Optional<T> issueOrderEditSavedCard(BrowserTarget target,PayJpPaymentFlowObservation observed,long observationStarted,
+            java.util.function.Function<BrowserTarget,T> record){
+        Objects.requireNonNull(record);
+        if(!issueOrderEditBrowser(target,observed,observationStarted))return Optional.empty();
+        return Optional.of(Objects.requireNonNull(record.apply(target)));
+    }
     private static boolean freshBrowserObservation(long started){long elapsed=System.nanoTime()-started;return elapsed>=0&&elapsed<5_000_000_000L;}
     /** One durable first-confirm screen. Not a provider POST permit and never contains a secret. */
     public boolean issueBrowserConfirmation(long orderId,UUID operationId,PayJpPaymentFlowObservation observed){
