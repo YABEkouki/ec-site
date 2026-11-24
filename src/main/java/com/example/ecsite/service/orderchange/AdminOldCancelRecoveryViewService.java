@@ -47,7 +47,7 @@ public class AdminOldCancelRecoveryViewService {
                 select 1 from order_change_financial_requests r where r.operation_id=o.id and r.order_id=o.order_id
                   and r.payment_id=o.old_payment_id and r.request_kind='OLD_CANCEL' and r.purpose='ORDER_CHANGE_OLD_AUTH_CANCEL')) eligible
             from order_change_operations o join payments p on p.id=o.old_payment_id join payments n on n.id=o.new_payment_id
-            where o.order_id=? order by o.created_at desc,o.id
+            where o.order_id=? and o.execution_version is null order by o.created_at desc,o.id
             """,(r,n)->new Target(r.getLong("order_id"),r.getObject("id",UUID.class),r.getString("state"),r.getString("financial_review_reason"),
             r.getLong("old_payment_id"),r.getInt("old_amount"),r.getLong("new_payment_id"),r.getInt("new_amount"),r.getLong("version"),r.getBoolean("eligible")),orderId);
     }

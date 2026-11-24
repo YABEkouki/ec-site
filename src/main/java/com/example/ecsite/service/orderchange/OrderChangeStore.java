@@ -31,7 +31,7 @@ public class OrderChangeStore {
         if(limit<1 || limit>1000)throw new IllegalArgumentException("Invalid expiry batch size");
         return jdbc.query("""
             select o.order_id,o.id from order_change_operations o
-            where o.state='RESERVED' and o.abort_request_id is null and o.switch_decided_at is null and o.new_payment_id is null
+            where o.execution_version is null and o.state='RESERVED' and o.abort_request_id is null and o.switch_decided_at is null and o.new_payment_id is null
               and o.grace_until<=timezone('Asia/Tokyo',clock_timestamp())
               and not exists(select 1 from order_change_financial_requests r where r.operation_id=o.id)
               and not exists(select 1 from payment_transactions t where t.order_change_operation_id=o.id)
@@ -39,6 +39,8 @@ public class OrderChangeStore {
             """,(r,n)->new ExpiringOperation(r.getLong(1),r.getObject(2,UUID.class)),limit);
     }
     public Optional<Operation> operation(long orderId,UUID id){return find("order_id=? and id=?",orderId,id);}
+    /** Feature140-B: the legacy screens never open a batch edit, not even a RETAIN_AUTH one (which is not f125-owned). */
+    public Optional<Operation> legacyOperation(long orderId,UUID id){return find("order_id=? and id=? and execution_version is null",orderId,id);}
     private Optional<Operation> find(String predicate,Object... args){
         var rows=jdbc.query("select *,exists(select 1 from order_change_deadline_closures c where c.operation_id=order_change_operations.id) as f128_deadline_closed,"
                 +"(select d.outcome from order_change_final_decisions d where d.operation_id=order_change_operations.id) as f128_final_outcome"

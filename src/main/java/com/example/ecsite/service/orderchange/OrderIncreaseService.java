@@ -28,18 +28,18 @@ public class OrderIncreaseService {
     @Transactional
     public OrderChangeStore.Operation status(long orderId,long customerId,UUID id){
         lockedOrder(orderId,customerId);
-        return store.operation(orderId,id).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId));
+        return store.legacyOperation(orderId,id).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId));
     }
     @Transactional
     public void abort(long orderId,long customerId,UUID operationId){
         context.requireCleanWritableReadCommitted();var order=lockedOrder(orderId,customerId);
-        release(order,store.operation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId)));
+        release(order,store.legacyOperation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId)));
     }
     /** Customer confirmation CAS; release() rechecks that no financial work exists under these locks. */
     @Transactional
     public void withdrawReserved(long orderId,long customerId,UUID operationId,long expectedVersion){
         context.requireCleanWritableReadCommitted();var order=lockedOrder(orderId,customerId);
-        var operation=store.operation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId));
+        var operation=store.legacyOperation(orderId,operationId).orElseThrow(()->new com.example.ecsite.exception.OrderNotFoundException(orderId));
         if(!"ABORTED".equals(operation.state())&&operation.version()!=expectedVersion)throw new IllegalStateException("Withdrawal version changed");
         release(order,operation);
     }
@@ -49,7 +49,7 @@ public class OrderIncreaseService {
     @Transactional
     public boolean expireReserved(long orderId,UUID operationId){
         context.requireCleanWritableReadCommitted();var order=orders.findByIdForUpdate(orderId).orElseThrow();context.refreshWritableOrder(order);
-        var op=store.operation(orderId,operationId).orElseThrow();
+        var op=store.legacyOperation(orderId,operationId).orElseThrow();
         if(!op.state().equals("RESERVED") || !policy.canExpireChange(op.graceUntil(),op.switchDecidedAt(),orders.findCurrentTimeInTokyo()))return false;
         if(store.abortRequested(operationId)||store.financialStarted(operationId))return false;
         release(order,op);return true;
