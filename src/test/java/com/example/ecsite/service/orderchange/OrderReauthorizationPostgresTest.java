@@ -18,7 +18,8 @@ import com.example.ecsite.payment.*;
 import com.example.ecsite.payment.orderchange.*;
 import com.example.ecsite.payment.payjp.PayJpPaymentFlowObservation;
 
-@SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
+@SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false",
+    "spring.flyway.target=107"})
 @com.example.ecsite.support.CaptureConnectionTest
 @org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 class OrderReauthorizationPostgresTest {
@@ -28,6 +29,7 @@ class OrderReauthorizationPostgresTest {
     @MockitoSpyBean OldCancelRecoveryAuditRepository recoveryAudits;
     @Autowired OrderReauthorizationTransactions resultTransactions;
     @Autowired OrderIncreaseService increases;
+    @Autowired org.springframework.context.ApplicationContext context;
     @Autowired JdbcTemplate jdbc;
     @MockitoSpyBean OrderRepository orders;
     @Autowired UserRepository users;
@@ -64,7 +66,7 @@ class OrderReauthorizationPostgresTest {
         var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,total,0,key,now,PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);auth.markSucceeded(payment.getProviderPaymentId(),now);transactions.saveAndFlush(auth);
         return new Fixture(order.getId(),user.getId(),order.getItems().getFirst().getId(),product.getId(),payment.getId(),payment.getProviderPaymentId());
     });}
-    OrderChangeStore.Operation accept(Fixture f,int quantity){int revision=jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order());return increases.accept(new OrderIncreaseService.Request(f.order(),f.user(),UUID.randomUUID(),revision,Map.of(f.item(),quantity)));}
+    OrderChangeStore.Operation accept(Fixture f,int quantity){return LegacyOrderIncreaseFixture.accept(context,f.order(),f.user(),Map.of(f.item(),quantity));}
     final AtomicReference<String> newState=new AtomicReference<>("requires_capture");
     final AtomicBoolean oldCancelled=new AtomicBoolean();
     String newFlow;

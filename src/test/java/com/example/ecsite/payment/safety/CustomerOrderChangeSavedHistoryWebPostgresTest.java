@@ -54,6 +54,7 @@ class CustomerOrderChangeSavedHistoryWebPostgresTest {
         properties.add("spring.datasource.url", database::getJdbcUrl);
         properties.add("spring.datasource.username", database::getUsername);
         properties.add("spring.datasource.password", database::getPassword);
+        properties.add("spring.flyway.target", () -> "107"); // Feature140: writes legacy increases.
         properties.add("spring.flyway.url", database::getJdbcUrl);
         properties.add("spring.flyway.user", database::getUsername);
         properties.add("spring.flyway.password", database::getPassword);

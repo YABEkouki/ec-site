@@ -24,13 +24,15 @@ import com.example.ecsite.repository.*;
  * The database guards use the real clock. LEGACY order and operation deadline columns are shifted back
  * together (keeping their CHECK relations) so that "now" lands just after deadline+4min or deadline+5min.
  */
-@SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
+@SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false",
+    "spring.flyway.target=107"})
 @com.example.ecsite.support.CaptureConnectionTest
 class OrderChangeFinalDecisionPostgresTest {
     @Autowired OrderReauthorizationService service;
     @Autowired OrderReauthorizationTransactions results;
     @Autowired OrderChangeFinalDecisionService decisions;
     @Autowired OrderIncreaseService increases;
+    @Autowired org.springframework.context.ApplicationContext context;
     @Autowired JdbcTemplate jdbc;
     @Autowired OrderRepository orders;
     @Autowired UserRepository users;
@@ -60,8 +62,7 @@ class OrderChangeFinalDecisionPostgresTest {
         return new Fixture(order.getId(),user.getId(),order.getItems().getFirst().getId(),product.getId(),payment.getId(),payment.getProviderPaymentId());
     });}
     OrderChangeStore.Operation accept(Fixture f){
-        int revision=jdbc.queryForObject("select content_revision from orders where id=?",Integer.class,f.order());
-        return increases.accept(new OrderIncreaseService.Request(f.order(),f.user(),UUID.randomUUID(),revision,Map.of(f.item(),3)));
+        return LegacyOrderIncreaseFixture.accept(context,f.order(),f.user(),Map.of(f.item(),3));
     }
     /** Places the database clock {@code seconds} after the change deadline (deadline was one hour ahead). */
     void atDeadlinePlus(Fixture f,OrderChangeStore.Operation op,int seconds){tx(()->{

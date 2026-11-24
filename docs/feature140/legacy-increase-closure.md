@@ -1,6 +1,6 @@
 # Feature140 従来の数量増加（Feature124）を閉じる
 
-状態：140-A 設計承認（2026-11-24）、実装中。基準は main eec40c8（最新マイグレーション V107）。
+状態：140-A 実装・テスト完了（2026-11-24）。main 統合と開発 DB への適用は未実施。基準は main eec40c8（最新マイグレーション V107）。
 
 ## 1. 目的
 
@@ -87,7 +87,12 @@
 - OrderIncreasePostgresTest・OrderIncreaseCustomerPostgresTest の受付（見積もり・受付・再送・競合・在庫不足など）のテストは、機能がなくなるので削除する。解放・期限切れ・取下げ・状態表示のテストは残す。
 - OrderIncreasePolicyTest の要求の digest、OrderIncreaseModelCEvidencePostgresTest の受付は削除し、一括編集が続けて使えることの検証は残す。
 - OrderEditAdmissionGuardPostgresTest の `reauthorize` は、残る入口（`OrderReauthorizationTransactions.prepare`）がすでに別のテストで検証されていることを確かめてから外す。なければ置き換える。
-- 削除したテストは、実装時に一覧にしてここに残す。
+- 削除したテストは次のとおり。
+  - OrderIncreasePostgresTest：reservesOnlyIncreaseAndKeepsOriginalOrder、replayDoesNotReserveAgainAndChangedRequestConflicts、stockFailureRollsBackAllWrites、unsupportedChangesAndOtherCustomersAreRejected、concurrentReplayHasOneReservation、twoDifferentSubmissionsCannotBothReserve、cancellationWinningOrderLockPreventsCandidate、productsLockAscendingAndLaterShortageRollsBackEarlierReservation、finalAdmissionCheckRejectsDeadlineReachedWhileWaitingForProductLocks、quantityIncreaseCanLowerTotalByCrossingFreeShippingThreshold、shippingPreparationWaitsForCandidateAndThenIsRejected（releaseIsIdempotentAndAllowsNewSubmission は、新しい受付の部分を外して releaseIsIdempotentAndClearsTheUnresolvedChange に変更）
+  - OrderIncreaseCustomerPostgresTest：inputIsOwnedAndNeverCallsProvider、confirmedServerQuoteIsIdempotentAndDoesNotChangeOriginalOrder、csrfAndConfirmationOwnershipAreRequired、invalidQuantityIsRejected、foreignOrDuplicateItemsAreRejected、acceptanceRechecksDeadlineAndPreparationAfterPreview、changedServerPricingRequiresNewConfirmation、sparseFormIndexIsRejectedWithoutReservation
+  - OrderIncreasePolicyTest：requestIsImmutableAndDigestIgnoresMapIterationOrder
+  - OrderIncreaseModelCEvidencePostgresTest：クラスごと（enrolledOrdersRejectBothAcceptEntrancesWithoutAnySavedSideEffect、legacyOrderStillAcceptsAndReplaysOneReservation、rejectionDoesNotBlockTheNewBatchPath）
+- 当初の設計との差：OrderIncreaseModelCEvidencePostgresTest は、一括編集の検証も含めて削除した。「legacy の受付が拒否されたあと」という前提がなくなり、一括編集が使えることは最新版の OrderEditReauthorizationIntegrationTest が検証している。
 
 ### 6.3 新しいテスト
 
@@ -104,6 +109,19 @@
 
 - 最新版数の 3 テスト（IsolatedTestSmokeTest、OrderShippingPreparationPostgresTest、AdminOrderShippingPreparationSecurityPostgresTest）を 108 にする。
 - 回帰：一括編集（再与信・金額の範囲内・登録カード・不成立の取消）、Webhook・照合、倉庫出力、管理画面の保留一覧、注文詳細、プライバシーフィルター、JS テスト。関連する @WebMvcTest も実行する。
+
+### 6.5 結果（2026-11-24）
+
+- 77 クラス・1,993 件：失敗 0、エラー 0、スキップ 0。JS テスト 5 本も成功。
+- 初回に失敗した新規テスト 2 クラスは、どちらもテスト側の誤り（ログイン URL の期待値、Flyway の構成）で、直して成功した。
+- 6.3 の担当：
+  - 1 の拒否と 3 は LegacyIncreaseClosedPostgresTest。1 の一括編集は OrderEdit 系の既存テスト（最新版の DB）。
+  - 2 は LegacyIncreaseClosureUpgradePostgresTest。
+  - 4 は OrderChangePaymentCustomerPostgresTest（target=107）。
+  - 5 の状態の読み取りは LegacyIncreaseClosureUpgradePostgresTest。画面と変更履歴は target=107 のクラス。
+- V108 適用後の DB では確かめていないもの：
+  - AUTHORIZING 以降の取下げは、受理まで。取消の完了は target=107 で検証している。
+  - 完了した変更の画面と変更履歴の HTML。ブラウザで確認する。
 
 ## 7. 適用と確認
 

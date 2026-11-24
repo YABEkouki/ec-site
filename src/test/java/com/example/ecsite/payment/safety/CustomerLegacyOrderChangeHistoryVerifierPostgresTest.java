@@ -15,6 +15,7 @@ class CustomerLegacyOrderChangeHistoryVerifierPostgresTest extends OrderEditReau
     @DynamicPropertySource static void legacyHistoryDatabase(org.springframework.test.context.DynamicPropertyRegistry properties){
         legacyHistoryDatabase=OrderEditAdmissionFoundationPostgresTest.commitTrackingContainer();legacyHistoryDatabase.start();
         properties.add("spring.datasource.url",legacyHistoryDatabase::getJdbcUrl);properties.add("spring.datasource.username",legacyHistoryDatabase::getUsername);properties.add("spring.datasource.password",legacyHistoryDatabase::getPassword);
+        properties.add("spring.flyway.target",()->"107"); // Feature140: writes legacy increases.
         properties.add("spring.flyway.url",legacyHistoryDatabase::getJdbcUrl);properties.add("spring.flyway.user",legacyHistoryDatabase::getUsername);properties.add("spring.flyway.password",legacyHistoryDatabase::getPassword);
     }
     @AfterAll static void stopLegacyHistoryDatabase(){if(legacyHistoryDatabase!=null)legacyHistoryDatabase.stop();}

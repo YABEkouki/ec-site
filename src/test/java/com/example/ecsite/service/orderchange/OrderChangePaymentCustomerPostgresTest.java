@@ -22,12 +22,14 @@ import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-@SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false"})
+@SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false",
+    "spring.flyway.target=107"})
 @AutoConfigureMockMvc
 @com.example.ecsite.support.CaptureConnectionTest
 class OrderChangePaymentCustomerPostgresTest {
  @Autowired MockMvc mvc;
  @Autowired OrderIncreaseService increases;
+ @Autowired org.springframework.context.ApplicationContext context;
  @Autowired OrderReauthorizationTransactions financialTransactions;
  @Autowired OrderRepository orders;
  @Autowired UserRepository users;
@@ -59,7 +61,7 @@ class OrderChangePaymentCustomerPostgresTest {
  String root(Fixture f){return "/orders/"+f.order()+"/increase";}
  org.springframework.test.web.servlet.request.RequestPostProcessor customer(long id){return user(new CustomUserDetails(id,"customer","unused",true,List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))));}
 
- java.util.UUID accept(Fixture f){return increases.accept(new OrderIncreaseService.Request(f.order(),f.user(),java.util.UUID.randomUUID(),0,Map.of(f.item(),5))).id();}
+ java.util.UUID accept(Fixture f){return LegacyOrderIncreaseFixture.accept(context,f.order(),f.user(),Map.of(f.item(),5)).id();}
  @Test void paymentRequiresOwnershipAndCreatesNoFlowForOtherCustomer() throws Exception {
   var f=fixture();var op=accept(f);
   mvc.perform(post(root(f)+"/"+op+"/payment").with(customer(f.user()+1000)).with(csrf())).andExpect(status().isNotFound());
@@ -99,8 +101,19 @@ class OrderChangePaymentCustomerPostgresTest {
   });
   when(gateway.retrieveAuthorization(flow)).thenReturn(new com.example.ecsite.payment.AuthorizationRecovery(
    new com.example.ecsite.payment.AuthorizationResult(com.example.ecsite.payment.AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD,flow,null,null),secret));
+  // The authorization had been prepared before Feature140-A; the browser no longer starts it from RESERVED.
+  financialTransactions.prepare(f.order(),op);
  }
  String payment(Fixture f,UUID op){return root(f)+"/"+op+"/payment";}
+ @Test void reservedIncreaseNeverStartsAnAuthorizationFromTheBrowser() throws Exception {
+  var f=fixture();var op=accept(f);
+  for(String path:List.of("","/continue"))mvc.perform(post(payment(f,op)+path).with(customer(f.user())).with(csrf()))
+   .andExpect(status().isFound()).andExpect(redirectedUrl(root(f)+"/"+op));
+  assertThat(jdbc.queryForObject("select state from order_change_operations where id=?",String.class,op)).isEqualTo("RESERVED");
+  assertThat(jdbc.queryForObject("select new_payment_id from order_change_operations where id=?",Long.class,op)).isNull();
+  assertThat(jdbc.queryForObject("select count(*) from payments where order_id=?",Integer.class,f.order())).isOne();
+  verifyNoInteractions(gateway);
+ }
  @Test void firstCardScreenIsDurableAndCannotBeReissuedAcrossTabsOrSessions() throws Exception {
   var f=fixture();var op=accept(f);mockFlow(f,op);var session=new MockHttpSession();
   var result=mvc.perform(post(payment(f,op)).with(customer(f.user())).with(csrf()).session(session))

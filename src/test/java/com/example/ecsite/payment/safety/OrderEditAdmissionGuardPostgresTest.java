@@ -85,7 +85,8 @@ class OrderEditAdmissionGuardPostgresTest {
             case "cancel"->create(PaymentService.class,dependencies).startCancellation(o,null);
             case "items"->create(OrderService.class,dependencies).changeItemsForUser(f.order(),f.customer(),"test",null);
             case "address"->create(OrderService.class,dependencies).changeShippingAddressForUser(f.order(),f.customer(),"test",null);
-            case "reauthorize"->create(OrderIncreaseService.class,dependencies).accept(new OrderIncreaseService.Request(f.order(),f.customer(),UUID.randomUUID(),0,Map.of(1L,2)));
+            case "reauthorize"->{dependencies.put(org.springframework.jdbc.core.JdbcTemplate.class,jdbc);
+                create(com.example.ecsite.service.orderchange.OrderReauthorizationTransactions.class,dependencies).prepare(f.order(),UUID.randomUUID());}
             case "capture"->create(CaptureShipmentOperations.class,dependencies).start(f.order(),1L,"test-admin",null);
             default->throw new IllegalArgumentException(operation);
         }

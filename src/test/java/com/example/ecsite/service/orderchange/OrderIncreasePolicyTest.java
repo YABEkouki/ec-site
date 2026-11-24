@@ -4,7 +4,6 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.service.OrderModificationPolicy;
 import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
-import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 
 class OrderIncreasePolicyTest {
@@ -18,13 +17,5 @@ class OrderIncreasePolicyTest {
         assertThat(policy.canExpireChange(grace,null,grace.minusNanos(1))).isFalse();
         assertThat(policy.canExpireChange(grace,null,grace)).isTrue();
         assertThat(policy.canExpireChange(grace,deadline,grace.plusDays(1))).isFalse();
-    }
-    @Test void requestIsImmutableAndDigestIgnoresMapIterationOrder(){
-        var key=UUID.randomUUID();var source=new LinkedHashMap<Long,Integer>();source.put(2L,4);source.put(1L,3);
-        var first=new OrderIncreaseService.Request(10,20,key,0,source);source.put(1L,99);
-        var second=new OrderIncreaseService.Request(10,20,key,0,Map.of(1L,3,2L,4));
-        assertThat(first).isEqualTo(second);assertThat(first.digest()).isEqualTo(second.digest());
-        assertThat(new OrderIncreaseService.Request(10,20,key,1,second.quantities()).digest()).isNotEqualTo(first.digest());
-        assertThatThrownBy(()->new OrderIncreaseService.Request(10,20,key,0,Map.of(1L,0))).isInstanceOf(IllegalArgumentException.class);
     }
 }
