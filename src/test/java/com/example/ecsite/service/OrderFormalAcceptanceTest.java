@@ -70,7 +70,6 @@ class OrderFormalAcceptanceTest {
             assertThat(policy.allowsPreparationStart(order, now)).isFalse();
             assertThat(order.isWithinModificationPeriod(now)).isFalse();
             assertThat(order.canCancelByUser(now)).isFalse();
-            assertThat(order.canChangeItemsByUser(now)).isFalse();
             assertThat(order.canChangeShippingAddress(now)).isFalse();
         }
     }

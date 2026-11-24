@@ -103,31 +103,6 @@ public class InventoryService {
         stockMovementRepository.save(movement);
     }
 
-    public void restoreForOrderItemChange(
-            Long productId,
-            int quantity,
-            Long orderId) {
-
-        Product product = productRepository
-                .findByIdForUpdateIncludingInactive(productId)
-                .orElseThrow(() -> new ProductNotFoundException(productId));
-
-        int stockBefore = product.getStock();
-
-        product.adjustStock(quantity);
-
-        int stockAfter = product.getStock();
-
-        StockMovement movement = StockMovement.createOrderItemChange(
-                product,
-                stockBefore,
-                stockAfter,
-                quantity,
-                orderId);
-
-        stockMovementRepository.save(movement);
-    }
-
     @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
     public long releaseForOrderChange(Long productId,int quantity,Long orderId,java.util.UUID operationId,Long itemId) {
         if(quantity<=0)throw new IllegalArgumentException("Positive release required");

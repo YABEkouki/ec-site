@@ -182,7 +182,7 @@ class OrderEditAdmissionServicePostgresTest {
         jdbc.update("update products set price=1000 where id=?",f.product());
         assertThat(service().submit(c).outcome()).isEqualTo(Outcome.ACCEPTED);
     }
-    @ParameterizedTest @ValueSource(strings={"shipping","cancel","items","address","reauthorize","capture"})
+    @ParameterizedTest @ValueSource(strings={"shipping","cancel","address","reauthorize","capture"})
     void admissionCommitSerializesAllExistingOperationGates(String operation) throws Exception {
         var f=fixture(false);var c=command(f);var recorded=new CountDownLatch(1);var finish=new CountDownLatch(1);
         var manager=new DataSourceTransactionManager(db.source){final AtomicBoolean first=new AtomicBoolean(true);

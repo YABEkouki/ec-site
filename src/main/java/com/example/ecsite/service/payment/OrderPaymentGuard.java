@@ -49,10 +49,6 @@ public class OrderPaymentGuard {
         return contentEvidence == null ? null : contentEvidence.inspectAdvisory(order);
     }
 
-    public void validateItemChange(Order order) {
-        assertNoPending(lockedPayments(order));
-    }
-
     public void validateManualPayment(Order order) {
         validateLocalCancellation(order);
     }

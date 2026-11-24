@@ -13,7 +13,6 @@ import javax.sql.DataSource;
 
 import com.example.ecsite.entity.*;
 import com.example.ecsite.entity.Order;
-import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.payment.*;
@@ -77,7 +76,7 @@ class OrderModificationGuardPostgresTest {
     @AfterEach void cleanup() throws Exception {
         release.countDown(); workers.shutdownNow(); assertThat(workers.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
     }
-    enum Operation { ADDRESS, ADDRESS_NO_OP, ITEMS, LOCAL_USER_CANCEL, LOCAL_ADMIN_CANCEL, CARD_USER_CANCEL, CARD_ADMIN_CANCEL }
+    enum Operation { ADDRESS, ADDRESS_NO_OP, LOCAL_USER_CANCEL, LOCAL_ADMIN_CANCEL, CARD_USER_CANCEL, CARD_ADMIN_CANCEL }
     @ParameterizedTest @EnumSource(Operation.class)
     void expiredDeadlineRejectsEveryNewModificationWithoutSideEffects(Operation operation) {
         assertRejected(operation, false);
@@ -115,7 +114,6 @@ class OrderModificationGuardPostgresTest {
     private void perform(Operation operation,Fixture f) {
         switch(operation) {
             case ADDRESS, ADDRESS_NO_OP -> orderService.changeShippingAddressForUser(f.orderId,f.userId,"user",address(operation==Operation.ADDRESS?"Changed":"Original"));
-            case ITEMS -> change(f);
             case LOCAL_USER_CANCEL -> orderService.cancelOrderForUser(f.orderId,f.userId,"user");
             case LOCAL_ADMIN_CANCEL -> orderService.cancelOrder(f.orderId,1L,"admin",null);
             case CARD_USER_CANCEL -> userCancel.cancelForUser(f.orderId,f.userId,"user");
@@ -200,13 +198,6 @@ class OrderModificationGuardPostgresTest {
         form.setShippingPostalCode("100-0001");form.setShippingPrefecture("Tokyo");form.setShippingCity("Chiyoda");
         form.setShippingAddressLine("1-1");form.setShippingPhone("09012345678");return form;
     }
-    private boolean change(Fixture f) { return orderService.changeItemsForUser(f.orderId,f.userId,"user",form(f)); }
-    private OrderItemChangeForm form(Fixture f) {
-        OrderItemChangeForm form=new OrderItemChangeForm(); form.setContentRevision(0);
-        for(int i=0;i<2;i++) { var item=new OrderItemChangeForm.Item();item.setOrderItemId(f.itemIds.get(i));item.setQuantity(i==0?1:0);form.getItems().add(item); }
-        return form;
-    }
-    private void price(Fixture f,int amount) { when(calculator.calculate(any(),any(ChargeTaxSnapshot.class))).thenReturn(amount(f,amount)); }
     private OrderAmount amount(Fixture f,int total) { return new OrderAmount(total,List.of(new OrderChargeAmount(OrderChargeType.SHIPPING,"shipping",0,f.taxId,"test","test",BigDecimal.ZERO,1)),0,0,total); }
     private List<Integer> stock(Fixture f) { return jdbc.queryForList("select stock from products where id in (?,?) order by id",Integer.class,f.productIds.get(0),f.productIds.get(1)); }
     private int number(String table,Fixture f) { return jdbc.queryForObject("select count(*) from "+table+" where order_id=?",Integer.class,f.orderId); }

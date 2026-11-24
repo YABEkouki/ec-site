@@ -25,7 +25,6 @@ import java.util.function.Supplier;
 import com.example.ecsite.entity.*;
 import com.example.ecsite.entity.Order;
 import com.example.ecsite.exception.InvalidOrderStatusException;
-import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.form.OrderShippingAddressForm;
 import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.repository.*;
@@ -76,6 +75,7 @@ class OrderShippingPreparationPostgresTest {
     @Autowired PaymentTransactionRepository transactions;
     @Autowired PlatformTransactionManager manager;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.context.ApplicationContext context;
     @Autowired Environment environment;
     @Autowired EntityManager entityManager;
     @MockitoBean PaymentGateway gateway;
@@ -119,7 +119,7 @@ class OrderShippingPreparationPostgresTest {
         assertThat(withoutPreparation(state(f))).isEqualTo(withoutPreparation(before));
         assertThat(orderRow(f)).containsEntry("status", card ? "ORDERED" : "PAID")
                 .containsEntry("shipment_capture_payment_id", null);
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(108);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(109);
         assertThat(environment.getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
         assertThat(jdbc.queryForObject("select count(*) from pg_constraint where conrelid='orders'::regclass "
                 + "and conname in ('chk_orders_shipping_preparation_metadata','chk_orders_shipment_metadata') "
@@ -387,7 +387,7 @@ class OrderShippingPreparationPostgresTest {
         when(calculator.calculate(any(), any(ChargeTaxSnapshot.class))).thenReturn(amount(f.taxId(), 1000));
         CompletableFuture<Integer> blocker = new CompletableFuture<>();
         Future<?> first = workers.submit(() -> asAdmin(7L, "first", () -> tx(() -> {
-            assertThat(orderService.changeItemsForUser(f.orderId(), f.userId(), "customer", itemChange(f))).isTrue();
+            com.example.ecsite.support.LegacyItemDecreaseFixture.decreaseContentOnly(context, f.orderId(), f.userId(), java.util.Map.of(f.itemIds().get(0), 1, f.itemIds().get(1), 0));
             blocker.complete(backendPid()); await(release); return null;
         })));
         int pid = blocker.get(20, TimeUnit.SECONDS);
@@ -405,14 +405,13 @@ class OrderShippingPreparationPostgresTest {
                 argThat(p -> p.getAmount() == 3000), argThat(t -> t.getOrderContentRevision() == 0));
         assertThat(jdbc.queryForObject("select count(*) from emergency_shipping_preparations where order_id=?",
                 Integer.class, f.orderId())).isZero();
-        assertThat(count("order_content_change_histories", f)).isEqualTo(1);
         // Confirming the current content succeeds.
         var result = asAdmin(9L, "second", () -> start(f));
         assertThat(result.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
         assertStored(f, result);
     }
 
-    enum Modification { ADDRESS, ADDRESS_NO_OP, ITEMS, LOCAL_CUSTOMER_CANCEL, LOCAL_ADMIN_CANCEL, CARD_CUSTOMER_CANCEL, CARD_ADMIN_CANCEL }
+    enum Modification { ADDRESS, ADDRESS_NO_OP, LOCAL_CUSTOMER_CANCEL, LOCAL_ADMIN_CANCEL, CARD_CUSTOMER_CANCEL, CARD_ADMIN_CANCEL }
     @ParameterizedTest @EnumSource(Modification.class)
     void preparationBlocksExistingModificationAndCancellationRoutes(Modification operation) {
         Fixture f = fixture(true);
@@ -426,7 +425,6 @@ class OrderShippingPreparationPostgresTest {
             switch (operation) {
                 case ADDRESS, ADDRESS_NO_OP -> orderService.changeShippingAddressForUser(f.orderId(), f.userId(), "customer",
                         address(operation == Modification.ADDRESS ? "Changed" : "Original"));
-                case ITEMS -> orderService.changeItemsForUser(f.orderId(), f.userId(), "customer", itemChange(f));
                 case LOCAL_CUSTOMER_CANCEL -> orderService.cancelOrderForUser(f.orderId(), f.userId(), "customer");
                 case LOCAL_ADMIN_CANCEL -> orderService.cancelOrder(f.orderId(), 7L, "first", null);
                 case CARD_CUSTOMER_CANCEL -> cancellation.start(f.orderId(), f.userId(), "customer");
@@ -897,15 +895,6 @@ class OrderShippingPreparationPostgresTest {
     private OrderAmount amount(Long taxId, int total) {
         return new OrderAmount(total, List.of(new OrderChargeAmount(OrderChargeType.SHIPPING, "shipping", 0,
                 taxId, "test", "test", BigDecimal.ZERO, 1)), 0, 0, total);
-    }
-
-    private OrderItemChangeForm itemChange(Fixture f) {
-        OrderItemChangeForm form = new OrderItemChangeForm(); form.setContentRevision(0);
-        for (int i = 0; i < 2; i++) {
-            var item = new OrderItemChangeForm.Item(); item.setOrderItemId(f.itemIds().get(i));
-            item.setQuantity(i == 0 ? 1 : 0); form.getItems().add(item);
-        }
-        return form;
     }
 
     private OrderShippingAddressForm address(String name) {

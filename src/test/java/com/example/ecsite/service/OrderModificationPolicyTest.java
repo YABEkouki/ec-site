@@ -87,7 +87,6 @@ class OrderModificationPolicyTest {
         LocalDateTime now = DEADLINE.minusNanos(1);
         assertThat(policy.allowsModification(order, now)).isTrue();
         assertThat(order.canChangeShippingAddress(now)).isTrue();
-        assertThat(order.canChangeItemsByUser(now)).isFalse();
         assertThat(order.canCancelByUser(now)).isFalse();
         assertThat(policy.allowsPreparationStart(order, DEADLINE)).isTrue();
     }
@@ -114,7 +113,6 @@ class OrderModificationPolicyTest {
         assertThat(policy.allowsModification(order, DEADLINE)).isFalse();
         assertThat(policy.allowsPreparationStart(order, DEADLINE)).isTrue();
         assertThat(order.canChangeShippingAddress(beforeDeadline)).isFalse();
-        assertThat(order.canChangeItemsByUser(beforeDeadline)).isFalse();
         assertThat(order.canCancelByUser(beforeDeadline)).isFalse();
     }
 

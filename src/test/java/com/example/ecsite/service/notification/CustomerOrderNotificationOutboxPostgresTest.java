@@ -90,7 +90,7 @@ class CustomerOrderNotificationOutboxPostgresTest {
         finally { SecurityContextHolder.clearContext(); }
     }
 
-    @Test void acceptanceItemAndAddressChangesAndShipmentEachRecordOneNotification() throws Exception {
+    @Test void acceptanceAddressChangeAndShipmentEachRecordOneNotification() throws Exception {
         Seed seed=seed();
         long id=order(seed);
         assertThat(notifications(id)).isEmpty();
@@ -116,19 +116,6 @@ class CustomerOrderNotificationOutboxPostgresTest {
 
         var deadline=date(id,"change_deadline_at");
         advance(deadline.minusNanos(1000));
-        assertThat(orderService.changeItemsForUser(id,seed.user(),"customer",items(id,0,2))).isTrue();
-        JsonNode changed=payload(id,"ITEMS_CHANGED");
-        assertThat(changed.at("/change/oldTotalAmount").asInt()).isEqualTo(3550);
-        assertThat(changed.at("/change/newTotalAmount").asInt()).isEqualTo(2550);
-        assertThat(changed.at("/change/items/0/oldQuantity").asInt()).isEqualTo(3);
-        assertThat(changed.at("/change/items/0/newQuantity").asInt()).isEqualTo(2);
-        assertThat(changed.at("/order/totalAmount").asInt()).isEqualTo(2550);
-        assertThat(changed.at("/order/items/0/quantity").asInt()).isEqualTo(2);
-        long history=jdbc.queryForObject("select id from order_content_change_histories where order_id=?",Long.class,id);
-        assertThat(notification(id,"ITEMS_CHANGED")).containsEntry("source_key",String.valueOf(history));
-        // The acceptance snapshot is not rewritten by the later change.
-        assertThat(payload(id,"ORDER_ACCEPTED")).isEqualTo(accepted);
-
         OrderShippingAddressForm address=new OrderShippingAddressForm();address.setShippingName("changed name");
         address.setShippingPostalCode("150-0001");address.setShippingPrefecture("東京都");address.setShippingCity("渋谷区");
         address.setShippingAddressLine("2-2");address.setShippingPhone("0398765432");
@@ -139,12 +126,14 @@ class CustomerOrderNotificationOutboxPostgresTest {
         assertThat(moved.at("/newShipping/city").asString()).isEqualTo("渋谷区");
         assertThat(moved.at("/order/shipping/addressLine").asString()).isEqualTo("2-2");
         assertThat(moved.toString()).doesNotContain("0398765432").doesNotContain("0312345678");
+        // The acceptance snapshot is not rewritten by the later change.
+        assertThat(payload(id,"ORDER_ACCEPTED")).isEqualTo(accepted);
         // An unchanged address writes no history and records nothing.
         assertThat(orderService.changeShippingAddressForUser(id,seed.user(),"customer",address)).isFalse();
 
         advance(deadline);authenticate(seed.preparer());
         com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,id);
-        assertThat(types(id)).containsExactly("ORDER_ACCEPTED","ITEMS_CHANGED","ADDRESS_CHANGED");
+        assertThat(types(id)).containsExactly("ORDER_ACCEPTED","ADDRESS_CHANGED");
 
         advance(deadline.plusNanos(1000));authenticate(seed.shipper());
         when(gateway.capture(any())).thenReturn(new CaptureResult(CaptureResultStatus.PENDING,provider,null,null));
@@ -158,7 +147,7 @@ class CustomerOrderNotificationOutboxPostgresTest {
         advance(deadline.plusNanos(2000));
         when(gateway.retrievePaymentFlow(provider)).thenReturn(new PaymentFlowState(provider,PaymentFlowStatus.SUCCEEDED,null,null));
         assertThat(requery.requery(id)).isEqualTo(AdminCaptureRequeryService.Result.CONFIRMED);
-        assertThat(types(id)).containsExactly("ORDER_ACCEPTED","ITEMS_CHANGED","ADDRESS_CHANGED","ORDER_SHIPPED");
+        assertThat(types(id)).containsExactly("ORDER_ACCEPTED","ADDRESS_CHANGED","ORDER_SHIPPED");
         assertThat(notifications(id)).allSatisfy(n -> assertThat(n).containsEntry("status","PENDING")
                 .containsEntry("user_id",seed.user()).containsEntry("attempt_count",0).containsEntry("max_attempts",3));
     }
@@ -343,11 +332,6 @@ class CustomerOrderNotificationOutboxPostgresTest {
     private void authenticate(Actor actor) {
         var details=new AdminUserDetails(actor.id(),actor.username(),"test",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(details,"",details.getAuthorities()));
-    }
-    private OrderItemChangeForm items(long id,int revision,int quantity) {
-        var f=new OrderItemChangeForm();f.setContentRevision(revision);var item=new OrderItemChangeForm.Item();
-        item.setOrderItemId(jdbc.queryForObject("select id from order_items where order_id=?",Long.class,id));
-        item.setQuantity(quantity);f.getItems().add(item);return f;
     }
     private void advance(LocalDateTime time) {
         clock.advance(time);doReturn(clock.localTime()).when(orders).findCurrentTimeInTokyo();
