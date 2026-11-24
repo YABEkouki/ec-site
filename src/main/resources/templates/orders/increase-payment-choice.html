@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>注文変更のカード認証</title><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<body class="flow-page">
+<header th:replace="~{fragments/header :: header}"></header>
+<main class="flow-main">
+<h1>注文変更のカード認証</h1>
+<p class="flow-message-info">変更後の注文全額についてカードの与信を確認します。認証に使うカードを選んでください。</p>
+<p>新旧の全額与信が一時的に重なります。デビット・プリペイドカードでは一時的な二重引落しや解放の遅れが生じることがあります。</p>
+<p>カード認証はこの変更につき 1 回です。認証を始めたあとは、別のカードに選び直せません。</p>
+<section>
+<h2>登録済みのカードで認証する</h2>
+<form id="saved-card-form" th:action="@{/orders/{id}/edit/{admission}/payment/saved-card(id=${orderId},admission=${admission})}" method="post">
+<div th:each="saved, st : ${savedCards}">
+<label>
+<input type="radio" name="paymentMethodId" th:value="${saved.id}" required
+       th:checked="${saved.defaultCard or (st.first and #lists.isEmpty(savedCards.?[defaultCard]))}">
+<span th:text="${saved.brand + ' **** ' + saved.last4}"></span>
+<span th:text="${'（有効期限 ' + #numbers.formatInteger(saved.expMonth, 2) + '/' + saved.expYear + '）'}"></span>
+<span th:if="${saved.defaultCard}">既定</span>
+</label>
+</div>
+<button type="submit" id="saved-card-submit" class="button-primary">このカードで認証する</button>
+</form>
+</section>
+<section>
+<h2>カード情報を入力して認証する</h2>
+<form id="manual-card-form" th:action="@{/orders/{id}/edit/{admission}/payment/manual(id=${orderId},admission=${admission})}" method="post">
+<button type="submit" class="button-secondary">カード情報を入力する</button>
+</form>
+</section>
+<p class="actions"><a th:href="@{${paymentStatusUrl}}" class="button button-secondary">変更候補の状態へ戻る</a></p>
+<script th:attr="nonce=${paymentScriptNonce}">
+(() => {
+    // One submission only: the server records the single confirmation chance of this change.
+    let submitted = false;
+    document.querySelectorAll('form').forEach(form => form.addEventListener('submit', event => {
+        if (submitted) { event.preventDefault(); return; }
+        submitted = true;
+        document.querySelectorAll('button[type="submit"]').forEach(button => button.disabled = true);
+    }));
+})();
+</script>
+</main>
+</body></html>

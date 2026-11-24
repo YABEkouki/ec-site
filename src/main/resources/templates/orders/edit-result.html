@@ -18,6 +18,15 @@
 <form id="result-auth-start" th:attr="data-target=${result.automaticCardTarget}" th:if="${failureClosurePending != true and result.canAuthenticate}" th:action="@{/orders/{id}/edit/{receipt}/payment(id=${orderId},receipt=${result.id})}" method="post">
 <button type="submit" class="button-primary">カード認証を開始する</button>
 </form>
+<form id="result-saved-card-authenticate" th:if="${failureClosurePending != true and savedCardStep == 'AUTHENTICATE'}" th:action="@{/orders/{id}/edit/{receipt}/payment/authenticate(id=${orderId},receipt=${result.id})}" method="post">
+<p>登録済みのカードの本人認証（3D セキュア）が完了していません。</p>
+<button type="submit" class="button-primary">本人認証へ進む</button>
+</form>
+<form id="result-saved-card-resend" th:if="${failureClosurePending != true and savedCardStep == 'RESEND' and savedCardMethod != null}" th:action="@{/orders/{id}/edit/{receipt}/payment/saved-card(id=${orderId},receipt=${result.id})}" method="post">
+<p>登録済みのカードでの認証の送信結果を確認できていません。同じカードで送信結果を確認し、届いていない場合だけ送り直します。</p>
+<input type="hidden" name="paymentMethodId" th:value="${savedCardMethod}">
+<button type="submit" class="button-secondary">同じカードで認証を続ける</button>
+</form>
 <form id="result-continue" th:attr="data-receipt=${result.id},data-stage=${result.nextStep.stage},data-wait-ms=${result.nextStep.waitMillis},data-remaining-ms=${result.nextStep.remainingMillis}" th:if="${failureClosurePending != true and (result.canContinue or result.autoContinueAllowed)}" th:action="@{/orders/{id}/edit/{receipt}/payment/continue(id=${orderId},receipt=${result.id})}" method="post"><input type="hidden" name="automaticVersion" th:value="${result.nextStep.version}"><input type="hidden" name="automatic" value="false"><button type="submit" class="button-secondary">受付済み処理を継続する</button>
 </form>
 <form id="result-discard-failed" th:if="${failureClosurePending != true and result.label == 'カード認証待ち' and !result.autoStartCardAllowed}" th:action="@{/orders/{id}/edit/{receipt}/payment/discard-failed(id=${orderId},receipt=${result.id})}" method="post">

@@ -17,7 +17,7 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)
             throws ServletException,IOException {
         String path=request.getRequestURI().substring(request.getContextPath().length());
-        boolean edit=path.matches("/orders/[^/]+/edit/[^/]+/payment(?:/return|/continue)?");
+        boolean edit=path.matches("/orders/[^/]+/edit/[^/]+/payment(?:/return|/continue|/manual|/saved-card|/authenticate)?");
         boolean editContinue=path.matches("/orders/[^/]+/edit/continue");
         if(!edit&&!editContinue&&!path.matches("/orders/[^/]+/increase/[^/]+/payment(?:/return|/continue)?")
                 && !path.matches("/checkout/payment(?:/return|/continue|/wait)?")){
@@ -38,6 +38,11 @@ public class OrderChangePaymentPrivacyFilter extends OncePerRequestFilter {
                 parameters.put("automatic",new String[]{"true"});
                 String version=request.getParameter("automaticVersion");
                 if(version!=null&&version.matches("[0-9]{1,18}"))parameters.put("automaticVersion",new String[]{version});
+            }
+            if(edit&&path.endsWith("/saved-card")){
+                // Feature139-C: only a saved card id (pm_...) is passed on; never card data.
+                String card=request.getParameter("paymentMethodId");
+                if(card!=null&&card.matches("pm_[A-Za-z0-9_-]{1,252}"))parameters.put("paymentMethodId",new String[]{card});
             }
             var csrf=request.getParameterValues("_csrf");if(csrf!=null)parameters.put("_csrf",csrf.clone());
             var admission=request.getParameter("admission");
