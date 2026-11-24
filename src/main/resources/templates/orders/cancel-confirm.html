@@ -139,13 +139,13 @@
         </tbody>
     </table>
 
+    <p id="cancel-change-guidance">
+        商品や数量を変更する場合は、注文詳細の「注文内容を変更する」から行ってください。
+    </p>
+
     <div class="form-actions">
         <a th:href="@{/orders/{id}(id=${order.id})}" class="button button-secondary">
             注文詳細に戻る
-        </a>
-
-        <a th:href="@{/orders/{id}/items(id=${order.id})}" class="button button-secondary">
-            注文内容を変更する
         </a>
 
         <form th:action="@{/orders/{id}/cancel(id=${order.id})}" method="post">

@@ -13,7 +13,6 @@ import javax.sql.DataSource;
 
 import com.example.ecsite.entity.*;
 import com.example.ecsite.entity.Order;
-import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.payment.*;
 import com.example.ecsite.repository.*;
@@ -64,6 +63,7 @@ class OrderPaymentGuardPostgresTest {
     @Autowired PaymentTransactionRepository transactions;
     @Autowired PlatformTransactionManager manager;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.context.ApplicationContext context;
     @Autowired DataSource dataSource;
     @MockitoBean PaymentGateway gateway;
     @MockitoBean OrderAmountCalculator calculator;
@@ -75,12 +75,6 @@ class OrderPaymentGuardPostgresTest {
     @AfterEach void cleanup() throws Exception {
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
         release.countDown(); workers.shutdownNow(); assertThat(workers.awaitTermination(20, TimeUnit.SECONDS)).isTrue();
-    }
-    @ParameterizedTest @EnumSource(value = PaymentTransactionType.class, names = {"AUTHORIZE", "CAPTURE", "CANCEL"})
-    void pendingOperationRejectsItemChangeWithoutAnySideEffect(PaymentTransactionType type) {
-        Fixture f = pending(type); Map<String,Object> before = state(f);
-        assertThatThrownBy(() -> change(f)).isInstanceOf(InvalidOrderStatusException.class);
-        assertThat(state(f)).isEqualTo(before); verifyNoInteractions(calculator, gateway);
     }
     @ParameterizedTest @EnumSource(value = PaymentTransactionType.class, names = {"AUTHORIZE", "CAPTURE", "CANCEL"})
     void pendingOperationRejectsManualPayment(PaymentTransactionType type) {
@@ -107,15 +101,12 @@ class OrderPaymentGuardPostgresTest {
         assertThatThrownBy(() -> orderService.cancelOrder(f.orderId, 1L, "admin", null)).isInstanceOf(RuntimeException.class);
         assertThat(state(f)).isEqualTo(before);
     }
-    @Test void normalDecreaseAndRemovalRestoreStockAndAllowDecreasedCapture() {
+    @Test void decreasedContentWithoutEvidenceAllowsDecreasedCapture() {
         Fixture f = fixture(true); price(f, 1000);
-        assertThat(change(f)).isTrue();
+        change(f);
         assertThat(jdbc.queryForMap("select total_amount, content_revision from orders where id=?", f.orderId))
                 .containsEntry("total_amount",1000).containsEntry("content_revision",1);
         assertThat(jdbc.queryForList("select quantity from order_items where order_id=?", Integer.class, f.orderId)).containsExactly(1);
-        assertThat(stock(f)).containsExactly(11,12);
-        assertThat(number("order_content_change_histories", f)).isEqualTo(1);
-        assertThat(number("stock_movements", f)).isEqualTo(2);
         PaymentCaptureStart start = preparedCapture(f);
         assertThat(start.amount()).isEqualTo(1000);
         assertThat(jdbc.queryForObject("select order_content_revision from payment_transactions where id=?", Integer.class,start.transactionId())).isEqualTo(1);
@@ -156,22 +147,7 @@ class OrderPaymentGuardPostgresTest {
         assertThat(stock(f)).containsExactly(12,12); assertThat(number("stock_movements",f)).isEqualTo(2);
         verify(gateway).cancelAuthorization(any()); verify(gateway).retrievePaymentFlow(f.providerId);
     }
-    @Test void paymentStartCommittedWhileChangeWaitsMakesChangeReject() throws Exception {
-        Fixture f = fixture(true); CompletableFuture<Integer> blocker = new CompletableFuture<>();
-        Future<?> first = workers.submit(() -> tx(() -> {
-            orders.findByIdForUpdate(f.orderId).orElseThrow();
-            pendingCaptureUnderOrderLock(f);
-            blocker.complete(jdbc.queryForObject("select pg_backend_pid()",Integer.class));
-            awaitUnchecked(release); return null;
-        }));
-        int pid = blocker.get(20,TimeUnit.SECONDS);
-        Future<?> changing = workers.submit(() -> change(f));
-        assertWait(pid); Map<String,Object> before = state(f);
-        release.countDown(); first.get(20,TimeUnit.SECONDS);
-        assertThatThrownBy(() -> changing.get(20,TimeUnit.SECONDS)).hasCauseInstanceOf(InvalidOrderStatusException.class);
-        assertThat(state(f)).isEqualTo(before); verifyNoInteractions(calculator,gateway);
-    }
-    @Test void itemChangeCommitsBeforePreparationAndCaptureUsesNewSnapshot() throws Exception {
+    @Test void decreaseCommittedBeforePreparationIsSeenAfterTheOrderLockWait() throws Exception {
         Fixture f = fixture(true); price(f,1000); CompletableFuture<Integer> blocker = new CompletableFuture<>();
         when(calculator.calculate(any(),any(ChargeTaxSnapshot.class))).thenAnswer(call -> {
             blocker.complete(jdbc.queryForObject("select pg_backend_pid()",Integer.class));
@@ -183,7 +159,6 @@ class OrderPaymentGuardPostgresTest {
         PaymentCaptureStart result = starting.get(20,TimeUnit.SECONDS);
         assertThat(result.amount()).isEqualTo(1000);
         assertThat(jdbc.queryForObject("select order_content_revision from payment_transactions where id=?",Integer.class,result.transactionId())).isEqualTo(1);
-        assertThat(stock(f)).containsExactly(11,12);
     }
     @Test void adminCancellationRechecksPaymentCreatedWhileWaitingForOrder() throws Exception {
         Fixture f = fixture(false); CompletableFuture<Integer> blocker = new CompletableFuture<>();
@@ -198,14 +173,6 @@ class OrderPaymentGuardPostgresTest {
         verify(gateway).cancelAuthorization(any()); assertThat(number("order_status_histories",f)).isEqualTo(1);
         assertThat(stock(f)).containsExactly(12,12);
     }
-    @Test void expiredModificationPeriodStillRejectsWithoutMutation() {
-        Fixture f=fixture(true);
-        tx(() -> { jdbc.update("update orders set change_deadline_at=? where id=?",LocalDateTime.now().minusDays(1),f.orderId);return null; });
-        Map<String,Object> before=state(f);
-        assertThatThrownBy(() -> change(f)).isInstanceOf(InvalidOrderStatusException.class);
-        assertThat(state(f)).isEqualTo(before);verifyNoInteractions(calculator,gateway);
-    }
-
     @Test void normalManualPaymentAndShippingRemainAvailableWithoutExternalPayment() {
         Fixture f=fixture(false);
         orderService.markAsPaid(f.orderId,1L,"admin",null);
@@ -247,12 +214,7 @@ class OrderPaymentGuardPostgresTest {
                 payment.getAmount(),0,UUID.randomUUID().toString(),orders.findCurrentTimeInTokyo(),
                 new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN,1L,"admin",null)));
     }
-    private boolean change(Fixture f) { return orderService.changeItemsForUser(f.orderId,f.userId,"user",form(f)); }
-    private OrderItemChangeForm form(Fixture f) {
-        OrderItemChangeForm form=new OrderItemChangeForm(); form.setContentRevision(0);
-        for(int i=0;i<2;i++) { var item=new OrderItemChangeForm.Item();item.setOrderItemId(f.itemIds.get(i));item.setQuantity(i==0?1:0);form.getItems().add(item); }
-        return form;
-    }
+    private void change(Fixture f) { com.example.ecsite.support.LegacyItemDecreaseFixture.decreaseContentOnly(context,f.orderId,f.userId,Map.of(f.itemIds.get(0),1,f.itemIds.get(1),0)); }
     private void price(Fixture f,int amount) { when(calculator.calculate(any(),any(ChargeTaxSnapshot.class))).thenReturn(amount(f,amount)); }
     private OrderAmount amount(Fixture f,int total) { return new OrderAmount(total,List.of(new OrderChargeAmount(OrderChargeType.SHIPPING,"shipping",0,f.taxId,"test","test",BigDecimal.ZERO,1)),0,0,total); }
     private List<Integer> stock(Fixture f) { return jdbc.queryForList("select stock from products where id in (?,?) order by id",Integer.class,f.productIds.get(0),f.productIds.get(1)); }

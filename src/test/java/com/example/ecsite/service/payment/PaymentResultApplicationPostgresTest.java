@@ -13,7 +13,6 @@ import javax.sql.DataSource;
 
 import com.example.ecsite.entity.*;
 import com.example.ecsite.entity.Order;
-import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.exception.InvalidOrderStatusException;
 import com.example.ecsite.payment.*;
 import com.example.ecsite.repository.*;
@@ -54,6 +53,7 @@ class PaymentResultApplicationPostgresTest {
     @Autowired PaymentTransactionRepository transactions;
     @Autowired PlatformTransactionManager manager;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.context.ApplicationContext context;
     @Autowired DataSource dataSource;
     @MockitoSpyBean com.example.ecsite.service.InventoryService inventory;
     @MockitoBean PaymentGateway gateway;
@@ -380,12 +380,7 @@ class PaymentResultApplicationPostgresTest {
             return PaymentOperationSnapshot.class.getDeclaredConstructor(types).newInstance(values);
         }catch(ReflectiveOperationException e){throw new AssertionError(e);}
     }
-    private boolean change(Fixture f) { return orderService.changeItemsForUser(f.orderId,f.userId,"user",form(f)); }
-    private OrderItemChangeForm form(Fixture f) {
-        OrderItemChangeForm form=new OrderItemChangeForm(); form.setContentRevision(0);
-        for(int i=0;i<2;i++) { var item=new OrderItemChangeForm.Item();item.setOrderItemId(f.itemIds.get(i));item.setQuantity(i==0?1:0);form.getItems().add(item); }
-        return form;
-    }
+    private void change(Fixture f) { com.example.ecsite.support.LegacyItemDecreaseFixture.decreaseContentOnly(context,f.orderId,f.userId,Map.of(f.itemIds.get(0),1,f.itemIds.get(1),0)); }
     private void price(Fixture f,int amount) { when(calculator.calculate(any(),any(ChargeTaxSnapshot.class))).thenReturn(amount(f,amount)); }
     private OrderAmount amount(Fixture f,int total) { return new OrderAmount(total,List.of(new OrderChargeAmount(OrderChargeType.SHIPPING,"shipping",0,f.taxId,"test","test",BigDecimal.ZERO,1)),0,0,total); }
     private List<Integer> stock(Fixture f) { return jdbc.queryForList("select stock from products where id in (?,?) order by id",Integer.class,f.productIds.get(0),f.productIds.get(1)); }

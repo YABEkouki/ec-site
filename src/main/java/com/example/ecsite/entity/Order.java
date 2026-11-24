@@ -660,11 +660,6 @@ public class Order {
                 && isWithinModificationPeriod(now);
     }
 
-    public boolean canChangeItemsByUser(LocalDateTime now) {
-        return status == OrderStatus.ORDERED
-                && isWithinModificationPeriod(now);
-    }
-
     public boolean canMarkAsPaid() {
         return status == OrderStatus.ORDERED;
     }

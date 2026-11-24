@@ -74,6 +74,7 @@ class OrderToCaptureJourneyPostgresTest {
     @Autowired TaxCategoryService taxes;
     @Autowired PlatformTransactionManager manager;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.context.ApplicationContext context;
     @Autowired DataSource dataSource;
     @Autowired JourneyClock clock;
     @MockitoSpyBean OrderRepository orders;
@@ -84,7 +85,7 @@ class OrderToCaptureJourneyPostgresTest {
         finally { SecurityContextHolder.clearContext(); }
     }
 
-    @Test void newOrderCanBeReducedPreparedShippedAndCapturedThroughRequery() {
+    @Test void newOrderReducedBeforeFeature141CanBePreparedShippedAndCapturedThroughRequery() {
         SecurityContextHolder.clearContext();
         Seed seed=tx(() -> {
             var now=orders.findCurrentTimeInTokyo();String unique=UUID.randomUUID().toString();
@@ -126,14 +127,13 @@ class OrderToCaptureJourneyPostgresTest {
 
         // Initial order/authorization used real time. Advance only the time boundary from here.
         advance(deadline.minusNanos(1000));
-        assertThat(orderService.changeItemsForUser(id,seed.user(),"customer",items(id,0,2))).isTrue();
+        com.example.ecsite.support.LegacyItemDecreaseFixture.decreaseContentOnly(context,id,seed.user(),java.util.Map.of(itemId(id),2));
         assertThat(row(id)).containsEntry("total_amount",2550).containsEntry("content_revision",1);
-        assertThat(quantity(id)).isEqualTo(2);assertThat(stock(seed)).isEqualTo(8);
+        assertThat(quantity(id)).isEqualTo(2);
         assertThat(transactions(id)).isEqualTo(authBefore);
         assertThat(payment(id)).containsEntry("amount",3550).containsEntry("status","AUTHORIZED");
 
         advance(deadline);
-        unchangedOnRejection(seed,id,()->orderService.changeItemsForUser(id,seed.user(),"customer",items(id,1,1)));
         authenticate(seed.preparer());
         var started=com.example.ecsite.support.EmergencyShippingFixtures.start(preparation,jdbc,id);
         assertThat(started.status()).isEqualTo(ShippingPreparationStartResult.Status.STARTED);
@@ -224,11 +224,7 @@ class OrderToCaptureJourneyPostgresTest {
         CheckoutForm f=new CheckoutForm();f.setShippingName("customer");f.setShippingPostalCode("100-0001");
         f.setShippingPrefecture("東京都");f.setShippingCity("千代田区");f.setShippingAddressLine("1-1");f.setShippingPhone("0312345678");return f;
     }
-    private OrderItemChangeForm items(long id,int revision,int quantity) {
-        var f=new OrderItemChangeForm();f.setContentRevision(revision);var item=new OrderItemChangeForm.Item();
-        item.setOrderItemId(jdbc.queryForObject("select id from order_items where order_id=?",Long.class,id));
-        item.setQuantity(quantity);f.getItems().add(item);return f;
-    }
+    private long itemId(long id) { return jdbc.queryForObject("select id from order_items where order_id=?",Long.class,id); }
     private <T>T tx(Supplier<T> action) { return new TransactionTemplate(manager).execute(s->action.get()); }
     private void assertOutsideTx() {
         assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();

@@ -1,8 +1,6 @@
 package com.example.ecsite.payment.safety;
 
-import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.payment.PaymentGateway;
-import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.order.evidence.LegacyOrderEvidenceEnrollment;
 import com.example.ecsite.service.order.evidence.OrderChangeRoutePolicy;
 import com.example.ecsite.service.order.evidence.OrderEditExecutionService;
@@ -59,15 +57,11 @@ final class CustomerOrderChangeSavedHistoryFixture {
     }
 
     void decrease(Legacy order, int revision, int quantity, boolean remove) {
-        var form = new OrderItemChangeForm();
-        form.setContentRevision(revision);
-        var item = new OrderItemChangeForm.Item(); item.setOrderItemId(order.item()); item.setQuantity(quantity);
-        form.getItems().add(item);
-        if (remove) {
-            var deleted = new OrderItemChangeForm.Item(); deleted.setOrderItemId(order.removed()); deleted.setQuantity(0);
-            form.getItems().add(deleted);
-        }
-        assertThat(context.getBean(OrderService.class).changeItemsForUser(order.order(), order.owner(), "saved-history-test", form)).isTrue();
+        var quantities = new java.util.HashMap<>(java.util.Map.of(order.item(), quantity));
+        if (remove) quantities.put(order.removed(), 0);
+        assertThat(context.getBean(org.springframework.jdbc.core.JdbcTemplate.class)
+                .queryForObject("select content_revision from orders where id=?", Integer.class, order.order())).isEqualTo(revision);
+        com.example.ecsite.support.LegacyItemDecreaseFixture.decrease(context, order.order(), order.owner(), "saved-history-test", quantities);
     }
 
     OrderEditAdmissionServicePostgresTest.Fixture enroll(Legacy order) {

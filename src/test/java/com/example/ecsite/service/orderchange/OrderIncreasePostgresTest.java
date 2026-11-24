@@ -68,7 +68,6 @@ class OrderIncreasePostgresTest {
     @Test void unresolvedCandidateBlocksCompetingMutations(){
         var f=fixture();accept(f,3);
         assertThatThrownBy(()->tx(()->{guard.requireNoOrderChange(orders.findByIdForUpdate(f.order()).orElseThrow());return null;})).isInstanceOf(RuntimeException.class);
-        assertThatThrownBy(()->tx(()->{guard.validateItemChange(orders.findByIdForUpdate(f.order()).orElseThrow());return null;})).isInstanceOf(RuntimeException.class);
         assertThatThrownBy(()->tx(()->{guard.validateLocalCancellation(orders.findByIdForUpdate(f.order()).orElseThrow());return null;})).isInstanceOf(RuntimeException.class);
     }
     @Test void reservationExpiryUsesGraceBoundaryAndCannotUndoDecision(){
@@ -125,11 +124,7 @@ class OrderIncreasePostgresTest {
     @Test void abortedCandidateDoesNotPreventLaterOrdinaryItemRemoval(){
         var f=fixture();var second=secondItem(f,10);var operation=accept(f,4);
         service.abort(f.order(),f.user(),operation.id());
-        var form=new com.example.ecsite.form.OrderItemChangeForm();form.setContentRevision(0);
-        var first=new com.example.ecsite.form.OrderItemChangeForm.Item();first.setOrderItemId(f.item());first.setQuantity(0);
-        var remaining=new com.example.ecsite.form.OrderItemChangeForm.Item();remaining.setOrderItemId(second[0]);remaining.setQuantity(1);
-        form.setItems(List.of(first,remaining));
-        assertThat(orderService.changeItemsForUser(f.order(),f.user(),"customer",form)).isTrue();
+        com.example.ecsite.support.LegacyItemDecreaseFixture.decrease(context,f.order(),f.user(),"customer",Map.of(f.item(),0));
         assertThat(jdbc.queryForObject("select count(*) from order_items where id=?",Long.class,f.item())).isZero();
         assertThat(jdbc.queryForObject("select count(*) from order_change_items where operation_id=? and order_item_id=?",Long.class,operation.id(),f.item())).isEqualTo(1);
     }

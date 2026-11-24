@@ -1,6 +1,6 @@
 # Feature141 従来の商品変更（/orders/{id}/items）を閉じる
 
-状態：設計（2026-11-24、実装の承認待ち）。基準は main a098936（最新マイグレーション V108）。
+状態：141-A は実装・テスト済み（2026-11-24、main への統合前。V109 は開発 DB に未適用）。141-B は未着手。基準は main a098936（最新マイグレーション V108）。
 
 ## 1. 目的
 
@@ -156,3 +156,37 @@
 ## 9. 対象外
 
 - 配送先変更、未使用の `cancelOrderForUser`、不整合になった注文の回復機能、Feature140 の案 b（legacy の数量増加の画面の撤去）。
+
+## 10. 141-A の実装結果（2026-11-24）
+
+### 10.1 設計との差
+
+- 6.2 の 3「別の注文の operation に結び付いた履歴の拒否」のテストは作っていない。既存の複合 FK（履歴と注文の組）により、その状態を作れない。関数の条件には `order_id` を含めてある。
+- V109 の stock_movements のトリガーは、INSERT 用と UPDATE 用（`f141_legacy_item_change_update_guard`）の 2 つに分けた。UPDATE は `movement_type` がその値に変わるときだけ拒否し、過去の行のほかの列の更新は妨げない。
+- 6.2 の 4 の「legacy の数量増加が V109 の適用後に完了する」は、既存の LegacyIncreaseClosureUpgradePostgresTest（target=107 から最新版へ）が検証する。新しいテストは追加していない。
+- `OrderEditAdmissionServicePostgresTest` の `admissionCommitSerializesAllExistingOperationGates` は、6.1 の表から漏れていた。共有の `invoke` から items を外したため、回帰で失敗して判明した。値一覧から items を外した。
+- `Order.removeItem` は残した。
+
+### 10.2 テスト結果
+
+- 新しいテスト 3 クラス・10 件：PASS（LegacyItemsClosedPostgresTest 8、LegacyItemsClosureUpgradePostgresTest 1、LegacyItemDecreaseNotificationPostgresTest 1）。
+- 回帰：計画は 204 件。うち `CaptureConnectionTest` は注釈でテストではないため、実際は 203 クラス。201 クラスは 1 回で PASS。失敗した 2 クラスは、再実行して PASS。
+  - OrderEditAdmissionServicePostgresTest：上記の移行漏れ。修正して 29 件 PASS。
+  - OrderEditFailureClosureFoundationPostgresTest：実行中にホストの記録が 18:09:54〜19:50:25 の間途切れており（スリープとみられる）、1 件が失敗した。変更せずに再実行して 24 件 PASS。
+- 修正を外した確認：スクラッチのコピーで、V109 の 3 つのトリガー、コントローラーの案内、キャンセル確認画面の変更を 1 つずつ外し、どれも LegacyItemsClosedPostgresTest の対応するテストが失敗することを確かめた。
+
+### 10.3 削除したテスト
+
+| クラス | テスト |
+|---|---|
+| OrderControllerTest | itemChangeInputDisplaysFormWhenChangeIsAllowed、itemChangeInputRedirectsWhenChangeIsNotAllowed、itemChangeConfirmDisplaysConfirmationWhenChangeIsValid、itemChangeConfirmReturnsToInputWhenNothingChanged、itemChangeBackReturnsToInputWithSubmittedForm、changeItemsUpdatesOwnedOrderAndRedirectsToDetail、changeItemsDisplaysErrorWhenContentRevisionIsStale、changeItemsDoesNotCallServiceWhenFormHasValidationErrors、itemChangeConfirmReturnsToInputWhenFormHasValidationErrors |
+| OrderServiceTest | unchangedItemsAreRejectedWhenDatabaseDeadlineHasClosed、`changeItemsForUser` の DecreasesQuantityAndRestoresStock・RemovesItemAndRestoresAllItemStock・DoesNothingWhenQuantitiesAreUnchanged・RejectsRemovingAllItems・RejectsQuantityIncrease・RejectsStaleContentRevision・RejectsUnknownOrderItemId・RejectsDuplicateOrderItemId・RejectsExactlyAtDeadline・RejectsPaidOrder・RejectsOrderOwnedByAnotherUser |
+| OrderPaymentGuardPostgresTest | pendingOperationRejectsItemChangeWithoutAnySideEffect、paymentStartCommittedWhileChangeWaitsMakesChangeReject、expiredModificationPeriodStillRejectsWithoutMutation |
+| OrderModificationGuard、OrderShippingPreparation、OrderEditAdmissionGuard、OrderEditAdmissionService の各 PostgresTest | パラメーター化テストの ITEMS・items の行だけ |
+
+改名（検証の対象を、残る機能に替えた）：
+
+- normalDecreaseAndRemovalRestoreStockAndAllowDecreasedCapture → decreasedContentWithoutEvidenceAllowsDecreasedCapture
+- itemChangeCommitsBeforePreparationAndCaptureUsesNewSnapshot → decreaseCommittedBeforePreparationIsSeenAfterTheOrderLockWait
+- newOrderCanBeReducedPreparedShippedAndCapturedThroughRequery → newOrderReducedBeforeFeature141CanBePreparedShippedAndCapturedThroughRequery
+- acceptanceItemAndAddressChangesAndShipmentEachRecordOneNotification → acceptanceAddressChangeAndShipmentEachRecordOneNotification

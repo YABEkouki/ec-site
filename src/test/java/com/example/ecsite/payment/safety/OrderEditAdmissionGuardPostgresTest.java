@@ -45,11 +45,11 @@ class OrderEditAdmissionGuardPostgresTest {
         assertThatThrownBy(()->tx(()->{guard().requireNoOrderChange(order(f.order()));return null;}))
             .isInstanceOf(InvalidOrderStatusException.class);
     }
-    @ParameterizedTest @ValueSource(strings={"shipping","cancel","items","address","reauthorize","capture"})
+    @ParameterizedTest @ValueSource(strings={"shipping","cancel","address","reauthorize","capture"})
     void realServiceEntryRejectsAdmissionBeforeItsMutation(String operation) {
         var f=fixture(false);UUID id=record(f);
         if(Set.of("cancel","reauthorize","capture").contains(operation)) verify(id);
-        if(operation.equals("items"))tx(()->{jdbc.queryForObject("select f125_admission_hold(?,'TEST_UNPROVEN')",Object.class,id);return null;});
+        if(operation.equals("address"))tx(()->{jdbc.queryForObject("select f125_admission_hold(?,'TEST_UNPROVEN')",Object.class,id);return null;});
         if(operation.equals("capture"))tx(()->{
             jdbc.queryForObject("select f125_admission_lock(?)",Object.class,id);
             for(String state:List.of("OBSERVING","APPLYING","RECOVERY_PENDING"))
@@ -83,7 +83,6 @@ class OrderEditAdmissionGuardPostgresTest {
                 org.springframework.test.util.ReflectionTestUtils.setField(shipping,"emergency",emergency);
                 shipping.start(f.order(),"test",o.getContentRevision());}
             case "cancel"->create(PaymentService.class,dependencies).startCancellation(o,null);
-            case "items"->create(OrderService.class,dependencies).changeItemsForUser(f.order(),f.customer(),"test",null);
             case "address"->create(OrderService.class,dependencies).changeShippingAddressForUser(f.order(),f.customer(),"test",null);
             case "reauthorize"->{dependencies.put(org.springframework.jdbc.core.JdbcTemplate.class,jdbc);
                 create(com.example.ecsite.service.orderchange.OrderReauthorizationTransactions.class,dependencies).prepare(f.order(),UUID.randomUUID());}

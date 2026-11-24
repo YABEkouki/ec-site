@@ -147,7 +147,7 @@ public class StockMovement {
         return movement;
     }
 
-    public static StockMovement createOrderItemChange(
+    private static StockMovement createOrderItemChange(
             Product product,
             int stockBefore,
             int stockAfter,

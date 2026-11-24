@@ -39,7 +39,6 @@ class CustomerOrderChangeEvidencePostgresTest extends OrderEditReauthorizationIn
     @AfterAll static void stopDedicatedDatabase(){if(readerDatabase!=null)readerDatabase.stop();}
 
     @Autowired CustomerOrderChangeHistoryReadService historyReadService;
-    @Autowired com.example.ecsite.service.OrderService orderService;
     @Autowired com.example.ecsite.service.orderchange.OrderIncreaseService increases;
     @Autowired org.springframework.context.ApplicationContext applicationContext;
 
@@ -141,7 +140,7 @@ class CustomerOrderChangeEvidencePostgresTest extends OrderEditReauthorizationIn
             source.afterOwnership=null;assertThat(read(source,f.order(),f.customer()).rows(EvidenceSet.HISTORIES)).hasSize(1);
         }finally{release.countDown();executor.shutdownNow();}
     }
-    @Test void actualLegacyDecreaseAndDeletionUseExistingWriter(){
+    @Test void savedLegacyDecreaseAndDeletionAreRead(){
         var old=new LegacyOrderEvidenceEnrollmentPostgresTest().fixture();long owner=db.jdbc.queryForObject("select user_id from orders where id=?",Long.class,old.order());
         db.jdbc.update("update order_items set quantity=2,subtotal=12000 where order_id=?",old.order());
         db.jdbc.update("insert into order_items(order_id,product_id,product_name,category_id,category_name,price,quantity,subtotal,tax_category_id,tax_category_code,tax_category_name,tax_rate) select order_id,product_id,product_name,category_id,category_name,price,1,6000,tax_category_id,tax_category_code,tax_category_name,tax_rate from order_items where order_id=?",old.order());
@@ -149,11 +148,8 @@ class CustomerOrderChangeEvidencePostgresTest extends OrderEditReauthorizationIn
         db.jdbc.update("update payments set amount=18000 where id=?",old.payment());
         db.jdbc.update("update payment_transactions set amount=18000 where id=?",old.auth());
         var item=db.jdbc.queryForMap("select id,product_id from order_items where order_id=? order by id limit 1",old.order());
-        var form=new com.example.ecsite.form.OrderItemChangeForm();form.setContentRevision(0);
-        var line=new com.example.ecsite.form.OrderItemChangeForm.Item();line.setOrderItemId(((Number)item.get("id")).longValue());line.setQuantity(1);form.getItems().add(line);
         long removed=db.jdbc.queryForObject("select max(id) from order_items where order_id=?",Long.class,old.order());
-        var deletion=new com.example.ecsite.form.OrderItemChangeForm.Item();deletion.setOrderItemId(removed);deletion.setQuantity(0);form.getItems().add(deletion);
-        assertThat(orderService.changeItemsForUser(old.order(),owner,"fixture",form)).isTrue();
+        com.example.ecsite.support.LegacyItemDecreaseFixture.decrease(applicationContext,old.order(),owner,"fixture",Map.of(((Number)item.get("id")).longValue(),1,removed,0));
         customer(owner);var read=historyReadService.readForCustomer(old.order());
         assertThat(read.rows(EvidenceSet.OPERATIONS)).isEmpty();assertThat(read.rows(EvidenceSet.ITEM_CHANGES)).hasSize(2);
         assertThat(read.rows(EvidenceSet.ITEM_CHANGES)).filteredOn(r->"REMOVED".equals(r.value("change_type"))).singleElement().satisfies(r->assertThat(r.value("new_quantity")).isNull());
