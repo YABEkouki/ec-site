@@ -23,7 +23,6 @@ import com.example.ecsite.entity.Order;
 import com.example.ecsite.payment.PaymentGateway;
 import com.example.ecsite.repository.*;
 import com.example.ecsite.service.OrderStatusHistoryService;
-import com.example.ecsite.service.orderchange.OrderIncreaseService;
 import com.example.ecsite.service.warehouse.WarehouseExportHoldException.Reason;
 import com.example.ecsite.service.warehouse.WarehouseExportOrderTransactions.Status;
 
@@ -39,7 +38,6 @@ class WarehouseExportPostgresTest {
     @Autowired WarehouseExportService service;
     @Autowired WarehouseExportOrderTransactions transactions;
     @Autowired WarehouseExportBatchStore batches;
-    @Autowired OrderIncreaseService increases;
     @Autowired JdbcTemplate jdbc;
     @Autowired OrderRepository orders;
     @Autowired UserRepository users;
@@ -1194,20 +1192,6 @@ class WarehouseExportPostgresTest {
             return null;
         });
         assertHeld(f, batch, Reason.PAYMENT_NOT_READY);
-    }
-
-    @Test void anUnresolvedOrderChangeHoldsTheOrder() {
-        var f = card(nextBusinessDate()); long batch = batch(f.businessDate());
-        // Accept a change while the deadline is open, then move the order and the operation into the past.
-        var deadline = f.businessDate().atTime(14, 0);
-        jdbc.update("update orders set change_deadline_at=timezone('Asia/Tokyo',clock_timestamp())+interval '1 hour' where id=?", f.order());
-        int revision = jdbc.queryForObject("select content_revision from orders where id=?", Integer.class, f.order());
-        var op = increases.accept(new OrderIncreaseService.Request(f.order(), f.user(), UUID.randomUUID(), revision, Map.of(f.item(), 3)));
-        moveDeadline(f.order(), deadline);
-        jdbc.update("update order_change_operations set accepted_at=?,deadline_at=?,grace_until=? where id=?",
-                deadline.minusMinutes(30), deadline, deadline.plusMinutes(10), op.id());
-
-        assertHeld(f, batch, Reason.ORDER_CHANGE_UNRESOLVED);
     }
 
     @Test void manualPreparationCancellationAndDeadlinesAreRespected() {

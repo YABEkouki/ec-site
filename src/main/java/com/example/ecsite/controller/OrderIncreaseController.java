@@ -1,7 +1,6 @@
 package com.example.ecsite.controller;
 
 import java.util.*;
-import com.example.ecsite.form.OrderItemChangeForm;
 import com.example.ecsite.security.CustomUserDetails;
 import com.example.ecsite.service.orderchange.OrderIncreaseService;
 import com.example.ecsite.service.orderchange.OrderChangeWithdrawalService;
@@ -11,74 +10,33 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Controller;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.ui.Model;
-import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-/** Customer candidate screens. Financial work is submitted only by an explicit confirmed POST. */
+/** Status and withdrawal of quantity increases accepted before Feature140-A. Nothing new is accepted. */
 @Controller
 @RequestMapping("/orders/{id}/increase")
 public class OrderIncreaseController {
-    private static final String QUOTES=OrderIncreaseController.class.getName()+".quotes";
     private static final String WITHDRAWALS=OrderIncreaseController.class.getName()+".withdrawals";
     public record WithdrawalCommand(long orderId,long customerId,UUID operationId,UUID requestId,long expectedVersion){}
     private final OrderIncreaseService increases;
     private final OrderChangeWithdrawalService withdrawals;
     public OrderIncreaseController(OrderIncreaseService increases,OrderChangeWithdrawalService withdrawals){this.increases=increases;this.withdrawals=withdrawals;}
-    @InitBinder("increaseForm")
-    void binder(WebDataBinder binder){
-        binder.setAllowedFields("contentRevision","items[*].orderItemId","items[*].quantity");
-        binder.setAutoGrowCollectionLimit(1000);
-    }
     @ModelAttribute
     void headers(HttpServletResponse response){
         response.setHeader("Cache-Control","no-store");
         response.setHeader("Referrer-Policy","no-referrer");
     }
+    /** Feature140-A: closed. Nothing is read or written here; the order detail checks the owner. */
     @GetMapping
-    public String input(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,Model model){
-        var input=increases.input(id,user.getId());
-        if(input.pending()!=null)return operationUrl(id,input.pending().id());
-        model.addAttribute("orderId",id);
-        if(!input.available()){model.addAttribute("mode","UNAVAILABLE");return "orders/increase";}
-        var form=new OrderItemChangeForm();form.setContentRevision(input.revision());
-        for(var line:input.lines()){
-            var item=new OrderItemChangeForm.Item();item.setOrderItemId(line.id());item.setQuantity(line.beforeQuantity());form.getItems().add(item);
-        }
-        model.addAttribute("input",input);model.addAttribute("increaseForm",form);model.addAttribute("mode","INPUT");
-        return "orders/increase";
-    }
+    public String closedInput(@PathVariable long id,RedirectAttributes redirect){return closed(id,redirect);}
     @PostMapping("/preview")
-    public String preview(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
-            @ModelAttribute("increaseForm") OrderItemChangeForm form,BindingResult binding,HttpSession session,Model model){
-        var input=increases.input(id,user.getId());
-        if(binding.hasErrors() || form.getContentRevision()==null || form.getItems()==null || form.getItems().size()!=input.lines().size()
-                || form.getItems().size()>1000)throw new IllegalArgumentException("Invalid quantities");
-        var before=new HashMap<Long,Integer>();input.lines().forEach(l->before.put(l.id(),l.beforeQuantity()));
-        var seen=new HashSet<Long>();var quantities=new HashMap<Long,Integer>();
-        for(var item:form.getItems()){
-            var quantity=item.getQuantity();var old=before.get(item.getOrderItemId());
-            if(old==null || quantity==null || quantity<old || !seen.add(item.getOrderItemId()))throw new IllegalArgumentException("Only existing-item increases are accepted");
-            if(quantity>old)quantities.put(item.getOrderItemId(),quantity);
-        }
-        UUID token=UUID.randomUUID();
-        var quote=increases.preview(new OrderIncreaseService.Request(id,user.getId(),token,form.getContentRevision(),quantities));
-        synchronized(session){
-            var quotes=quotes(session);quotes.put(token,quote);
-            while(quotes.size()>8)quotes.remove(quotes.keySet().iterator().next());
-        }
-        model.addAttribute("orderId",id);model.addAttribute("mode","CONFIRM");model.addAttribute("preview",quote);
-        model.addAttribute("confirmationToken",token);return "orders/increase";
-    }
+    public String closedPreview(@PathVariable long id,RedirectAttributes redirect){return closed(id,redirect);}
     @PostMapping
-    public String accept(@PathVariable long id,@AuthenticationPrincipal CustomUserDetails user,
-            @RequestParam UUID confirmationToken,HttpSession session){
-        final OrderIncreaseService.Preview quote;
-        synchronized(session){quote=quotes(session).get(confirmationToken);}
-        if(quote==null)throw new IllegalStateException("Confirmation expired");
-        if(quote.request().orderId()!=id || quote.request().customerId()!=user.getId())throw new OrderNotFoundException(id);
-        var operation=increases.acceptConfirmed(quote);
-        return operationUrl(id,operation.id());
+    public String closedAccept(@PathVariable long id,RedirectAttributes redirect){return closed(id,redirect);}
+    private String closed(long id,RedirectAttributes redirect){
+        redirect.addFlashAttribute("errorMessage","数量の変更は、注文詳細の「注文内容を変更する」から行ってください。");
+        return "redirect:/orders/"+id;
     }
     @GetMapping("/{operationId}")
     public String status(@PathVariable long id,@PathVariable UUID operationId,
@@ -94,7 +52,7 @@ public class OrderIncreaseController {
             : "NOT_ADOPTED".equals(operation.finalOutcome())
             ? "注文変更期限までに決済手続きが完了しなかったため、この変更は成立しませんでした。ご注文は変更前の内容のままです。"
             : switch(operation.state()){
-            case "RESERVED" -> "数量増加候補を受け付けました。決済はまだ開始していません。";
+            case "RESERVED" -> "この変更の受付は終了しました。新しい決済は開始できません。候補を取り下げると、確保した追加在庫を解放します。";
             case "COMPLETED" -> "注文変更が完了しました。変更後の注文詳細をご確認ください。";
             case "ABORTED" -> operation.deadlineClosed()
                 ? "注文変更期限を過ぎたため、この変更は成立しませんでした。ご注文は変更前の内容のままです。"
@@ -152,10 +110,4 @@ public class OrderIncreaseController {
         model.addAttribute("mode","UNAVAILABLE");return "orders/increase";
     }
     private String operationUrl(long id,UUID operation){return "redirect:/orders/"+id+"/increase/"+operation;}
-    @SuppressWarnings("unchecked")
-    private Map<UUID,OrderIncreaseService.Preview> quotes(HttpSession session){
-        var value=session.getAttribute(QUOTES);
-        if(value==null){value=new LinkedHashMap<UUID,OrderIncreaseService.Preview>();session.setAttribute(QUOTES,value);}
-        return (Map<UUID,OrderIncreaseService.Preview>)value;
-    }
 }

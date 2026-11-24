@@ -31,6 +31,7 @@ class CustomerOrderChangeEvidencePostgresTest extends OrderEditReauthorizationIn
         properties.add("spring.datasource.url",readerDatabase::getJdbcUrl);
         properties.add("spring.datasource.username",readerDatabase::getUsername);
         properties.add("spring.datasource.password",readerDatabase::getPassword);
+        properties.add("spring.flyway.target",()->"107"); // Feature140: writes legacy increases.
         properties.add("spring.flyway.url",readerDatabase::getJdbcUrl);
         properties.add("spring.flyway.user",readerDatabase::getUsername);
         properties.add("spring.flyway.password",readerDatabase::getPassword);

@@ -23,7 +23,7 @@ public final class LegacyOrderChangeEvidenceFixture {
         test.transactions=context.getBean(com.example.ecsite.repository.PaymentTransactionRepository.class);
         test.histories=context.getBean(com.example.ecsite.service.OrderStatusHistoryService.class);
         test.service=context.getBean(OrderReauthorizationService.class);
-        test.increases=context.getBean(OrderIncreaseService.class);
+        test.context=context;
         test.orders=context.getBean(OrderRepository.class);test.gateway=gateway;
         var order=test.fixture();var operation=test.accept(order,3);test.mockFlow(order,operation);
         assertThat(test.service.advance(order.order(),operation.id()).state()).isEqualTo("COMPLETED");

@@ -34,6 +34,7 @@ public class OrderChangeBrowserService {
     public Optional<Card> start(long order,long customer,UUID operation){
         increases.status(order,customer,operation);
         increases.expireReserved(order,operation);
+        if(reserved(order,customer,operation))return Optional.empty();
         var view=financial.advance(order,operation);
         if(view.abortRequested() || !"AUTHORIZING".equals(view.state()) || view.newFlow()==null)return Optional.empty();
         var observed=gateway.observeOrderChangeFlow(view.newFlow());
@@ -48,7 +49,13 @@ public class OrderChangeBrowserService {
             "/orders/"+order+"/increase/"+operation+"/payment/return").toString()));
     }
     public void continueChange(long order,long customer,UUID operation){
-        increases.status(order,customer,operation);increases.expireReserved(order,operation);financial.advance(order,operation);
+        increases.status(order,customer,operation);increases.expireReserved(order,operation);
+        if(reserved(order,customer,operation))return;
+        financial.advance(order,operation);
+    }
+    /** Feature140-A: a legacy increase that never started its authorization can only be withdrawn or expire. */
+    private boolean reserved(long order,long customer,UUID operation){
+        return "RESERVED".equals(increases.status(order,customer,operation).state());
     }
     public void observe(long order,long customer,UUID operation){
         var op=increases.status(order,customer,operation);

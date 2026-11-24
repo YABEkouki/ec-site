@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.*;
 /** Uses the existing old-recovery writer fixture without changing production or existing test files. */
 public final class LegacyRecoveredOrderChangeHistoryFixture {
     private LegacyRecoveredOrderChangeHistoryFixture() {}
-    private static OrderReauthorizationPostgresTest wired(ApplicationContext context,PaymentGateway gateway){
+    static OrderReauthorizationPostgresTest wired(ApplicationContext context,PaymentGateway gateway){
         var test=new OrderReauthorizationPostgresTest();
         test.manager=context.getBean(org.springframework.transaction.PlatformTransactionManager.class);
         test.jdbc=context.getBean(org.springframework.jdbc.core.JdbcTemplate.class);
@@ -18,7 +18,7 @@ public final class LegacyRecoveredOrderChangeHistoryFixture {
         test.payments=context.getBean(com.example.ecsite.repository.PaymentRepository.class);
         test.transactions=context.getBean(com.example.ecsite.repository.PaymentTransactionRepository.class);
         test.histories=context.getBean(com.example.ecsite.service.OrderStatusHistoryService.class);
-        test.service=context.getBean(OrderReauthorizationService.class);test.increases=context.getBean(OrderIncreaseService.class);
+        test.service=context.getBean(OrderReauthorizationService.class);test.context=context;
         test.orders=context.getBean(com.example.ecsite.repository.OrderRepository.class);test.gateway=gateway;
         test.recovery=context.getBean(OldCancelRecoveryService.class);
         return test;
