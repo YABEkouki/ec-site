@@ -1,6 +1,6 @@
 # Feature139 クレジットカードの登録（保存）
 
-状態：139-A 完了（2026-11-22、V105、ブラウザで確認した（9 章））。139-B 完了（2026-11-24、V106、ブラウザで確認した（10 章））。139-C は実装中（7 章、ブランチ feature/139-c-saved-card-order-change、V107）。基準は main eb19697（最新マイグレーション V104）。
+状態：139-A 完了（2026-11-22、V105、ブラウザで確認した（9 章））。139-B 完了（2026-11-24、V106、ブラウザで確認した（10 章））。139-C 完了（2026-11-24、V107、ブラウザで確認した（11 章））。基準は main eb19697（最新マイグレーション V104）。
 
 ## 1. 目的
 
@@ -455,3 +455,12 @@ SavedCardGateway に次を追加する（PayJpPaymentGateway は変えない）�
 - saved_card_operations：注文 30 のカードに ATTACH（SUCCEEDED）、注文 32 のカードに ATTACH → DETACH / DUPLICATE（SUCCEEDED）。ATTACH はカードの `customer_id` が空のときだけ送るので、**ブラウザで確定したカードは PAY.JP が自動では顧客に紐付けない**ことが分かった（6.3 の 3 の ATTACH は必要）。
 - PAY.JP の顧客 `ecu-dev1-2` の有効なカードは 4242（既定）、5555…4444、JCB の 3 枚で、DB の記録と一致する。既定は変わっていない（2 枚目以降の ATTACH では既定が変わらない）。
 - 同じ確認の中で、マイページでのカードの登録 2 件・削除 1 件（139-A）も行い、すべて SUCCEEDED だった。
+
+## 11. 139-C のブラウザ確認（2026-11-24、テストモード）
+
+アプリを `PAYJP_CUSTOMER_ID_PREFIX=ecu-dev1-` で起動した（開発 DB に V107 を適用。一括編集の実行環境は RUNNING、generation 417c973d）。一般ユーザー（users.id 2）が一括編集で金額が増える変更を 2 件行い、カードの選択画面から登録済みのカードで認証して、どちらも変更完了になった。ユーザーの確認はすべて OK。
+
+照合：
+- 注文 29（1,230 円 → 2,590 円、Visa 4242）と注文 32（3,050 円 → 7,500 円、JCB）：変更の操作は COMPLETED、受付は ACCEPTED / COMPLETED で反映済み。新しい Payment は AUTHORIZED で注文の有効な Payment になり、旧 Payment は CANCELLED。注文の金額は変更後の金額。
+- order_change_card_sends の 4 行はすべて SUCCEEDED（各変更で FLOW_UPDATE → CONFIRM が 1 回ずつ）。確定の記録（`browser_confirmation_issued_at`）はどちらも付いている。
+- PAY.JP：新しい Flow は `requires_capture`（変更後の全額が与信済み）、`customer_id` は `ecu-dev1-2`、カードは送った値、metadata は `order_id`・`order_change_operation_id` のまま。旧 Flow は `canceled`。
