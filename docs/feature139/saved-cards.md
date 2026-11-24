@@ -1,6 +1,6 @@
 # Feature139 クレジットカードの登録（保存）
 
-状態：139-A 完了（2026-11-22、V105、ブラウザで確認した（9 章））。139-B 完了（2026-11-24、V106、ブラウザで確認した（10 章））。139-C は未着手。基準は main eb19697（最新マイグレーション V104）。
+状態：139-A 完了（2026-11-22、V105、ブラウザで確認した（9 章））。139-B 完了（2026-11-24、V106、ブラウザで確認した（10 章））。139-C は詳細設計中（7 章）。基準は main eb19697（最新マイグレーション V104）。
 
 ## 1. 目的
 
@@ -293,13 +293,122 @@ SavedCardGateway に次を追加する（PayJpPaymentGateway は変えない）�
 2. 登録の後処理は、注文完了の画面に戻ったとき（結果の確認で AUTHORIZED になったとき）だけ行う。
 3. 6.8 の事前確認を行った。
 
-## 7. 139-C：注文変更の再与信・増額で登録済みのカード（概要。139-B のあとで詳細を決める）
+## 7. 139-C：注文変更の再与信で登録済みのカード（詳細設計案、2026-11-24）
 
-- 新しい決済の作成リクエスト（OrderChangeHttpRequest）に、`customer_id` と `payment_method_id` を含む第 2 版の本文を加える（`confirm:false` のまま）。ハッシュに版を含める。
-- confirm を別のリクエストとして送る。`ORDER_CHANGE_AUTHORIZATION` の後続として、新しい送信の種類と記録を加える。
-- 3D セキュアは増額の画面（orders/increase-payment.html）で `handleNextAction` を呼び、今の戻り先を使う。
-- 拒否・3D セキュアの失敗は `requires_payment_method` と `last_payment_error` で観測できる（3.1 の 8）。今の 3D セキュア失敗の証拠（ThreeDsFailureEvidence）を、サーバーからの confirm による失敗にも使えるか、別の種類が要るかを 139-C の設計で決める。
-- 今の「カードを入力し直す」流れは残す。
+### 7.1 今の注文変更の与信（前提）
+
+- 対象は一括編集（Feature125）の「再与信」の経路。サーバーが新しい Payment Flow を `confirm:false` で作り（CREATE。本文とハッシュは固定、metadata に `order_id` と `order_change_operation_id`）、顧客が「注文変更のカード認証」画面（orders/increase-payment.html）でカードを入力し、ブラウザが `confirmPayment` で確定する。
+- 確定の機会は 1 つの変更につき 1 回だけ。画面を出すときに `order_change_operations.browser_confirmation_issued_at` を記録する（V60、変更不可）。これが確定の開始とみなされ、変更の締切より前でなければ記録できない（V82）。
+- 結果はサーバーが Payment Flow を GET して決める（OrderReauthorizationTransactions.authorization）。新しい与信の成立後に旧与信を取り消し、注文を切り替える。拒否・中断で与信が成立しなかった変更は、締切後に「未採用」として新しい与信を取り消して終わる（Feature128）。
+- 3D セキュアの失敗だけは、顧客が「今回の変更を取りやめる」を選べる（V78/V80、ThreeDsFailureEvidence）。PAY.JP の Payment Flow を GET し、決まった項目だけを取り出した文書（`last_payment_error.code` が `three_d_secure_failed`、`next_action` が空、metadata が 2 項目だけ、など）を証拠として記録する。
+- 従来の数量増加（Feature124、/orders/{id}/increase/…）は、一括編集の前に作られた注文だけが使う古い経路。
+
+### 7.2 方針
+
+- 一括編集の再与信で、カード入力の代わりに登録済みのカードを選べるようにする。今のカード入力の流れはそのまま残す。
+- CREATE の本文とハッシュは変えない。139-B と同じく、作成済みの Payment Flow をサーバーが更新（`customer_id`・`payment_method_id`）し、確定（`/confirm`）を送る。metadata は送らない（変わらないことをテストモードで確かめる。7.9）。
+- 確定の機会は今と同じく 1 回。サーバーからの確定も `browser_confirmation_issued_at` を記録してから行う。締切の判定（V82）もそのまま効く。
+- 与信の結果、旧与信の取消、注文の切替、未採用の取消、3D セキュア失敗での取りやめは、今の処理をそのまま使う。新しい処理は「更新と確定を送ること」と「3D セキュアの画面を出すこと」だけ。
+- 決済画面で新しいカードを登録する機能（139-B の「このカードを登録する」）は、注文変更には付けない。
+
+### 7.3 画面
+
+**カード認証の開始**（`POST /orders/{id}/edit/{admission}/payment`。結果画面のボタンと自動開始の両方がここに来る）
+- 登録済みのカードが使えるとき（機能が有効で、期限切れでないカードが 1 枚以上）：確定の記録はせずに「カードの選択」画面を出す。PAY.JP にはカードの一覧の GET だけを送る。
+  - 「登録済みのカードで認証する」：カードを並べ、既定カードを初めから選んでおく →「このカードで認証する」（`POST …/payment/saved-card`）。
+  - 「カード情報を入力して認証する」（`POST …/payment/manual`）：今の開始処理（確定の記録 → カード入力画面）。
+- 登録済みのカードがない・機能が無効・一覧の取得に失敗したとき：今までどおり、すぐにカード入力画面を出す。
+
+**登録済みのカードで認証する**（`POST …/payment/saved-card`、pm を送る）
+1. 本人の顧客の、期限切れでないカードかを確かめる（139-B と同じ requireUsableCard）。
+2. 今の開始と同じ条件で対象を確かめ（prepareOrderEditBrowser）、Payment Flow を GET して `requires_payment_method` を確かめる。
+3. 1 つのトランザクションで、確定の記録（`browser_confirmation_issued_at`）と、更新の送信記録（FLOW_UPDATE、PENDING）を作る。
+4. 更新を送る → 記録 → 確定の送信記録（CONFIRM、PENDING）→ 確定を送る（`return_url` は今の戻り先 `/orders/{id}/edit/{admission}/payment/return`）→ 記録。
+5. 結果ごとの画面：
+   - `requires_action`：「本人認証」画面。`payments.handleNextAction` で 3D セキュアに進み、戻り先は今の戻り先。
+   - それ以外（与信の成立・拒否など）：今のカード入力画面と同じく、続行の POST（`…/payment/continue`）で結果をサーバーで確かめ、結果画面へ。
+
+**本人認証をやり直す**（3D セキュアの画面を閉じたとき）
+- 結果画面で、この変更の CONFIRM が成功していて、Payment Flow が `requires_action` のときだけ「本人認証へ進む」を出す（`POST …/payment/authenticate`）。client_secret は PAY.JP から取り直し、保存しない。確定は送り直さない。
+
+### 7.4 拒否・3D セキュアの失敗・届かなかった送信
+
+- カードが拒否されたとき：今のカード入力と同じく、この変更では別のカードを選び直せない（確定の機会は 1 回）。締切後に未採用として終わる（今の動き）。顧客は、締切前なら新しい変更をやり直せる（今の動き）。
+- 3D セキュアに失敗したとき：Payment Flow は `requires_payment_method` に戻り、`last_payment_error.code` は `three_d_secure_failed`。証拠の文書は `customer_id`・`payment_method_id` を含まない決まった項目だけなので、今の「今回の変更を取りやめる」がそのまま使える（ThreeDsFailureEvidence は変更しない。テストモードで確かめる。7.9）。
+- 更新が拒否されたとき（4xx。カードが使えないなど）：確定は送らない。確定の機会はすでに記録済みなので、この変更ではやり直せず、締切後に未採用として終わる。
+- 確定が PAY.JP に届かなかったとき（4xx、または GET で `requires_confirmation` のまま）：締切前に限り、同じカードで確定を 1 回だけ送り直せる（CONFIRM は 1 つの変更で 2 回まで。2 回目は 1 回目が FAILED のときだけ）。
+
+### 7.5 DB（V107）
+
+**`order_change_card_sends`**（139-B の `checkout_card_sends` と同じ形。注文変更の操作に結び付ける）
+
+| 列 | 内容 |
+|---|---|
+| user_id, order_id | 本人と注文 |
+| operation_id | `order_change_operations.id` |
+| admission_id | `order_edit_admissions.id` |
+| payment_id, transaction_id | 新しい Payment と ORDER_CHANGE_AUTHORIZATION の取引 |
+| send_type | FLOW_UPDATE / CONFIRM |
+| provider_payment_flow_id, provider_customer_id, provider_payment_method_id | 送った値（カードは必須） |
+| idempotency_key, status, error_code, created_at, completed_at | 139-B と同じ |
+
+トリガー（f139_order_change_card_send_guard）：
+- 追加は PENDING のみ。注文は本人の ORDERED、操作は一括編集が持つ再与信（`f125_reauth_is_owned`）で状態 AUTHORIZING、切替の決定・中止の要求がない、Payment は新しい Payment で PAYJP/CARD、Flow ID が一致、取引は PENDING の ORDER_CHANGE_AUTHORIZATION。
+- `browser_confirmation_issued_at` が記録済みであること（確定の機会を使ったあとにだけ送れる）。
+- FLOW_UPDATE は 1 つの変更で 1 回だけ。
+- CONFIRM は、成功した FLOW_UPDATE と同じカード・同じ顧客で、変更の締切より前（DB の時刻）。2 回までで、2 回目は 1 回目が FAILED のときだけ。
+- 結果待ちの送信は 1 つの変更で 1 件（部分一意索引）。状態は先にしか進まない。識別の列は変更不可。削除・TRUNCATE 不可。
+- ロック順：orders → payments（id 昇順）→ payment_transactions → order_change_operations。今の再与信の処理と同じ順にする（実装時に OrderReauthorizationTransactions.lock の順を確かめる）。
+
+### 7.6 外部送信と結果不明
+
+- 139-B と同じ：PENDING を記録 → トランザクションの外で送信 → SUCCEEDED / FAILED / UNCONFIRMED。結果不明は Payment Flow を GET して確かめ、自動では送り直さない。
+- FLOW_UPDATE の確認：Flow の `customer_id` と `payment_method_id` が送った値なら SUCCEEDED、`requires_payment_method` で顧客がないなら FAILED。
+- CONFIRM の確認：Flow が `requires_confirmation` 以外なら SUCCEEDED（届いた）、`requires_confirmation` のままで古くなったら FAILED（届かなかった）。
+- 与信の結果は、今までどおり今の処理（GET）が決める。この表は送信の記録だけで、与信の判断には使わない。
+
+### 7.7 変更しないもの
+
+- OrderChangeHttpRequest（CREATE の本文・ハッシュ）、送信の許可（order_change_request_dispatches）、締切（V82）、未採用の取消（Feature128）、照合・Webhook、3D セキュア失敗の証拠（V78/V80）、出荷時の売上確定。
+- 従来の数量増加（Feature124）の経路は、カード入力のまま。
+
+### 7.8 ゲートウェイ・サービス
+
+- ゲートウェイは 139-B の `updateFlowCustomer`・`confirmFlow`・`findFlow` をそのまま使う（新しい送信の種類はない）。
+- 新しいサービス OrderChangeSavedCardService：options（カードの選択画面）、pay（7.3 の手順）、authenticate（本人認証のやり直し）、settle（結果不明の確認）。
+- 確定の記録は、今の issueOrderEditBrowser と同じ確認（5 秒以内の GET で `requires_payment_method`、同じ対象）をしてから、同じトランザクションで FLOW_UPDATE の記録を作る新しい入口を OrderReauthorizationTransactions に加える。
+- コントローラー：OrderEditPaymentController に saved-card・manual・authenticate を加える。新しい依存は setter で注入し、ないときは今の画面のまま。
+
+### 7.9 テストモードでの事前確認（承認後に行う）
+
+一括編集の CREATE と同じ本文（metadata 付き、`confirm:false`）で Payment Flow を作り、次を確かめる。
+1. 顧客とカードで更新しても、metadata（`order_id`・`order_change_operation_id`）が変わらないこと。
+2. 確定 → 3D セキュアで失敗させたあと、`status`、`last_payment_error.code`、`next_action`、`amount_received`、`amount_capturable`、`canceled_at` が、ThreeDsFailureEvidence の文書の条件を満たすこと。
+3. `requires_confirmation`・`requires_action` の Flow を取り消せること（未採用の取消・取りやめで使う）。
+4. 拒否されたカードで確定したあとの状態（`requires_payment_method`、`card_declined`）。
+
+ブラウザが必要なため、ブラウザ確認で見ること：サーバーが確定した Flow で `handleNextAction` が動き、今の戻り先から続行できること。
+
+結果（2026-11-24、すべて期待どおり。作った Flow はすべて取り消し、顧客は削除した）：
+1. 更新のあとも metadata は `order_id`・`order_change_operation_id` の 2 項目のまま変わらない。更新後の状態は `requires_confirmation`。
+2. 確定 → `requires_action`（`card_three_d_secure`）→ 3D セキュア失敗のあと：`status=requires_payment_method`、`last_payment_error.code=three_d_secure_failed`、`next_action={}`、`amount_received=null`、`amount_capturable=null`、`canceled_at=null`、metadata は 2 項目。ThreeDsFailureEvidence の文書の条件を満たす（顧客・カードの項目は文書に入らない）。
+3. `requires_action` と `requires_confirmation` の Flow は、どちらも取り消せる（`canceled`、`canceled_at` は `Z` 付きの ISO 形式）。
+4. 拒否：確定は HTTP 402 `card_declined`、Flow は `requires_payment_method`、`last_payment_error.code=card_declined`。
+5. 失敗・拒否のあとも、Flow の `customer_id`・`payment_method_id` は残る（今の処理はこれらを見ないので影響はない）。
+
+### 7.10 テスト
+
+- OrderChangeCardSendPostgresTest（SHARED）：V107 のトリガー（本人・操作・Payment・取引の一致、確定の記録が前提、FLOW_UPDATE 1 回、CONFIRM の条件と締切、結果待ち 1 件、変更不可）。
+- サービスのテスト（偽の PAY.JP）：与信の成立から切替まで、3D セキュア → 失敗 → 取りやめ、拒否 → 締切後の未採用、届かなかった確定の送り直し（1 回まで）、本人以外のカード、結果不明、確定の記録の二重発行がないこと、カード入力の経路との排他。
+- OrderEditPaymentController の @WebMvcTest：選択画面の出し分け、CSRF、client_secret を残さないこと。
+- 既存の一括編集の再与信のテスト（OrderEdit*、OrderReauthorizationPostgresTest など）と、最新版数の 3 テスト（107）。
+
+### 7.11 決定事項（2026-11-24）
+
+1. 拒否のあと、同じ変更で別のカードは選び直せない（今のカード入力と同じ。確定の機会は 1 回）。
+2. 届かなかった確定は、締切前に限り同じカードで 1 回だけ送り直せる。
+3. 従来の数量増加（Feature124）の経路は対象にしない。この経路は、139 とは別の機能で閉じる方向で対応する。
+4. 7.9 のテストモードでの事前確認を行う。
 
 ## 8. 未確認のこと（ブラウザ確認で見る）
 
