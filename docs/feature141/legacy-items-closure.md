@@ -1,6 +1,6 @@
 # Feature141 従来の商品変更（/orders/{id}/items）を閉じる
 
-状態：141-A は実装・テスト済み（2026-11-24、main への統合前。V109 は開発 DB に未適用）。141-B は未着手。基準は main a098936（最新マイグレーション V108）。
+状態：141-A は main に統合済み（d62f249、2026-11-24）。V109 を開発 DB に適用し、ブラウザで確認済み。141-B は実装中。141-A の基準は main a098936（V108）。
 
 ## 1. 目的
 
@@ -190,3 +190,10 @@
 - itemChangeCommitsBeforePreparationAndCaptureUsesNewSnapshot → decreaseCommittedBeforePreparationIsSeenAfterTheOrderLockWait
 - newOrderCanBeReducedPreparedShippedAndCapturedThroughRequery → newOrderReducedBeforeFeature141CanBePreparedShippedAndCapturedThroughRequery
 - acceptanceItemAndAddressChangesAndShipmentEachRecordOneNotification → acceptanceAddressChangeAndShipmentEachRecordOneNotification
+
+### 10.4 ブラウザ確認（2026-11-24、開発 DB、V109）
+
+- A（期限後の注文 30・32、他人の注文 23）：`/items` の直接入力の案内、変更履歴、他人の注文の 404、期限後のキャンセル画面の案内。期待どおり。
+- B（PAY.JP テストモードで新しく作った注文 34、期限 2026-11-25 14:00）：`/items` の案内と「注文内容を変更する」の併存、キャンセル確認画面の案内、一括編集の画面。期待どおり。
+- 確認後の DB：注文 34 は ORDERED・AUTHORIZED・5,980 円・版 0 で、変更操作・変更履歴はない。`ORDER_ITEM_CHANGE` は 0 件。起動中の ERROR はない。
+- 確認の前に作られた注文 33 は、決済が未完了（AUTHORIZE PENDING）のまま残っている。141-A の変更には関係しない。
