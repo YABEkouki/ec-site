@@ -44,6 +44,8 @@ public class SavedCardService {
         public boolean canAdd() { return !busy && cards.size() < MAX_CARDS; }
     }
 
+    public record CheckoutCards(List<CardView> usable, boolean canRegister) {}
+
     public record RegistrationStart(String setupFlowId, String clientSecret) {
         @Override public String toString() { return "RegistrationStart[" + setupFlowId + ", redacted]"; }
     }
@@ -136,7 +138,15 @@ public class SavedCardService {
         String added = state.paymentMethodId();
         store.recordSetupCompletion(userId, customerId, setupFlowId, added);
         settle(userId);
+        return settleAddedCard(userId, customerId, added);
+    }
 
+    /**
+     * After a card was added to the customer (Setup Flow or checkout): refuse a duplicate, keep at most
+     * {@link #MAX_CARDS} cards (the newest beyond the limit is detached) and make sure there is a default card.
+     * Safe to repeat.
+     */
+    RegistrationResult settleAddedCard(long userId, String customerId, String added) {
         List<Card> cards = gateway.listCards(customerId);
         Card card = cards.stream().filter(c -> c.id().equals(added)).findFirst().orElse(null);
         if (card == null) {
@@ -163,6 +173,56 @@ public class SavedCardService {
         }
         ensureDefault(userId, customerId);
         return RegistrationResult.REGISTERED;
+    }
+
+    // ---- Feature139-B: used by the checkout -------------------------------------------------------------------
+
+    /** The customer id of the user (no PAY.JP call). */
+    public String customerIdOf(long userId) {
+        requireEnabled();
+        return customers.customerId(userId);
+    }
+
+    /** Creates the PAY.JP customer when missing. */
+    public String prepareCustomer(long userId) {
+        requireEnabled();
+        settle(userId);
+        return ensureCustomer(userId);
+    }
+
+    /** Cards that can pay now (attached, not expired), newest first, and whether one more card can be registered. */
+    public CheckoutCards cardsForCheckout(long userId) {
+        var view = cards(userId);
+        return new CheckoutCards(view.cards().stream().filter(c -> !c.expired()).toList(), view.canAdd());
+    }
+
+    /** Throws {@link NotOwnedException} unless the card is an attached, unexpired card of this user's customer. */
+    public void requireUsableCard(long userId, String paymentMethodId) {
+        requireEnabled();
+        String customerId = customers.customerId(userId);
+        if (paymentMethodId == null || !paymentMethodId.matches("pm_[A-Za-z0-9_-]{1,252}")) throw new NotOwnedException();
+        Card card = gateway.findCard(paymentMethodId).orElseThrow(NotOwnedException::new);
+        if (!card.attachedTo(customerId) || expired(card, LocalDate.now(clock))) throw new NotOwnedException();
+    }
+
+    /**
+     * After a checkout authorized with a new card the user chose to register: attach it when PAY.JP did not, then
+     * apply the duplicate / limit / default rules. Empty when the card belongs to another customer.
+     */
+    public Optional<RegistrationResult> registerCheckoutCard(long userId, String paymentMethodId) {
+        requireEnabled();
+        settle(userId);
+        String customerId = customers.customerId(userId);
+        Card card = gateway.findCard(paymentMethodId).orElseThrow(NotOwnedException::new);
+        if (card.detachedAt() == null && card.customerId() != null && !customerId.equals(card.customerId())) {
+            log.warn("Checkout card {} belongs to another customer; not registered", paymentMethodId);
+            return Optional.empty();
+        }
+        if (card.detachedAt() == null && card.customerId() == null) {
+            Operation op = store.begin(userId, Type.ATTACH, Reason.USER, customerId, paymentMethodId);
+            send(op, () -> gateway.attach(paymentMethodId, customerId, op.idempotencyKey()), r -> null);
+        }
+        return Optional.of(settleAddedCard(userId, customerId, paymentMethodId));
     }
 
     public void delete(long userId, String paymentMethodId) {
@@ -214,6 +274,8 @@ public class SavedCardService {
             case DETACH -> gateway.findCard(op.paymentMethodId()).map(c -> c.detachedAt() != null);
             case SET_DEFAULT -> gateway.findCustomer(op.customerId())
                     .map(c -> op.paymentMethodId().equals(c.defaultPaymentMethodId()));
+            case ATTACH -> gateway.findCard(op.paymentMethodId())
+                    .map(c -> c.detachedAt() == null && op.customerId().equals(c.customerId()));
             case SETUP_COMPLETE -> Optional.empty();
         };
     }

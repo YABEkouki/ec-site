@@ -31,6 +31,7 @@ import com.example.ecsite.service.OrderService;
 import com.example.ecsite.service.ShippingAddressService;
 import com.example.ecsite.service.payment.PaymentAuthorizationPreparation;
 import com.example.ecsite.service.payment.PaymentAuthorizationService;
+import com.example.ecsite.service.payment.PaymentOperationSnapshotService;
 import com.example.ecsite.service.pricing.OrderAmount;
 
 import jakarta.servlet.http.HttpSession;
@@ -59,6 +60,14 @@ public class CheckoutController {
         this.validator = validator;
         this.paymentAuthorizationService = paymentAuthorizationService;
         this.payJpProperties = payJpProperties;
+    }
+
+    /** Feature139-B: optional (null in unit tests and when not wired): saved cards at checkout. */
+    private com.example.ecsite.service.savedcard.CheckoutSavedCardService savedCards;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSavedCards(com.example.ecsite.service.savedcard.CheckoutSavedCardService savedCards) {
+        this.savedCards = savedCards;
     }
 
     @ModelAttribute("cart")
@@ -284,20 +293,104 @@ public class CheckoutController {
         if (!(orderValue instanceof Long orderId) || !(paymentValue instanceof Long paymentId)) return "redirect:/";
         Order order=orderService.findOrderByIdAndUserId(orderId,loginUser.getId());
         model.addAttribute("orderId",orderId);
+        var target=paymentAuthorizationService.checkoutTarget(orderId,paymentId,loginUser.getId()).orElse(null);
         try {
             var recovery=paymentAuthorizationService.recoverAuthorization(order,paymentId);
+            var status=recovery.result().status();
+            boolean secret=recovery.clientSecret()!=null && !recovery.clientSecret().isBlank();
             // Interrupted confirm/action/processing is observation-only. Never infer reconfirm permission.
-            if(recovery.result().status()==AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD
-                    && recovery.clientSecret()!=null && !recovery.clientSecret().isBlank()) {
-                if(payJpProperties.publicKey()==null || payJpProperties.publicKey().isBlank())
-                    throw new IllegalStateException("PAY.JP公開鍵が設定されていません。");
-                model.addAttribute("card",new CheckoutCard(payJpProperties.publicKey(),recovery.clientSecret()));
+            if(status==AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD && secret) {
+                model.addAttribute("card",new CheckoutCard(publicKey(),recovery.clientSecret()));
+                addSavedCards(model,loginUser.getId(),target,true);
+            } else if(status==AuthorizationResultStatus.REQUIRES_CONFIRMATION && target!=null && savedCards!=null
+                    && savedCards.savedCardSelected(target.transactionId())) {
+                // Feature139-B: the saved card update succeeded but its confirm did not arrive; confirm again.
+                addSavedCards(model,loginUser.getId(),target,false);
+            } else if(status==AuthorizationResultStatus.REQUIRES_ACTION && secret && target!=null && savedCards!=null
+                    && savedCards.serverConfirmed(target.transactionId())) {
+                // Feature139-B: only an action this site's own confirm started may be continued in the browser.
+                model.addAttribute("nextAction",new CheckoutCard(publicKey(),recovery.clientSecret()));
             }
         } catch(PaymentGatewayException | IllegalStateException stopped) {
             // Static pending display. Do not expose provider exceptions or credentials.
         }
-        model.addAttribute("confirmationTarget",paymentAuthorizationService.checkoutTarget(orderId,paymentId,loginUser.getId()).orElse(null));
+        model.addAttribute("confirmationTarget",target);
         return "checkout/payment";
+    }
+
+    private String publicKey(){
+        if(payJpProperties.publicKey()==null || payJpProperties.publicKey().isBlank())
+            throw new IllegalStateException("PAY.JP公開鍵が設定されていません。");
+        return payJpProperties.publicKey();
+    }
+
+    private void addSavedCards(Model model,long userId,PaymentOperationSnapshotService.CheckoutTarget target,boolean newCardAllowed){
+        if(savedCards==null || target==null)return;
+        savedCards.options(userId).ifPresent(options->{
+            model.addAttribute("savedCards",options.usable());
+            model.addAttribute("cardRegistrationAllowed",newCardAllowed && options.canRegister());
+        });
+    }
+
+    /** Feature139-B: pay with a saved card (update + confirm by this site, then the usual observation). */
+    @PostMapping("/payment/saved-card")
+    public String paymentWithSavedCard(@AuthenticationPrincipal CustomUserDetails loginUser,HttpSession session,
+            SessionStatus sessionStatus,RedirectAttributes redirectAttributes,
+            @RequestParam(required=false) Long expectedOrderId,@RequestParam(required=false) Long expectedPaymentId,
+            @RequestParam(required=false) Long expectedTransactionId,@RequestParam(required=false) String paymentMethodId){
+        var pair=checkoutPair(session);
+        if(pair==null)return "redirect:/";
+        if(savedCards==null||!java.util.Objects.equals(expectedOrderId,pair.order())||!java.util.Objects.equals(expectedPaymentId,pair.payment())
+                ||expectedTransactionId==null)
+            return "redirect:/checkout/payment/wait";
+        orderService.findOrderByIdAndUserId(pair.order(),loginUser.getId());
+        var outcome=savedCards.pay(loginUser.getId(),pair.order(),pair.payment(),expectedTransactionId,paymentMethodId);
+        switch(outcome){
+            case AUTHORIZED -> {
+                if(clearCheckoutPaymentSession(session,pair))sessionStatus.setComplete();
+                redirectAttributes.addFlashAttribute("orderId",pair.order());
+                return "redirect:/checkout/complete";
+            }
+            case REQUIRES_ACTION -> { return "redirect:/checkout/payment"; }
+            case DECLINED -> redirectAttributes.addFlashAttribute("errorMessage","このカードはご利用いただけませんでした。別のカードを選んでください。");
+            case CONFIRM_NOT_SENT -> redirectAttributes.addFlashAttribute("errorMessage","決済を完了できませんでした。もう一度「このカードで支払う」を押してください。");
+            case CARD_NOT_USABLE -> redirectAttributes.addFlashAttribute("errorMessage","選択したカードは使えません。別のカードを選んでください。");
+            case LIMIT_REACHED -> {
+                redirectAttributes.addFlashAttribute("errorMessage","登録済みのカードでの決済を続けられません。お手数ですが、もう一度注文してください。");
+                return "redirect:/checkout/payment/wait";
+            }
+            case FAILED -> {
+                clearCheckoutPaymentSession(session,pair);
+                redirectAttributes.addFlashAttribute("errorMessage","カードの与信に失敗しました。カード情報をご確認のうえ、もう一度注文してください。");
+                return "redirect:/cart";
+            }
+            case PENDING -> {
+                redirectAttributes.addFlashAttribute("errorMessage","決済処理を確認中です。しばらくしてからもう一度お試しください。");
+                return "redirect:/checkout/payment/wait";
+            }
+        }
+        return "redirect:/checkout/payment";
+    }
+
+    /** Feature139-B: called by the payment page before the browser confirms a new card the user wants to register. */
+    @PostMapping("/payment/register-intent")
+    @org.springframework.web.bind.annotation.ResponseBody
+    public org.springframework.http.ResponseEntity<java.util.Map<String,Object>> paymentRegisterIntent(
+            @AuthenticationPrincipal CustomUserDetails loginUser,HttpSession session,
+            @RequestParam(required=false) Long expectedOrderId,@RequestParam(required=false) Long expectedPaymentId,
+            @RequestParam(required=false) Long expectedTransactionId){
+        var pair=checkoutPair(session);
+        var refused=org.springframework.http.ResponseEntity.status(409).<java.util.Map<String,Object>>body(java.util.Map.of("ready",false,
+                "message","カードを登録する準備ができませんでした。登録しない場合はチェックを外してお支払いください。"));
+        if(pair==null||savedCards==null||!java.util.Objects.equals(expectedOrderId,pair.order())
+                ||!java.util.Objects.equals(expectedPaymentId,pair.payment())||expectedTransactionId==null)return refused;
+        orderService.findOrderByIdAndUserId(pair.order(),loginUser.getId());
+        return switch(savedCards.prepareRegistration(loginUser.getId(),pair.order(),pair.payment(),expectedTransactionId)){
+            case READY -> org.springframework.http.ResponseEntity.ok(java.util.Map.of("ready",true));
+            case LIMIT -> org.springframework.http.ResponseEntity.status(409).body(java.util.Map.of("ready",false,
+                    "message","登録できるカードは 5 枚までです。登録しない場合はチェックを外してお支払いください。"));
+            case FAILED -> refused;
+        };
     }
 
     public record CheckoutCard(String publicKey,String clientSecret) {
@@ -369,6 +462,18 @@ public class CheckoutController {
         }
 
         if (result.status() == AuthorizationResultStatus.AUTHORIZED) {
+
+            if(savedCards!=null) {
+                // Feature139-B: register the new card the user asked for; never affects the order.
+                String message=switch(savedCards.completeRegistration(loginUser.getId(),orderId,paymentId)){
+                    case NONE -> null;
+                    case REGISTERED -> "お支払いに使ったカードを登録しました。";
+                    case DUPLICATE -> "お支払いに使ったカードは、すでに登録されています。";
+                    case LIMIT -> "登録できるカードは 5 枚までのため、お支払いに使ったカードは登録しませんでした。";
+                    case FAILED -> "カードを登録できませんでした。マイページから登録してください。";
+                };
+                if(message!=null)redirectAttributes.addFlashAttribute("cardRegistrationMessage",message);
+            }
 
             if(clearCheckoutPaymentSession(session,pair))sessionStatus.setComplete();
 

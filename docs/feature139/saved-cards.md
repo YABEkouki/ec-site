@@ -1,6 +1,6 @@
 # Feature139 クレジットカードの登録（保存）
 
-状態：139-A 完了（2026-11-22、V105、ブラウザで確認した（9 章））。139-B・139-C は未着手。基準は main eb19697（最新マイグレーション V104）。
+状態：139-A 完了（2026-11-22、V105、ブラウザで確認した（9 章））。139-B 完了（2026-11-24、V106、ブラウザで確認した（10 章））。139-C は未着手。基準は main eb19697（最新マイグレーション V104）。
 
 ## 1. 目的
 
@@ -165,21 +165,133 @@ DB トリガーで守ること：
 - 最新版数の 3 テスト（105）。
 - ブラウザ確認（テストモード）：登録（3D セキュアあり）・重複・削除・既定の付け替え。あわせて、Setup Flow で登録したときに既定カードがどう変わるかを確かめる。
 
-## 6. 139-B：注文時の登録済みカード・決済画面での登録（概要。139-A のあとで詳細を決める）
+## 6. 139-B：注文時の登録済みカード・決済画面での登録（詳細設計案、2026-11-22）
 
-- 決済画面（checkout/payment.html）：登録済みのカード（期限切れ以外）を並べ、既定カードを初めから選んだ状態にする。「新しいカード」を選ぶと、今の payments.js の入力欄を出す。
-- 登録済みのカードを選んだとき：
-  1. 注文時に作った Payment Flow（`confirm:false`、顧客なし）を更新し、`customer_id` と `payment_method_id` を設定する。
-  2. `POST /v2/payment_flows/{id}/confirm`（`return_url` 付き）を送る。
-  - どちらも冪等キーを先に記録し、トランザクションの外で送る。今の決済の送信記録（payment_transactions など）の形に合わせる。
-  - Payment Flow の ID は作成のときに記録済みなので、402 などで結果が分からなくても、その ID で取得し直せる。
-- confirm の結果：
-  - `requires_capture` → 今の与信成功と同じ処理。
-  - `requires_action` → 画面で `payments.handleNextAction({clientSecret})` を呼び、`/checkout/payment/return` に戻す（今の確認処理を使う）。
-  - `requires_payment_method`（拒否・3D セキュアの失敗）→ 今の失敗と同じ。
-  - 結果不明 → 取得し直す。自動で confirm を送り直さない。
-- 決済画面の「このカードを登録する」：新しいカードの入力のとき、ブラウザで確定する前に Payment Flow へ `customer_id` を設定する。与信が成功したあと、カードが顧客に紐付いていなければ attach する（ATTACH の操作記録）。重複・上限・既定の扱いは 5.3 と同じ。attach の失敗は注文と与信に影響させない。
-- 決済の安全判定（PaymentSafetyClassifier）・照合：サーバーから confirm を送る段階（PENDING の取引）を判定と照合に加える。
+### 6.1 今の注文時の与信（前提）
+
+- 注文を作ると、Payment Flow（`confirm:false`、顧客なし、`capture_method=manual`）と、与信の取引（AUTHORIZE、PENDING、INITIAL_ORDER_AUTHORIZATION）が作られる（PaymentAuthorizationService.prepareAuthorization）。Payment Flow の ID は Payment.provider_payment_id にある。
+- 決済画面（`/checkout/payment`）は、Payment Flow が `requires_payment_method` のときだけ payments.js の入力欄を出す。ブラウザが `widgets.confirmPayment` で確定し、戻り先（`/checkout/payment/return`）から結果の確認（`/checkout/payment/continue`）を POST する。
+- 結果の確認は、PAY.JP から Payment Flow を取得して取引に反映する（refreshAuthorization → apply）。`requires_capture` なら与信成功、`canceled` なら失敗。`requires_payment_method`（拒否・3D セキュアの失敗）なら同じ Payment Flow のまま続けられる。
+- ブラウザでの確定は、同じ注文で 1 回だけ（localStorage の印）。中断した 3D セキュアは、見るだけで再開しない。
+
+**139-B でもこの前提は変えない。** 与信の取引の状態は、今までどおり PAY.JP の Payment Flow を取得して決める。新しく記録するのは「当サイトから Payment Flow に送ったこと」（冪等キー・結果）だけで、決済の安全判定（PaymentSafetyClassifier）・照合・与信期限（Feature135）・出荷時の Capture は変えない。
+
+### 6.2 登録済みのカードで支払う
+
+1. 決済画面の上に「登録済みのカードで支払う」（期限切れ以外のカードの選択欄。既定カードを初めから選んだ状態。既定がなければ最も新しいカード）と「このカードで支払う」を置き、その下に「新しいカードで支払う」（今の入力欄）を置く。
+   - 登録済みのカードは PAY.JP から取得する（139-A の SavedCardService）。取得できないとき、使えないとき、カードがないときは、今の入力欄だけを出す。
+2. 「このカードで支払う」→ `POST /checkout/payment/saved-card`（カードの ID と、今の結果の確認と同じ注文・Payment・取引の ID、CSRF）。
+3. サーバーでの処理：
+   1. 注文が本人のもので、今の CheckoutTarget（ORDERED、有効な Payment、PENDING の AUTHORIZE）と一致すること、カードが本人の顧客の削除されていないカードであることを確かめる。
+   2. **Payment Flow の更新**（FLOW_UPDATE）：`POST /v2/payment_flows/{id}` に `customer_id` と `payment_method_id` を送る（Payment Flow が requires_payment_method / requires_confirmation のときだけ PAY.JP が受け付ける）。
+   3. **確定**（CONFIRM）：`POST /v2/payment_flows/{id}/confirm` に `return_url`（`/checkout/payment/return`）を送る。
+   - どちらも、送信記録（6.4）を PENDING で作ってからトランザクションの外で送り、結果を記録する。
+   4. 送ったあとは、今の refreshAuthorization で Payment Flow を取得して取引に反映し、結果に応じて画面を分ける。
+4. 結果：
+   - `requires_capture`（AUTHORIZED）→ 注文完了（今と同じ）。
+   - `requires_action` → 3D セキュアへ。決済画面に「本人認証へ進む」を出し、`payments.handleNextAction({clientSecret})` を呼ぶ。認証後は今の戻り先・結果の確認を使う。
+     - 「本人認証へ進む」を出すのは、この取引で当サイトが CONFIRM を送っていて、Payment Flow が requires_action のときだけ。ブラウザでの確定が中断したもの（今の「見るだけ」）とは区別する。
+     - 3D セキュアは、登録時（Setup Flow）に済んでいれば出ない（3.1 の 2）。
+   - `requires_payment_method`（拒否・3D セキュアの失敗。CONFIRM が 402 で FAILED になる場合を含む）→ 決済画面に戻し、「このカードはご利用いただけませんでした。別のカードを選んでください。」と表示する（再試行は 6.10 の 1）。
+   - `requires_confirmation`（更新はできたが確定が届かなかった）→ 決済画面に「このカードで支払う」を再び出す（同じカードで CONFIRM をもう一度。新しい冪等キー）。
+   - 結果不明（送信も取得も失敗）→ 今の「確認中」の画面（`/checkout/payment/wait`）。自動では送り直さない。
+5. 一度登録済みのカードの更新が通ると、Payment Flow には顧客とカードが付く。そのあと「新しいカード」に切り替えられるのは、Payment Flow が requires_payment_method に戻ったとき（拒否のあと）だけにする。requires_confirmation の Payment Flow にブラウザから別のカードで確定できるかは確かめていないため。
+
+### 6.3 決済画面で「このカードを登録する」
+
+1. 「新しいカード」の入力欄の下に「このカードを登録する（次回から入力不要）」のチェックを置く。登録済みのカードが 5 枚あるとき、機能が使えないときは出さない。
+2. チェックしたまま「カードで支払う」を押すと、ブラウザで確定する前に、`POST /checkout/payment/register-intent`（fetch、CSRF ヘッダー）を送る。サーバーでは次を行う。
+   - 顧客がなければ作る（139-A の CUSTOMER_CREATE）。
+   - Payment Flow の更新（FLOW_UPDATE、purpose=REGISTER_NEW_CARD）で `customer_id` だけを設定する。
+   - 成功したら、ブラウザは今までどおり `widgets.confirmPayment` を呼ぶ。失敗したら確定せずに「カードを登録する準備ができませんでした。登録しない場合はチェックを外してお支払いください。」と表示する。
+3. 与信が成功したら（結果の確認で AUTHORIZED になったとき）、登録の後処理をする。
+   - Payment Flow の `payment_method_id` のカードを取得する。
+   - カードの `customer_id` が空なら紐付ける（ATTACH。139-A の操作記録に種類を追加）。本人の顧客ならそのまま。他人の顧客なら何もしない（記録して止める）。
+   - そのあと、重複・上限・既定の扱いは 5.3 と同じ（重複・上限超えなら新しいカードを削除する。削除しても与信と出荷時の Capture には影響しない（3.1 の 4））。
+   - 後処理の失敗・結果不明は注文に影響させない。注文完了の画面に「カードを登録できませんでした。マイページから登録してください。」と出す。
+   - 注文完了の画面まで戻らなかったとき（ブラウザを閉じたなど）は、後処理を行わない。PAY.JP が自動で紐付けていた場合は、そのカードがマイページに出る（重複の確認は行われない）。
+4. 「登録する」にチェックした決済でも、カードは顧客付きの Payment Flow で使われる。チェックしないときは今までどおり顧客を付けない。
+
+### 6.4 DB（V106）
+
+**`checkout_card_sends`**：当サイトから注文時の Payment Flow に送った更新と確定の記録。カード番号・client_secret・PAY.JP の応答本文は持たない。
+
+| 列 | 内容 |
+|---|---|
+| id | bigserial |
+| user_id・order_id・payment_id・transaction_id | 本人・注文・Payment・与信の取引（AUTHORIZE） |
+| send_type | FLOW_UPDATE / CONFIRM |
+| purpose | SAVED_CARD（登録済みのカードで支払う）/ REGISTER_NEW_CARD（新しいカードを登録する。FLOW_UPDATE だけ） |
+| provider_payment_flow_id | Payment.provider_payment_id と一致 |
+| provider_customer_id | 本人の顧客 ID |
+| provider_payment_method_id | SAVED_CARD のときのカード（REGISTER_NEW_CARD の FLOW_UPDATE では空） |
+| idempotency_key | 一意 |
+| status・error_code・created_at・completed_at | 139-A の操作記録と同じ（PENDING → SUCCEEDED / FAILED / UNCONFIRMED、UNCONFIRMED → SUCCEEDED / FAILED） |
+
+DB トリガーで守ること：
+- 作成時：取引が AUTHORIZE・PENDING で、Payment（PAYJP・CARD、provider_payment_id が Payment Flow ID と一致）と注文（ORDERED、user_id が本人、active_payment_id がその Payment）に属すること。読み取りは注文 → Payment の順に `FOR SHARE` で行う（アプリは同じ順に `FOR UPDATE` 済み）。
+- 1 つの取引で、送信中（PENDING / UNCONFIRMED）は 1 件まで（部分一意索引）。
+- CONFIRM は、同じ取引の最新の FLOW_UPDATE が SAVED_CARD・SUCCEEDED で、同じカードであること。CONFIRM は 1 つの取引で 3 回まで。
+- 中身は変更不可、状態は前にしか進まない、削除不可（139-A と同じ）。
+
+**`saved_card_operations`（V105）**：種類に ATTACH を追加する（CHECK を作り直す。カード必須、Setup Flow なし、冪等キーあり、理由 USER）。ATTACH の結果不明は、カードの `customer_id` が本人の顧客かを見て確かめる。
+
+### 6.5 外部送信と結果不明
+
+- 流れは 139-A と同じ（PENDING を記録 → トランザクションの外で送る → 結果を記録）。注文の行 → Payment の行の順にロックしてから送信記録を作る。
+- 結果不明の確かめ方（取得だけ。送り直さない）：
+  - FLOW_UPDATE：Payment Flow の `customer_id`（と SAVED_CARD なら `payment_method_id`）が送った値なら SUCCEEDED、違えば FAILED。
+  - CONFIRM：Payment Flow が requires_confirmation のままなら届いていない（FAILED）。それ以外の状態なら届いた（SUCCEEDED）。
+  - 確かめるのは、決済画面を開いたとき・結果の確認のとき・次の送信の前。
+- 与信の取引の状態は、送信記録ではなく Payment Flow の取得で決める（今の refreshAuthorization）。そのため、決済の安全判定・照合・Webhook の同期・与信期限・出荷時の Capture・管理者の取消は変えない。管理者の取消と確定が同時に起きた場合の扱いは、今のブラウザでの確定と同じ（PAY.JP の状態を見て反映する）。
+
+### 6.6 ゲートウェイ
+
+SavedCardGateway に次を追加する（PayJpPaymentGateway は変えない）。
+- `updateFlowCustomer(flowId, customerId, paymentMethodId|null, key)`：`POST /v2/payment_flows/{id}`
+- `confirmFlow(flowId, returnUrl, key)`：`POST /v2/payment_flows/{id}/confirm`。402 は REJECTED（`card_declined` など）として扱う。
+- `findFlow(flowId)`：状態・`customer_id`・`payment_method_id` だけを読む（結果不明の確認と登録の後処理用）。
+- `attach(paymentMethodId, customerId, key)`：`POST /v2/payment_methods/{id}/attach`
+
+### 6.7 画面
+
+- 決済画面（checkout/payment.html）：
+  - 登録済みのカードの選択欄（ブランド・下 4 桁・有効期限、既定に印）と「このカードで支払う」。
+  - その下に「新しいカードで支払う」として今の入力欄と「このカードを登録する」のチェックを出す（切り替えの JavaScript は使わない）。
+  - 結果のメッセージ（拒否・カードが使えない・確定が届かなかった）を画面の上に出す。
+  - 「本人認証へ進む」（6.2 の 4）。
+  - payments.js と CSP は今のものを使う。fetch の送り先（`/checkout/payment/register-intent`）は同じオリジンなので CSP の connect-src 'self' で足りる。
+- 注文完了の画面：登録の後処理の結果（登録した／重複／上限／できなかった）を 1 行で出す。
+- 今のブラウザでの確定（localStorage の印、中断した 3D セキュアを再開しない）は変えない。
+
+### 6.8 テストモードでの事前確認（2026-11-22、すべて期待どおり）
+
+今の注文時と同じ本文（顧客なし、`confirm:false`、`capture_method=manual`）で作った Payment Flow で確かめた。
+
+1. 更新で `customer_id` と `payment_method_id` を設定 → `requires_confirmation`。`confirm`（`return_url`）で、3D セキュア未済みのカードは `requires_action` → 認証後 `requires_capture`、済みのカードはすぐ `requires_capture`。
+2. 確定で拒否 → HTTP 402 `card_declined`。Payment Flow は `requires_payment_method`（`last_payment_error.code=card_declined`）。同じ Payment Flow を別のカードで更新・確定し直すと `requires_capture`。
+   - 与信が成功したあとも、`last_payment_error` には前の拒否が残る。そのため、与信の判定は状態（`requires_capture`）だけで行い、`last_payment_error` の有無では判断しない（今の PayJpAuthorizationMapper も、`requires_capture` ではエラーを見ない）。
+3. 更新で `customer_id` だけを設定 → `requires_payment_method` のまま。
+4. 他人の顧客のカードで更新 → 400 `payment_method_not_owned_by_customer`。
+5. 与信が成功した Payment Flow への確定・更新 → 400 `invalid_status` / `fields_not_updatable_in_status`。二重に確定しても与信は二重にならない。
+
+ブラウザが必要なため、139-B のブラウザ確認で見ること（結果は 10 章）：
+- 顧客付きの Payment Flow でブラウザから確定したカードが、自動で顧客に紐付くか（6.3 の 3 の ATTACH が要るか）→ **紐付かない。ATTACH が要る。**
+- `handleNextAction` で 3D セキュアに進み、戻り先から与信が確認できること。
+
+### 6.9 テスト
+
+- CheckoutCardSendPostgresTest（SHARED）：V106 のトリガー（本人・注文・Payment・取引の一致、送信中 1 件、CONFIRM の前提、変更不可）、ATTACH の追加。
+- サービスのテスト（偽の PAY.JP）：登録済みのカードでの与信（成功・3D セキュア・拒否・届かなかった確定・結果不明）、本人以外のカードの拒否、登録の後処理（紐付け・重複・上限・既定・失敗しても注文に影響しないこと）。
+- ゲートウェイのテスト：送る項目名、402 の扱い。
+- CheckoutController の @WebMvcTest と CheckoutPaymentPrivacyPostgresTest：選択欄、CSRF、「本人認証へ進む」の出し分け、client_secret を残さないこと。
+- 最新版数の 3 テスト（106）。
+
+### 6.10 決定事項（2026-11-22）
+
+1. 登録済みのカードが拒否されたあと（Payment Flow が requires_payment_method に戻ったとき）、同じ注文で別のカード（登録済み・新しいカード）を選び直せる。当サイトからの CONFIRM は 1 つの与信の取引で 3 回まで（DB トリガーでも守る）。超えたら「確認中」と同じく、注文をやり直してもらう。
+2. 登録の後処理は、注文完了の画面に戻ったとき（結果の確認で AUTHORIZED になったとき）だけ行う。
+3. 6.8 の事前確認を行った。
 
 ## 7. 139-C：注文変更の再与信・増額で登録済みのカード（概要。139-B のあとで詳細を決める）
 
@@ -191,7 +303,7 @@ DB トリガーで守ること：
 
 ## 8. 未確認のこと（ブラウザ確認で見る）
 
-- 決済画面で入力したカードが、`customer_id` 付きの決済で自動的に顧客に紐付くか（139-B）。
+- なし。決済画面で入力したカードは、`customer_id` 付きの決済でも自動では顧客に紐付かない（10 章で確認。139-B の ATTACH が必要）。
 
 ## 9. 139-A のブラウザ確認（2026-11-22、テストモード）
 
@@ -208,3 +320,18 @@ DB トリガーで守ること：
 - 1 枚目のあとに当サイトから既定を設定した記録がない → Setup Flow で最初に登録したカードは、PAY.JP が自動で既定にする（3.1 の 6）。
 - 顧客の作成時に送った `metadata.user_id` は、PAY.JP の顧客では空だった。当サイトはこの値を使わないので影響はない。
 
+## 10. 139-B のブラウザ確認（2026-11-24、テストモード）
+
+アプリを `PAYJP_CUSTOMER_ID_PREFIX=ecu-dev1-` で起動した（開発 DB に V106 を適用）。一般ユーザー（users.id 2）で次を確認し、すべて期待どおりだった。
+
+1. 登録済みの 4242（既定）で支払う → 注文完了（注文 29）。
+2. 新しいカード 5555…4444 に「このカードを登録する」を付けて支払う → 注文完了、「お支払いに使ったカードを登録しました。」、マイページに追加（注文 30）。
+3. 登録した 5555…4444 を選んで支払う → 注文完了（注文 31）。
+4. 4242 を新しいカードとして「このカードを登録する」を付けて支払う → 注文完了、重複として登録しない（注文 32）。
+
+照合：
+- 注文 29〜32 はすべて ORDERED、Payment は AUTHORIZED、初回与信の取引は SUCCEEDED。
+- checkout_card_sends の 6 行はすべて SUCCEEDED：注文 29・31 は FLOW_UPDATE（SAVED_CARD）→ CONFIRM、注文 30・32 は FLOW_UPDATE（REGISTER_NEW_CARD）のみ。
+- saved_card_operations：注文 30 のカードに ATTACH（SUCCEEDED）、注文 32 のカードに ATTACH → DETACH / DUPLICATE（SUCCEEDED）。ATTACH はカードの `customer_id` が空のときだけ送るので、**ブラウザで確定したカードは PAY.JP が自動では顧客に紐付けない**ことが分かった（6.3 の 3 の ATTACH は必要）。
+- PAY.JP の顧客 `ecu-dev1-2` の有効なカードは 4242（既定）、5555…4444、JCB の 3 枚で、DB の記録と一致する。既定は変わっていない（2 枚目以降の ATTACH では既定が変わらない）。
+- 同じ確認の中で、マイページでのカードの登録 2 件・削除 1 件（139-A）も行い、すべて SUCCEEDED だった。

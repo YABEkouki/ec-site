@@ -36,6 +36,7 @@ public class PayJpSavedCardGateway implements SavedCardGateway {
     private static final String PAYMENT_METHOD_ID = "pm_[A-Za-z0-9_-]{1,252}";
     private static final String SETUP_FLOW_ID = "[A-Za-z0-9_-]{1,255}";
     private static final String KEY = "[A-Za-z0-9_-]{1,100}";
+    private static final String FLOW_ID = "pfw_[A-Za-z0-9_-]{1,251}";
     private static final int MAX_PAGES = 10;
 
     private final RestClient restClient;
@@ -177,6 +178,51 @@ public class PayJpSavedCardGateway implements SavedCardGateway {
         require(paymentMethodId, PAYMENT_METHOD_ID);
         return customer(post("/v2/customers/" + customerId, Map.of("default_payment_method_id", paymentMethodId),
                 idempotencyKey), customerId);
+    }
+
+    @Override
+    public FlowState updateFlowCustomer(String flowId, String customerId, String paymentMethodId, String idempotencyKey) {
+        require(flowId, FLOW_ID);
+        require(customerId, CUSTOMER_ID);
+        var body = new LinkedHashMap<String, Object>();
+        body.put("customer_id", customerId);
+        if (paymentMethodId != null) {
+            require(paymentMethodId, PAYMENT_METHOD_ID);
+            body.put("payment_method_id", paymentMethodId);
+        }
+        return flow(post("/v2/payment_flows/" + flowId, body, idempotencyKey), flowId);
+    }
+
+    @Override
+    public FlowState confirmFlow(String flowId, String returnUrl, String idempotencyKey) {
+        require(flowId, FLOW_ID);
+        if (returnUrl == null || !returnUrl.matches("https?://[^\\s]{1,2000}")) throw new IllegalArgumentException("Invalid return URL");
+        return flow(post("/v2/payment_flows/" + flowId + "/confirm", Map.of("return_url", returnUrl), idempotencyKey), flowId);
+    }
+
+    @Override
+    public Optional<FlowState> findFlow(String flowId) {
+        require(flowId, FLOW_ID);
+        return get("/v2/payment_flows/{id}", flowId).map(body -> flow(body, flowId));
+    }
+
+    @Override
+    public Card attach(String paymentMethodId, String customerId, String idempotencyKey) {
+        require(paymentMethodId, PAYMENT_METHOD_ID);
+        require(customerId, CUSTOMER_ID);
+        Card card = card(post("/v2/payment_methods/" + paymentMethodId + "/attach", Map.of("customer_id", customerId),
+                idempotencyKey));
+        if (!paymentMethodId.equals(card.id())) throw invalid();
+        return card;
+    }
+
+    private static FlowState flow(JsonNode body, String expectedId) {
+        String id = text(body, "id");
+        String status = text(body, "status");
+        String paymentMethod = text(body, "payment_method_id");
+        if (!expectedId.equals(id) || status == null || !status.matches("[a-z_]{1,40}")
+                || (paymentMethod != null && !paymentMethod.matches(PAYMENT_METHOD_ID))) throw invalid();
+        return new FlowState(id, status, text(body, "customer_id"), paymentMethod);
     }
 
     private Optional<JsonNode> get(String uri, Object... variables) {
