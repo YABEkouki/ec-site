@@ -12,6 +12,13 @@ import com.example.ecsite.repository.PaymentRepository;
 public class PaymentOperationSnapshotService {
     private final PaymentTransactionRepository transactions;
     private final PaymentRepository payments;
+    private com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore closures;
+
+    /** Feature142-A: Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setUnpaidOrderClosures(com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore closures) {
+        this.closures = closures;
+    }
     public PaymentOperationSnapshotService(PaymentTransactionRepository transactions, PaymentRepository payments) {
         this.transactions = transactions;
         this.payments = payments;
@@ -56,6 +63,7 @@ public class PaymentOperationSnapshotService {
     }
     @Transactional(readOnly = true)
     public Optional<CheckoutTarget> checkoutTarget(long orderId,long paymentId,long customerId) {
+        if(closures!=null&&closures.isOpen(orderId))return Optional.empty();
         var payment=payments.findById(paymentId).orElse(null);
         if(payment==null)return Optional.empty();
         var order=payment.getOrder();

@@ -32,8 +32,8 @@ class PaymentOperationSyncServiceTest {
         assertThat(service.synchronize(snapshot)).isEqualTo(PaymentSynchronizationOutcome.from(outcome));
         assertThat(events.list).hasSize(1);
         var event=events.list.getFirst();
-        assertThat(event.getLevel()).isEqualTo(outcome==PaymentResultApplication.CONFLICT?Level.WARN:outcome==PaymentResultApplication.ALREADY_APPLIED?Level.DEBUG:Level.INFO);
-        assertThat(event.getFormattedMessage()).contains("outcome="+outcome,"transactionId=100","paymentId=20").doesNotContain("do-not-log-key");
+        assertThat(event.getLevel()).isEqualTo(outcome==PaymentResultApplication.CONFLICT?Level.WARN:outcome==PaymentResultApplication.ALREADY_APPLIED||outcome==PaymentResultApplication.DEFERRED?Level.DEBUG:Level.INFO);
+        assertThat(event.getFormattedMessage()).contains("outcome="+PaymentSynchronizationOutcome.from(outcome),"transactionId=100","paymentId=20").doesNotContain("do-not-log-key");
         assertThat(event.getThrowableProxy()).isNull();
     }
     @Test void uncertainProviderStateIsWaitingAndStillRevalidatesExactTransaction(){

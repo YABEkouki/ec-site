@@ -42,6 +42,7 @@ class CustomerOrderChangeHistoryWebTest {
     @MockitoBean PaymentService payments;
     @MockitoBean PaymentAuthorizationService authorization;
     @MockitoBean OrderEditBrowserService browser;
+    @MockitoBean com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore unpaidClosures;
     @MockitoBean com.example.ecsite.service.warehouse.OrderShipmentTrackingReader shipmentTracking;
     @MockitoBean AdminUserDetailsService admins;
     @MockitoBean CustomUserDetailsService customers;

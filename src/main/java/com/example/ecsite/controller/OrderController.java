@@ -87,6 +87,14 @@ public class OrderController {
         return shipmentTracking == null ? null : shipmentTracking.find(order.getId()).orElse(null);
     }
 
+    private com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore unpaidClosures;
+
+    /** Feature142-A. Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setUnpaidClosures(com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore unpaidClosures) {
+        this.unpaidClosures = unpaidClosures;
+    }
+
     @GetMapping
     public String list(
             @AuthenticationPrincipal CustomUserDetails loginUser,
@@ -126,6 +134,7 @@ public class OrderController {
         boolean canResumePayment = paymentService.canResumeAuthorization(order)
                 || paymentService.canRecoverAuthorization(order);
 
+        boolean closing = unpaidClosures != null && unpaidClosures.isOpen(id);
         model.addAttribute("order", order);
         boolean requiresPaymentConfirmation = paymentService.requiresAuthorizationConfirmation(order);
         model.addAttribute("requiresPaymentConfirmation", requiresPaymentConfirmation);
@@ -156,7 +165,10 @@ public class OrderController {
 
         model.addAttribute(
                 "canResumePayment",
-                canResumePayment && !requiresPaymentConfirmation);
+                canResumePayment && !requiresPaymentConfirmation && !closing);
+        model.addAttribute("unpaidClosureInProgress", closing);
+        model.addAttribute("closedAsUnpaid", unpaidClosures != null
+                && order.getStatus() == com.example.ecsite.entity.OrderStatus.CANCELLED && unpaidClosures.closed(id));
         model.addAttribute("shipmentTracking", shipmentTracking(order));
         model.addAttribute("cancelledForExpiredAuthorization", authorizationExpiries != null
                 && order.getStatus() == com.example.ecsite.entity.OrderStatus.CANCELLED

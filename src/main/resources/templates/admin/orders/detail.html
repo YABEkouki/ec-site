@@ -506,6 +506,69 @@
 
     </div>
 
+    <section id="unpaid-order-closure"
+        th:if="${canCloseUnpaid == true or (unpaidClosures != null and !unpaidClosures.isEmpty())}">
+        <h3>決済未完了の注文の終了</h3>
+        <table th:if="${unpaidClosures != null and !unpaidClosures.isEmpty()}">
+            <thead>
+                <tr><th>受付日時</th><th>操作者</th><th>状態</th><th>完了日時</th><th>備考</th><th>PAY.JPへの取消</th></tr>
+            </thead>
+            <tbody>
+                <tr th:each="row : ${unpaidClosures}">
+                    <td th:text="${#temporals.format(row.closure().createdAt(), 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${row.closure().requestedBy()}"></td>
+                    <td th:switch="${row.closure().status().name()}">
+                        <span th:case="'REQUESTED'">確認中（取消は未送信）</span>
+                        <span th:case="'SENDING'">取消結果を確認中</span>
+                        <span th:case="'CLOSED'">終了</span>
+                        <span th:case="'REJECTED'">PAY.JPが取消を受け付けず中止</span>
+                        <th:block th:case="'RELEASED'"><th:block th:switch="${row.closure().releaseReason().name()}">
+                            <span th:case="'AUTHORIZED'">与信が完了していたため中止</span>
+                            <span th:case="'PROCESSING'">PAY.JPで処理中のため中止</span>
+                            <span th:case="'UNREADABLE'">PAY.JPを確認できず中止</span>
+                            <span th:case="'CHANGED'">状態が変わったため中止</span>
+                            <span th:case="'STALE'">中断のため中止（取消は未送信）</span>
+                        </th:block></th:block>
+                    </td>
+                    <td th:text="${row.closure().completedAt() == null ? '-' : #temporals.format(row.closure().completedAt(), 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${row.closure().note() ?: '-'}"></td>
+                    <td>
+                        <span th:if="${row.sends().isEmpty()}">送信なし</span>
+                        <div th:each="send : ${row.sends()}">
+                            <span th:text="${#temporals.format(send.createdAt(), 'yyyy/MM/dd HH:mm:ss')}"></span>
+                            <span th:text="${send.status().name()}"></span>
+                            <span th:if="${send.errorCode() != null}" th:text="${'（' + send.errorCode() + '）'}"></span>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <th:block th:if="${canCloseUnpaid}">
+            <p th:if="${!unpaidClosureOpen}">
+                カードの決済が完了していない、正式受注前の注文です。PAY.JPに決済の取消を送り、取り消されたことを確認してから、注文を終了して在庫を戻します。
+                与信が完了していた場合は終了せず、正式受注にします。お客様には、注文が成立しなかったことを知らせるメールが送られます。
+            </p>
+            <p th:if="${unpaidClosureOpen}">
+                終了処理の結果を確認中です。自動で確認を続けますが、下のボタンで今すぐ確認し、必要な場合は取消を送り直せます。
+            </p>
+            <form th:action="@{/admin/orders/{id}/close-unpaid(id=${order.id})}" method="post">
+                <th:block th:if="${!unpaidClosureOpen}">
+                    <p>
+                        <label for="internalNoteUnpaid">変更理由・備考（任意）</label>
+                    </p>
+                    <p>
+                        <textarea id="internalNoteUnpaid" name="internalNote" rows="3" maxlength="500"></textarea>
+                    </p>
+                </th:block>
+                <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+                <button type="submit" class="button-danger"
+                    onclick="return confirm('PAY.JPの決済を取り消し、この注文を終了しますか？この操作は元に戻せません。');"
+                    th:text="${unpaidClosureOpen ? '終了処理の結果を確認する' : '決済未完了の注文を終了する'}">
+                </button>
+            </form>
+        </th:block>
+    </section>
+
     <section id="expired-authorization-cancellation" th:if="${canCancelExpiredAuthorization}">
         <h3>与信期限切れによる取消</h3>
         <p>

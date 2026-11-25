@@ -1,6 +1,6 @@
 # Feature142 決済が完了していない注文を終わらせる
 
-状態：設計案（2026-11-25、未承認・未実装）。基準は main 2aa58dd（最新マイグレーション V109）。
+状態：設計は 2026-11-25 に承認。142-A は実装・テスト済み（未統合、ブラウザ確認前）、142-B は未着手。結果は 12 章。基準は main 2aa58dd（最新マイグレーション V109）。
 
 ## 1. 目的
 
@@ -161,3 +161,41 @@ Webhook と定期照会が先に canceled を観測した場合も、同じ TX �
 | 2 | 自動で終了するまでの時間 | 注文から 24 時間（設定で変更可、既定は無効） |
 | 3 | お客様自身の終了操作 | 作らない（必要なら後の Feature） |
 | 4 | 9 章の事前確認 | 実装前に行う |
+
+11 章は 4 項目とも案のとおり承認された。
+
+## 12. 142-A の結果（2026-11-25）
+
+### 12.1 PAY.JP テストモードの事前確認
+
+- `requires_payment_method` の Payment Flow を取り消すと 200、`canceled`（`cancellation_reason` は abandoned）になる。
+- 作成の 1 回目は本文の必須項目が不足して 422（決済は作られていない）。実際の呼び出しは、作成 2 回（うち 1 回は拒否）、取消 1 回、GET 2 回。
+
+### 12.2 設計との差
+
+| 設計 | 実装 |
+|---|---|
+| 専用の確認画面 | 注文詳細のボタンと確認ダイアログ |
+| REQUESTED からの遷移は SENDING・RELEASED | 送信前の GET で canceled だったときの REQUESTED → CLOSED を追加 |
+| ERROR 応答後の再送は未定義 | 自動は 10 分以上空けて合計 5 回まで。以後は管理者が同じボタンで確認・再送する |
+| 送信の状態の細目は未定義 | PENDING / ACCEPTED / REJECTED / UNCONFIRMED / ERROR / EXPIRED。429・502・503・504 と冪等キーの待ち時間切れは同じキーで再送する |
+| 冪等キーは 24 時間 | 余裕をみて 23 時間で失効とみなす |
+
+保留中の与信成功は `DEFERRED` とし、同期の結果は既存の `WAITING`（DEBUG ログ）にまとめた。
+GET と取消の間に与信が成立した場合は、取消が勝ちうる。このとき注文は正式受注されず、取消として終わる。
+
+### 12.3 テスト
+
+- 回帰：259 クラス（当初の計画 256 ＋追加 3）。258 クラス PASS、失敗 0。残る 1 つは注釈の `CaptureConnectionTest`。5,190 件のうち 3 件は以前からの条件付き・手動確認用でスキップ（`MailServiceIntegrationTest` 1、`PaymentAuditNotificationManualResendProcessRecoveryTest` 2）。
+- 1 回目は 240 クラスまで実行したところで Windows の再起動により中断。8 クラスが失敗し、すべて 142-A の変更が原因だった。
+  - 本体を 2 か所修正：管理画面の条件 `canCloseUnpaid` が null のとき、注文の ID が null のときの例外。
+  - テストを 4 クラス修正：依存の追加 2、V107 固定の DB でのモック 1（`OrderReauthorizationPostgresTest`）、`DEFERRED` のログの期待値 1（`PaymentOperationSyncServiceTest`）。
+- 修正後に再実行したのは、失敗 8 クラス、未実行 16 クラス、管理者の注文画面に関わるクラスの計 42 クラス。それ以外の PASS は修正前の実行による。
+- 修正を外した確認：コピーから守りを 1 つずつ除いて `UnpaidOrderClosurePostgresTest`（55 件）を実行した。アプリ 6 種、DB トリガー 9 種のすべてで失敗する。TRUNCATE を防ぐ 2 種は最初は失敗せず、テストを強めた。
+
+### 12.4 確認できていないこと
+
+- `requires_action`・`requires_confirmation` の Payment Flow を実際の PAY.JP で取り消せるか。
+- `processing` の間の実際の挙動。
+- 放置した Payment Flow が PAY.JP 側で自動的に失効するか。
+- ブラウザでの動作（注文 33）。

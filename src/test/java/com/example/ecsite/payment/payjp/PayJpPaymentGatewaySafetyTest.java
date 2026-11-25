@@ -66,6 +66,26 @@ class PayJpPaymentGatewaySafetyTest {
         assertThat(failure.category()).isEqualTo(PaymentGatewayErrorCategory.OTHER_HTTP_ERROR);
         assertThat(failure.providerErrorCode()).isNull();
     }
+    /** Feature142: the same endpoint with its own reason; the ordinary cancellation keeps requested_by_customer. */
+    @Test void unpaidCheckoutIsCanceledAsAbandoned() {
+        var bodies = new CopyOnWriteArrayList<String>();
+        var keys = new CopyOnWriteArrayList<String>();
+        server.createContext("/v2/payment_flows/pfw_unpaid/cancel", exchange -> {
+            bodies.add(new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+            keys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            var bytes = "{\"id\":\"pfw_unpaid\",\"status\":\"canceled\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes); exchange.close();
+        });
+        var request = new CancellationRequest("pfw_unpaid", "closure-key");
+        assertThat(gateway.cancelUnpaidCheckout(request).status()).isEqualTo(CancellationResultStatus.CANCELLED);
+        gateway.cancelAuthorization(request);
+        assertThat(bodies).containsExactly("{\"cancellation_reason\":\"abandoned\"}", "{\"cancellation_reason\":\"requested_by_customer\"}");
+        assertThat(keys).containsExactly("closure-key", "closure-key");
+        assertThatThrownBy(() -> gateway.cancelUnpaidCheckout(new CancellationRequest("pfw_other", "key")))
+                .isInstanceOf(PaymentGatewayException.class);
+    }
     @Test void redirectsDoNotReplayPost() {
         server.createContext("/v2/payment_flows", exchange -> {
             calls.incrementAndGet(); exchange.getRequestBody().readAllBytes();

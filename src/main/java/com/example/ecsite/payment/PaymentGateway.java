@@ -64,5 +64,10 @@ public interface PaymentGateway {
 
     CancellationResult cancelAuthorization(CancellationRequest request);
 
+    /** Feature142-A: cancels the Payment Flow of a checkout that was never completed. A success is confirmed by a GET. */
+    default CancellationResult cancelUnpaidCheckout(CancellationRequest request) {
+        throw new UnsupportedOperationException("Unpaid checkout cancellation is not supported");
+    }
+
     CaptureResult capture(com.example.ecsite.payment.capture.CaptureHttpRequest request);
 }

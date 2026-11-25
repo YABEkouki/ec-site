@@ -1166,6 +1166,17 @@ public class OrderService {
     public void cancelOrderForPaymentFailure(
             Long orderId) {
 
+        cancelOrderBeforeAcceptance(orderId, "カード与信失敗による注文キャンセル");
+    }
+
+    /** Feature142-A: the canceled Payment Flow of an order being closed as unpaid. */
+    @Transactional
+    public void cancelUnpaidOrder(Long orderId) {
+        cancelOrderBeforeAcceptance(orderId, "決済未完了のため注文を終了");
+    }
+
+    private void cancelOrderBeforeAcceptance(Long orderId, String note) {
+
         Order order = findOrderForUpdate(orderId);
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
@@ -1179,7 +1190,7 @@ public class OrderService {
                 OrderStatusHistoryActorType.SYSTEM,
                 null,
                 "SYSTEM",
-                "カード与信失敗による注文キャンセル",
+                note,
                 now);
     }
 
