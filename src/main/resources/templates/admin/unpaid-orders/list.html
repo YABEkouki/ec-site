@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>決済未完了の注文一覧</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>決済未完了の注文一覧</h1>
+
+        <p>カードの決済が完了していない、正式受注前の注文です。注文の終了は注文詳細から行います。</p>
+        <p id="unpaid-order-automatic"
+            th:text="${automatic} ? |自動終了：有効（注文から${automaticAfter}たった注文）| : '自動終了：無効（管理者の操作だけで終了します）'"></p>
+
+        <form th:action="@{/admin/unpaid-orders}" method="get" id="unpaid-order-filter">
+            <label>表示
+                <select name="view">
+                    <option th:each="v : ${views}" th:value="${v.name()}" th:text="${v.label}" th:selected="${v == view}"></option>
+                </select>
+            </label>
+            <button type="submit">絞り込む</button>
+        </form>
+
+        <p th:text="|${result.total}件|" id="unpaid-order-total"></p>
+        <p th:if="${#lists.isEmpty(result.rows)}" id="unpaid-order-none">該当する注文はありません。</p>
+
+        <table th:unless="${#lists.isEmpty(result.rows)}" id="unpaid-order-rows">
+            <thead>
+                <tr>
+                    <th>注文番号</th>
+                    <th>注文日時</th>
+                    <th>合計金額</th>
+                    <th>決済</th>
+                    <th>終了できるか</th>
+                    <th>直近の終了処理</th>
+                    <th>PAY.JPへの取消</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="r : ${result.rows}">
+                    <td><a th:href="@{/admin/orders/{id}(id=${r.orderId})}" th:text="${r.orderId}"></a></td>
+                    <td th:text="${#temporals.format(r.orderedAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="|${#numbers.formatInteger(r.totalAmount, 1, 'COMMA')}円|"></td>
+                    <td th:text="${r.paymentLabel}"></td>
+                    <td>
+                        <span th:if="${r.closable}">終了できます</span>
+                        <span th:unless="${r.closable}">終了できません</span>
+                    </td>
+                    <td>
+                        <span th:text="${r.closureLabel}" th:classappend="${r.stuck} ? 'action-required-danger'"></span>
+                        <span th:if="${r.closureStatus != null}"
+                            th:text="|（${#temporals.format(r.closureCreatedAt, 'yyyy/MM/dd HH:mm:ss')}・${r.requestedBy}）|"></span>
+                    </td>
+                    <td th:text="${r.sendCount == 0} ? '未送信' : |${r.sendCount}回（${r.sendStatus}）|"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            <a th:if="${result.page > 0}" th:href="@{/admin/unpaid-orders(view=${view.name()},page=${result.page - 1})}">前のページ</a>
+            <a th:if="${result.hasNext}" th:href="@{/admin/unpaid-orders(view=${view.name()},page=${result.page + 1})}">次のページ</a>
+        </p>
+    </main>
+
+</body>
+
+</html>

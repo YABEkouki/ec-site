@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -87,7 +88,8 @@ class UnpaidOrderClosurePostgresTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager manager;
     @Autowired UnpaidOrderClosureService service;
-    @Autowired UnpaidOrderClosureStore store;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean UnpaidOrderClosureStore store;
+    @Autowired AdminUnpaidOrderQueries queries;
     @Autowired PaymentAuthorizationResultService results;
     @Autowired PaymentAuthorizationService authorizations;
     @Autowired PaymentOperationSnapshotService snapshots;
@@ -690,6 +692,198 @@ class UnpaidOrderClosurePostgresTest {
         mvc.perform(post("/admin/orders/{id}/close-unpaid", f.order()).with(user(account)).with(csrf()))
                 .andExpect(flash().attribute("errorMessage", containsString("終了できません")));
         verify(gateway, times(1)).cancelUnpaidCheckout(any());
+    }
+
+    // ---- Feature142-B: the automatic closure and the list ----
+
+    static final Duration AFTER = Duration.ofHours(24);
+    static final Duration RETRY = Duration.ofHours(6);
+
+    void automatic() { service.closeDue(AFTER, RETRY, 100); }
+
+    @Test void theSchedulerIsDisabledByDefault(@Autowired org.springframework.context.ApplicationContext context) {
+        assertThat(context.getBeansOfType(UnpaidOrderClosureScheduler.class)).isEmpty();
+        assertThat(context.getBean(com.example.ecsite.config.UnpaidOrderClosureProperties.class).enabled()).isFalse();
+    }
+
+    @Test void anOrderUnpaidForTwentyFourHoursIsClosedOnce() {
+        f = fixture(1440);
+        automatic();
+        assertClosed();
+        assertThat(jdbc.queryForMap("select requested_by_type,requested_by_account_id,requested_by_username,internal_note "
+                + "from unpaid_order_closures where order_id=?", f.order())).containsEntry("requested_by_type", "SYSTEM")
+                .containsEntry("requested_by_account_id", null).containsEntry("requested_by_username", "SYSTEM")
+                .containsEntry("internal_note", "自動終了");
+        automatic();
+        verify(gateway, times(1)).cancelUnpaidCheckout(any());
+        assertThat(count("unpaid_order_closures")).isEqualTo(1);
+    }
+
+    @Test void aYoungerOrderIsLeftAlone() {
+        f = fixture(1438);
+        automatic();
+        assertUntouched();
+        assertThat(count("unpaid_order_closures")).isZero();
+        assertThat(store.requestDue(f.order(), AFTER, RETRY)).isEmpty();
+        verify(gateway, never()).retrieveAuthorization(f.flow());
+    }
+
+    /** V110 refuses anything younger than 60 minutes whatever the configured wait is. */
+    @Test void sixtyMinutesAreKeptBelowTheConfiguration() {
+        f = fixture(58);
+        assertThat(store.dueOrders(Duration.ZERO, RETRY, 1000)).doesNotContain(f.order());
+        assertThat(store.requestDue(f.order(), Duration.ZERO, RETRY)).isEmpty();
+        assertUntouched();
+        assertThat(count("unpaid_order_closures")).isZero();
+    }
+
+    @Test void anAuthorizedOrderIsAcceptedByTheAutomaticClosure() {
+        f = fixture(1500);
+        provider = AuthorizationResultStatus.AUTHORIZED;
+        automatic();
+        assertAccepted();
+        automatic();
+        assertThat(count("unpaid_order_closures")).isEqualTo(1);
+        verify(gateway, never()).cancelUnpaidCheckout(any());
+    }
+
+    @Test void aReleasedClosureIsTriedAgainOnlyAfterTheWait() {
+        f = fixture(1500);
+        provider = AuthorizationResultStatus.PENDING;
+        automatic();
+        assertReleased("PROCESSING");
+        automatic();
+        assertThat(store.requestDue(f.order(), AFTER, RETRY)).isEmpty();
+        assertThat(count("unpaid_order_closures")).isEqualTo(1);
+        provider = AuthorizationResultStatus.REQUIRES_PAYMENT_METHOD;
+        service.closeDue(AFTER, Duration.ZERO, 100);
+        assertClosed();
+        assertThat(count("unpaid_order_closures")).isEqualTo(2);
+    }
+
+    @Test void aRejectedClosureIsTriedAgainOnlyAfterTheWait() {
+        f = fixture(1500);
+        doThrow(failure(400, "invalid_status")).when(gateway).cancelUnpaidCheckout(any());
+        automatic();
+        assertThat(closureStatus()).isEqualTo("REJECTED");
+        automatic();
+        verify(gateway, times(1)).cancelUnpaidCheckout(any());
+        service.closeDue(AFTER, Duration.ZERO, 100);
+        verify(gateway, times(2)).cancelUnpaidCheckout(any());
+        provider = AuthorizationResultStatus.FAILED;
+        service.closeDue(AFTER, Duration.ZERO, 100);
+        assertClosed();
+    }
+
+    /** Open closures belong to the recovery: the automatic pass neither resends nor restarts them. */
+    @Test void anOpenClosureIsNotTouchedByTheAutomaticPass() {
+        f = fixture(1500);
+        doThrow(failure(500, "internal_server_error")).when(gateway).cancelUnpaidCheckout(any());
+        automatic();
+        assertOpen("SENDING");
+        assertThat(store.dueOrders(AFTER, Duration.ZERO, 100)).doesNotContain(f.order()); // it would use up the limit
+        service.closeDue(AFTER, Duration.ZERO, 100);
+        assertThat(store.requestDue(f.order(), AFTER, Duration.ZERO)).isEmpty();
+        verify(gateway, times(1)).cancelUnpaidCheckout(any());
+        assertThat(count("unpaid_order_closures")).isEqualTo(1);
+        finish();
+    }
+
+    @Test void theOldestComeFirstUpToTheLimit() {
+        var newer = fixture(1500);
+        f = fixture(3000);
+        assertThat(store.dueOrders(AFTER, RETRY, 1)).containsExactly(f.order());
+        service.closeDue(AFTER, RETRY, 1);
+        assertClosed();
+        assertThat(store.dueOrders(AFTER, RETRY, 1)).containsExactly(newer.order());
+        f = newer;
+        automatic();
+        assertClosed();
+    }
+
+    @Test void oneFailureDoesNotStopTheOtherAutomaticClosures() {
+        var broken = fixture(3000);
+        f = fixture(1500);
+        doThrow(new org.springframework.dao.CannotAcquireLockException("fixture")).when(store)
+                .requestDue(eq(broken.order()), any(), any());
+        automatic();
+        assertClosed();
+        f = broken;
+        assertUntouched();
+        reset(store);
+        automatic();
+        assertClosed();
+    }
+
+    @Test void twoProcessesSendOnce() throws Exception {
+        f = fixture(1500);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var start = new CountDownLatch(1);
+            var tasks = new ArrayList<java.util.concurrent.Future<?>>();
+            for (int i = 0; i < 2; i++) tasks.add(pool.submit(() -> { start.await(); automatic(); return null; }));
+            start.countDown();
+            for (var task : tasks) task.get(30, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertClosed();
+        assertThat(count("unpaid_order_closures")).isEqualTo(1);
+        verify(gateway, times(1)).cancelUnpaidCheckout(any());
+    }
+
+    /** The other worker's closure may have ended between the listing and the request. */
+    @Test void aListedOrderIsDecidedAgainUnderTheLocks() {
+        f = fixture(1500);
+        assertThat(store.dueOrders(AFTER, RETRY, 100)).contains(f.order());
+        store.release(store.request(f.order(), ADMIN).orElseThrow().id(), ReleaseReason.UNREADABLE);
+        assertThat(store.requestDue(f.order(), AFTER, RETRY)).isEmpty();
+        var closure = store.requestDue(f.order(), AFTER, Duration.ZERO).orElseThrow();
+        store.release(closure.id(), ReleaseReason.UNREADABLE);
+        service.closeDue(AFTER, Duration.ZERO, 100);
+        assertClosed();
+    }
+
+    @Test void theListAndTheCountsShowUnpaidAndStuckOrders() throws Exception {
+        long unpaid = queries.summary().unpaid(), stuck = queries.summary().stuck();
+        f = fixture(120);
+        var young = fixture(5);
+        assertThat(queries.summary()).isEqualTo(new AdminUnpaidOrderQueries.Summary(unpaid + 2, stuck));
+        assertThat(row(AdminUnpaidOrderQueries.View.CLOSABLE, f).closable()).isTrue();
+        assertThat(row(AdminUnpaidOrderQueries.View.CLOSABLE, young)).isNull();
+        assertThat(row(AdminUnpaidOrderQueries.View.ALL, young).closable()).isFalse();
+
+        doThrow(failure(400, "invalid_status")).when(gateway).cancelUnpaidCheckout(any());
+        service.close(f.order(), ADMIN);
+        var rejected = row(AdminUnpaidOrderQueries.View.STUCK, f);
+        assertThat(rejected.closureStatus()).isEqualTo("REJECTED");
+        assertThat(rejected.sendStatus()).isEqualTo("REJECTED");
+        assertThat(rejected.sendCount()).isEqualTo(1);
+        assertThat(rejected.closable()).isTrue();
+        assertThat(rejected.requestedBy()).isEqualTo("closer");
+        assertThat(queries.summary().stuck()).isEqualTo(stuck + 1);
+
+        doThrow(unknown()).when(gateway).cancelUnpaidCheckout(any());
+        service.close(f.order(), ADMIN); // a new closure that has only just started sending is not stuck
+        assertThat(row(AdminUnpaidOrderQueries.View.STUCK, f)).isNull();
+        assertThat(row(AdminUnpaidOrderQueries.View.ALL, f).closable()).isFalse();
+        var waited = new AdminUnpaidOrderQueries(jdbc, Duration.ZERO);
+        assertThat(waited.summary().stuck()).isEqualTo(stuck + 1);
+        assertThat(waited.list(AdminUnpaidOrderQueries.View.STUCK, 0).rows()).anyMatch(r -> r.orderId() == f.order() && r.stuck());
+        mvc.perform(get("/admin/unpaid-orders").with(user(new com.example.ecsite.security.AdminUserDetails(1L, "a", "unused", true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))))).andExpect(status().isOk())
+                .andExpect(content().string(containsString("取消結果を確認中")));
+        finish();
+        assertThat(row(AdminUnpaidOrderQueries.View.ALL, f)).isNull();
+        assertThat(queries.summary()).isEqualTo(new AdminUnpaidOrderQueries.Summary(unpaid + 1, stuck));
+    }
+
+    AdminUnpaidOrderQueries.Row row(AdminUnpaidOrderQueries.View view, Fixture fixture) {
+        for (int page = 0; ; page++) {
+            var result = queries.list(view, page);
+            for (var r : result.rows()) if (r.orderId() == fixture.order()) return r;
+            if (!result.hasNext()) return null;
+        }
     }
 
     // ---- helpers ----

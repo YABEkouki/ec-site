@@ -104,6 +104,20 @@ public class UnpaidOrderClosureService {
         return settle(closure, observe(closure));
     }
 
+    /**
+     * Feature142-B: closes the orders left unpaid for {@code after}. Only starts closures; open ones belong to
+     * {@link #recover}. One failure never stops the others.
+     */
+    public void closeDue(Duration after, Duration retryAfter, int limit) {
+        for (long orderId : store.dueOrders(after, retryAfter, limit)) {
+            try {
+                store.requestDue(orderId, after, retryAfter).ifPresent(closure -> logged(closure, start(closure)));
+            } catch (RuntimeException failure) {
+                log.warn("Automatic unpaid order closure deferred: orderId={}, error={}", orderId, failure.getClass().getSimpleName());
+            }
+        }
+    }
+
     /** Resolves interrupted closures. One failure never stops the others. */
     public void recover(int limit) {
         for (Closure closure : store.openClosures(limit)) {

@@ -54,6 +54,9 @@ class AdminControllerTest {
     private com.example.ecsite.service.emergency.AdminEmergencyShippingQueries emergencyShippings;
 
     @MockitoBean
+    private com.example.ecsite.service.unpaidclosure.AdminUnpaidOrderQueries unpaidOrders;
+
+    @MockitoBean
     private com.example.ecsite.service.warehouse.WarehouseFileOutputStore warehouseFileOutputs;
 
     @Test
@@ -217,6 +220,27 @@ class AdminControllerTest {
         when(authorizationExpiries.summary()).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
         mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
                 .andExpect(model().attribute("authorizationExpirySummary", (Object) null));
+    }
+
+    /** Feature142-B: unpaid orders and stuck closures; a failure only hides them. */
+    @Test
+    void indexShowsUnpaidOrderCounts() throws Exception {
+        var empty = new ActionRequiredAgingSummary(0L, 0L);
+        when(orderService.getActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getUnassignedActionRequiredAgingSummary()).thenReturn(empty);
+        when(orderService.getMyAssignedActionRequiredAgingSummary(20L)).thenReturn(empty);
+        AdminUserDetails adminUser = new AdminUserDetails(20L, "admin", "password", true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        var auth = authentication(new UsernamePasswordAuthenticationToken(adminUser, adminUser.getPassword(), adminUser.getAuthorities()));
+        when(unpaidOrders.summary()).thenReturn(
+                new com.example.ecsite.service.unpaidclosure.AdminUnpaidOrderQueries.Summary(7, 2));
+        String html = mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        org.assertj.core.api.Assertions.assertThat(html).contains("<strong>7</strong>", "終了処理が止まっている 2件", "/admin/unpaid-orders");
+
+        when(unpaidOrders.summary()).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("down"));
+        mockMvc.perform(get("/admin").with(auth)).andExpect(status().isOk())
+                .andExpect(model().attribute("unpaidOrderSummary", (Object) null));
     }
 
     /** Feature136-C3: emergency shipping counts link to the filtered list; a failure only hides them. */

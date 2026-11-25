@@ -179,6 +179,22 @@
                         </a>
                     </td>
                 </tr>
+                <tr id="dashboard-unpaid-orders">
+                    <td><strong>決済未完了の注文</strong></td>
+                    <td>
+                        <th:block th:if="${unpaidOrderSummary != null}">
+                            <strong th:text="${unpaidOrderSummary.unpaid()}">0</strong>
+                            <span th:if="${unpaidOrderSummary.stuck() > 0}" class="action-required-danger"
+                                th:text="|終了処理が止まっている ${unpaidOrderSummary.stuck()}件|"></span>
+                        </th:block>
+                        <span th:if="${unpaidOrderSummary == null}" class="message-error">取得できませんでした</span>
+                    </td>
+                    <td>
+                        <a th:href="@{/admin/unpaid-orders}">
+                            <strong>一覧を見る</strong>
+                        </a>
+                    </td>
+                </tr>
                 <tr id="dashboard-emergency-unshipped">
                     <td><strong>緊急出荷・未出荷</strong></td>
                     <td>
