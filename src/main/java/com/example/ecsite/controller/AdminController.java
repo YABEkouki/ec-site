@@ -159,7 +159,24 @@ public class AdminController {
         }
         model.addAttribute("warehouseFileSummary", warehouseFileSummary);
 
+        // Feature142-B: unpaid orders; unavailable counts must not break the dashboard.
+        com.example.ecsite.service.unpaidclosure.AdminUnpaidOrderQueries.Summary unpaidOrderSummary = null;
+        try {
+            if (unpaidOrders != null) unpaidOrderSummary = unpaidOrders.summary();
+        } catch (DataAccessException unavailable) {
+            // Rendered as "unavailable".
+        }
+        model.addAttribute("unpaidOrderSummary", unpaidOrderSummary);
+
         return "admin/index";
+    }
+
+    private com.example.ecsite.service.unpaidclosure.AdminUnpaidOrderQueries unpaidOrders;
+
+    /** Feature142-B. Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setUnpaidOrders(com.example.ecsite.service.unpaidclosure.AdminUnpaidOrderQueries unpaidOrders) {
+        this.unpaidOrders = unpaidOrders;
     }
 
     private com.example.ecsite.service.emergency.AdminEmergencyShippingQueries emergencyShippings;

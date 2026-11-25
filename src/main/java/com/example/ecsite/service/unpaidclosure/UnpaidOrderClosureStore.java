@@ -67,16 +67,43 @@ public class UnpaidOrderClosureStore {
 
     /** Empty when the order is not eligible. A second open closure of the same order is refused by the unique index. */
     public Optional<Closure> request(long orderId, Actor actor) {
+        return tx.execute(s -> requestLocked(orderId, actor));
+    }
+
+    /** Feature142-B: oldest first. Orders whose latest closure ended less than retryAfter ago are left for later. */
+    public List<Long> dueOrders(Duration after, Duration retryAfter, int limit) {
+        return jdbc.queryForList("with due as materialized (select o.id,o.ordered_at from orders o where " + DUE
+                + ") select id from due where f142_unpaid_order_closable(id) order by ordered_at,id limit ?",
+                Long.class, millis(after), millis(retryAfter), limit);
+    }
+
+    /** Feature142-B: the automatic request; being due is decided again under the locks, so two workers never both start one. */
+    public Optional<Closure> requestDue(long orderId, Duration after, Duration retryAfter) {
         return tx.execute(s -> {
             lock(orderId);
-            if (open(orderId).isPresent() || !closable(orderId)) return Optional.<Closure>empty();
-            return jdbc.query("insert into unpaid_order_closures(order_id,payment_id,transaction_id,provider_payment_flow_id,"
-                    + "requested_by_type,requested_by_account_id,requested_by_username,internal_note,status,created_at) "
-                    + "select o.id,p.id,t.id,p.provider_payment_id,?,?,?,?,'REQUESTED',localtimestamp from orders o "
-                    + "join payments p on p.id=o.active_payment_id join payment_transactions t on t.payment_id=p.id "
-                    + "where o.id=? returning " + COLUMNS, CLOSURE, actor.type(), actor.accountId(), actor.username(),
-                    actor.note(), orderId).stream().findFirst();
+            boolean due = Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from orders o where o.id=? and " + DUE + ")",
+                    Boolean.class, orderId, millis(after), millis(retryAfter)));
+            return due ? requestLocked(orderId, AUTOMATIC) : Optional.<Closure>empty();
         });
+    }
+
+    private static final Actor AUTOMATIC = new Actor(null, "SYSTEM", "自動終了");
+    private static final String DUE = "o.status='ORDERED' and o.accepted_at is null "
+            + "and o.ordered_at <= timezone('Asia/Tokyo', clock_timestamp()) - ?::interval "
+            + "and not exists(select 1 from unpaid_order_closures c where c.order_id=o.id and (c.completed_at is null "
+            + "or c.completed_at > timezone('Asia/Tokyo', clock_timestamp()) - ?::interval))";
+
+    private static String millis(Duration value) { return value.toMillis() + " milliseconds"; }
+
+    private Optional<Closure> requestLocked(long orderId, Actor actor) {
+        lock(orderId);
+        if (open(orderId).isPresent() || !closable(orderId)) return Optional.empty();
+        return jdbc.query("insert into unpaid_order_closures(order_id,payment_id,transaction_id,provider_payment_flow_id,"
+                + "requested_by_type,requested_by_account_id,requested_by_username,internal_note,status,created_at) "
+                + "select o.id,p.id,t.id,p.provider_payment_id,?,?,?,?,'REQUESTED',localtimestamp from orders o "
+                + "join payments p on p.id=o.active_payment_id join payment_transactions t on t.payment_id=p.id "
+                + "where o.id=? returning " + COLUMNS, CLOSURE, actor.type(), actor.accountId(), actor.username(),
+                actor.note(), orderId).stream().findFirst();
     }
 
     /** The only step that permits a POST: committed before it, and only from REQUESTED with every condition unchanged. */
@@ -174,7 +201,7 @@ public class UnpaidOrderClosureStore {
 
     private boolean olderThan(String table, String column, long id, Duration age) {
         return Boolean.TRUE.equals(jdbc.queryForObject("select " + column + " <= timezone('Asia/Tokyo', clock_timestamp()) - ?::interval "
-                + "from " + table + " where id=?", Boolean.class, age.toMillis() + " milliseconds", id));
+                + "from " + table + " where id=?", Boolean.class, millis(age), id));
     }
 
     /** Order first, then its payments in id order. */
