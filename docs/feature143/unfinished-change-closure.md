@@ -1,6 +1,6 @@
 # Feature143 再与信が完了しなかった注文変更を終わらせる
 
-状態：設計案（2026-11-25、未承認・未実装）。基準は main 3e7118e（最新マイグレーション V110）。
+状態：設計は承認済み（案 X。11 章）。143-A を実装中。基準は main 3e7118e（最新マイグレーション V110）。
 
 ## 1. 目的
 
@@ -42,9 +42,9 @@
 
 次をすべて満たす注文変更。Order、Payment（id 昇順）の順にロックし、既存の `f125_reauth_lock` の順序に従って判定する。
 
-- 一括編集（owned）の REAUTHORIZE、最終判定が NOT_ADOPTED、切替の決定なし、取り下げの記録なし。
+- 一括編集（owned）の REAUTHORIZE、切替の決定なし、取り下げの記録なし。
 - 状態が AUTHORIZING・REQUIRES_ACTION、または MANUAL_REVIEW で理由が UNSETTLED_AUTH_AFTER_GRACE。
-- `automatic_until` を過ぎている。受付は ACCEPTED・未終了・RECOVERY_PENDING で、実行中の処理なし。
+- `automatic_until` を過ぎている（最終判定の有無は問わない）。受付は ACCEPTED・未終了・RECOVERY_PENDING で、実行中の処理なし。
 - 新しい決済が PAYJP・CARD、PENDING か REQUIRES_ACTION、Payment Flow の ID あり。取引は PENDING の再与信 1 件だけ。作成の送信は OBSERVED。
 - 元の決済が AUTHORIZED（DB）。元の与信の取消・NEW_ABORT の記録なし。
 - 在庫の確保が HELD で、証拠が受付時と一致する（`f125_reauth_assert_current`）。
@@ -63,7 +63,7 @@
 5. 反映（TX3）：`canceled` を、金額・通貨・metadata（注文番号・変更の ID）まで照合して確認し、同じ TX で次を行う。
    - 再与信の取引を FAILED（FLOW_CANCELED）、新しい決済を FAILED。
    - 注文変更を ABORTED、在庫を RELEASED（入出庫 1 件）。
-   - 受付を CLOSED_UNAPPLIED（CHANGE_NOT_ADOPTED）、終了の記録を CLOSED。
+   - 受付を CLOSED_UNAPPLIED（REAUTH_UNFINISHED）、終了の記録を CLOSED。
 
 結果が不明・エラーのときの扱いは Feature142 と同じ（同じキーで再送、23 時間で失効、ERROR は 10 分以上空けて合計 5 回まで、以後は管理者）。
 
@@ -87,7 +87,7 @@
 
 - `order_change_flow_closures` と `order_change_flow_closure_sends`（状態と遷移は Feature142 と同じ形。削除・TRUNCATE・書き換え禁止）。
 - 保留のトリガー：新しい決済の AUTHORIZED、再与信の取引の SUCCEEDED、注文変更の状態の変更（ABORTED を除く）、NEW_ABORT の記録、登録カードの送信の挿入。
-- `f125_not_adopted_insert`・`f125_not_adopted_closed` に、終了の記録が CLOSED で、新しい決済が FAILED・FLOW_CANCELED の組を追加する（CANCELLED と NEW_ABORT の組は変えない）。受付が RECOVERY_PENDING のまま閉じられるのは、この組だけ。
+- 受付を閉じる証明は専用の表と関数にする（`f125_not_adopted_*` は変えない）。受付の最終チェックなど、既存の関数には REAUTH_UNFINISHED の組だけを追加する。
 - 遅延制約：CLOSED は、注文変更 ABORTED・決済 FAILED・在庫 RELEASED・受付終了のすべてがそろったコミットだけ。逆も同じ。
 - 変更する既存の関数は、V110 時点の全文を基に差分だけを加える。V96 より後の定義であることを確認してから書く。
 
@@ -96,7 +96,7 @@
 | | 内容 |
 |---|---|
 | 143-A | V111 と終了処理、管理者の操作（注文 17 で確認） |
-| 143-B | 不採用が確定した対象の自動終了（既定は無効）。未完了のまま期限を過ぎた owned の変更を MANUAL_REVIEW にしない |
+| 143-B | 期限を過ぎた対象の自動終了（既定は無効。期限後の猶予を置く）。未完了のまま期限を過ぎた owned の変更を MANUAL_REVIEW にしない |
 
 調査時の案（A＝再発防止、B＝既存の解消）から、順番を入れ替えた。期限後はすぐ MANUAL_REVIEW になるため、どちらも MANUAL_REVIEW から終わらせる同じ土台が必要で、管理者の操作で先に確かめるほうが安全。
 
@@ -116,21 +116,21 @@
 - 守りを外すとテストが失敗すること（スクラッチのコピー。DB トリガーは無効にしない）。
 - 回帰は変更した関数・表を使うテストを grep で洗い出す。版数の 3 テストを更新する。
 
-既知の制約：一括編集の注文は期限を後から変えられず、最終判定まで待つテストを自然な手順では作れない（129-B と同じ）。130-B のテストは、最終判定の行を差し込むためにトリガーを一時的に無効にしていた。**本 Feature では無効にしない**。期限の近い注文を最初から作る方法を先に試し、作れなければ実装の前に報告する。
+既知の制約：V71 が変更期限を 14:00 に固定するため、最終判定のあとの状態は自然な手順では作れない（130-B はトリガーを一時的に無効にした）。本 Feature では無効にしない。自動処理の期限は `f125_execution_initialize` の引数で短くできるので、条件を期限の経過にした（案 X）。
 
 ## 10. 対象外
 
 - 注文 8（NEW_FLOW_EVIDENCE_MISMATCH、決済 13 は AUTHORIZED）。原因が違う。別に調べる。
 - 一括編集でない従来の変更（Feature140 で新規は停止）。
 - RESERVED・AUTH_UNKNOWN（Payment Flow の作成結果が不明）、LATE_ADOPTION。
-- 14:05 より前の終了。お客様自身の操作。
+- お客様自身の操作。
 
 ## 11. 決めていただくこと
 
 | # | 項目 | 案 |
 |---|---|---|
 | 1 | 順番（7 章） | 143-A＝管理者の操作、143-B＝自動 |
-| 2 | 終わらせる時期 | 最終判定（変更期限の 14:05）のあと。期限後すぐに終わらせる案は、証明の条件を広く変えるため採らない |
+| 2 | 終わらせる時期 | 自動処理の期限（`automatic_until`）のあと。当初案は最終判定のあとだったが、トリガーを無効にせずに検証できないため変更した（案 X） |
 | 3 | 自動終了の既定 | 無効（Feature142 と同じ） |
 | 4 | 5.2（MANUAL_REVIEW で与信成立） | 自動では進めず、終了しない |
 
