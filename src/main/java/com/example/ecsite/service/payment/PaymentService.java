@@ -511,13 +511,22 @@ public class PaymentService {
                 initiator, PaymentTransactionPurpose.ORDER_CANCELLATION);
 
         paymentTransactionRepository.save(transaction);
+        PaymentOperationSnapshot snapshot = PaymentOperationSnapshot.from(transaction);
+        // Feature141-B: the judgement the result will face, before anything is sent. An expired authorization is not
+        // sent to the provider; its start and result share one transaction.
+        if (!expiredAuthorization && !currentPurposeMatches(order, payment, transaction, snapshot, payments,
+                history(payments))) {
+            throw new com.example.ecsite.exception.InvalidOrderStatusException(
+                    "注文内容とカード決済の内容を確認できないため、キャンセルを受け付けられません。"
+                            + "注文番号「" + order.getId() + "」を添えてお問い合わせください。");
+        }
 
         return new PaymentCancellationStart(
                 payment.getId(),
                 transaction.getId(),
                 providerPaymentId,
                 transaction.getIdempotencyKey(),
-                PaymentStartDisposition.NEW, PaymentOperationSnapshot.from(transaction));
+                PaymentStartDisposition.NEW, snapshot);
     }
 
     @Transactional
@@ -574,16 +583,24 @@ public class PaymentService {
                 || !Objects.equals(payment.getProviderPaymentId(), snapshot.providerPaymentId()))) return null;
         if (assigningProviderId && snapshot.providerPaymentId() != null
                 && !Objects.equals(payment.getProviderPaymentId(), snapshot.providerPaymentId())) return null;
-        List<PaymentTransaction> history = lockedPayments.stream().flatMap(p -> paymentTransactionRepository
-                .findByPaymentIdOrderByCreatedAtAscIdAsc(p.getId()).stream()).toList();
+        List<PaymentTransaction> history = history(lockedPayments);
         // Historical identity may justify ignoring a stale response, never applying it.
         // Current-state eligibility is retained separately and required before every mutation.
-        var resolver = new PaymentPurposeResolver();
-        boolean currentPurposeMatches = resolver.matches(order, payment, transaction, snapshot, lockedPayments, history,
+        boolean currentPurposeMatches = currentPurposeMatches(order, payment, transaction, snapshot, lockedPayments, history);
+        if (!currentPurposeMatches && !new PaymentPurposeResolver().matchesResultIdentity(order, payment, transaction, snapshot, history)) return null;
+        return new ResultTarget(payment, transaction, currentPurposeMatches);
+    }
+
+    private List<PaymentTransaction> history(List<Payment> lockedPayments) {
+        return lockedPayments.stream().flatMap(p -> paymentTransactionRepository
+                .findByPaymentIdOrderByCreatedAtAscIdAsc(p.getId()).stream()).toList();
+    }
+
+    private boolean currentPurposeMatches(Order order, Payment payment, PaymentTransaction transaction,
+            PaymentOperationSnapshot snapshot, List<Payment> lockedPayments, List<PaymentTransaction> history) {
+        return new PaymentPurposeResolver().matches(order, payment, transaction, snapshot, lockedPayments, history,
                 orderPaymentGuard.completedOrderChanges(order), orderPaymentGuard.abortedOrderChanges(order),
                 orderPaymentGuard.paymentContentEvidence(order));
-        if (!currentPurposeMatches && !resolver.matchesResultIdentity(order, payment, transaction, snapshot, history)) return null;
-        return new ResultTarget(payment, transaction, currentPurposeMatches);
     }
 
     private boolean competingPending(ResultTarget target) {
