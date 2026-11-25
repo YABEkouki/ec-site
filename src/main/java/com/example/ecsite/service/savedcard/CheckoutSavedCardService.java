@@ -107,12 +107,12 @@ public class CheckoutSavedCardService {
         String customerId = cards.customerIdOf(userId);
         String flowId = payments.getProviderPaymentId(paymentId);
 
-        Send update = sends.begin(userId, orderId, paymentId, transactionId, SendType.FLOW_UPDATE, Purpose.SAVED_CARD,
-                flowId, customerId, paymentMethodId);
+        Send update = beginPayment(userId, orderId, paymentId, transactionId, SendType.FLOW_UPDATE, flowId, customerId, paymentMethodId);
+        if (update == null) return PayOutcome.PENDING;
         Status updated = send(update, () -> gateway.updateFlowCustomer(flowId, customerId, paymentMethodId, update.idempotencyKey()));
         if (updated == Status.SUCCEEDED) {
-            Send confirm = sends.begin(userId, orderId, paymentId, transactionId, SendType.CONFIRM, Purpose.SAVED_CARD,
-                    flowId, customerId, paymentMethodId);
+            Send confirm = beginPayment(userId, orderId, paymentId, transactionId, SendType.CONFIRM, flowId, customerId, paymentMethodId);
+            if (confirm == null) return PayOutcome.PENDING;
             send(confirm, () -> gateway.confirmFlow(flowId, returnUrl, confirm.idempotencyKey()));
         }
         PayOutcome outcome = observe(orderId, paymentId);
@@ -194,6 +194,17 @@ public class CheckoutSavedCardService {
 
     private Optional<Send> latestUpdate(long transactionId) {
         return sends.forTransaction(transactionId).stream().filter(s -> s.type() == SendType.FLOW_UPDATE).reduce((a, b) -> b);
+    }
+
+    /** Null when V110 refused the send because the order started being closed as unpaid in the meantime (Feature142-A). */
+    private Send beginPayment(long userId, long orderId, long paymentId, long transactionId, SendType type, String flowId,
+            String customerId, String paymentMethodId) {
+        try {
+            return sends.begin(userId, orderId, paymentId, transactionId, type, Purpose.SAVED_CARD, flowId, customerId, paymentMethodId);
+        } catch (org.springframework.dao.DataIntegrityViolationException refused) {
+            if (currentTarget(userId, orderId, paymentId, transactionId)) throw refused;
+            return null;
+        }
     }
 
     private boolean currentTarget(long userId, long orderId, long paymentId, long transactionId) {

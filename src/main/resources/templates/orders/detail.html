@@ -195,6 +195,10 @@
             </a>
         </p>
 
+        <p th:if="${unpaidClosureInProgress}" id="unpaid-closure-in-progress" class="alert alert-warning">
+            決済の状態を確認しています。しばらくしてから、この画面を再度表示してください。
+        </p>
+
         <p th:if="${requiresPaymentConfirmation}" class="alert alert-warning">
             決済結果を確認中です。失敗が確定したわけではありません。安全のため決済の再送を停止しています。
             解消しない場合は、注文番号「<span th:text="${order.id}"></span>」を添えて管理者へお問い合わせください。
@@ -217,6 +221,10 @@
 
         <p th:if="${order.status == T(com.example.ecsite.entity.OrderStatus).CANCELLED}">
             この注文はキャンセルされています。
+        </p>
+        <p th:if="${closedAsUnpaid}" id="closed-as-unpaid">
+            お支払いが完了しなかったため、注文を終了しました。カードへのご請求はありません。
+            引き続きご希望の場合は、お手数ですが改めてご注文ください。
         </p>
         <p th:if="${cancelledForExpiredAuthorization}" id="expired-authorization-cancelled">
             カードのお支払いの有効期限（与信期限）が切れたため、キャンセルされました。カードへのご請求はありません。

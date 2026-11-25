@@ -5,6 +5,6 @@ public enum PaymentSynchronizationOutcome {
     APPLIED, ALREADY_APPLIED, IGNORED_STALE, CONFLICT, WAITING, SKIPPED;
 
     static PaymentSynchronizationOutcome from(PaymentResultApplication application) {
-        return valueOf(application.name());
+        return application == PaymentResultApplication.DEFERRED ? WAITING : valueOf(application.name());
     }
 }

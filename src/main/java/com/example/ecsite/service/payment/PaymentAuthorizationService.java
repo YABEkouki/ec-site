@@ -22,6 +22,13 @@ public class PaymentAuthorizationService {
     private final PaymentGateway paymentGateway;
     private final PaymentPostGuardService postGuard;
     private final PaymentAuthorizationResultService paymentAuthorizationResultService;
+    private com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore closures;
+
+    /** Feature142-A: Spring always injects it; hand-built unit fixtures predate it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setUnpaidOrderClosures(com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore closures) {
+        this.closures = closures;
+    }
 
     public PaymentAuthorizationService(
             PaymentAuthorizationStartService startService,
@@ -110,6 +117,9 @@ public class PaymentAuthorizationService {
     }
 
     private PaymentAuthorizationRecovery recoverExisting(Order order,Long paymentId) {
+        // No card entry and no client secret while the order is being closed as unpaid.
+        if (closures != null && closures.isOpen(order.getId()))
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.CLOSURE_IN_PROGRESS, order.getId());
         PaymentOperationSnapshot snapshot = snapshots.authorization(order.getId(), paymentId);
         String providerPaymentId = snapshot.providerPaymentId();
 
@@ -129,11 +139,15 @@ public class PaymentAuthorizationService {
     }
 
     private void applySafely(PaymentOperationSnapshot snapshot, AuthorizationResult result) {
+        PaymentResultApplication applied;
         try {
-            paymentAuthorizationResultService.apply(snapshot, result).requireAccepted();
+            applied = paymentAuthorizationResultService.apply(snapshot, result);
+            if (applied != PaymentResultApplication.DEFERRED) applied.requireAccepted();
         } catch (RuntimeException failure) {
             throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.RESULT_PERSISTENCE_UNKNOWN, snapshot.orderId());
         }
+        if (applied == PaymentResultApplication.DEFERRED)
+            throw new PaymentSafetyStopException(PaymentSafetyStopException.Reason.CLOSURE_IN_PROGRESS, snapshot.orderId());
     }
 
     private PaymentAuthorizationRecoveryAction determineRecoveryAction(

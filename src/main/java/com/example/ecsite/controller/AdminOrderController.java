@@ -326,6 +326,7 @@ public class AdminOrderController {
         model.addAttribute("authorizationExpiry", authorizationExpiries == null ? null : authorizationExpiries.forOrder(order.getId()));
         model.addAttribute("canCancelExpiredAuthorization", expiredCancellations != null && expiredCancellations.available(order.getId()));
         model.addAttribute("customerNotifications", customerNotifications(order));
+        addUnpaidClosure(id, model);
 
         model.addAttribute(
                 "statusHistories",
@@ -573,6 +574,69 @@ public class AdminOrderController {
         return redirectToDetail(
                 id,
                 returnUrl);
+    }
+
+    private com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore unpaidClosures;
+    private com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureService unpaidClosureService;
+    /** Feature142-A. Spring always injects them; hand-built unit fixtures predate them and never offer it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setUnpaidClosures(com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore unpaidClosures,
+            com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureService unpaidClosureService) {
+        this.unpaidClosures = unpaidClosures;
+        this.unpaidClosureService = unpaidClosureService;
+    }
+
+    public record UnpaidClosureRow(com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore.Closure closure,
+            List<com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore.Send> sends) {}
+
+    private void addUnpaidClosure(long orderId, Model model) {
+        if (unpaidClosures == null) return;
+        var closures = unpaidClosures.forOrder(orderId).stream()
+                .map(c -> new UnpaidClosureRow(c, unpaidClosures.sends(c.id()))).toList();
+        boolean open = closures.stream().anyMatch(r -> r.closure().open());
+        model.addAttribute("unpaidClosures", closures);
+        model.addAttribute("unpaidClosureOpen", open);
+        model.addAttribute("canCloseUnpaid", open || unpaidClosures.closable(orderId));
+    }
+
+    @PostMapping("/{id}/close-unpaid")
+    public String closeUnpaid(
+            @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute("errorMessage", "変更理由・備考は500文字以内で入力してください。");
+            return redirectToDetail(id, returnUrl);
+        }
+        if (unpaidClosureService == null) {
+            redirectAttributes.addFlashAttribute("errorMessage", "この操作は利用できません。");
+            return redirectToDetail(id, returnUrl);
+        }
+        String note = form.getInternalNote() == null || form.getInternalNote().isBlank() ? null : form.getInternalNote().trim();
+        try {
+            var outcome = unpaidClosureService.close(id, new com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore.Actor(
+                    loginUser.getId(), loginUser.getUsername(), note));
+            boolean success = outcome == com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureService.Outcome.CLOSED;
+            redirectAttributes.addFlashAttribute(success ? "successMessage" : "errorMessage", switch (outcome) {
+                case CLOSED -> "決済未完了の注文を終了しました。PAY.JPの決済は取り消され、在庫を戻しました。";
+                case ACCEPTED -> "カードの与信が完了していたため、注文を終了せず正式受注にしました。";
+                case PROCESSING -> "PAY.JPで決済を処理中のため、終了しませんでした。時間をおいて再度お試しください。";
+                case UNREADABLE -> "PAY.JPで決済の状態を確認できませんでした。注文は変更していません。時間をおいて再度お試しください。";
+                case CHANGED -> "確認中に注文または決済の状態が変わったため、終了しませんでした。最新の状態をご確認ください。";
+                case REJECTED -> "PAY.JPが決済の取消を受け付けなかったため、終了しませんでした。最新の状態をご確認ください。";
+                case UNCONFIRMED -> "決済の取消結果を確認中です。注文はまだ終了していません。自動で確認を続けます。";
+            });
+        } catch (com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        } catch (org.springframework.dao.DataAccessException | IllegalStateException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "終了処理の結果を確認できませんでした。最新の注文・決済の状態をご確認ください。");
+        }
+        return redirectToDetail(id, returnUrl);
     }
 
     private com.example.ecsite.service.payment.ExpiredAuthorizationCancellationService expiredCancellations;

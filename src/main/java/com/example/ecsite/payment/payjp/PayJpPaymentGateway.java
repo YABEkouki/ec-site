@@ -309,10 +309,19 @@ public class PayJpPaymentGateway implements PaymentGateway {
     @Override
     public CancellationResult cancelAuthorization(
             CancellationRequest request) {
+        return cancelFlow(request, "requested_by_customer");
+    }
 
-        Map<String, Object> body = Map.of(
-                "cancellation_reason",
-                "requested_by_customer");
+    @Override
+    public CancellationResult cancelUnpaidCheckout(CancellationRequest request) {
+        if (TransactionSynchronizationManager.isActualTransactionActive())
+            throw new IllegalStateException("Unpaid checkout cancellation requires no database transaction");
+        return cancelFlow(request, "abandoned");
+    }
+
+    private CancellationResult cancelFlow(CancellationRequest request, String reason) {
+
+        Map<String, Object> body = Map.of("cancellation_reason", reason);
 
         try {
             PayJpPaymentFlowResponse response = restClient.post()
