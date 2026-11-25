@@ -1048,6 +1048,8 @@ public class OrderReauthorizationTransactions {
             return view(data); // Stale result: before CREATE OBSERVED or any Payment/transaction mutation.
         }
         if(terminal(data))return view(data);
+        // Feature143: a cancel may still reach this flow; only the closure (V111) ends the change meanwhile.
+        if(closingFlow(data))return view(data);
         if(abortRequested(data)&&op.get("new_payment_id")==null)return view(data);
         var next=payment(data,number(op,"new_payment_id"));
         if(!matchesFlow(data,next,observed,true))return review(data,"NEW_FLOW_EVIDENCE_MISMATCH");
@@ -1327,7 +1329,12 @@ public class OrderReauthorizationTransactions {
         data.operation().put("state",state);data.operation().put("version",number(data.operation(),"version")+1);
     }
     private boolean abortRequested(Locked data){return data.operation().get("abort_request_id")!=null;}
-    private boolean progressBlocked(Locked data){return terminal(data)||abortRequested(data);}
+    private boolean progressBlocked(Locked data){return terminal(data)||abortRequested(data)||closingFlow(data);}
+    /** Decided under the Order lock a closure is requested with. Schemas before V111 cannot contain one. */
+    private boolean closingFlow(Locked data){
+        if(!Boolean.TRUE.equals(jdbc.queryForObject("select to_regclass('order_change_flow_closures') is not null",Boolean.class)))return false;
+        return Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from order_change_flow_closures where operation_id=? and status in ('REQUESTED','SENDING'))",Boolean.class,data.operation().get("id")));
+    }
     private boolean terminal(Locked data){return List.of("COMPLETED","ABORTED","MANUAL_REVIEW").contains(data.operation().get("state"));}
     private com.example.ecsite.service.order.evidence.OrderEditReauthorizationBridge bridge(){return new com.example.ecsite.service.order.evidence.OrderEditReauthorizationBridge(jdbc);}
     private void rejectOwnedLegacy(long orderId,UUID operationId){
