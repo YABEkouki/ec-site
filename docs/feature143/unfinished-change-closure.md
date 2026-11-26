@@ -1,6 +1,6 @@
 # Feature143 再与信が完了しなかった注文変更を終わらせる
 
-状態：設計は承認済み（案 X。11 章）。143-A は main に統合済み（0b9b8bc）。注文 17 のブラウザ確認で見つかった不具合を 143-A2（V112、14 章）で直し、テストまで完了（main 未統合、V112 は開発 DB に未適用、ブラウザ未確認）。143-B は未着手。
+状態：143-A・143-A2 は main に統合済み（4e402ca、V111〜V112）。143-B は設計承認済み（15 章、2026-11-26）、実装とテストが完了（16 章。main 未統合、ブラウザ未確認）。
 
 ## 1. 目的
 
@@ -211,3 +211,109 @@
 
 - 開発 DB への V112 の適用と、注文 17 のブラウザでの終了、PAY.JP テストモードでの取消。
 - 注文 8 は別の理由（NEW_FLOW_EVIDENCE_MISMATCH）で止まっており、対象外。
+
+## 15. 143-B 自動の終了（設計案）
+
+基準は main 4e402ca（最新マイグレーション V112）。
+
+### 15.1 方針
+
+- 143-A の終了処理（`ChangeFlowClosureService`）をそのまま使い、定期処理が対象を選んで受け付けるだけにする。PAY.JP への取消、反映、保留、DB の守りは 143-A と同じ。
+- 形は Feature142-B に合わせる。既定は無効。
+
+| 設定 | 既定 | 範囲 |
+|---|---|---|
+| `ORDER_CHANGE_CLOSURE_ENABLED` | false | |
+| `ORDER_CHANGE_CLOSURE_AFTER`（自動処理の期限 `automatic_until` からの猶予） | 60 分 | 10 分〜7 日 |
+| 実行の間隔 | 5 分 | 10 秒〜24 時間 |
+| RELEASED・REJECTED のあとの間隔（管理者の操作による終了も同じ） | 6 時間 | 10 分〜7 日 |
+| 1 回の件数 | 20 件（期限の古い順） | 1〜100 |
+
+- 対象は `f143_change_closable` を満たす変更（AUTHORIZING・REQUIRES_ACTION・MANUAL_REVIEW の UNSETTLED_AUTH_AFTER_GRACE）。一覧で選び、Order と注文変更をロックした状態でもう一度判定してから受け付ける。受付中・送信中の終了には触れない。
+- 記録の操作者は SYSTEM、備考は「自動終了」。
+- 1 件の失敗で全体を止めない。送信中の確かめ直しは既存の定期処理（143-A）が行う。
+
+### 15.2 7 章からの変更（承認が必要）
+
+7 章では「未完了のまま期限を過ぎた owned の変更を MANUAL_REVIEW にしない」を 143-B に含めていた。これは行わないことを提案する。
+
+- 143-A で MANUAL_REVIEW（UNSETTLED_AUTH_AFTER_GRACE）から終了できるようにしたため、自動の終了もそのまま対象にできる。
+- MANUAL_REVIEW への移行は `OrderReauthorizationTransactions.authorization` の共通の経路にあり、Feature125・128・129 の状態遷移に影響する。変えなくても目的は達成できる。
+- 自動の終了が無効のあいだは、MANUAL_REVIEW のほうが管理者の目に留まりやすい。
+
+### 15.3 DB
+
+マイグレーションはない（Feature142-B と同じ）。期限前の終了は V111・V112 が既に拒否する（`automatic_until` を過ぎていること）。猶予はアプリの設定で、10 分未満では起動しない。
+
+### 15.4 お客様への連絡
+
+- 終了の処理自体はメールを送らない（143-A と同じ。注文 17 でも送られていない）。
+- 「変更不成立」のメール（CHANGE_NOT_ADOPTED）は、変更期限の 5 分後（14:05）の最終判定で送られる。最終判定は ABORTED の変更を対象にしないため、14:05 より前に終了するとこのメールは送られない（コードの読み取り。未確認）。
+- 3D セキュアの失敗などで普通に取りやめになった変更も、14:05 より前に ABORTED になればメールは送られない。自動の終了もこれと同じ扱いにすることを提案する。お客様の画面には「ご注文は変更前の内容のままです」と表示される。
+
+### 15.5 画面
+
+- 管理者の注文詳細：終了の記録に「SYSTEM・自動終了」と表示する（143-A の表示をそのまま使う）。
+- 新しい一覧は作らない。対象は少なく、注文詳細と保留の一覧で確認できる。
+
+### 15.6 テスト
+
+- 選ばれる条件：猶予前は選ばない、猶予後は選ぶ、AUTHORIZING・REQUIRES_ACTION・MANUAL_REVIEW のどれも選ぶ。対象外（与信成立、決済の状態、受付中の終了がある、runtime 停止）は選ばない。
+- RELEASED・REJECTED のあとは間隔を空ける。1 回の件数と順序。1 件の失敗で止まらない。二重に動いても受付は 1 件。
+- 記録の操作者が SYSTEM であること。設定の範囲外で起動しないこと、無効なら定期処理が作られないこと。
+- 守りを外すとテストが失敗すること（コピー上、トリガーは無効にしない）。回帰は変更したクラスを使うテストを grep で洗い出す。
+
+### 15.7 確認
+
+- ブラウザ確認：お客様の画面で一括編集の変更を始め、3D セキュアの認証を完了せずに止める。自動処理の期限（10 分）と猶予を過ぎたあと、`ORDER_CHANGE_CLOSURE_ENABLED=true` と短い猶予（10 分）で起動して自動で終了することを確かめる。PAY.JP テストモードの取消を含むので、事前に確認する。
+- 確認後は既定（無効）に戻して起動する。
+
+### 15.8 決めていただくこと
+
+| # | 項目 | 案 |
+|---|---|---|
+| 1 | 7 章の「MANUAL_REVIEW にしない」 | 行わない（15.2） |
+| 2 | 猶予の既定 | 自動処理の期限から 60 分（最小 10 分） |
+| 3 | お客様へのメール | 新しいメールは作らない。14:05 より前に終了した場合は不成立のメールも送られない（15.4） |
+| 4 | 既定 | 無効 |
+
+## 16. 143-B の結果
+
+### 16.1 実装
+
+設計（15 章）のとおり。マイグレーションはない。
+
+- `ChangeFlowClosureStore.dueOperations`：期限の古い順に、猶予と再試行の間隔を過ぎ、受付中の終了がなく、`f143_change_closable` を満たす変更を選ぶ。
+- `ChangeFlowClosureStore.requestDue`：Feature125 の順でロックしてから、同じ条件をもう一度判定して受け付ける。操作者は SYSTEM、備考は「自動終了」。管理者の受付と同じ処理（`requestLocked`）を使う。
+- `ChangeFlowClosureService.closeDue`：受け付けた終了を 143-A と同じ流れで進める。1 件の失敗はログに残して次へ進む。
+- `ChangeFlowClosureScheduler` と `OrderChangeClosureProperties`（`app.order-change-closure.*`）。既定は無効。範囲外の値では起動しない。
+
+### 16.2 テスト
+
+- `OrderChangeFlowClosurePostgresTest` に自動終了の 7 件を追加し、34 件 PASS（共有テスト DB、トリガーの無効化なし）。
+  - 猶予前は選ばない、AUTHORIZING・REQUIRES_ACTION・MANUAL_REVIEW を終了する、RELEASED のあとは間隔を空ける、受付中の終了は触らない、runtime 停止中は選ばない、2 つが同時に動いても送信は 1 回、期限の古い順。
+  - このクラスのテストは runtime の世代を共有するため、先のテストが終了できる変更を残す。自動終了のテストでは、それらに送らない受付中の記録を付けて対象から外す（`retireOthers`）。
+- 新規 `OrderChangeClosurePropertiesTest`（11 件）、`ChangeFlowClosureServiceTest`（1 件）。
+- 回帰：変更したクラスと設定を使う 15 クラスすべて PASS（689 件、失敗 0、エラー 0）。うち `OrderChangeFlowClosurePostgresTest` は、テストの誤り（モックの準備を続けて 2 回行った）を直して再実行した。
+
+### 16.3 守りを外した確認
+
+14 か所を 1 つずつ外し、すべてテストが失敗した。最初は 2 か所が検出できず、テストを強めた（一覧を終了条件で絞ること、期限の古い順）。
+
+| 外したもの | 失敗したテスト |
+|---|---|
+| 猶予の条件 | `theAutomaticClosureWaitsForTheGraceAndClosesAsTheSystem` |
+| 再試行までの間隔 | `aReleasedClosureIsRetriedOnlyAfterTheWait` |
+| 受付中の終了を除く条件 | `anOpenClosureIsLeftToItsOwner` ほか 5 件 |
+| 一覧を終了条件で絞る | `aStoppedRuntimeIsNotClosedAutomatically` |
+| 期限の古い順 | `theLongestOverdueComesFirst` |
+| 受付時の再判定 | `aReleasedClosureIsRetriedOnlyAfterTheWait` ほか 1 件 |
+| ロック前の判定 | `aStoppedRuntimeIsNotClosedAutomatically` |
+| 操作者 SYSTEM | `theAutomaticClosureWaitsForTheGraceAndClosesAsTheSystem` |
+| 1 件の失敗で止めない | `oneFailureDoesNotStopTheOthers` |
+| 設定の最小値、既定の無効、無効時に定期処理を作らない、定期処理の例外の扱い | `OrderChangeClosurePropertiesTest` の各テスト |
+
+### 16.4 確認できていないこと
+
+- ブラウザでの確認と、PAY.JP テストモードでの自動の取消。
+- 14:05 より前に終了した場合に不成立のメールが送られないこと（15.4。コードの読み取りのみ）。

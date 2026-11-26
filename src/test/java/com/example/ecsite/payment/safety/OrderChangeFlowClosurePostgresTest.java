@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
-/** Feature143-A: closing an owned change whose re-authorization was never completed (V111). No trigger is ever disabled. */
+/** Feature143-A/B: closing an owned change whose re-authorization was never completed (V111). No trigger is ever disabled. */
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false","logging.level.org.springframework=WARN","logging.level.org.hibernate=WARN"})
 @CaptureConnectionTest
 @org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -240,6 +240,8 @@ class OrderChangeFlowClosurePostgresTest {
         assertThat(store.request(f.order(),operation,ADMIN)).isEmpty();
         assertThatThrownBy(this::insert).hasMessageContaining("not completed in time");
         assertThatThrownBy(this::close).isInstanceOf(ChangeFlowClosureException.class);assertUntouched();
+        automatic(Duration.ZERO,SECOND);assertThat(store.requestDue(due(),Duration.ZERO,SECOND)).isEmpty();
+        assertThat(count("order_change_flow_closures where operation_id=?",operation)).isZero();assertUntouched();
         verify(gateway,never()).cancelUnpaidCheckout(any());
     }
     @ParameterizedTest @CsvSource({"requires_capture,AUTHORIZED","processing,PROCESSING"})
@@ -422,6 +424,77 @@ class OrderChangeFlowClosurePostgresTest {
         page=mvc.perform(get("/admin/orders/{id}",f.order()).with(account)).andExpect(status200()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         assertThat(page).contains("確認").doesNotContain("完了しなかった注文変更を終了する</button>");
         mvc.perform(post("/admin/orders/{id}/close-unfinished-change",f.order()).with(account).with(csrf())).andExpect(flash().attributeExists("errorMessage"));
+    }
+    // Feature143-B: the automatic closure only requests; everything after that is the administrator's path above.
+    static final Duration HOUR=Duration.ofHours(1),RETRY=Duration.ofHours(6),SECOND=Duration.ofSeconds(1);
+    /**
+     * The tests of this class share one runtime generation, so earlier tests leave closable changes. Each is given an
+     * open closure that is never sent, which the automatic closure leaves alone whatever the waits.
+     */
+    void retireOthers(){
+        for(var other:store.dueOperations(Duration.ZERO,Duration.ZERO,100))
+            if(!other.equals(due()))store.request(other.orderId(),other.operationId(),ADMIN).orElseThrow();
+        assertThat(store.dueOperations(Duration.ZERO,Duration.ZERO,100)).isSubsetOf(due());
+    }
+    void automatic(Duration after,Duration retryAfter){retireOthers();closures.closeDue(after,retryAfter,20);}
+    Due due(){return new Due(f.order(),operation);}
+    @Test void theAutomaticClosureWaitsForTheGraceAndClosesAsTheSystem(){
+        stuck();
+        automatic(HOUR,RETRY);assertThat(store.dueOperations(HOUR,RETRY,20)).isEmpty();assertThat(store.requestDue(due(),HOUR,RETRY)).isEmpty();
+        assertThat(count("order_change_flow_closures where operation_id=?",operation)).isZero();assertUntouched();verifyNoInteractions(gateway);
+        assertThat(store.dueOperations(Duration.ZERO,RETRY,1)).containsExactly(due());
+        automatic(Duration.ZERO,RETRY);assertClosed();
+        assertThat(one("select requested_by_type||':'||requested_by_username||':'||internal_note||':'||(requested_by_account_id is null) from order_change_flow_closures where operation_id=?",operation))
+            .isEqualTo("SYSTEM:SYSTEM:自動終了:true");
+        assertThat(sends()).containsExactly("ACCEPTED");
+        automatic(Duration.ZERO,SECOND);verify(gateway,times(1)).cancelUnpaidCheckout(any());
+        assertThat(count("order_change_flow_closures where operation_id=?",operation)).isOne();
+    }
+    @ParameterizedTest @ValueSource(strings={"MANUAL_REVIEW","REQUIRES_ACTION"})
+    void everyUnfinishedStateIsClosedAutomatically(String state){
+        stuck();
+        if(state.equals("MANUAL_REVIEW"))review();
+        else{newStatus="requires_action";synchronization.synchronize(snapshots.find(authorization).orElseThrow());}
+        assertThat(operationState()).isEqualTo(state);
+        automatic(Duration.ZERO,RETRY);assertClosed();verify(gateway,times(1)).cancelUnpaidCheckout(any());
+    }
+    @Test void aReleasedClosureIsRetriedOnlyAfterTheWait(){
+        stuck();newStatus="requires_capture";
+        automatic(Duration.ZERO,RETRY);assertOpen("RELEASED");
+        newStatus="requires_payment_method";
+        automatic(Duration.ZERO,RETRY);assertThat(store.requestDue(due(),Duration.ZERO,RETRY)).isEmpty();
+        assertThat(count("order_change_flow_closures where operation_id=?",operation)).isOne();assertUntouched();
+        verify(gateway,never()).cancelUnpaidCheckout(any());
+        db.jdbc.queryForObject("select pg_sleep(1.2)",Object.class);
+        automatic(Duration.ZERO,SECOND);assertClosed();verify(gateway,times(1)).cancelUnpaidCheckout(any());
+    }
+    @Test void anOpenClosureIsLeftToItsOwner(){
+        stuck();store.request(f.order(),operation,ADMIN).orElseThrow();
+        automatic(Duration.ZERO,SECOND);assertThat(store.requestDue(due(),Duration.ZERO,SECOND)).isEmpty();
+        assertOpen("REQUESTED");assertThat(count("order_change_flow_closures where operation_id=?",operation)).isOne();
+        verifyNoInteractions(gateway);
+    }
+    @Test void aStoppedRuntimeIsNotClosedAutomatically(){
+        stuck();stopRuntime();
+        assertThat(store.dueOperations(Duration.ZERO,Duration.ZERO,100)).doesNotContain(due());
+        closures.closeDue(Duration.ZERO,Duration.ZERO,20);assertThat(store.requestDue(due(),Duration.ZERO,Duration.ZERO)).isEmpty();
+        assertThat(count("order_change_flow_closures where operation_id=?",operation)).isZero();
+        verifyNoInteractions(gateway);
+    }
+    @Test void theLongestOverdueComesFirst(){
+        stuck();var first=due();reset(gateway);stuck();var second=due();
+        assertThat(store.dueOperations(Duration.ZERO,Duration.ZERO,100)).filteredOn(d->d.equals(first)||d.equals(second)).containsExactly(first,second);
+        retireOthers();
+    }
+    @Test void twoWorkersSendOnce() throws Exception {
+        stuck();retireOthers();var pool=Executors.newFixedThreadPool(2);
+        try{
+            var tasks=new ArrayList<Future<?>>();
+            for(int i=0;i<2;i++)tasks.add(pool.submit(()->{closures.closeDue(Duration.ZERO,SECOND,20);return null;}));
+            for(var t:tasks)t.get(30,TimeUnit.SECONDS);
+        }finally{pool.shutdownNow();}
+        assertClosed();verify(gateway,times(1)).cancelUnpaidCheckout(any());
+        assertThat(count("order_change_flow_closures where operation_id=?",operation)).isOne();
     }
     static org.springframework.test.web.servlet.ResultMatcher status200(){return org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk();}
 }
