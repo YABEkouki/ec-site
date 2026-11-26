@@ -1,6 +1,6 @@
 # Feature143 再与信が完了しなかった注文変更を終わらせる
 
-状態：143-A・143-A2 は main に統合済み（4e402ca、V111〜V112）。注文 17 はブラウザで終了し、Feature135 の取消とメールまで確認済み。143-B は設計中（15 章、承認待ち）。
+状態：143-A・143-A2 は main に統合済み（4e402ca、V111〜V112）。143-B は設計承認済み（15 章、2026-11-26）、実装とテストが完了（16 章。main 未統合、ブラウザ未確認）。
 
 ## 1. 目的
 
@@ -276,3 +276,44 @@
 | 2 | 猶予の既定 | 自動処理の期限から 60 分（最小 10 分） |
 | 3 | お客様へのメール | 新しいメールは作らない。14:05 より前に終了した場合は不成立のメールも送られない（15.4） |
 | 4 | 既定 | 無効 |
+
+## 16. 143-B の結果
+
+### 16.1 実装
+
+設計（15 章）のとおり。マイグレーションはない。
+
+- `ChangeFlowClosureStore.dueOperations`：期限の古い順に、猶予と再試行の間隔を過ぎ、受付中の終了がなく、`f143_change_closable` を満たす変更を選ぶ。
+- `ChangeFlowClosureStore.requestDue`：Feature125 の順でロックしてから、同じ条件をもう一度判定して受け付ける。操作者は SYSTEM、備考は「自動終了」。管理者の受付と同じ処理（`requestLocked`）を使う。
+- `ChangeFlowClosureService.closeDue`：受け付けた終了を 143-A と同じ流れで進める。1 件の失敗はログに残して次へ進む。
+- `ChangeFlowClosureScheduler` と `OrderChangeClosureProperties`（`app.order-change-closure.*`）。既定は無効。範囲外の値では起動しない。
+
+### 16.2 テスト
+
+- `OrderChangeFlowClosurePostgresTest` に自動終了の 7 件を追加し、34 件 PASS（共有テスト DB、トリガーの無効化なし）。
+  - 猶予前は選ばない、AUTHORIZING・REQUIRES_ACTION・MANUAL_REVIEW を終了する、RELEASED のあとは間隔を空ける、受付中の終了は触らない、runtime 停止中は選ばない、2 つが同時に動いても送信は 1 回、期限の古い順。
+  - このクラスのテストは runtime の世代を共有するため、先のテストが終了できる変更を残す。自動終了のテストでは、それらに送らない受付中の記録を付けて対象から外す（`retireOthers`）。
+- 新規 `OrderChangeClosurePropertiesTest`（11 件）、`ChangeFlowClosureServiceTest`（1 件）。
+- 回帰：変更したクラスと設定を使う 15 クラスすべて PASS（689 件、失敗 0、エラー 0）。うち `OrderChangeFlowClosurePostgresTest` は、テストの誤り（モックの準備を続けて 2 回行った）を直して再実行した。
+
+### 16.3 守りを外した確認
+
+14 か所を 1 つずつ外し、すべてテストが失敗した。最初は 2 か所が検出できず、テストを強めた（一覧を終了条件で絞ること、期限の古い順）。
+
+| 外したもの | 失敗したテスト |
+|---|---|
+| 猶予の条件 | `theAutomaticClosureWaitsForTheGraceAndClosesAsTheSystem` |
+| 再試行までの間隔 | `aReleasedClosureIsRetriedOnlyAfterTheWait` |
+| 受付中の終了を除く条件 | `anOpenClosureIsLeftToItsOwner` ほか 5 件 |
+| 一覧を終了条件で絞る | `aStoppedRuntimeIsNotClosedAutomatically` |
+| 期限の古い順 | `theLongestOverdueComesFirst` |
+| 受付時の再判定 | `aReleasedClosureIsRetriedOnlyAfterTheWait` ほか 1 件 |
+| ロック前の判定 | `aStoppedRuntimeIsNotClosedAutomatically` |
+| 操作者 SYSTEM | `theAutomaticClosureWaitsForTheGraceAndClosesAsTheSystem` |
+| 1 件の失敗で止めない | `oneFailureDoesNotStopTheOthers` |
+| 設定の最小値、既定の無効、無効時に定期処理を作らない、定期処理の例外の扱い | `OrderChangeClosurePropertiesTest` の各テスト |
+
+### 16.4 確認できていないこと
+
+- ブラウザでの確認と、PAY.JP テストモードでの自動の取消。
+- 14:05 より前に終了した場合に不成立のメールが送られないこと（15.4。コードの読み取りのみ）。

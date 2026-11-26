@@ -27,7 +27,7 @@ import com.example.ecsite.service.changeclosure.ChangeFlowClosureStore.SendStatu
 import com.example.ecsite.service.changeclosure.ChangeFlowClosureStore.Status;
 
 /**
- * Feature143-A: closes an order change whose re-authorization was never completed (docs/feature143/unfinished-change-closure.md).
+ * Feature143-A/B: closes an order change whose re-authorization was never completed (docs/feature143/unfinished-change-closure.md).
  *
  * After automatic_until the change can never be adopted. The cancel also hits a Payment Flow that has just been
  * authorized, so the change is fenced (application and V111) from the request until the outcome is known. It is aborted,
@@ -103,6 +103,20 @@ public class ChangeFlowClosureService {
         if (send.isEmpty()) return released(closure, ReleaseReason.CHANGED, Outcome.CHANGED);
         dispatch(closure, send.get());
         return settle(closure, observe(closure));
+    }
+
+    /**
+     * Feature143-B: closes the changes left after the grace, oldest first. Only requests a closure; the cancel, its
+     * application and every guard are those of the administrator's closure. One failure never stops the others.
+     */
+    public void closeDue(Duration after, Duration retryAfter, int limit) {
+        for (ChangeFlowClosureStore.Due due : store.dueOperations(after, retryAfter, limit)) {
+            try {
+                store.requestDue(due, after, retryAfter).ifPresent(closure -> logged(closure, start(closure)));
+            } catch (RuntimeException failure) {
+                log.warn("Automatic order change flow closure deferred: orderId={}, error={}", due.orderId(), failure.getClass().getSimpleName());
+            }
+        }
     }
 
     /** Resolves interrupted closures. One failure never stops the others. */

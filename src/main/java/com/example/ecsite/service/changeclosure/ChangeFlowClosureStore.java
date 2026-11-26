@@ -13,7 +13,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Feature143-A: the records of closing an unfinished order change (V111). Sends and state changes commit before any HTTP. */
+/** Feature143-A/B: the records of closing an unfinished order change (V111). Sends and state changes commit before any HTTP. */
 @Repository
 public class ChangeFlowClosureStore {
 
@@ -72,15 +72,52 @@ public class ChangeFlowClosureStore {
             // The canonical lock refuses a stopped runtime, so it is only taken for a change that looks eligible.
             if (!closable(operationId)) return Optional.<Closure>empty();
             lock(orderId, operationId);
-            if (open(orderId).isPresent() || !closable(operationId)) return Optional.<Closure>empty();
-            return jdbc.query("insert into order_change_flow_closures(order_id,operation_id,admission_id,payment_id,transaction_id,"
-                    + "provider_payment_flow_id,requested_by_type,requested_by_account_id,requested_by_username,internal_note,status,created_at) "
-                    + "select op.order_id,op.id,r.id,p.id,t.id,p.provider_payment_id,?,?,?,?,'REQUESTED',localtimestamp "
-                    + "from order_change_operations op join order_edit_admissions r on r.order_id=op.order_id and r.submission_key=op.submission_key "
-                    + "join payments p on p.id=op.new_payment_id join payment_transactions t on t.payment_id=p.id "
-                    + "where op.id=? and op.order_id=? returning " + COLUMNS, CLOSURE, actor.type(), actor.accountId(), actor.username(),
-                    actor.note(), operationId, orderId).stream().findFirst();
+            return requestLocked(orderId, operationId, actor);
         });
+    }
+
+    /** Feature143-B: a change the automatic closure may take. */
+    public record Due(long orderId, UUID operationId) {}
+
+    static final Actor AUTOMATIC = new Actor(null, "SYSTEM", "自動終了");
+
+    /** after counts from automatic_until; retryAfter is the wait after a closure of the same change ended without closing it. */
+    private static final String DUE = "op.execution_route='REAUTHORIZE' and op.state in ('AUTHORIZING','REQUIRES_ACTION','MANUAL_REVIEW') "
+            + "and c.automatic_until <= clock_timestamp() - ?::interval "
+            + "and not exists(select 1 from order_change_flow_closures x where x.operation_id=op.id and (x.completed_at is null "
+            + "or x.completed_at > timezone('Asia/Tokyo', clock_timestamp()) - ?::interval))";
+    private static final String DUE_FROM = " from order_change_operations op join order_edit_admissions r on r.order_id=op.order_id "
+            + "and r.submission_key=op.submission_key join order_edit_execution_controls c on c.admission_id=r.id where ";
+
+    /** Feature143-B: due changes, the longest overdue first. Eligibility is decided again by requestDue. */
+    public List<Due> dueOperations(Duration after, Duration retryAfter, int limit) {
+        return jdbc.query("with due as materialized (select op.order_id,op.id,c.automatic_until" + DUE_FROM + DUE
+                + ") select order_id,id from due where f143_change_closable(id) order by automatic_until,id limit ?",
+                (r, n) -> new Due(r.getLong(1), r.getObject(2, UUID.class)), millis(after), millis(retryAfter), limit);
+    }
+
+    /** Feature143-B: the automatic request; being due is decided again under the locks, so two workers never both start one. */
+    public Optional<Closure> requestDue(Due due, Duration after, Duration retryAfter) {
+        return tx.execute(s -> {
+            if (!closable(due.operationId())) return Optional.<Closure>empty();
+            lock(due.orderId(), due.operationId());
+            boolean stillDue = Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1" + DUE_FROM + "op.id=? and op.order_id=? and "
+                    + DUE + ")", Boolean.class, due.operationId(), due.orderId(), millis(after), millis(retryAfter)));
+            return stillDue ? requestLocked(due.orderId(), due.operationId(), AUTOMATIC) : Optional.<Closure>empty();
+        });
+    }
+
+    private static String millis(Duration value) { return value.toMillis() + " milliseconds"; }
+
+    private Optional<Closure> requestLocked(long orderId, UUID operationId, Actor actor) {
+        if (open(orderId).isPresent() || !closable(operationId)) return Optional.<Closure>empty();
+        return jdbc.query("insert into order_change_flow_closures(order_id,operation_id,admission_id,payment_id,transaction_id,"
+                + "provider_payment_flow_id,requested_by_type,requested_by_account_id,requested_by_username,internal_note,status,created_at) "
+                + "select op.order_id,op.id,r.id,p.id,t.id,p.provider_payment_id,?,?,?,?,'REQUESTED',localtimestamp "
+                + "from order_change_operations op join order_edit_admissions r on r.order_id=op.order_id and r.submission_key=op.submission_key "
+                + "join payments p on p.id=op.new_payment_id join payment_transactions t on t.payment_id=p.id "
+                + "where op.id=? and op.order_id=? returning " + COLUMNS, CLOSURE, actor.type(), actor.accountId(), actor.username(),
+                actor.note(), operationId, orderId).stream().findFirst();
     }
 
     private boolean closable(UUID operationId) {
@@ -144,7 +181,7 @@ public class ChangeFlowClosureStore {
                 CLOSURE, orderId).stream().findFirst();
     }
 
-        public boolean closed(long closureId) {
+    public boolean closed(long closureId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from order_change_flow_closures where id=? "
                 + "and status='CLOSED')", Boolean.class, closureId));
     }
