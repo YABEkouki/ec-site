@@ -48,6 +48,11 @@ public interface PaymentGateway {
         throw new UnsupportedOperationException("Requested abort observation is not supported");
     }
 
+    /** Feature144: GET only, for a new Payment Flow that may have been canceled by its expiry. */
+    default com.example.ecsite.payment.payjp.ExpiredFlowObservation observeExpiredFlow(String flowId) {
+        throw new UnsupportedOperationException("Expired flow observation is not supported");
+    }
+
     default com.example.ecsite.payment.payjp.PayJpPaymentFlowObservation observeOrderChangeFlow(String flowId) {
         throw new UnsupportedOperationException("Order change observation is not supported");
     }

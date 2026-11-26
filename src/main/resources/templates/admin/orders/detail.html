@@ -632,6 +632,44 @@
         </th:block>
     </section>
 
+    <section id="expired-change-closure"
+        th:if="${canCloseExpiredChange == true or (expiredChangeClosures != null and !expiredChangeClosures.isEmpty())}">
+        <h3>新しい与信が期限切れになった注文変更の終了</h3>
+        <table th:if="${expiredChangeClosures != null and !expiredChangeClosures.isEmpty()}">
+            <thead>
+                <tr><th>終了日時</th><th>操作者</th><th>新しい与信の期限</th><th>PAY.JPの取消日時</th><th>備考</th></tr>
+            </thead>
+            <tbody>
+                <tr th:each="row : ${expiredChangeClosures}">
+                    <td th:text="${#temporals.format(row.recordedAt(), 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${row.requestedBy()}"></td>
+                    <td th:text="${row.expiredAt()}"></td>
+                    <td th:text="${row.canceledAt()}"></td>
+                    <td th:text="${row.note() ?: '-'}"></td>
+                </tr>
+            </tbody>
+        </table>
+        <th:block th:if="${canCloseExpiredChange == true}">
+            <p>
+                採用されなかった注文変更の新しいカード決済の与信が、PAY.JPで期限切れにより取り消されています。PAY.JPで期限切れの取消を確認してから、
+                注文変更を終了して確保した在庫を戻します（PAY.JPへの取消依頼は送りません）。注文は変更前の内容のままです。
+            </p>
+            <form th:action="@{/admin/orders/{id}/close-expired-change(id=${order.id})}" method="post">
+                <p>
+                    <label for="internalNoteExpiredChange">変更理由・備考（任意）</label>
+                </p>
+                <p>
+                    <textarea id="internalNoteExpiredChange" name="internalNote" rows="3" maxlength="500"></textarea>
+                </p>
+                <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+                <button type="submit" class="button-danger"
+                    onclick="return confirm('新しい与信が期限切れになった注文変更を終了しますか？この操作は元に戻せません。');">
+                    期限切れの注文変更を終了する
+                </button>
+            </form>
+        </th:block>
+    </section>
+
     <section id="expired-authorization-cancellation" th:if="${canCancelExpiredAuthorization}">
         <h3>与信期限切れによる取消</h3>
         <p>

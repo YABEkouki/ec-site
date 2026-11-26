@@ -140,7 +140,7 @@ class LegacyBaselineChangeClosureUpgradePostgresTest {
     int stock(){return db.jdbc.queryForObject("select stock from products where id=?",Integer.class,added);}
 
     @Test void legacyAdmission(){
-        assertThat(applicationJdbc.queryForObject("select max(version::int) from flyway_schema_history where success",Integer.class)).isEqualTo(112);
+        assertThat(applicationJdbc.queryForObject("select max(version::int) from flyway_schema_history where success",Integer.class)).isEqualTo(113);
         assertThat(applicationJdbc.queryForObject("select current_schema()",String.class)).isEqualTo(db.schema);
         new OrderEditAdmissionFoundationPostgresTest().runtime(new Info("legacyAdmission"));
         // The upgrade added the two columns with their default values to the order the admission was taken for.
