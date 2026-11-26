@@ -1,6 +1,6 @@
 # Feature143 再与信が完了しなかった注文変更を終わらせる
 
-状態：設計は承認済み（案 X。11 章）。143-A は実装とテストが完了（13 章。main 未統合、V111 は開発 DB に未適用、ブラウザ未確認）。143-B は未着手。基準は main 3e7118e（最新マイグレーション V110）。
+状態：設計は承認済み（案 X。11 章）。143-A は main に統合済み（0b9b8bc）。注文 17 のブラウザ確認で見つかった不具合を 143-A2（V112、14 章）で直し、テストまで完了（main 未統合、V112 は開発 DB に未適用、ブラウザ未確認）。143-B は未着手。
 
 ## 1. 目的
 
@@ -169,3 +169,45 @@
 
 - PAY.JP の実 API での取消と、ブラウザでの操作。
 - 注文 17 は、開発 DB への SELECT で終了条件を満たすことだけを確認した（V111 未適用のため、証明の表の条件を除いて評価）。
+
+## 14. 143-A2 V81 より前の受付の基準
+
+### 14.1 不具合
+
+注文 17 で終了を押すと「終了処理の結果を確認できませんでした」と表示された。終了の行を書く前に `f125_reauth_assert_current`（V75）が「Unexpected business or financial change outside owned reauthorization」で拒否していた。終了の行は書かれず、PAY.JP にも何も送っていない。
+
+原因は V81 で `orders` に加えた `acceptance_mode`（既定 'LEGACY'）と `accepted_at`（null）。受付時に保存した基準 `unapplied_baseline` は注文の行を丸ごと JSON にしたもので、V81 より前の受付ではこの 2 つのキーがない。今の注文にはあるため、比較が必ず一致しない。古い形の基準を持つ受付は 19 件、そのうち終わっていないのは注文 8（QUEUED）と 17（RECOVERY_PENDING）の 2 件。
+
+### 14.2 直したこと（案 A）
+
+- V112 `f143_legacy_order_local(baseline, actual)`：次をすべて満たすときだけ、今の注文から 2 つのキーを除いて比較する。それ以外は今の値をそのまま返す。
+  - 基準の注文に 2 つのキーがどちらもない。
+  - 今の注文が `acceptance_mode='LEGACY'` かつ `accepted_at` が null（V81 で入った既定値のまま）。
+- V112 で `f125_reauth_assert_current` を置き換え、比較の前にこの関数を通す。ほかは V75 と同じ。
+- 案 A との差 1：Java 側の実行開始時の比較（`OrderEditApplicationPlanRepository.prepare`）も同じ規則にした。DB 側だけ直すと、古い受付の実行開始が `REAUTHORIZATION_INITIALIZATION_UNCONFIRMED` で止まることがアップグレードのテストで分かった。V112 がない DB では従来の比較を使う。
+- 案 A との差 2：終了ボタンの表示判定 `f143_change_closable` に、今の状態が基準と一致するかの確認（`f143_reauth_current`）を加えた。押しても DB が拒否する変更にボタンを出さないため。稼働が止まっている、または世代が違うときは確認せず false にする。
+- 変えていないもの：`f125_financial_assert_current` は REAUTHORIZE では使われない（自分の行として比較から除かれる）。`f125_reauth_conclusive` も基準を丸ごと比べるが、実行記録のない受付にしか使われない。
+
+### 14.3 テスト
+
+- 新規 `LegacyBaselineChangeClosureUpgradePostgresTest`（独立コンテナ、2 件 PASS）：V80 で受付を作り、V112 まで上げてから実行して終了する。終了後は注文変更が CLOSED、在庫が戻り、元の与信は AUTHORIZED のまま。比較から除く条件は関数を直接呼んで確かめる。
+- `OrderChangeFlowClosurePostgresTest` は 26 件 PASS（`aChangedOrderIsNotOffered` を追加）。
+- 回帰は 110 クラスすべて初回で PASS。2,592 件（失敗 0、エラー 0、スキップ 2。スキップは再起動用の既存テスト）。
+
+### 14.4 守りを外した確認
+
+6 か所を 1 つずつ外し、すべてテストが失敗した。
+
+| 外したもの | 失敗したテスト |
+|---|---|
+| `f125_reauth_assert_current` の新しい比較 | `legacyAdmission` |
+| Java 側の実行開始時の比較 | `legacyAdmission` |
+| 基準に 2 つのキーがないときだけ除く条件 | `onlyTheUpgradeDefaultsAreLeftOut` |
+| 値が既定値のときだけ除く条件 | `onlyTheUpgradeDefaultsAreLeftOut` |
+| 表示判定に加えた一致の確認 | `aChangedOrderIsNotOffered` |
+| その中の稼働状態の確認 | `aStoppedRuntimeWritesAndSendsNothing` |
+
+### 14.5 確認できていないこと
+
+- 開発 DB への V112 の適用と、注文 17 のブラウザでの終了、PAY.JP テストモードでの取消。
+- 注文 8 は別の理由（NEW_FLOW_EVIDENCE_MISMATCH）で止まっており、対象外。
