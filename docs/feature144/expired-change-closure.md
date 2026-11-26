@@ -1,6 +1,6 @@
 # Feature144 新しい与信が期限切れになった不採用の注文変更を終わらせる
 
-状態：設計案（承認待ち）。基準は main e39e8fb（最新マイグレーション V112）。
+状態：実装済み（ブランチ feature/144-expired-change-closure、main への統合前）。基準は main e39e8fb（最新マイグレーション V112）。設計は 1〜9 章、変更点と結果は 11 章。
 
 ## 1. 目的
 
@@ -44,7 +44,7 @@
 次をすべて満たす注文変更。Feature125 の順（`f125_reauth_lock`）でロックして判定する。
 
 - 一括編集（owned）の REAUTHORIZE。切替の決定なし、取り下げの記録なし、適用なし。
-- 最終判定が NOT_ADOPTED。
+- 自動処理の期限（`automatic_until`）を過ぎている（11.1 の案 X'。設計時は「最終判定が NOT_ADOPTED」）。
 - 状態が AUTHORIZED、または MANUAL_REVIEW で理由が NEW_FLOW_EVIDENCE_MISMATCH・ESTABLISHED_AUTH_CANCELED_EXTERNALLY。
 - 新しい決済が PAYJP・CARD・AUTHORIZED、再与信の取引が SUCCEEDED の 1 件だけ。記録上の期限（V93）を過ぎている。保留中の取引なし。
 - 元の決済が AUTHORIZED で、取消の記録なし（元の与信には触れない）。
@@ -102,7 +102,7 @@ PAY.JP が `canceled`（expired）でない場合は何も書かず、「PAY.JP 
 | # | 項目 | 案 |
 |---|---|---|
 | 1 | 操作 | 管理者の操作だけ（自動にしない） |
-| 2 | 対象の状態 | AUTHORIZED と、MANUAL_REVIEW（NEW_FLOW_EVIDENCE_MISMATCH・ESTABLISHED_AUTH_CANCELED_EXTERNALLY）。最終判定 NOT_ADOPTED が必須 |
+| 2 | 対象の状態 | AUTHORIZED と、MANUAL_REVIEW（NEW_FLOW_EVIDENCE_MISMATCH・ESTABLISHED_AUTH_CANCELED_EXTERNALLY）。最終判定 NOT_ADOPTED が必須 → 案 X' で「自動処理の期限を過ぎている」に変更（11.1） |
 | 3 | 新しい決済の記録 | CANCEL 取引（ORDER_CHANGE_NEW_AUTH_ABORT）SUCCEEDED と決済 CANCELLED。POST は送らない |
 | 4 | 受付の終了理由 | 新しい理由 NEW_AUTH_EXPIRED |
 | 5 | 分割 | 分けない（V113・終了処理・画面を 1 ブランチ） |
@@ -111,3 +111,56 @@ PAY.JP が `canceled`（expired）でない場合は何も書かず、「PAY.JP 
 ## 10. 適用と確認
 
 - V113 の適用（アプリの再起動）、注文 8 のブラウザ確認（PAY.JP テストモードの GET）は事前に確認する。
+
+## 11. 実装の結果（2026-11-27）
+
+### 11.1 設計からの変更
+
+- **案 X'（ご承認済み）**：対象の条件「最終判定 NOT_ADOPTED」は「自動処理の期限（`automatic_until`）を過ぎている」に変えた。V71 が一括編集の期限を 14:00 に固定するため、最終判定（14:05）をテストの中で作れない。Feature143 の案 X と同じ扱い。注文 8 はどちらの条件も満たす。
+- 対象の条件には、ほかに次を加えた。受付中の処理がなく、すべての試行に結果があること。`f143_reauth_current`（V112 の基準の扱い）を満たすこと。開いている 143 の終了依頼がないこと。
+- PAY.JP の GET は専用の `observeExpiredFlow` を使う（`GET /v2/payment_flows/{id}`）。既存の照合（`matchesFlow`）は変えていない。
+
+### 11.2 実装
+
+- V113：
+  - 表 `order_change_expired_closures`（追記のみ）
+  - 関数：`f144_change_closable`（対象の判定）、`f144_close_expired`（唯一の書き込み口）
+  - 遅延チェック 2 つ：
+    - 証拠の行があるときは、終了に必要な変更がすべてそろっていること
+    - 期限後の ORDER_CHANGE_NEW_AUTH_ABORT の取消取引には、送信の記録か証拠の行があること
+  - 終了後に決済・取引・変更を変えられないようにする守り
+  - 既存の関数 8 つ：最新の定義を写し、本 Feature の分岐だけを加えた（`f125_reauth_assert_current`、`f125_reauth_inventory_update`、`f125_runtime_other_work`、`f125_execution_close_guard`、`f125_execution_final_check`、`f125_closure_capture`、`f125_admission_final_check`、`f125_closure_assert_final`）
+- Java：
+  - `ExpiredFlowObservation`、`PayJpPaymentGateway.observeExpiredFlow`
+  - `ExpiredChangeClosureService`：GET は TX の外。結果は CLOSED、NOT_EXPIRED、UNREADABLE、CHANGED のどれか。
+  - `POST /admin/orders/{id}/close-expired-change`
+  - 注文詳細の表示：ボタンと終了の記録
+
+### 11.3 テスト
+
+- `OrderChangeFlowClosurePostgresTest`：49 件 PASS（Feature144 は 15 件）。確かめたこと：
+  - 3 つの状態がどれも終了すること
+  - 次の場合は何も書かないこと：
+    - `requires_capture` や、期限切れ以外の取消の応答
+    - 読めない応答、ID が別の Flow の応答
+    - 別の変更の応答（DB が拒否）
+    - 取消理由が期限切れでない応答（DB が拒否）
+  - 次の場合は対象外になること：記録上の期限の前、自動処理の期限の前、一括編集の稼働の停止中
+  - DB の守り：証拠のない取消取引、直接の挿入、終了後の変更、証拠の行の更新や削除を拒否すること。2 回目の終了は何もせず false を返すこと。
+  - 管理者の画面：CSRF、表示、二重操作
+- 回帰：変更した関数・表を使うテストを grep で洗い出し、PAY.JP の接続部分の単体テストを加えた。合わせて 147 クラスがすべて PASS（約 3,400 件）。
+  - 初回の失敗 3 クラスは、すべてテストの側を直した。
+    - `OrderReauthorizationPostgresTest`：V107 までのスキーマで画面を開くと、新しい表がない。143 と同じ方法で、新しいサービスを Mock にした。
+    - `LegacyBaselineChangeClosureUpgradePostgresTest`：版数の期待値を 112 から 113 に変えた。
+    - `OrderChangeFlowClosurePostgresTest` の `closesAfterTheFlowIsReadAsCanceled[3]`（Feature143 のテスト）：1 回だけ在庫が確保されないまま止まった。再実行では PASS。原因は確かめていない。4 秒の自動処理の期限を、高い負荷の中で超えた可能性がある。
+  - テストではないクラス（Mock・Fixture）が計画に混ざり、4 行が起動できなかった。テストクラスだけで再実行し、PASS した。
+- 守りを外した確認（コピー上）：14 通りのうち 12 通りを検出した。
+  - 初回に検出できなかった 2 通り（DB の取消理由の確認、Java の Flow ID の照合）は、テストを 2 件加えて検出できるようにした。
+  - 検出できないまま残ったものは 2 通り。
+    - `f144_change_closable` の状態の条件：ほかの条件（切替・取り下げなし、新しい決済が AUTHORIZED、取引 1 件）で、ほぼ同じ範囲に絞られる。ただし、ほかの理由の MANUAL_REVIEW で重なる場合がないことは確かめていない。
+    - `f125_closure_capture` の形の確認：証拠の行を書くのは `f144_close_expired` だけなので、二重の守りになっている。
+
+### 11.4 確かめていないこと・既知の制約
+
+- 本物の PAY.JP の応答による終了：ブラウザでの確認（注文 8）で確かめる。
+- 129-B がすでに取消の依頼を作っている AUTHORIZED の変更（`abort_request_id` あり）は対象外。この場合は終わらない（注文 8 は該当しない）。

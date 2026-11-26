@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
-/** Feature143-A/B: closing an owned change whose re-authorization was never completed (V111). No trigger is ever disabled. */
+/** Feature143-A/B and Feature144: closing an owned change whose re-authorization was never completed (V111). No trigger is ever disabled. */
 @SpringBootTest(properties={"logging.level.root=WARN","spring.jpa.show-sql=false","logging.level.org.springframework=WARN","logging.level.org.hibernate=WARN"})
 @CaptureConnectionTest
 @org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -495,6 +495,166 @@ class OrderChangeFlowClosurePostgresTest {
         }finally{pool.shutdownNow();}
         assertClosed();verify(gateway,times(1)).cancelUnpaidCheckout(any());
         assertThat(count("order_change_flow_closures where operation_id=?",operation)).isOne();
+    }
+    // Feature144: a not-adopted change whose new authorization succeeded and then expired at PAY.JP (V113).
+    @Autowired ExpiredChangeClosureService expiredClosures;
+    String flowStatus,flowReason;
+    UUID flowOperation;
+    /** The new authorization succeeds after automatic_until (so it is never switched) and then expires. */
+    void expired(String state){
+        stuck();preAuthorization=false;newStatus="requires_capture";
+        synchronization.synchronize(snapshots.find(authorization).orElseThrow());
+        assertThat(operationState()).isEqualTo("AUTHORIZED");
+        assertThat(one("select status from payments where id=?",payment)).isEqualTo("AUTHORIZED");
+        db.jdbc.update("update payment_authorization_expiries set source='PROVIDER',expires_at=authorization_base_at+interval '1 millisecond' where payment_id=?",payment);
+        if(!state.equals("AUTHORIZED")){
+            // PAY.JP reports an expired flow with amount_received null, which the observation does not accept.
+            preAuthorization=state.equals("NEW_FLOW_EVIDENCE_MISMATCH");
+            financeTransactions.authorization(f.order(),operation,observation(newFlow,"canceled",afterAmount,Map.of("order_id",Long.toString(f.order()),"order_change_operation_id",operation.toString())));
+            assertThat(one("select state||':'||financial_review_reason from order_change_operations where id=?",operation)).isEqualTo("MANUAL_REVIEW:"+state);
+        }
+        flowStatus="canceled";flowReason="expired";flowOperation=operation;
+        when(gateway.observeExpiredFlow(anyString())).thenAnswer(call->{
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat((String)call.getArgument(0)).isEqualTo(newFlow);
+            var now=java.time.OffsetDateTime.now();
+            return new com.example.ecsite.payment.payjp.ExpiredFlowObservation(newFlow,flowStatus,flowReason,(long)afterAmount,"jpy","manual",false,
+                null,0L,now.minusMinutes(20),now.minusMinutes(5),Long.toString(f.order()),flowOperation.toString());
+        });
+        clearInvocations(gateway);
+    }
+    ExpiredChangeClosureService.Outcome closeExpired(){return expiredClosures.close(f.order(),1L,"closer","期限切れ");}
+    void assertExpiredClosed(){
+        assertThat(operationState()).isEqualTo("ABORTED");
+        assertThat(one("select status from payments where id=?",payment)).isEqualTo("CANCELLED");
+        assertThat(one("select status from payment_transactions where id=?",authorization)).isEqualTo("SUCCEEDED");
+        assertThat(one("select status||':'||transaction_type||':'||provider_transaction_id||':'||initiator_type||':'||initiator_username from payment_transactions where order_change_operation_id=? and purpose='ORDER_CHANGE_NEW_AUTH_ABORT'",operation))
+            .isEqualTo("SUCCEEDED:CANCEL:"+newFlow+":ADMIN:closer");
+        assertThat(count("order_change_financial_requests where operation_id=?",operation)).isOne();
+        assertThat(one("select execution_state||':'||reason_code from order_edit_admissions where id=?",admission)).isEqualTo("CLOSED_UNAPPLIED:NEW_AUTH_EXPIRED");
+        assertThat(db.jdbc.queryForList("select reservation_state from order_edit_inventory_plans where admission_id=? and reserve_quantity>0",String.class,admission)).containsOnly("RELEASED");
+        assertThat(stock()).isEqualTo(stockBefore);
+        assertThat(count("stock_movements where movement_type='ORDER_CHANGE_RELEASE' and order_id=?",f.order())).isOne();
+        assertThat(count("order_change_expired_closures where operation_id=?",operation)).isOne();
+        assertThat(one("select requested_by_username||':'||internal_note||':'||(observation->>'cancellationReason') from order_change_expired_closures where operation_id=?",operation)).isEqualTo("closer:期限切れ:expired");
+        assertThat(one("select status from payments where id=?",f.payment())).isEqualTo("AUTHORIZED");
+        assertOriginalContent(f);
+        assertThat(db.jdbc.queryForObject("select f131_order_has_blocking_admission(?)",Boolean.class,f.order())).isFalse();
+        verify(gateway,never()).cancelUnpaidCheckout(any());verify(gateway,never()).sendOrderChangeRequest(any());
+    }
+    void assertExpiredUntouched(){
+        assertThat(operationState()).isIn("AUTHORIZED","MANUAL_REVIEW");
+        assertThat(one("select status from payments where id=?",payment)).isEqualTo("AUTHORIZED");
+        assertThat(count("payment_transactions where order_change_operation_id=?",operation)).isOne();
+        assertThat(count("order_change_expired_closures where operation_id=?",operation)).isZero();
+        assertThat(one("select execution_state from order_edit_admissions where id=?",admission)).isNotEqualTo("CLOSED_UNAPPLIED");
+        assertHeld(admission);assertThat(stock()).isEqualTo(stockBefore-1);
+    }
+    @ParameterizedTest @ValueSource(strings={"AUTHORIZED","NEW_FLOW_EVIDENCE_MISMATCH","ESTABLISHED_AUTH_CANCELED_EXTERNALLY"})
+    void anExpiredNewAuthorizationIsClosedWithoutSending(String state){
+        expired(state);
+        assertThat(expiredClosures.closableOperation(f.order())).contains(operation);
+        assertThat(closeExpired()).isEqualTo(ExpiredChangeClosureService.Outcome.CLOSED);
+        assertExpiredClosed();verify(gateway,times(1)).observeExpiredFlow(newFlow);
+        assertThat(expiredClosures.closableOperation(f.order())).isEmpty();
+        assertThatThrownBy(this::closeExpired).isInstanceOf(ChangeFlowClosureException.class);
+        verify(gateway,times(1)).observeExpiredFlow(newFlow);
+        assertThat(expiredClosures.forOrder(f.order())).singleElement().satisfies(c->assertThat(c.requestedBy()).isEqualTo("closer"));
+    }
+    @ParameterizedTest @CsvSource({"requires_capture,","canceled,requested_by_customer","canceled,"})
+    void aFlowNotCanceledByItsExpiryIsLeftAlone(String status,String reason){
+        expired("AUTHORIZED");flowStatus=status;flowReason=reason;
+        assertThat(closeExpired()).isEqualTo(ExpiredChangeClosureService.Outcome.NOT_EXPIRED);assertExpiredUntouched();
+        flowStatus="canceled";flowReason="expired";
+        assertThat(closeExpired()).isEqualTo(ExpiredChangeClosureService.Outcome.CLOSED);assertExpiredClosed();
+    }
+    @Test void anUnreadableFlowWritesNothing(){
+        expired("AUTHORIZED");doThrow(failure(null,null)).when(gateway).observeExpiredFlow(anyString());
+        assertThat(closeExpired()).isEqualTo(ExpiredChangeClosureService.Outcome.UNREADABLE);assertExpiredUntouched();
+    }
+    @Test void anotherChangesFlowIsRefusedByTheDatabase(){
+        expired("AUTHORIZED");flowOperation=UUID.randomUUID();
+        assertThat(closeExpired()).isEqualTo(ExpiredChangeClosureService.Outcome.CHANGED);assertExpiredUntouched();
+    }
+    @Test void aResponseForAnotherFlowIsNotUsed(){
+        expired("AUTHORIZED");
+        var now=java.time.OffsetDateTime.now();
+        doReturn(new com.example.ecsite.payment.payjp.ExpiredFlowObservation("pfw_other",flowStatus,flowReason,(long)afterAmount,"jpy","manual",false,
+            null,0L,now.minusMinutes(20),now.minusMinutes(5),Long.toString(f.order()),operation.toString())).when(gateway).observeExpiredFlow(anyString());
+        assertThat(closeExpired()).isEqualTo(ExpiredChangeClosureService.Outcome.UNREADABLE);assertExpiredUntouched();
+    }
+    String expiryDocument(String reason){
+        var now=java.time.OffsetDateTime.now();var d=new java.util.LinkedHashMap<String,Object>();
+        d.put("flow",newFlow);d.put("status","canceled");d.put("cancellationReason",reason);d.put("amount",afterAmount);d.put("amountReceived",null);d.put("amountCapturable",0);
+        d.put("currency","jpy");d.put("captureMethod","manual");d.put("livemode",false);d.put("expiredAt",now.minusMinutes(20).toString());d.put("canceledAt",now.minusMinutes(5).toString());
+        d.put("order",Long.toString(f.order()));d.put("operation",operation.toString());
+        return tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(d);
+    }
+    @Test void theDatabaseRequiresTheExpiryAsTheCancellationReason(){
+        expired("AUTHORIZED");
+        for(String reason:new String[]{"requested_by_customer","fraudulent"})
+            assertThatThrownBy(()->OrderEditAdmissionServicePostgresTest.tx(()->db.jdbc.queryForObject("select f144_close_expired(?,?::jsonb,1,'closer',null)",Boolean.class,operation,expiryDocument(reason))))
+                .isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertExpiredUntouched();
+        assertThat(OrderEditAdmissionServicePostgresTest.tx(()->db.jdbc.queryForObject("select f144_close_expired(?,?::jsonb,1,'closer',null)",Boolean.class,operation,expiryDocument("expired")))).isTrue();
+        assertThat(operationState()).isEqualTo("ABORTED");
+    }
+    @Test void anAuthorizationBeforeItsRecordedExpiryIsNotClosable(){
+        stuck();preAuthorization=false;newStatus="requires_capture";
+        synchronization.synchronize(snapshots.find(authorization).orElseThrow());
+        assertThat(operationState()).isEqualTo("AUTHORIZED");
+        assertThat(expiredClosures.closableOperation(f.order())).isEmpty();
+        assertThatThrownBy(this::closeExpired).isInstanceOf(ChangeFlowClosureException.class);
+        assertThatThrownBy(()->OrderEditAdmissionServicePostgresTest.tx(()->db.jdbc.queryForObject("select f144_close_expired(?,?::jsonb,1,'closer',null)",Boolean.class,operation,"{}")))
+            .hasMessageContaining("expired");
+        verify(gateway,never()).observeExpiredFlow(anyString());
+    }
+    @Test void theAutomaticWindowIsKeptForExpiredChanges(){
+        stuck(null);preAuthorization=false;newStatus="requires_capture";
+        synchronization.synchronize(snapshots.find(authorization).orElseThrow());
+        assertThat(operationState()).isEqualTo("AUTHORIZED");
+        db.jdbc.update("update payment_authorization_expiries set source='PROVIDER',expires_at=authorization_base_at+interval '1 millisecond' where payment_id=?",payment);
+        assertThat(expiredClosures.closableOperation(f.order())).isEmpty();
+        assertThatThrownBy(this::closeExpired).isInstanceOf(ChangeFlowClosureException.class);
+    }
+    @Test void aStoppedRuntimeIsNotClosedAfterExpiry(){
+        expired("AUTHORIZED");stopRuntime();
+        assertThatThrownBy(this::closeExpired).isInstanceOf(ChangeFlowClosureException.class);
+        verify(gateway,never()).observeExpiredFlow(anyString());
+        assertThat(count("order_change_expired_closures where operation_id=?",operation)).isZero();
+    }
+    @Test void theDatabaseGuardsTheExpiredClosure(){
+        expired("AUTHORIZED");
+        // A cancel of the new authorization needs its sent request or the expiry proof.
+        assertThatThrownBy(()->OrderEditAdmissionServicePostgresTest.tx(()->db.jdbc.update("""
+            insert into payment_transactions(payment_id,transaction_type,status,amount,order_content_revision,idempotency_key,provider_transaction_id,created_at,completed_at,purpose,order_change_operation_id,order_change_order_id)
+            select p.id,'CANCEL','SUCCEEDED',p.amount,0,'f144-test-'||gen_random_uuid(),p.provider_payment_id,localtimestamp,localtimestamp,'ORDER_CHANGE_NEW_AUTH_ABORT',?,p.order_id from payments p where p.id=?""",operation,payment)))
+            .hasStackTraceContaining("request or its expiry proof");
+        assertThatThrownBy(()->db.jdbc.update("insert into order_change_expired_closures(admission_id,order_id,operation_id,new_payment_id,requested_by_account_id,requested_by_username,observation,document,canonical,digest) values (?,?,?,?,1,'x','{}','{}','',sha256(''::bytea))",admission,f.order(),operation,payment))
+            .hasMessageContaining("expired Payment Flow");
+        assertExpiredUntouched();
+        assertThat(closeExpired()).isEqualTo(ExpiredChangeClosureService.Outcome.CLOSED);assertExpiredClosed();
+        String closed="closed after its new authorization expired";
+        assertThatThrownBy(()->db.jdbc.update("update payments set status='AUTHORIZED' where id=?",payment)).hasMessageContaining(closed);
+        assertThatThrownBy(()->db.jdbc.update("update payment_transactions set status='FAILED' where id=?",authorization)).hasMessageContaining(closed);
+        assertThatThrownBy(()->db.jdbc.update("update order_change_operations set state='AUTHORIZED',version=version+1 where id=?",operation)).hasMessageContaining(closed);
+        assertThatThrownBy(()->db.jdbc.update("update order_change_expired_closures set internal_note='x' where operation_id=?",operation)).hasMessageContaining("append only");
+        assertThatThrownBy(()->db.jdbc.update("delete from order_change_expired_closures where operation_id=?",operation)).hasMessageContaining("append only");
+        assertThat(OrderEditAdmissionServicePostgresTest.tx(()->db.jdbc.queryForObject("select f144_close_expired(?,'{}'::jsonb,1,'closer',null)",Boolean.class,operation))).isFalse();
+    }
+    @Test void theAdministratorClosesAnExpiredChangeFromTheOrderDetail() throws Exception {
+        expired("NEW_FLOW_EVIDENCE_MISMATCH");
+        long id=db.jdbc.queryForObject("insert into admin_accounts(username,password,enabled,created_at,updated_at) values (?,'unused',true,localtimestamp,localtimestamp) returning id",Long.class,"f144-"+f.order());
+        var account=user(new com.example.ecsite.security.AdminUserDetails(id,"f144-"+f.order(),"unused",true,List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+        var page=mvc.perform(get("/admin/orders/{id}",f.order()).with(account)).andExpect(status200()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(page).contains("期限切れの注文変更を終了する").doesNotContain("完了しなかった注文変更を終了する");
+        mvc.perform(post("/admin/orders/{id}/close-expired-change",f.order()).with(account)).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden());
+        mvc.perform(post("/admin/orders/{id}/close-expired-change",f.order()).with(account).with(csrf()).param("internalNote"," 期限切れ ")).andExpect(flash().attributeExists("successMessage"));
+        assertThat(operationState()).isEqualTo("ABORTED");
+        assertThat(one("select requested_by_username||':'||internal_note from order_change_expired_closures where operation_id=?",operation)).isEqualTo("f144-"+f.order()+":期限切れ");
+        page=mvc.perform(get("/admin/orders/{id}",f.order()).with(account)).andExpect(status200()).andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(page).contains("新しい与信が期限切れになった注文変更の終了").doesNotContain("期限切れの注文変更を終了する</button>");
+        mvc.perform(post("/admin/orders/{id}/close-expired-change",f.order()).with(account).with(csrf())).andExpect(flash().attributeExists("errorMessage"));
     }
     static org.springframework.test.web.servlet.ResultMatcher status200(){return org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk();}
 }

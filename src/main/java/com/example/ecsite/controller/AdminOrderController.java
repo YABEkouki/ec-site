@@ -328,6 +328,7 @@ public class AdminOrderController {
         model.addAttribute("customerNotifications", customerNotifications(order));
         addUnpaidClosure(id, model);
         addChangeClosure(id, model);
+        addExpiredChangeClosure(id, model);
 
         model.addAttribute(
                 "statusHistories",
@@ -628,6 +629,55 @@ public class AdminOrderController {
                 case CHANGED -> "確認中に注文変更または決済の状態が変わったため、終了しませんでした。最新の状態をご確認ください。";
                 case REJECTED -> "PAY.JPが決済の取消を受け付けなかったため、終了しませんでした。最新の状態をご確認ください。";
                 case UNCONFIRMED -> "決済の取消結果を確認中です。注文変更はまだ終了していません。自動で確認を続けます。";
+            });
+        } catch (com.example.ecsite.service.changeclosure.ChangeFlowClosureException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        } catch (org.springframework.dao.DataAccessException | IllegalStateException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "終了処理の結果を確認できませんでした。最新の注文変更・決済の状態をご確認ください。");
+        }
+        return redirectToDetail(id, returnUrl);
+    }
+
+    private com.example.ecsite.service.changeclosure.ExpiredChangeClosureService expiredChangeClosures;
+    /** Feature144. Spring always injects it; hand-built unit fixtures predate it and never offer it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setExpiredChangeClosures(com.example.ecsite.service.changeclosure.ExpiredChangeClosureService expiredChangeClosures) {
+        this.expiredChangeClosures = expiredChangeClosures;
+    }
+
+    private void addExpiredChangeClosure(long orderId, Model model) {
+        if (expiredChangeClosures == null) return;
+        model.addAttribute("expiredChangeClosures", expiredChangeClosures.forOrder(orderId));
+        model.addAttribute("canCloseExpiredChange", expiredChangeClosures.closableOperation(orderId).isPresent());
+    }
+
+    @PostMapping("/{id}/close-expired-change")
+    public String closeExpiredChange(
+            @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute("errorMessage", "変更理由・備考は500文字以内で入力してください。");
+            return redirectToDetail(id, returnUrl);
+        }
+        if (expiredChangeClosures == null) {
+            redirectAttributes.addFlashAttribute("errorMessage", "この操作は利用できません。");
+            return redirectToDetail(id, returnUrl);
+        }
+        String note = form.getInternalNote() == null || form.getInternalNote().isBlank() ? null : form.getInternalNote().trim();
+        try {
+            var outcome = expiredChangeClosures.close(id, loginUser.getId(), loginUser.getUsername(), note);
+            boolean success = outcome == com.example.ecsite.service.changeclosure.ExpiredChangeClosureService.Outcome.CLOSED;
+            redirectAttributes.addFlashAttribute(success ? "successMessage" : "errorMessage", switch (outcome) {
+                case CLOSED -> "新しい与信が期限切れになった注文変更を終了しました。確保していた在庫を戻しました。注文は変更前の内容のままです。";
+                case NOT_EXPIRED -> "PAY.JPで新しい与信が期限切れによる取消になっていないため、終了しませんでした。時間をおいて再度お試しください。";
+                case UNREADABLE -> "PAY.JPで決済の状態を確認できませんでした。注文変更は変わっていません。時間をおいて再度お試しください。";
+                case CHANGED -> "確認中に注文変更または決済の状態が変わったため、終了しませんでした。最新の状態をご確認ください。";
             });
         } catch (com.example.ecsite.service.changeclosure.ChangeFlowClosureException e) {
             redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());

@@ -407,6 +407,38 @@ public class PayJpPaymentGateway implements PaymentGateway {
         }
     }
 
+    /** Feature144: observation only; the response body, client secret and card data are never kept. */
+    @Override
+    public ExpiredFlowObservation observeExpiredFlow(String flowId) {
+        if(flowId==null||!flowId.matches("pfw_[A-Za-z0-9_-]{1,251}"))throw new IllegalArgumentException("Invalid Flow identifier");
+        try {
+            var body=restClient.get().uri("/v2/payment_flows/{id}",flowId).retrieve().body(tools.jackson.databind.JsonNode.class);
+            if(body==null||!body.isObject()||!flowId.equals(text(body,"id"))||text(body,"status")==null)
+                throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);
+            var metadata=body.get("metadata");
+            return new ExpiredFlowObservation(text(body,"id"),text(body,"status"),text(body,"cancellation_reason"),
+                    integer(body,"amount"),text(body,"currency"),text(body,"capture_method"),
+                    body.get("livemode")!=null&&body.get("livemode").isBoolean()?body.get("livemode").booleanValue():null,
+                    integer(body,"amount_received"),integer(body,"amount_capturable"),time(body,"expired_at"),time(body,"canceled_at"),
+                    metadata!=null&&metadata.isObject()?text(metadata,"order_id"):null,
+                    metadata!=null&&metadata.isObject()?text(metadata,"order_change_operation_id"):null);
+        } catch(RestClientException failure){throw classify(failure);}
+          catch(tools.jackson.core.JacksonException|java.time.format.DateTimeParseException|IllegalArgumentException failure){
+            throw new PaymentGatewayException(PaymentGatewayErrorCategory.INVALID_RESPONSE,null,null,true);}
+    }
+    private static String text(tools.jackson.databind.JsonNode node,String field){
+        var value=node.get(field);return value!=null&&value.isString()?value.stringValue():null;
+    }
+    private static Long integer(tools.jackson.databind.JsonNode node,String field){
+        var value=node.get(field);
+        if(value==null||value.isNull())return null;
+        if(!value.isIntegralNumber()||!value.canConvertToLong())throw new IllegalArgumentException("Invalid amount");
+        return value.longValue();
+    }
+    private static java.time.OffsetDateTime time(tools.jackson.databind.JsonNode node,String field){
+        var value=text(node,field);return value==null?null:java.time.OffsetDateTime.parse(value);
+    }
+
     /** Observation only. Unknown status and absent optional fields are not normalized. */
     public PayJpPaymentFlowObservation observeOrderChangeFlow(String flowId) {
         if(flowId==null||!flowId.matches("pfw_[A-Za-z0-9_-]{1,251}"))throw new IllegalArgumentException("Invalid Flow identifier");
