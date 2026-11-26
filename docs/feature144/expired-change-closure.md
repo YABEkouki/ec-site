@@ -164,3 +164,16 @@ PAY.JP が `canceled`（expired）でない場合は何も書かず、「PAY.JP 
 
 - 本物の PAY.JP の応答による終了：ブラウザでの確認（注文 8）で確かめる。
 - 129-B がすでに取消の依頼を作っている AUTHORIZED の変更（`abort_request_id` あり）は対象外。この場合は終わらない（注文 8 は該当しない）。
+
+### 11.5 ブラウザでの確認（2026-11-27、開発環境）
+
+V113 を適用したあと（08:00 起動、メール有効・自動終了無効）、注文 8 で確かめた（PAY.JP テストモードの GET 2 回）。
+
+- 管理者（admin001）が「期限切れの注文変更を終了する」を押し、成功した。
+  - PAY.JP の応答は `canceled`（expired）だった。期限は 2026-11-13 12:29:59Z、取消は 12:41:16Z。
+  - 変更 b50a191c は ABORTED、受付 a5eb6e77 は CLOSED_UNAPPLIED（NEW_AUTH_EXPIRED）になった。
+  - 決済 13 は CANCELLED になり、取消取引（ORDER_CHANGE_NEW_AUTH_ABORT、SUCCEEDED、ADMIN）が 1 件記録された。
+  - 在庫は RELEASED になり、入出庫（ORDER_CHANGE_RELEASE）が 1 件記録された。
+- 続けて Feature135 の期限切れ取消を行った。
+  - 注文 8 は CANCELLED、決済 12 は CANCELLED になった。
+  - 取消メール（通知 32）は SENT になり、mailpit で受信を確かめた。
