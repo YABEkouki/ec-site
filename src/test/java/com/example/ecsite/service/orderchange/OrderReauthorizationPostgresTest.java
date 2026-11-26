@@ -43,6 +43,8 @@ class OrderReauthorizationPostgresTest {
     @MockitoBean PaymentGateway gateway;
     // Feature142 (V110) is newer than this schema (target 107), so no closure can exist here.
     @MockitoBean com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore unpaidClosures;
+    // Likewise Feature143 (V111).
+    @MockitoBean com.example.ecsite.service.changeclosure.ChangeFlowClosureStore changeClosures;
     @Autowired com.example.ecsite.service.payment.PayJpWebhookSyncService webhook;
     @Autowired com.example.ecsite.service.payment.PaymentReconciliationItemService reconciliation;
     @Autowired com.example.ecsite.service.payment.PaymentCancellationStartService cancellation;

@@ -32,7 +32,7 @@ public class AdminOrderHoldViewService {
 
     public enum Category {
         CHANGE_MANUAL_REVIEW(true, "注文変更：手動確認待ち",
-                "システムでは解消できません。注文詳細で状態を確認してください（旧与信取消の再照合ができる場合はリンクが表示されます）。"),
+                "システムでは解消できません。注文詳細で状態を確認してください（再与信が完了しなかった注文変更の終了や、旧与信取消の再照合ができる場合は、操作が表示されます）。"),
         LATE_ADOPTION_PENDING(false, "遅延成立：注文切替未完了",
                 "旧与信の取消が決定済みのため、元の注文には戻しません。Webhook・照合による完了を待っています。"),
         NOT_ADOPTED_CANCELLING(false, "不成立：不要な新与信の取消待ち",

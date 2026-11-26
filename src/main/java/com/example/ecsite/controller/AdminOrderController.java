@@ -327,6 +327,7 @@ public class AdminOrderController {
         model.addAttribute("canCancelExpiredAuthorization", expiredCancellations != null && expiredCancellations.available(order.getId()));
         model.addAttribute("customerNotifications", customerNotifications(order));
         addUnpaidClosure(id, model);
+        addChangeClosure(id, model);
 
         model.addAttribute(
                 "statusHistories",
@@ -574,6 +575,67 @@ public class AdminOrderController {
         return redirectToDetail(
                 id,
                 returnUrl);
+    }
+
+    private com.example.ecsite.service.changeclosure.ChangeFlowClosureStore changeClosures;
+    private com.example.ecsite.service.changeclosure.ChangeFlowClosureService changeClosureService;
+    /** Feature143-A. Spring always injects them; hand-built unit fixtures predate them and never offer it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setChangeClosures(com.example.ecsite.service.changeclosure.ChangeFlowClosureStore changeClosures, com.example.ecsite.service.changeclosure.ChangeFlowClosureService changeClosureService) {
+        this.changeClosures = changeClosures;
+        this.changeClosureService = changeClosureService;
+    }
+
+    public record ChangeClosureRow(com.example.ecsite.service.changeclosure.ChangeFlowClosureStore.Closure closure, List<com.example.ecsite.service.changeclosure.ChangeFlowClosureStore.Send> sends) {}
+
+    private void addChangeClosure(long orderId, Model model) {
+        if (changeClosures == null) return;
+        var closures = changeClosures.forOrder(orderId).stream()
+                .map(c -> new ChangeClosureRow(c, changeClosures.sends(c.id()))).toList();
+        boolean open = closures.stream().anyMatch(r -> r.closure().open());
+        model.addAttribute("changeClosures", closures);
+        model.addAttribute("changeClosureOpen", open);
+        model.addAttribute("canCloseChange", open || changeClosures.closableOperation(orderId).isPresent());
+    }
+
+    @PostMapping("/{id}/close-unfinished-change")
+    public String closeUnfinishedChange(
+            @PathVariable Long id,
+            @Valid @ModelAttribute AdminOrderStatusChangeForm form,
+            BindingResult bindingResult,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+
+        if (bindingResult.hasErrors()) {
+            redirectAttributes.addFlashAttribute("errorMessage", "変更理由・備考は500文字以内で入力してください。");
+            return redirectToDetail(id, returnUrl);
+        }
+        if (changeClosureService == null) {
+            redirectAttributes.addFlashAttribute("errorMessage", "この操作は利用できません。");
+            return redirectToDetail(id, returnUrl);
+        }
+        String note = form.getInternalNote() == null || form.getInternalNote().isBlank() ? null : form.getInternalNote().trim();
+        try {
+            var outcome = changeClosureService.close(id, new com.example.ecsite.service.changeclosure.ChangeFlowClosureStore.Actor(
+                    loginUser.getId(), loginUser.getUsername(), note));
+            boolean success = outcome == com.example.ecsite.service.changeclosure.ChangeFlowClosureService.Outcome.CLOSED;
+            redirectAttributes.addFlashAttribute(success ? "successMessage" : "errorMessage", switch (outcome) {
+                case CLOSED -> "完了しなかった注文変更を終了しました。新しいカード決済は取り消され、確保していた在庫を戻しました。注文は変更前の内容のままです。";
+                case AUTHORIZED -> "PAY.JPで新しいカード決済の与信が成立しているため、終了しませんでした。";
+                case PROCESSING -> "PAY.JPで決済を処理中のため、終了しませんでした。時間をおいて再度お試しください。";
+                case UNREADABLE -> "PAY.JPで決済の状態を確認できませんでした。注文変更は変わっていません。時間をおいて再度お試しください。";
+                case CHANGED -> "確認中に注文変更または決済の状態が変わったため、終了しませんでした。最新の状態をご確認ください。";
+                case REJECTED -> "PAY.JPが決済の取消を受け付けなかったため、終了しませんでした。最新の状態をご確認ください。";
+                case UNCONFIRMED -> "決済の取消結果を確認中です。注文変更はまだ終了していません。自動で確認を続けます。";
+            });
+        } catch (com.example.ecsite.service.changeclosure.ChangeFlowClosureException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        } catch (org.springframework.dao.DataAccessException | IllegalStateException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "終了処理の結果を確認できませんでした。最新の注文変更・決済の状態をご確認ください。");
+        }
+        return redirectToDetail(id, returnUrl);
     }
 
     private com.example.ecsite.service.unpaidclosure.UnpaidOrderClosureStore unpaidClosures;
