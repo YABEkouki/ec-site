@@ -387,6 +387,17 @@ class OrderChangeFlowClosurePostgresTest {
         });
         assertThat(close()).isEqualTo(Outcome.CLOSED);assertClosed();
     }
+    /** A change that no longer matches its admission is not offered: the closure could not be written. */
+    @Test void aChangedOrderIsNotOffered(){
+        stuck();assertThat(closable()).isTrue();
+        assertThatThrownBy(()->OrderEditAdmissionServicePostgresTest.tx(()->{
+            assertThat(db.jdbc.update("update orders set shipping_city=coalesce(shipping_city,'')||'x' where id=?",f.order())).isOne();
+            // The application uses its own connection; this transaction sees the change.
+            assertThat(closable()).isFalse();
+            throw new IllegalStateException("rolled back");
+        })).hasMessage("rolled back");
+        assertThat(close()).isEqualTo(Outcome.CLOSED);assertClosed();
+    }
     boolean closable(){return Boolean.TRUE.equals(db.jdbc.queryForObject("select f143_change_closable(?)",Boolean.class,operation));}
     String evidence(String status,int amount){
         return "{\"flow\":\""+newFlow+"\",\"status\":\""+status+"\",\"amount\":"+amount+",\"amountReceived\":null,\"amountCapturable\":null,\"currency\":\"jpy\",\"captureMethod\":\"manual\",\"livemode\":false,\"order\":\""+f.order()+"\",\"operation\":\""+operation+"\"}";

@@ -34,6 +34,12 @@ public final class OrderEditApplicationPlanRepository {
                 return new Plan(id,candidate,lines,inventory(id));
             },id);
     }
+    /** V112: a baseline taken before V81 is compared without the two columns V81 added, with their upgrade values only. */
+    private String unchangedSql(){
+        boolean legacyAware=Boolean.TRUE.equals(jdbc.queryForObject("select to_regprocedure('f143_legacy_order_local(jsonb,jsonb)') is not null",Boolean.class));
+        return legacyAware?"select unapplied_baseline=f143_legacy_order_local(unapplied_baseline,f125_execution_local(order_id)) from order_edit_admissions where id=?"
+            :"select unapplied_baseline=f125_execution_local(order_id) from order_edit_admissions where id=?";
+    }
     public Plan prepare(UUID id){
         writable();Objects.requireNonNull(id);
         jdbc.queryForObject("select f125_execution_lock(?)",Object.class,id);
@@ -42,7 +48,7 @@ public final class OrderEditApplicationPlanRepository {
             throw new IllegalStateException("Business state changed");
         if(Boolean.TRUE.equals(jdbc.queryForObject("select route='REAUTHORIZE' and exists(select 1 from order_change_operations op where op.order_id=a.order_id and op.submission_key=a.submission_key) from order_edit_admissions a where id=?",Boolean.class,id)))
             jdbc.queryForObject("select f125_reauth_assert_current(?)",Object.class,id);
-        else if(!Boolean.TRUE.equals(jdbc.queryForObject("select unapplied_baseline=f125_execution_local(order_id) from order_edit_admissions where id=?",Boolean.class,id)))
+        else if(!Boolean.TRUE.equals(jdbc.queryForObject(unchangedSql(),Boolean.class,id)))
             throw new IllegalStateException("Business state changed");
         var plan=read(id);
         byte[] digest=HexFormat.of().parseHex(digest(id));
