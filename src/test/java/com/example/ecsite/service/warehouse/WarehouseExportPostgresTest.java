@@ -1013,7 +1013,9 @@ class WarehouseExportPostgresTest {
         tx(() -> {
             assertThat(shipmentGuard.matchesExport(orders.findById(paid.order()).orElseThrow(), null)).isTrue();
             assertThat(shipmentGuard.matchesExport(orders.findById(paid.order()).orElseThrow(), 1L)).isFalse();
-            assertThat(shipmentGuard.matchesExport(orders.findById(manual.order()).orElseThrow(), 123456789L)).isTrue();
+            // The emergency record holds the active payment (set as checkout does): only that payment ships.
+            assertThat(shipmentGuard.matchesExport(orders.findById(manual.order()).orElseThrow(), manual.payment())).isTrue();
+            assertThat(shipmentGuard.matchesExport(orders.findById(manual.order()).orElseThrow(), 123456789L)).isFalse();
             return null;
         });
     }
@@ -1055,6 +1057,8 @@ class WarehouseExportPostgresTest {
         assertCancelled(f, "ADMIN");
         assertThat(stock(f)).isEqualTo(stock + 2);
         assertThat(orderRow(f.order()).get("shipping_preparation_started_at")).isNotNull();
+        // Feature146-C: the stopped order keeps pointing at the cancelled payment (frozen once prepared).
+        assertThat(orderRow(f.order()).get("active_payment_id")).isEqualTo(f.payment());
         var stop = jdbc.queryForMap("select * from order_shipping_stops where order_id=?", f.order());
         assertThat(stop).containsEntry("reason", "倉庫で破損").containsEntry("admin_username", admin.username())
                 .containsEntry("authorization_kind", "EXPIRED").containsEntry("status", "COMPLETED").containsEntry("warehouse_contacted", true)
@@ -1274,6 +1278,19 @@ class WarehouseExportPostgresTest {
         return f;
     }
 
+    /** Feature146-C: a legacy order without an active payment is stopped too, and stays without one. */
+    @Test void aLegacyOrderWithoutAnActivePaymentIsStopped() {
+        var admin = stopper();
+        var f = card(nextBusinessDate());
+        jdbc.update("update orders set active_payment_id=null where id=?", f.order());
+        adminPrepare(f.order());
+        stubCancelPost(f);
+        assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), "破損", true))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.STOPPED);
+        assertCancelled(f, "ADMIN");
+        assertThat(orderRow(f.order()).get("active_payment_id")).isNull();
+    }
+
     void cancelPostUnknown() {
         org.mockito.Mockito.when(gateway.cancelAuthorization(org.mockito.ArgumentMatchers.any())).thenThrow(new com.example.ecsite.payment.PaymentGatewayException(
                 com.example.ecsite.payment.PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN, null, null, true));
@@ -1309,6 +1326,7 @@ class WarehouseExportPostgresTest {
                 "select idempotency_key from payment_transactions where payment_id=? and transaction_type='CANCEL'", String.class, f.payment()));
         org.mockito.Mockito.verify(gateway, org.mockito.Mockito.never()).retrievePaymentFlow(org.mockito.ArgumentMatchers.anyString());
         assertCancelled(f, "ADMIN");
+        assertThat(orderRow(f.order()).get("active_payment_id")).isEqualTo(f.payment());
         assertThat(stock(f)).isEqualTo(stock + 2);
         assertThat(stopRow(f)).containsEntry("authorization_kind", "VALID").containsEntry("status", "COMPLETED").containsEntry("reason", "倉庫で破損")
                 .containsEntry("preparation_kind", "EMERGENCY").containsEntry("withdrawn_by_account_id", null);
@@ -1656,6 +1674,8 @@ class WarehouseExportPostgresTest {
                 var auth = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, total, 0, key, now,
                         PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);
                 auth.markSucceeded(payment.getProviderPaymentId(), now); paymentTransactions.saveAndFlush(auth);
+                // As checkout does (Feature146-C: the stop must work for an order whose active payment is set).
+                order.bindActivePayment(payment); orders.saveAndFlush(order);
                 paymentId = payment.getId();
             }
             return new Fixture(order.getId(), user.getId(), order.getItems().getFirst().getId(), paymentId, businessDate);
@@ -1836,7 +1856,7 @@ class WarehouseExportPostgresTest {
                 "update orders set total_amount=total_amount+1 where id=?",
                 "update orders set content_revision=content_revision+1 where id=?",
                 "update orders set shipping_name='別人' where id=?",
-                "update orders set active_payment_id=(select min(id) from payments where order_id=orders.id) where id=?",
+                "update orders set active_payment_id=null where id=?",
                 "update orders set status='CANCELLED', cancelled_at=ordered_at where id=?",
                 "update orders set shipping_preparation_started_at=null, shipping_preparation_started_by_username=null where id=?",
                 "update order_items set quantity=quantity+1 where order_id=?",
