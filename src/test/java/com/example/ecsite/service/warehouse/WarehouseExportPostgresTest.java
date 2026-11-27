@@ -1110,11 +1110,12 @@ class WarehouseExportPostgresTest {
         assertThatThrownBy(() -> shippingStops.stop(f.order(), admin.id(), admin.username(), "理由", true))
                 .isInstanceOf(refused).hasMessageContaining("まだ与信が取り消されていません");
 
-        // A valid authorization is left to 146-B; an unprepared order is not stopped.
+        // A valid authorization is offered the 146-B stop (sending the cancel POST); an unprepared order is not stopped.
         var valid = card(nextBusinessDate());
         adminPrepare(valid.order());
-        assertThat(shippingStops.view(valid.order(), admin.id()).state()).isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.State.VALID_AUTHORIZATION);
-        assertThatThrownBy(() -> shippingStops.stop(valid.order(), admin.id(), admin.username(), "理由", true)).isInstanceOf(refused).hasMessageContaining("146-B");
+        var validView = shippingStops.view(valid.order(), admin.id());
+        assertThat(validView.state()).isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.State.AVAILABLE);
+        assertThat(validView.expired()).isFalse();
         var unprepared = card(nextBusinessDate(), 10);
         assertThat(shippingStops.view(unprepared.order(), admin.id()).state()).isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.State.NONE);
         assertThatThrownBy(() -> shippingStops.stop(unprepared.order(), admin.id(), admin.username(), "理由", true)).isInstanceOf(refused).hasMessageContaining("発送準備");
@@ -1141,7 +1142,7 @@ class WarehouseExportPostgresTest {
             insertStop(f, start.transactionId(), admin.id());
             expiries.recordExpiredCancellation(start.transactionId(), start.paymentId(), start.providerPaymentId());
             return null;
-        })).hasStackTraceContaining("A shipping stop must cancel the order and its expired authorization");
+        })).hasStackTraceContaining("A shipping stop must cancel the order and its authorization");
         // Only a permitted administrator, and only with the pending cancellation of the expired active authorization.
         var unpermitted = com.example.ecsite.support.EmergencyShippingFixtures.permittedAdmin(jdbc, "f146-db");
         jdbc.update("update admin_accounts set emergency_shipping_allowed=false where id=?", unpermitted.id());
@@ -1165,7 +1166,7 @@ class WarehouseExportPostgresTest {
         com.example.ecsite.service.payment.PaymentService paymentService = context.getBean(com.example.ecsite.service.payment.PaymentService.class);
         var initiator = new com.example.ecsite.entity.PaymentTransactionInitiator(
                 com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, admin.id(), admin.username(), "x");
-        String needsPending = "A shipping stop needs the pending cancellation of the expired active authorization";
+        String needsPending = "A shipping stop needs the pending cancellation of the active authorization";
 
         // Not prepared: the expired authorization's cancellation is pending, but the order was never prepared.
         var unprepared = card(nextBusinessDate(), 10);
@@ -1185,7 +1186,7 @@ class WarehouseExportPostgresTest {
             paymentTransactions.saveAndFlush(t);
             insertStop(valid, t.getId(), admin.id());
             return null;
-        })).hasStackTraceContaining(needsPending);
+        })).hasStackTraceContaining("An expired shipping stop needs an expired authorization");
 
         // Not pending: the cancellation of the expired authorization has already failed.
         var f = preparedThenExpired(true);
@@ -1241,7 +1242,8 @@ class WarehouseExportPostgresTest {
         assertThat(page.apply(f.order(), plain)).contains("緊急出荷の権限を持つ管理者だけ").doesNotContain("/stop-shipment");
         var valid = card(nextBusinessDate());
         adminPrepare(valid.order());
-        assertThat(page.apply(valid.order(), admin)).contains("Feature146-B").doesNotContain("/stop-shipment");
+        assertThat(page.apply(valid.order(), admin)).contains("PAY.JPに与信の取消を依頼し")
+                .contains("action=\"/admin/orders/" + valid.order() + "/stop-shipment\"");
         assertThat(page.apply(card(nextBusinessDate()).order(), admin)).doesNotContain("id=\"shipping-stop\"");
 
         var post = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/admin/orders/{id}/stop-shipment", f.order())
@@ -1260,6 +1262,337 @@ class WarehouseExportPostgresTest {
         assertCancelled(f, "ADMIN");
         assertThat(page.apply(f.order(), admin)).contains("&lt;b&gt;破損&lt;/b&gt;").contains("取消済み").contains("緊急出荷")
                 .doesNotContain("/stop-shipment");
+    }
+
+    // ---- Feature146-B: stopping the shipment of a prepared order whose authorization is still valid ----
+
+    static final com.example.ecsite.service.shippingstop.ShippingStopService.Outcome STOPPED = com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.STOPPED;
+
+    Fixture preparedValid() {
+        var f = card(nextBusinessDate());
+        adminPrepare(f.order());
+        return f;
+    }
+
+    void cancelPostUnknown() {
+        org.mockito.Mockito.when(gateway.cancelAuthorization(org.mockito.ArgumentMatchers.any())).thenThrow(new com.example.ecsite.payment.PaymentGatewayException(
+                com.example.ecsite.payment.PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN, null, null, true));
+    }
+
+    Map<String, Object> stopRow(Fixture f) {
+        return jdbc.queryForMap("select * from order_shipping_stops where order_id=? order by id desc limit 1", f.order());
+    }
+
+    String cancelStatus(Fixture f) {
+        return jdbc.queryForObject("select status from payment_transactions where payment_id=? and transaction_type='CANCEL' order by id desc limit 1",
+                String.class, f.payment());
+    }
+
+    void assertStillPrepared(Fixture f) {
+        assertThat(orderRow(f.order())).containsEntry("status", "ORDERED");
+        assertThat(orderRow(f.order()).get("shipping_preparation_started_at")).isNotNull();
+        assertThat(jdbc.queryForObject("select status from payments where id=?", String.class, f.payment())).isEqualTo("AUTHORIZED");
+    }
+
+    @Test void aValidAuthorizationIsCancelledAtPayJpAndTheOrderIsStopped() {
+        var f = preparedValid();
+        var admin = stopper();
+        int stock = stock(f);
+        stubCancelPost(f);
+
+        assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), " 倉庫で破損 ", true)).isEqualTo(STOPPED);
+
+        var sent = org.mockito.ArgumentCaptor.forClass(com.example.ecsite.payment.CancellationRequest.class);
+        org.mockito.Mockito.verify(gateway).cancelAuthorization(sent.capture());
+        assertThat(sent.getValue().providerPaymentId()).isEqualTo(flow(f));
+        assertThat(sent.getValue().idempotencyKey()).isEqualTo(jdbc.queryForObject(
+                "select idempotency_key from payment_transactions where payment_id=? and transaction_type='CANCEL'", String.class, f.payment()));
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.never()).retrievePaymentFlow(org.mockito.ArgumentMatchers.anyString());
+        assertCancelled(f, "ADMIN");
+        assertThat(stock(f)).isEqualTo(stock + 2);
+        assertThat(stopRow(f)).containsEntry("authorization_kind", "VALID").containsEntry("status", "COMPLETED").containsEntry("reason", "倉庫で破損")
+                .containsEntry("preparation_kind", "EMERGENCY").containsEntry("withdrawn_by_account_id", null);
+        assertThat(stopRow(f).get("resolved_at")).isNotNull();
+        assertThat(stopRow(f).get("completed_xid")).isNotNull().isNotEqualTo(stopRow(f).get("recording_xid"));
+        assertThat(expiredObservations(f)).isZero();
+        assertThat(jdbc.queryForObject("select internal_note from order_status_histories where order_id=? and to_status='CANCELLED'", String.class, f.order()))
+                .isEqualTo("出荷中止：倉庫で破損");
+        var notice = jdbc.queryForObject("select payload::text from customer_order_notifications where order_id=? and event_type='ORDER_CANCELLED'",
+                String.class, f.order());
+        assertThat(notice).doesNotContain("\"authorizationExpired\": true");
+
+        org.mockito.Mockito.clearInvocations(gateway);
+        assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), "again", true))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.ALREADY_CANCELLED);
+        org.mockito.Mockito.verifyNoInteractions(gateway);
+        rejects("55000", () -> jdbc.update("update order_shipping_stops set status='REJECTED' where order_id=?", f.order()));
+    }
+
+    @Test void anUnknownResultStaysRequestedUntilTheRecheckOrAWebhookCompletesIt() {
+        var f = preparedValid();
+        var admin = stopper();
+        int stock = stock(f);
+        cancelPostUnknown();
+
+        assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), "在庫切れ", true))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.REQUESTED);
+        assertStillPrepared(f);
+        assertThat(stock(f)).isEqualTo(stock);
+        assertThat(stopRow(f)).containsEntry("status", "REQUESTED").containsEntry("authorization_kind", "VALID")
+                .containsEntry("resolved_at", null).containsEntry("completed_xid", null);
+        assertThat(cancelStatus(f)).isEqualTo("PENDING");
+        var view = shippingStops.view(f.order(), admin.id());
+        assertThat(view.state()).isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.State.REQUESTED);
+        assertThat(view.permitted()).isTrue();
+        // No second stop and no second POST while one is requested; V98 still refuses a direct cancellation.
+        org.mockito.Mockito.clearInvocations(gateway);
+        assertThatThrownBy(() -> shippingStops.stop(f.order(), admin.id(), admin.username(), "again", true))
+                .isInstanceOf(com.example.ecsite.service.shippingstop.ShippingStopException.class).hasMessageContaining("結果を確認しています");
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.never()).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        rejects("55000", () -> jdbc.update("update orders set status='CANCELLED', cancelled_at=localtimestamp where id=?", f.order()));
+
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.REQUIRES_CAPTURE);
+        assertThat(shippingStops.recheck(f.order(), admin.id()))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.STILL_REQUESTED);
+        assertStillPrepared(f);
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+        assertThat(shippingStops.recheck(f.order(), admin.id())).isEqualTo(STOPPED);
+        assertCancelled(f, "ADMIN");
+        assertThat(stock(f)).isEqualTo(stock + 2);
+        assertThat(stopRow(f)).containsEntry("status", "COMPLETED");
+        assertThat(jdbc.queryForObject("select internal_note from order_status_histories where order_id=? and to_status='CANCELLED'", String.class, f.order()))
+                .isEqualTo("出荷中止：在庫切れ");
+
+        // The webhook route (as reconciliation) completes another requested stop.
+        var g = preparedValid();
+        org.mockito.Mockito.doReturn(new com.example.ecsite.payment.CancellationResult(com.example.ecsite.payment.CancellationResultStatus.PENDING, flow(g)))
+                .when(gateway).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        assertThat(shippingStops.stop(g.order(), admin.id(), admin.username(), "お客様の申し出", true))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.REQUESTED);
+        stubFlow(g, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+        context.getBean(com.example.ecsite.service.payment.PayJpWebhookCancellationSyncService.class).synchronize(flow(g));
+        assertCancelled(g, "ADMIN");
+        assertThat(stopRow(g)).containsEntry("status", "COMPLETED");
+    }
+
+    @Test void aRejectedCancellationIsWithdrawnAndTheOrderCanBeStoppedAgain() {
+        var f = preparedValid();
+        var admin = stopper();
+        var unpermitted = com.example.ecsite.support.EmergencyShippingFixtures.permittedAdmin(jdbc, "f146b-plain");
+        jdbc.update("update admin_accounts set emergency_shipping_allowed=false where id=?", unpermitted.id());
+        org.mockito.Mockito.when(gateway.cancelAuthorization(org.mockito.ArgumentMatchers.any())).thenThrow(new com.example.ecsite.payment.PaymentGatewayException(
+                com.example.ecsite.payment.PaymentGatewayErrorCategory.OTHER_HTTP_ERROR, 400, "invalid_request", false));
+
+        assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), "破損", true))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.REJECTED_BY_PAYJP);
+        assertThat(stopRow(f)).containsEntry("status", "REQUESTED");
+        assertStillPrepared(f);
+
+        Class<?> refused = com.example.ecsite.service.shippingstop.ShippingStopException.class;
+        org.mockito.Mockito.clearInvocations(gateway);
+        assertThatThrownBy(() -> shippingStops.withdraw(f.order(), admin.id(), admin.username(), " ", true)).isInstanceOf(refused).hasMessageContaining("理由");
+        assertThatThrownBy(() -> shippingStops.withdraw(f.order(), admin.id(), admin.username(), "続行", false)).isInstanceOf(refused).hasMessageContaining("倉庫");
+        assertThatThrownBy(() -> shippingStops.withdraw(f.order(), unpermitted.id(), unpermitted.username(), "続行", true))
+                .isInstanceOf(refused).hasMessageContaining("緊急出荷の権限");
+        assertThatThrownBy(() -> shippingStops.recheck(f.order(), unpermitted.id())).isInstanceOf(refused);
+        org.mockito.Mockito.verifyNoInteractions(gateway);
+        // PAY.JP must show the authorization still capturable.
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.REQUIRES_PAYMENT_METHOD);
+        assertThatThrownBy(() -> shippingStops.withdraw(f.order(), admin.id(), admin.username(), "続行", true))
+                .isInstanceOf(refused).hasMessageContaining("確認できない");
+        assertThat(stopRow(f)).containsEntry("status", "REQUESTED");
+
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.REQUIRES_CAPTURE);
+        assertThat(shippingStops.withdraw(f.order(), admin.id(), admin.username(), " 倉庫で見つかった ", true))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.WITHDRAWN);
+        org.mockito.Mockito.verify(gateway, org.mockito.Mockito.never()).cancelAuthorization(org.mockito.ArgumentMatchers.any());
+        assertStillPrepared(f);
+        assertThat(stopRow(f)).containsEntry("status", "REJECTED").containsEntry("withdrawn_by_account_id", admin.id())
+                .containsEntry("withdrawn_by_username", admin.username()).containsEntry("withdrawal_reason", "倉庫で見つかった");
+        var cancel = jdbc.queryForMap("select * from payment_transactions where payment_id=? and transaction_type='CANCEL'", f.payment());
+        assertThat(cancel).containsEntry("status", "FAILED").containsEntry("failure_code", "SHIPPING_STOP_WITHDRAWN");
+        assertThat(shippingStops.view(f.order(), admin.id()).state()).isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.State.AVAILABLE);
+        rejects("55000", () -> jdbc.update("update order_shipping_stops set status='COMPLETED' where order_id=?", f.order()));
+
+        // The withdrawn stop does not prevent a new one.
+        org.mockito.Mockito.reset(gateway);
+        stubCancelPost(f);
+        assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), "再度の中止", true)).isEqualTo(STOPPED);
+        assertThat(orderRow(f.order())).containsEntry("status", "CANCELLED");
+        assertThat(jdbc.queryForList("select status from order_shipping_stops where order_id=? order by id", String.class, f.order()))
+                .containsExactly("REJECTED", "COMPLETED");
+
+        // After a withdrawal the order ships as prepared: the shipment capture can start.
+        var g = preparedValid();
+        org.mockito.Mockito.reset(gateway);
+        cancelPostUnknown();
+        shippingStops.stop(g.order(), admin.id(), admin.username(), "破損", true);
+        stubFlow(g, com.example.ecsite.payment.PaymentFlowStatus.REQUIRES_CAPTURE);
+        shippingStops.withdraw(g.order(), admin.id(), admin.username(), "続行", true);
+        var details = new com.example.ecsite.security.AdminUserDetails(admin.id(), admin.username(), "unused", true,
+                List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(details, null, details.getAuthorities()));
+        try {
+            assertThat(captureStarts.start(g.order(), admin.id(), admin.username(), null)).isNotNull();
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+        assertThat(jdbc.queryForObject("select status from payment_transactions where payment_id=? and transaction_type='CAPTURE'",
+                String.class, g.payment())).isEqualTo("PENDING");
+    }
+
+    @Test void withdrawingAStopWhoseFlowWasCanceledCompletesItInstead() {
+        var f = preparedValid();
+        var admin = stopper();
+        cancelPostUnknown();
+        shippingStops.stop(f.order(), admin.id(), admin.username(), "破損", true);
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+        assertThat(shippingStops.withdraw(f.order(), admin.id(), admin.username(), "続行", true)).isEqualTo(STOPPED);
+        assertCancelled(f, "ADMIN");
+        assertThat(stopRow(f)).containsEntry("status", "COMPLETED").containsEntry("withdrawal_reason", null);
+    }
+
+    @Test void theDatabaseGuardsAValidShippingStop() {
+        var admin = stopper();
+        com.example.ecsite.service.payment.PaymentService paymentService = context.getBean(com.example.ecsite.service.payment.PaymentService.class);
+        var initiator = new com.example.ecsite.entity.PaymentTransactionInitiator(
+                com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN, admin.id(), admin.username(), "x");
+        // V94: a cancellation after the deadline without its stop is refused at commit.
+        var f = preparedValid();
+        assertThatThrownBy(() -> tx(() -> {
+            paymentService.startShippingStopCancellation(orders.findByIdForUpdate(f.order()).orElseThrow(), initiator);
+            return null;
+        })).hasStackTraceContaining("must be an expired-authorization cancellation");
+        // A VALID stop starts REQUESTED, and only for a valid authorization.
+        assertThatThrownBy(() -> tx(() -> {
+            var start = paymentService.startShippingStopCancellation(orders.findByIdForUpdate(f.order()).orElseThrow(), initiator);
+            insertStop(f, start.transactionId(), admin.id(), "VALID", "COMPLETED");
+            return null;
+        })).hasStackTraceContaining("A valid shipping stop starts REQUESTED for a valid authorization");
+        var expired = preparedThenExpired(true);
+        // The application refuses the valid-authorization cancellation of an expired authorization before the database does.
+        assertThatThrownBy(() -> tx(() -> {
+            paymentService.startShippingStopCancellation(orders.findByIdForUpdate(expired.order()).orElseThrow(), initiator);
+            return null;
+        })).isInstanceOf(com.example.ecsite.service.payment.AuthorizationExpiryException.class)
+                .hasMessage("カード与信の有効期限が切れているため、この取消はできません。");
+        assertThat(jdbc.queryForObject("select count(*) from payment_transactions where payment_id=? and transaction_type='CANCEL'",
+                Integer.class, expired.payment())).isZero();
+        assertThatThrownBy(() -> tx(() -> {
+            var start = paymentService.startExpiredAuthorizationCancellation(orders.findByIdForUpdate(expired.order()).orElseThrow(), initiator);
+            insertStop(expired, start.transactionId(), admin.id(), "VALID", "REQUESTED");
+            return null;
+        })).hasStackTraceContaining("A valid shipping stop starts REQUESTED for a valid authorization");
+        // An EXPIRED stop is recorded COMPLETED only.
+        assertThatThrownBy(() -> tx(() -> {
+            var start = paymentService.startExpiredAuthorizationCancellation(orders.findByIdForUpdate(expired.order()).orElseThrow(), initiator);
+            insertStop(expired, start.transactionId(), admin.id(), "EXPIRED", "REQUESTED");
+            return null;
+        })).hasStackTraceContaining("An expired shipping stop needs an expired authorization");
+
+        cancelPostUnknown();
+        assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), "破損", true))
+                .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.REQUESTED);
+        long cancel = jdbc.queryForObject("select id from payment_transactions where payment_id=? and transaction_type='CANCEL'", Long.class, f.payment());
+        // Only the status (and its resolution) of a REQUESTED stop changes.
+        rejects("55000", () -> jdbc.update("update order_shipping_stops set reason='x' where order_id=?", f.order()));
+        rejects("55000", () -> jdbc.update("update order_shipping_stops set status='REQUESTED' where order_id=?", f.order()));
+        rejects("55000", () -> jdbc.update("delete from order_shipping_stops where order_id=?", f.order()));
+        // A resolution that also changes another column is refused as well.
+        rejects("55000", () -> jdbc.update("update order_shipping_stops set status='REJECTED', withdrawn_by_account_id=?, withdrawn_by_username='u',"
+                + " withdrawal_reason='r', reason='x' where order_id=?", admin.id(), f.order()));
+        rejects("55000", () -> jdbc.update("update order_shipping_stops set status='COMPLETED', admin_username='x' where order_id=?", f.order()));
+        // Completing the stop without cancelling the order fails at commit; cancelling the order without completing it is frozen.
+        assertThatThrownBy(() -> jdbc.update("update order_shipping_stops set status='COMPLETED' where order_id=?", f.order()))
+                .hasStackTraceContaining("A shipping stop must cancel the order and its authorization");
+        rejects("55000", () -> jdbc.update("update orders set status='CANCELLED', cancelled_at=localtimestamp where id=?", f.order()));
+        // The cancellation settles only with the stop.
+        assertThatThrownBy(() -> tx(() -> {
+            jdbc.update("update payment_transactions set status='FAILED', completed_at=localtimestamp where id=?", cancel);
+            return null;
+        })).hasStackTraceContaining("The cancellation of a requested shipping stop must settle the stop");
+        // A withdrawal needs a permitted administrator and the failed cancellation.
+        var unpermitted = com.example.ecsite.support.EmergencyShippingFixtures.permittedAdmin(jdbc, "f146b-db");
+        jdbc.update("update admin_accounts set emergency_shipping_allowed=false where id=?", unpermitted.id());
+        rejects("42501", () -> jdbc.update("update order_shipping_stops set status='REJECTED', withdrawn_by_account_id=?, withdrawn_by_username='u',"
+                + " withdrawal_reason='r' where order_id=?", unpermitted.id(), f.order()));
+        assertThatThrownBy(() -> jdbc.update("update order_shipping_stops set status='REJECTED', withdrawn_by_account_id=?, withdrawn_by_username='u',"
+                + " withdrawal_reason='r' where order_id=?", admin.id(), f.order()))
+                .hasStackTraceContaining("A requested or withdrawn shipping stop must keep the order prepared");
+        rejects("42501", () -> jdbc.update("update order_shipping_stops set status='REJECTED' where order_id=?", f.order()));
+        assertThat(stopRow(f)).containsEntry("status", "REQUESTED");
+        assertThat(cancelStatus(f)).isEqualTo("PENDING");
+        assertStillPrepared(f);
+    }
+
+    @Test void stoppedOrdersAreMarkedOnTheEmergencyAndExportScreens() {
+        var admin = stopper();
+        var f = preparedValid();
+        cancelPostUnknown();
+        shippingStops.stop(f.order(), admin.id(), admin.username(), "破損", true);
+        var queries = context.getBean(com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.class);
+        java.util.function.Supplier<String> label = () -> queries.list(null, null, com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.Shipment.ALL,
+                com.example.ecsite.service.emergency.AdminEmergencyShippingQueries.FileOutput.ALL, 0).rows().stream()
+                .filter(r -> r.orderId() == f.order()).findFirst().orElseThrow().getShippingStopLabel();
+        assertThat(label.get()).isEqualTo("出荷中止（取消の結果を確認中）");
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+        shippingStops.recheck(f.order(), admin.id());
+        assertThat(label.get()).isEqualTo("出荷中止（取消済み）");
+
+        var exported = preparedThenExpired(false);
+        stubFlow(exported, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+        shippingStops.stop(exported.order(), admin.id(), admin.username(), "在庫切れ", true);
+        long batch = jdbc.queryForObject("select batch_id from warehouse_export_lines where order_id=?", Long.class, exported.order());
+        assertThat(batches.lines(batch)).filteredOn(l -> l.orderId() == exported.order()).singleElement()
+                .satisfies(l -> assertThat(l.getShippingStopLabel()).isEqualTo("出荷中止（取消済み）"));
+        assertThat(batches.lines(batch)).filteredOn(l -> l.orderId() != exported.order())
+                .allSatisfy(l -> assertThat(l.getShippingStopLabel()).isNull());
+    }
+
+    @Test void theAdministratorRechecksAndWithdrawsFromTheOrderDetail() throws Exception {
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
+                .webAppContextSetup((org.springframework.web.context.WebApplicationContext) context)
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity()).build();
+        var admin = stopper();
+        var user = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
+                new com.example.ecsite.security.AdminUserDetails(admin.id(), admin.username(), "unused", true,
+                        List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))));
+        var csrf = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf();
+        var f = preparedValid();
+        cancelPostUnknown();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/admin/orders/{id}/stop-shipment", f.order())
+                        .param("reason", "破損").param("warehouseContacted", "true").with(user).with(csrf))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash().attribute("errorMessage",
+                        org.hamcrest.Matchers.containsString("結果はまだ確認できていません")));
+        String page = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/{id}", f.order()).with(user))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(page).contains("取消の結果を確認中").contains("/stop-shipment/recheck").contains("/stop-shipment/withdraw")
+                .doesNotContain("出荷を中止して取り消す");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/admin/orders/{id}/stop-shipment/withdraw", f.order())
+                        .param("reason", "<i>続行</i>").param("warehouseContacted", "true").with(user))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden());
+        stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.REQUIRES_CAPTURE);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/admin/orders/{id}/stop-shipment/recheck", f.order())
+                        .with(user).with(csrf))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash().attribute("errorMessage",
+                        org.hamcrest.Matchers.containsString("まだ取り消されていません")));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/admin/orders/{id}/stop-shipment/withdraw", f.order())
+                        .param("reason", "<i>続行</i>").param("warehouseContacted", "true").with(user).with(csrf))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash().attribute("successMessage",
+                        org.hamcrest.Matchers.containsString("取りやめました")));
+        page = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/admin/orders/{id}", f.order()).with(user))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(page).contains("&lt;i&gt;続行&lt;/i&gt;").contains("取りやめ（").contains("出荷を中止して取り消す");
+        assertStillPrepared(f);
+    }
+
+    void insertStop(Fixture f, long transactionId, long adminId, String kind, String status) {
+        jdbc.update("""
+                insert into order_shipping_stops(order_id,payment_id,transaction_id,authorization_kind,status,admin_account_id,admin_username,
+                    reason,warehouse_contacted,preparation_kind,prepared_at,file_state,recording_xid,created_at)
+                values (?,?,?,?,?,?,'a','r',true,'ADMINISTRATOR',localtimestamp,'NONE','0'::xid8,now())""",
+                f.order(), f.payment(), transactionId, kind, status, adminId);
     }
 
     void insertStop(Fixture f, long transactionId, long adminId) {

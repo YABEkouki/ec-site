@@ -72,6 +72,7 @@
                         <span th:if="${r.shipped}" th:text="|出荷済み（${#temporals.format(r.shippedAt, 'yyyy/MM/dd HH:mm')}・${r.shipperLabel}）|"></span>
                         <span th:if="${r.unshipped}">未出荷</span>
                         <span th:if="${!r.shipped and !r.unshipped}" th:text="${r.orderStatus}"></span>
+                        <span th:if="${r.shippingStopLabel != null}" class="shipping-stop-label action-required-danger" th:text="${r.shippingStopLabel}"></span>
                     </td>
                     <td>
                         <span th:text="${r.fileLabel}" th:classappend="${r.fileFailed} ? 'action-required-danger'"></span>

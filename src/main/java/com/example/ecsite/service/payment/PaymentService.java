@@ -405,7 +405,7 @@ public class PaymentService {
     public PaymentCancellationStart startCancellation(
             Order order,
             PaymentTransactionInitiator initiator) {
-        return startCancellation(order, initiator, false);
+        return startCancellation(order, initiator, false, false);
     }
 
     /**
@@ -421,13 +421,31 @@ public class PaymentService {
         if (initiator == null || initiator.type() != com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN) {
             throw new IllegalStateException("与信期限切れによる取消は管理者だけが実行できます。");
         }
-        return startCancellation(order, initiator, true);
+        return startCancellation(order, initiator, true, false);
+    }
+
+    /**
+     * Feature146-B: a NEW administrator cancellation of the still valid authorization of a prepared order whose
+     * shipment is being stopped. The same validations and locks as {@link #startCancellation(Order, PaymentTransactionInitiator)},
+     * except that the order modification window is replaced by the requirement that the recorded expiry has not
+     * passed, and an existing PENDING cancellation is refused. The caller must hold the Order lock and record the
+     * REQUESTED shipping stop in the same transaction (V115).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public PaymentCancellationStart startShippingStopCancellation(
+            Order order,
+            PaymentTransactionInitiator initiator) {
+        if (initiator == null || initiator.type() != com.example.ecsite.entity.PaymentTransactionInitiatorType.ADMIN) {
+            throw new IllegalStateException("出荷中止による取消は管理者だけが実行できます。");
+        }
+        return startCancellation(order, initiator, false, true);
     }
 
     private PaymentCancellationStart startCancellation(
             Order order,
             PaymentTransactionInitiator initiator,
-            boolean expiredAuthorization) {
+            boolean expiredAuthorization,
+            boolean shippingStop) {
 
         orderPaymentGuard.requireNoOrderChange(order);
         List<Payment> payments = paymentRepository.findByOrderIdForUpdate(
@@ -472,7 +490,7 @@ public class PaymentService {
                         PaymentTransactionType.CANCEL,
                         PaymentTransactionStatus.PENDING);
 
-        if (existingTransaction.isPresent() && expiredAuthorization) {
+        if (existingTransaction.isPresent() && (expiredAuthorization || shippingStop)) {
             throw new IllegalStateException("取消処理中の決済があります。結果の反映を待ってください。");
         }
 
@@ -495,6 +513,11 @@ public class PaymentService {
         if (expiredAuthorization) {
             if (expiries == null || !expiries.hasExpired(payment.getId())) {
                 throw new AuthorizationExpiryException("カード与信の有効期限が切れていないため、この取消はできません。");
+            }
+            now = expiries.databaseNow();
+        } else if (shippingStop) {
+            if (expiries == null || expiries.hasExpired(payment.getId())) {
+                throw new AuthorizationExpiryException("カード与信の有効期限が切れているため、この取消はできません。");
             }
             now = expiries.databaseNow();
         } else {
