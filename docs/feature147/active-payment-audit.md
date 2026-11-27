@@ -1,6 +1,6 @@
 # Feature147 有効な決済の扱いの点検（候補 G）
 
-状態：設計案（2026-11-28、承認待ち）
+状態：4 章は 1〜4 とも案どおり承認（2026-11-28）。147-A 完了（6 章）
 
 ## 1. 目的
 
@@ -83,3 +83,39 @@ Feature146-C の不具合は、テストの注文データの形が実際とず�
 
 - 147-A：本体は変えず、コピーで流す。PAY.JP への送信やアプリの再起動はない。
 - 147-B：変えたクラスと、grep で選んだ回帰テスト。守りを外した確認は、不具合を直した箇所について行う。
+
+## 6. 147-A の結果（2026-11-28）
+
+### 6.1 やり方
+
+- 本体の写しの中だけで、`Payment` に保存直後の処理（`@PostPersist`）を加えた。チェックアウトと同じく、決済を注文の有効な決済にする。
+  - 紐づけるのは、注文が ORDERED で、発送準備前、売上確定の決済がなく、まだ有効な決済がないときだけ。
+  - 失敗・取消済みの決済には紐づけない。実際には、失敗した決済は有効な決済から外れるため。
+  - 紐づけるたびにログに 1 行出し、クラスごとに、紐づけが実際に起きたことを数えた。
+- DB の トリガーで紐づける方法は使わなかった。注文のエンティティが毎回すべての列を書き戻すので、あとから空に戻されるため。
+- 28 クラスのうち、次の 8 クラスは対象外にした。
+  - 有効な決済の列がない古い版数で動くもの（3 クラス）：`CaptureRequestPostgresTest`、`OrderShippingMetadataPostgresTest`、`PaymentDiscrepancyOptimisticLockPostgresTest`
+  - 古い形を意図して確かめるもの（5 クラス、4 章の 3）：`LegacyIncreaseClosedPostgresTest`、`OrderIncreasePostgresTest`、`OrderIncreaseCustomerPostgresTest`、`OrderChangePaymentCustomerPostgresTest`、`WarehouseExportLegacyChangePostgresTest`
+
+### 6.2 結果
+
+- 20 クラスすべてが PASS した（2 回目、写しの手直し後）。アプリの不具合は見つからなかった。
+- 1 回目に失敗した 3 クラスと、紐づけが起きなかった 3 クラスの原因
+  - `AdminOrderShippingPreparationSecurityPostgresTest`（エラー 2 件）：テストの後片付け。注文が指している決済を先に消そうとして、外部キー（`fk_orders_active_payment_owner`）に拒否された。テストの前提が古いだけ。
+  - `PaymentReconciliationFairnessPostgresTest`（失敗 10 件・エラー 5 件）：同じ後片付けの問題。前のテストのデータが残り、あとのテストが壊れた連鎖。テストの前提が古いだけ。
+  - `PaymentShippingPreparationValidationPostgresTest`（失敗 2 件）：写しの処理が、失敗した決済に先に紐づけた。写しの作り方の問題。
+  - `CaptureShipmentFlowPostgresTest`、`CaptureShipmentPolicyPostgresTest`：紐づけが起きなかった。発送準備を始めてから決済を作る順で、テストの注文データを作っていた（実際は決済が先）。順を入れ替えると紐づき、PASS した。
+  - `ManualOrderShipmentPostgresTest`：紐づけが起きなかった。注文はほぼ入金済み（PAID）で、与信中のカードの注文がない。対象がないので、変える必要はない。
+- 紐づけが起きた回数は、クラスごとに 4〜1392 回。
+- 2 回目の手直し：紐づけの条件（失敗・取消済みの決済を除く）、2 クラスの後片付け、2 クラスの順の入れ替え。
+
+### 6.3 147-B で直す範囲（案）
+
+- テストの注文データ：19 クラスで、チェックアウトと同じく有効な決済を持つ形にする。写しの処理ではなく、各クラスのテストの注文データを作る部分で明示的に紐づける。
+  - `ManualOrderShipmentPostgresTest` は対象外。
+  - `CaptureShipmentFlowPostgresTest` と `CaptureShipmentPolicyPostgresTest` は、決済を作ってから発送準備を始める順にする。
+  - `AdminOrderShippingPreparationSecurityPostgresTest` と `PaymentReconciliationFairnessPostgresTest` は、後片付けで先に有効な決済を外す。
+- 古い形を意図するクラスで、すでにそう書いていないものには、その旨のコメントを加える。
+- 出荷中止のあとに、同じ取消の結果がもう一度届いたときのテストを加える（4 章の 4）。
+- 単体テストの 19 クラス：値が空かどうかで動きが分かれる処理（`CaptureShipmentPolicy`、`PaymentService.validateSingleActivePayment`、`PaymentPurposeResolver`）について、値が入った場合のテストがあるかを確かめ、ないものだけ加える。
+
