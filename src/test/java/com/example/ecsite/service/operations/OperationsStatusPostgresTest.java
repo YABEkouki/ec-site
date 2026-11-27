@@ -44,7 +44,7 @@ class OperationsStatusPostgresTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test void readsEveryProcessFromTheSchema() {
-        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(113);
+        assertThat(jdbc.queryForObject("select max(version::int) from flyway_schema_history where success", Integer.class)).isEqualTo(114);
         var s = service.read();
         assertThat(s.enabling()).hasSize(8).allSatisfy(p -> {
             assertThat(p.enabled()).isFalse();

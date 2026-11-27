@@ -630,6 +630,18 @@ public class Order {
     }
 
     /**
+     * Feature146: the only cancellation of a prepared order. The caller records the shipping stop in the same
+     * transaction (V114); without it V98 refuses the status change.
+     */
+    public void cancelStoppedShipment(LocalDateTime cancelledAt) {
+        if (shippingPreparationStartedAt == null || status != OrderStatus.ORDERED || shippedAt != null) {
+            throw new InvalidOrderStatusException("発送準備を開始し、まだ発送していない注文だけを出荷中止できます。");
+        }
+        status = OrderStatus.CANCELLED;
+        this.cancelledAt = cancelledAt;
+    }
+
+    /**
      * Feature136-B: once shipping preparation has started (warehouse export, emergency shipping or a legacy
      * administrator preparation) the content, amounts, shipping address and active payment are frozen and the
      * order can no longer be cancelled. Mirrors f131_order_preparation_guard / f131_prepared_content_guard (V98).

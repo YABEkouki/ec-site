@@ -329,6 +329,7 @@ public class AdminOrderController {
         addUnpaidClosure(id, model);
         addChangeClosure(id, model);
         addExpiredChangeClosure(id, model);
+        addShippingStop(id, model);
 
         model.addAttribute(
                 "statusHistories",
@@ -644,6 +645,49 @@ public class AdminOrderController {
     @org.springframework.beans.factory.annotation.Autowired
     void setExpiredChangeClosures(com.example.ecsite.service.changeclosure.ExpiredChangeClosureService expiredChangeClosures) {
         this.expiredChangeClosures = expiredChangeClosures;
+    }
+
+    private com.example.ecsite.service.shippingstop.ShippingStopService shippingStops;
+    /** Feature146. Spring always injects it; hand-built unit fixtures predate it and never offer it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    void setShippingStops(com.example.ecsite.service.shippingstop.ShippingStopService shippingStops) {
+        this.shippingStops = shippingStops;
+    }
+
+    private void addShippingStop(long orderId, Model model) {
+        if (shippingStops == null) return;
+        Long admin = currentAdminId();
+        model.addAttribute("shippingStop", shippingStops.view(orderId, admin == null ? 0L : admin));
+    }
+
+    @PostMapping("/{id}/stop-shipment")
+    public String stopShipment(
+            @PathVariable Long id,
+            @RequestParam(required = false) String reason,
+            @RequestParam(defaultValue = "false") boolean warehouseContacted,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+        if (shippingStops == null) {
+            redirectAttributes.addFlashAttribute("errorMessage", "この操作は利用できません。");
+            return redirectToDetail(id, returnUrl);
+        }
+        try {
+            var outcome = shippingStops.stop(id, loginUser.getId(), loginUser.getUsername(), reason, warehouseContacted);
+            redirectAttributes.addFlashAttribute("successMessage",
+                    outcome == com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.STOPPED
+                            ? "出荷を中止し、注文を取り消しました（与信の期限切れのため、PAY.JPでは与信は取消済みです）。"
+                            : "この注文は既に取り消されています。");
+        } catch (com.example.ecsite.service.shippingstop.ShippingStopException e) {
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        } catch (PaymentGatewayException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "PAY.JPで与信の状態を確認できませんでした。注文は変更していません。時間をおいて再度お試しください。");
+        } catch (InvalidOrderStatusException | IllegalStateException | org.springframework.dao.DataAccessException e) {
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "出荷中止できませんでした。注文・決済・出荷の状態をご確認ください。注文は変更していません。");
+        }
+        return redirectToDetail(id, returnUrl);
     }
 
     private void addExpiredChangeClosure(long orderId, Model model) {

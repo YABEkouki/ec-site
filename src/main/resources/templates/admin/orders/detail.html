@@ -670,6 +670,52 @@
         </th:block>
     </section>
 
+    <section id="shipping-stop"
+        th:if="${shippingStop != null and (shippingStop.state.name() != 'NONE' or !#lists.isEmpty(shippingStop.stops))}">
+        <h3>出荷中止</h3>
+        <table th:unless="${#lists.isEmpty(shippingStop.stops)}" id="shipping-stop-records">
+            <thead>
+                <tr><th>日時</th><th>操作者</th><th>理由</th><th>与信</th><th>出荷準備</th><th>倉庫向けファイル（中止時）</th><th>結果</th></tr>
+            </thead>
+            <tbody>
+                <tr th:each="s : ${shippingStop.stops}">
+                    <td th:text="${#temporals.format(s.createdAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
+                    <td th:text="${s.adminUsername}"></td>
+                    <td th:text="${s.reason}"></td>
+                    <td th:text="${s.authorizationKind == 'EXPIRED'} ? '期限切れ' : ${s.authorizationKind}"></td>
+                    <td th:text="${s.preparationKind == 'EMERGENCY'} ? '緊急出荷' : (${s.preparationKind == 'WAREHOUSE_EXPORT'} ? '14:05の倉庫向け出力' : '管理者')"></td>
+                    <td th:text="${s.fileState == 'WRITTEN'} ? '書き出し済み' : (${s.fileState == 'NONE'} ? 'なし' : '書き出し前（' + ${s.fileState} + '）')"></td>
+                    <td th:text="${s.status == 'COMPLETED'} ? '取消済み' : ${s.status}"></td>
+                </tr>
+            </tbody>
+        </table>
+        <th:block th:if="${shippingStop.state.name() != 'NONE'}">
+            <p>
+                発送準備を開始した注文の出荷を中止し、注文を取り消します。在庫は戻り、お客様には注文取消のメールが送られます。
+                倉庫へはシステムから連絡しません。操作の前に、倉庫に出荷しないよう連絡してください。
+            </p>
+            <p id="shipping-stop-file" th:text="${shippingStop.fileState == 'WRITTEN'}
+                ? '倉庫向けファイル：書き出し済み（倉庫はこの注文を受け取っています）'
+                : (${shippingStop.fileState == 'NONE'} ? '倉庫向けファイル：なし'
+                : '倉庫向けファイル：書き出し前（' + ${shippingStop.fileState} + '）。中止しても、書き出すファイルにはこの注文が入ります。')"></p>
+            <p id="shipping-stop-message" th:if="${shippingStop.message != null}" th:text="${shippingStop.message}"></p>
+            <form th:if="${shippingStop.state.name() == 'AVAILABLE'}" th:action="@{/admin/orders/{id}/stop-shipment(id=${order.id})}" method="post">
+                <p>この注文のカード与信は有効期限が切れています。PAY.JPで与信が取消済みであることを確認してから取り消します（PAY.JPへの取消依頼は送りません）。</p>
+                <p><label for="shippingStopReason">出荷中止の理由（必須）</label></p>
+                <p><textarea id="shippingStopReason" name="reason" rows="3" maxlength="500" required></textarea></p>
+                <p>
+                    <label><input type="checkbox" name="warehouseContacted" value="true" required>
+                        倉庫に、この注文を出荷しないよう連絡しました</label>
+                </p>
+                <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+                <button type="submit" class="button-danger"
+                    onclick="return confirm('この注文の出荷を中止し、注文を取り消しますか？この操作は元に戻せません。');">
+                    出荷を中止して取り消す
+                </button>
+            </form>
+        </th:block>
+    </section>
+
     <section id="expired-authorization-cancellation" th:if="${canCancelExpiredAuthorization}">
         <h3>与信期限切れによる取消</h3>
         <p>
