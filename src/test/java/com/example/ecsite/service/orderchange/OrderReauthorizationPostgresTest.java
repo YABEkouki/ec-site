@@ -47,6 +47,8 @@ class OrderReauthorizationPostgresTest {
     @MockitoBean com.example.ecsite.service.changeclosure.ChangeFlowClosureStore changeClosures;
     // Likewise Feature144 (V113).
     @MockitoBean com.example.ecsite.service.changeclosure.ExpiredChangeClosureService expiredChangeClosures;
+    // Likewise Feature146 (V114).
+    @MockitoBean com.example.ecsite.service.shippingstop.ShippingStopService shippingStops;
     @Autowired com.example.ecsite.service.payment.PayJpWebhookSyncService webhook;
     @Autowired com.example.ecsite.service.payment.PaymentReconciliationItemService reconciliation;
     @Autowired com.example.ecsite.service.payment.PaymentCancellationStartService cancellation;

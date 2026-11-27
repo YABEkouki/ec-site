@@ -477,6 +477,24 @@ public class OrderService {
                 LocalDateTime.now(clock));
     }
 
+    /** Feature146: cancels a prepared order whose shipping stop the caller records in this transaction. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void cancelOrderForShippingStop(
+            Order order,
+            Long accountId,
+            String username,
+            String internalNote) {
+
+        cancelAndRestoreStock(
+                order,
+                OrderStatusHistoryActorType.ADMIN,
+                accountId,
+                username,
+                internalNote,
+                LocalDateTime.now(clock),
+                true);
+    }
+
     @Transactional
     public void cancelOrder(
             Long id,
@@ -960,11 +978,26 @@ public class OrderService {
             String username,
             String internalNote,
             LocalDateTime cancelledAt) {
+        cancelAndRestoreStock(order, changedByType, accountId, username, internalNote, cancelledAt, false);
+    }
+
+    private void cancelAndRestoreStock(
+            Order order,
+            OrderStatusHistoryActorType changedByType,
+            Long accountId,
+            String username,
+            String internalNote,
+            LocalDateTime cancelledAt,
+            boolean shippingStop) {
 
         OrderStatus fromStatus = order.getStatus();
 
         // 不正な状態なら、在庫を変更する前に例外になる
-        order.cancel(cancelledAt);
+        if (shippingStop) {
+            order.cancelStoppedShipment(cancelledAt);
+        } else {
+            order.cancel(cancelledAt);
+        }
 
         orderStatusHistoryService.record(
                 order,
