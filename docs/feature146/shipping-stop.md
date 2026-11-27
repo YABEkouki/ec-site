@@ -197,3 +197,172 @@ A を先にする理由：
   - 発送準備前・取消済み・発送済みの注文には、欄が出ない。
 - 期限切れの注文の実際の中止は、開発環境では作れないため、テストで確かめた（11.3）。
 - 注文 37 は発送準備済みのまま残す。146-B の確認に使う。
+
+## 12. 146-B の設計案（2026-11-27、12.4 は 1〜5 とも案どおり承認）
+
+与信が有効な、出荷準備済みで未出荷の注文の出荷中止。PAY.JP に取消を送る（POST）。
+
+### 12.1 調査結果（main 16003de）
+
+- 管理者の取消（`AdminPaymentCancellationService`）の流れ
+  1. 開始の TX：取消の取引（PENDING）を作る。
+  2. TX の外：POST を送る。
+  3. 結果の TX：決済と注文を取り消す。
+- POST の結果の種類
+  - 結果は CANCELLED か PENDING の 2 つだけ。
+  - 通信の失敗や PAY.JP のエラーは `PaymentGatewayException` になる。取引は PENDING のまま残る。
+- PENDING の取消の決着
+  - 経路は 3 つ：管理者の再操作（GET）、Webhook、照合。
+  - 3 つとも、管理者の取消は `AdminPaymentCancellationResultService.apply` に集まる。
+  - CANCELLED のときは、そこで `cancelOrderAfterPaymentCancellation` が注文を取り消す。
+- 失敗で終わる経路がない：取消の取引を FAILED にする経路は、今はない。PAY.JP が取消を拒否したとき、取引は PENDING のまま残る。
+- 期限後の通常の取消
+  - Java：`orderModificationGuard` が拒否する。
+  - DB：V94 がコミット時に拒否する。
+  - 出荷準備済みの注文は、ふつう変更の期限（14:05）を過ぎている。
+- 出荷準備済みの注文の取消は、V98（V114 で変えたもの）が、同じ TX で出荷中止を記録したときだけ認める。結果の TX は開始の TX と別なので、このままでは取り消せない。
+
+### 12.2 流れ
+
+1. 管理者が注文詳細で、理由と倉庫連絡の確認を入れて、「出荷を中止して取り消す」を押す（146-A と同じ欄）。
+2. 開始の TX：注文をロックし、次の 2 つを作る。
+   - 出荷中止の記録（与信の種類 VALID、状態 REQUESTED）
+   - 取消の取引（ORDER_CANCELLATION、PENDING）
+3. TX の外：PAY.JP に取消の POST を送る（既存の冪等キー、既存の送信前ガード）。
+4. 結果
+   - **canceled**：結果の TX で次を行う。
+     - 決済を取り消す。
+     - 記録を COMPLETED にする。
+     - 注文を取り消し、在庫を戻す。
+     - お客様には通常の取消メールが送られる（期限切れの文面ではない）。
+   - **結果がわからない**（通信の失敗、5xx、PENDING）
+     - 記録は REQUESTED のまま。注文は出荷準備済みのまま。
+     - 決着は、ほかの管理者の取消と同じく、管理者の「PAY.JP で再確認」（GET）、Webhook、照合で行う。
+     - 3 つの経路の結果は、`AdminPaymentCancellationResultService.apply` に集まる。出荷中止の記録がある取引なら、そこで出荷中止として完了させる。
+   - **PAY.JP が拒否した**（決まった 4xx）：記録は REQUESTED のまま。画面に拒否された旨を出し、「中止を取りやめる」（12.4 の 2）を案内する。
+5. REQUESTED の間
+   - 売上確定は、取消が処理中のため、今までどおり拒否される。
+   - 倉庫から出荷済み CSV が来たら、その行は売上確定できずに止まる。管理者が倉庫に連絡済みなので、ふつうは来ない。
+   - 画面には「取消の結果を確認中」と表示する。
+
+### 12.3 DB（V115）
+
+- `order_shipping_stops` を広げる。
+  - 与信の種類：VALID を加える。
+  - 状態：REQUESTED と REJECTED を加える。
+  - 状態の遷移は REQUESTED → COMPLETED か REJECTED だけ。そのほかの UPDATE、DELETE、TRUNCATE は今までどおり拒否する。
+  - 完了した TX の番号（`completed_xid`）を、トリガーが入れる。
+- 作るときの条件（f146_stop_insert）
+  - VALID：期限が過ぎていない有効な与信に、ORDER_CANCELLATION の取消取引が PENDING であること。状態は REQUESTED から始める。
+  - EXPIRED：146-A のまま。
+- コミット時の確認
+  - REQUESTED：取消の取引が PENDING で、注文は出荷準備済みのまま。
+  - COMPLETED：146-A と同じ。VALID のときは、期限切れの証拠の代わりに、取消の取引が SUCCEEDED であること。
+  - REJECTED：取消の取引が FAILED で、注文と決済は元のまま。
+- V98（`f131_order_preparation_guard`）：CANCELLED への変更を、同じ TX で記録を作ったか（`recording_xid`）、COMPLETED にした（`completed_xid`）ときに認める。
+- V94（`f135_late_cancellation_guard`）：期限後の ORDER_CANCELLATION を、出荷中止の記録（VALID）に結び付いた取引も認める。最新の定義の全文を写して変える。
+- 取消の取引の PENDING → FAILED は、出荷中止の取りやめ（REJECTED にする TX）だけで認める。今の DB の決まりで足りるかは、実装で確かめる。
+
+### 12.4 決めていただくこと
+
+| # | 項目 | 案 |
+|---|---|---|
+| 1 | 結果がわからないとき | 記録は REQUESTED のまま。既存の再確認・Webhook・照合で決着させ、注文詳細に「PAY.JP で再確認」を置く |
+| 2 | PAY.JP が取消を拒否したとき | 「中止を取りやめる」を置く。押したら PAY.JP を GET し、まだ取り消されていない（requires_capture）ことを確かめる。そのうえで、取消の取引を FAILED、記録を REJECTED にする。注文は出荷準備済みのまま、普通に出荷できる。理由と確認のチェックを必須にする |
+| 3 | 2 の取りやめを、結果がわからないときにも使えるか | 使える（GET でまだ取り消されていないと確かめたときだけ）。あとで取消が通っていたら、売上確定は Feature135-B2 の決まりで失敗として止まる |
+| 4 | 中止した注文の表示 | 緊急出荷の一覧と倉庫向け出力の画面に「出荷中止」を表示する（146-A で入れなかった分） |
+| 5 | 分割 | 分けない（146-B として 1 つにする） |
+
+### 12.5 確認
+
+- テスト
+  - canceled の流れ、結果がわからない流れ、拒否の流れ（取りやめ）
+  - Webhook・照合・再確認からの完了
+  - 二重の操作
+  - DB の守り（状態の遷移、V98・V94 の分岐）
+  - 守りを外した確認、回帰
+- ブラウザ
+  - 注文 37（PAY.JP テストモード、与信は有効、緊急出荷で準備済み）で出荷中止する。PAY.JP テストモードへの取消 POST を 1 回含む。
+  - 注文が取り消され、通常の取消メールが届くことを確かめる。
+- V115 の適用（再起動）と、PAY.JP への送信は、事前に確認する。
+
+## 13. 146-B の結果（2026-11-27）
+
+### 13.1 実装
+
+- V115
+  - `order_shipping_stops`
+    - 与信の種類に VALID、状態に REQUESTED・REJECTED を加えた。
+    - 列を加えた：`completed_xid`、`resolved_at`、取りやめた管理者（ID・ユーザー名）、取りやめの理由。
+    - 注文ごとに 1 件という一意制約は、REJECTED を除く部分インデックスにした。取りやめたあと、もう一度中止できる。
+  - 記録の変更は、VALID の REQUESTED を COMPLETED か REJECTED にするときだけ認める。状態と、その決着に関わる列以外が変わると 55000。DELETE も 55000。
+    - COMPLETED：トリガーが `completed_xid` を今の TX にする。
+    - REJECTED：取りやめた管理者が、有効で緊急出荷の権限を持つこと（42501）。
+  - INSERT の条件
+    - EXPIRED は、期限切れの与信で、COMPLETED で記録するときだけ。
+    - VALID は、期限前の与信で、REQUESTED で記録するときだけ。
+  - コミット時の確認
+    - COMPLETED は、注文・決済・取消取引がすべて取り消されていること。
+    - REQUESTED と REJECTED は、注文が出荷準備済みのまま、決済が与信済みであること。取消取引は REQUESTED なら PENDING、REJECTED なら FAILED。
+    - 取消取引の状態が変わったときにも確かめる。REQUESTED の記録の取消取引は、記録を決着させずに PENDING から動かせない。
+  - V98（`f131_order_preparation_guard`）は全文を写し、条件を 1 つ変えた。出荷準備済みの注文を CANCELLED にできるのは、出荷中止を COMPLETED にした TX（`completed_xid`）の中だけ。
+  - V94（`f135_late_cancellation_guard`）は全文を写し、例外を 1 つ加えた。期限後の ORDER_CANCELLATION でも、VALID の出荷中止の取消取引なら認める。
+- Java
+  - `PaymentService.startShippingStopCancellation`：管理者だけ。期限前の与信の取消取引（ORDER_CANCELLATION、PENDING）を始める。期限切れのときは `AuthorizationExpiryException` で拒否する。
+  - `ShippingStopService`
+    - 中止（期限前の与信）：TX の中で、取消取引と REQUESTED の記録を作る。TX の外で PAY.JP に取消を POST する。
+      - 取り消された：既存の取消の結果の反映で、注文を取り消す。
+      - 結果がわからない：REQUESTED のまま。
+      - PAY.JP が拒否した：REQUESTED のまま、取りやめを案内する。
+    - 再確認：既存の同期（`PaymentOperationSyncService`）で PAY.JP を GET し、結果を反映する。
+    - 取りやめ：理由・確認・権限を確かめてから PAY.JP を GET する。
+      - canceled：取りやめずに、中止を完了させる。
+      - requires_capture：取消取引を FAILED、記録を REJECTED にする。
+      - それ以外：拒否する。
+  - `ShippingStopRecords`、`AdminPaymentCancellationResultService`：管理者の取消の結果は、すべてここで反映される。HTTP の再確認、Webhook、照合のどこから来ても、REQUESTED の記録があれば COMPLETED にし、同じ TX で注文を出荷中止として取り消す（内部メモは「出荷中止：理由」）。
+  - `PaymentPurposeResolver`：ORDER_CANCELLATION の判定で、失敗した通常の取消を数えないようにした。売上確定の判定は、もとから数えていない。
+- 画面
+  - 注文詳細の「出荷中止」の欄
+    - 記録の表に、与信の種類（期限切れ / 有効）と結果を出す。結果は「取消済み」「取消の結果を確認中」「取りやめ」（取りやめは、日時・管理者・理由も出す）。
+    - REQUESTED のときは「PAY.JPで再確認」と「出荷中止を取りやめる」を出す。取りやめには、理由と「倉庫に、この注文の出荷を続けるよう連絡しました」の確認が要る。権限のない管理者には、権限がない旨だけを出す。
+  - 緊急出荷の一覧と、倉庫向け出力の詳細：「出荷中止（取消済み）」または「出荷中止（取消の結果を確認中）」を出す。
+
+### 13.2 設計との違い
+
+- `PaymentPurposeResolver` の変更（13.1）は、12 章には書いていなかった。取りやめたあと、もう一度中止するために必要だった。これまで、取消取引が FAILED になる経路はなかったので、ほかの取消への影響はない。回帰テストでも確かめた。
+- 再確認にも、緊急出荷の権限を求める。中止・取りやめと同じにした。
+- 緊急出荷の一覧と倉庫向け出力の表示は、REJECTED を除いた最新の記録の状態から決める。取りやめた中止は表示しない。
+
+### 13.3 テスト
+
+- `WarehouseExportPostgresTest`：54 件 PASS。うち 146-B は 7 件。
+  - 期限前の与信の中止：PAY.JP で取り消され、注文が取り消される。
+  - 結果がわからないとき：REQUESTED のまま。再確認または Webhook で完了する。
+  - PAY.JP が拒否したとき：取りやめると記録は REJECTED、取消取引は FAILED。注文は出荷準備済みのまま。もう一度中止でき、売上確定も始められる。
+  - 取りやめの GET で canceled だったとき：取りやめずに完了する。
+  - DB の守り
+    - V94、INSERT の条件、変更できる列、コミット時の確認、取消取引の確認、取りやめの権限。
+    - アプリで期限切れの与信を拒否すること。
+  - 緊急出荷の一覧と、倉庫向け出力の表示。
+  - 注文詳細からの再確認と取りやめ（MockMvc）。
+- 守りを外した確認（コピー上）：基準を除く 17 通りすべてで、テストが失敗する。
+  - DB（10 通り）：V98 の `completed_xid`、V94 の例外、状態の遷移、変更できる列、取りやめの権限、VALID の状態、VALID の期限、コミット時の確認、取消取引の確認、REJECTED を含む一意制約。
+  - Java（7 通り）：結果の反映での完了、取りやめの GET（requires_capture、canceled）、拒否の結果、REQUESTED 中の中止の拒否、期限切れの与信の拒否、`PaymentPurposeResolver`。
+  - 最初に流した時点では、2 つが見つからなかった。
+    - 変更できる列：状態以外の列だけを変えるテストしかなかった。状態と一緒にほかの列も変えるテストを加えた。
+    - 期限切れの与信の拒否：画面側の流れでは、期限切れの与信は先に別の流れへ振り分けられる。`PaymentService` を直接呼ぶテストを加えた。
+    - 加えたあとに流し直し、2 つとも見つかることを確かめた。
+- 回帰：grep で選んだ 142 クラス（71 行）が、すべて PASS（3209 件。スキップ 2 件は、ふだんの実行でもスキップされるもの）。
+- 版数のテスト（114 → 115）を 5 か所更新した。
+- 1 回だけの失敗
+  - 守りを外した確認の基準（変更なし）で 1 回だけ、`aPreparedOrderIsInShippingPreparationAndTheOrderListFiltersOnIt` が失敗した。注文 ID で検索して、その注文が見つからなかった。
+  - そのあと、同じクラスを 3 回流した（回帰 1 回、基準 2 回）。3 回とも 54 件すべて PASS で、再現しなかった。
+  - 原因はわかっていない。この検索は今回の変更が関わる箇所ではなく、時刻によって変わる条件もない。
+
+### 13.4 確かめていないこと
+
+- 照合（reconciliation）からの完了は、テストで直接は確かめていない。HTTP の再確認と Webhook と同じ反映処理（`AdminPaymentCancellationResultService`）を通る。
+- 同時の操作（中止と取りやめ、中止と Webhook）は、順番に行うテストだけ。注文の行ロック、記録の行ロック、DB のトリガーで守る。
+- 取りやめたあと、取消が PAY.JP で実は通っていた場合：売上確定は、Feature135-B2 の決まりで失敗として止まる（12.4 の 3）。新しいテストはない。
+- 実際の PAY.JP での取消の拒否と、結果がわからない状態（テストではモックで作った）。
+

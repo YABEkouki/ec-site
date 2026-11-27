@@ -88,8 +88,10 @@ public final class PaymentPurposeResolver {
                 || authorization.getStatus()!=PaymentTransactionStatus.SUCCEEDED
                 || !new PaymentConsistencyEvaluator().evaluate(order,payment,authorization,contentEvidence).canCapture()) return false;
         if(expected==PaymentTransactionPurpose.ORDER_CANCELLATION) {
+            // Feature146-B: a withdrawn shipping stop leaves a FAILED ordinary cancellation, as a shipment tolerates below.
             return (order.getStatus()==OrderStatus.ORDERED || order.getStatus()==OrderStatus.CANCELLED)
-                    && own.size()==2 && operation.getAmount()==payment.getAmount()
+                    && own.stream().filter(t->!failedOrdinaryCancellation(order,payment,t)).count()==2
+                    && operation.getAmount()==payment.getAmount()
                     && operation.getOrderContentRevision()==order.getContentRevision()
                     && ((operation.getInitiatorType()==PaymentTransactionInitiatorType.USER
                             && Objects.equals(order.getUserId(),operation.getInitiatorId()))

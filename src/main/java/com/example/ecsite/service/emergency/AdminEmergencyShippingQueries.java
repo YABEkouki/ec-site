@@ -40,7 +40,19 @@ public class AdminEmergencyShippingQueries {
      */
     public record Row(long orderId, EmergencyShippingMode mode, LocalDateTime operatedAt, String adminUsername, String reason,
             String orderStatus, LocalDateTime shippedAt, Long shippedByAccountId, String shippedByUsername,
-            String fileState, LocalDateTime fileWrittenAt, int downloadCount) {
+            String fileState, LocalDateTime fileWrittenAt, int downloadCount, String shippingStop) {
+        public Row(long orderId, EmergencyShippingMode mode, LocalDateTime operatedAt, String adminUsername, String reason,
+                String orderStatus, LocalDateTime shippedAt, Long shippedByAccountId, String shippedByUsername,
+                String fileState, LocalDateTime fileWrittenAt, int downloadCount) {
+            this(orderId, mode, operatedAt, adminUsername, reason, orderStatus, shippedAt, shippedByAccountId, shippedByUsername,
+                    fileState, fileWrittenAt, downloadCount, null);
+        }
+        /** Feature146: 「出荷中止（取消済み）」or「出荷中止（取消の結果を確認中）」; null without a shipping stop. */
+        public String getShippingStopLabel() {
+            if ("COMPLETED".equals(shippingStop)) return "出荷中止（取消済み）";
+            if ("REQUESTED".equals(shippingStop)) return "出荷中止（取消の結果を確認中）";
+            return null;
+        }
         public boolean isShipped() { return "SHIPPED".equals(orderStatus); }
         /** 「倉庫出荷取込み」for a shipment by the warehouse shipment import, otherwise the administrator's name. */
         public String getShipperLabel() {
@@ -96,13 +108,15 @@ public class AdminEmergencyShippingQueries {
                 select e.order_id,e.mode,e.created_at,e.admin_username,e.reason,o.status,o.shipped_at,
                   o.shipped_by_account_id,o.shipped_by_username,
                   f.state as file_state,f.written_at as file_written_at,
-                  (select count(*) from emergency_shipping_csv_downloads d where d.order_id=e.order_id)::int as download_count
+                  (select count(*) from emergency_shipping_csv_downloads d where d.order_id=e.order_id)::int as download_count,
+                  (select s.status from order_shipping_stops s where s.order_id=e.order_id and s.status<>'REJECTED'
+                   order by s.id desc limit 1) as shipping_stop
                 """ + base + " order by e.id desc limit ? offset ?",
                 (r, n) -> new Row(r.getLong("order_id"), EmergencyShippingMode.valueOf(r.getString("mode")),
                         r.getObject("created_at", LocalDateTime.class), r.getString("admin_username"), r.getString("reason"),
                         r.getString("status"), r.getObject("shipped_at", LocalDateTime.class),
                         r.getObject("shipped_by_account_id", Long.class), r.getString("shipped_by_username"), r.getString("file_state"),
-                        r.getObject("file_written_at", LocalDateTime.class), r.getInt("download_count")),
+                        r.getObject("file_written_at", LocalDateTime.class), r.getInt("download_count"), r.getString("shipping_stop")),
                 pageArgs.toArray());
         return new Result(rows, safePage, total, (long) (safePage + 1) * PAGE_SIZE < total);
     }

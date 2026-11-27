@@ -668,16 +668,51 @@ public class AdminOrderController {
             @RequestParam(required = false) String returnUrl,
             @AuthenticationPrincipal AdminUserDetails loginUser,
             RedirectAttributes redirectAttributes) {
+        return shippingStopAction(id, returnUrl, redirectAttributes,
+                () -> shippingStops.stop(id, loginUser.getId(), loginUser.getUsername(), reason, warehouseContacted));
+    }
+
+    @PostMapping("/{id}/stop-shipment/recheck")
+    public String recheckShippingStop(
+            @PathVariable Long id,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+        return shippingStopAction(id, returnUrl, redirectAttributes, () -> shippingStops.recheck(id, loginUser.getId()));
+    }
+
+    @PostMapping("/{id}/stop-shipment/withdraw")
+    public String withdrawShippingStop(
+            @PathVariable Long id,
+            @RequestParam(required = false) String reason,
+            @RequestParam(defaultValue = "false") boolean warehouseContacted,
+            @RequestParam(required = false) String returnUrl,
+            @AuthenticationPrincipal AdminUserDetails loginUser,
+            RedirectAttributes redirectAttributes) {
+        return shippingStopAction(id, returnUrl, redirectAttributes,
+                () -> shippingStops.withdraw(id, loginUser.getId(), loginUser.getUsername(), reason, warehouseContacted));
+    }
+
+    private String shippingStopAction(Long id, String returnUrl, RedirectAttributes redirectAttributes,
+            java.util.function.Supplier<com.example.ecsite.service.shippingstop.ShippingStopService.Outcome> action) {
         if (shippingStops == null) {
             redirectAttributes.addFlashAttribute("errorMessage", "この操作は利用できません。");
             return redirectToDetail(id, returnUrl);
         }
         try {
-            var outcome = shippingStops.stop(id, loginUser.getId(), loginUser.getUsername(), reason, warehouseContacted);
-            redirectAttributes.addFlashAttribute("successMessage",
-                    outcome == com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.STOPPED
-                            ? "出荷を中止し、注文を取り消しました（与信の期限切れのため、PAY.JPでは与信は取消済みです）。"
-                            : "この注文は既に取り消されています。");
+            var outcome = action.get();
+            String message = switch (outcome) {
+                case STOPPED -> "出荷を中止し、注文を取り消しました。";
+                case ALREADY_CANCELLED -> "この注文は既に取り消されています。";
+                case REQUESTED -> "PAY.JPに与信の取消を依頼しました。結果はまだ確認できていません。注文は発送準備済みのままです。しばらくしてから「PAY.JPで再確認」を押してください。";
+                case REJECTED_BY_PAYJP -> "PAY.JPが与信の取消を受け付けませんでした。注文は発送準備済みのままです。PAY.JPで状態を確認し、出荷を続ける場合は「出荷中止を取りやめる」を行ってください。";
+                case STILL_REQUESTED -> "PAY.JP上で与信はまだ取り消されていません。注文は発送準備済みのままです。";
+                case WITHDRAWN -> "出荷中止を取りやめました。注文は発送準備済みのままで、通常どおり出荷できます。";
+            };
+            boolean done = outcome == com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.STOPPED
+                    || outcome == com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.ALREADY_CANCELLED
+                    || outcome == com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.WITHDRAWN;
+            redirectAttributes.addFlashAttribute(done ? "successMessage" : "errorMessage", message);
         } catch (com.example.ecsite.service.shippingstop.ShippingStopException e) {
             redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
         } catch (PaymentGatewayException e) {
@@ -685,7 +720,7 @@ public class AdminOrderController {
                     "PAY.JPで与信の状態を確認できませんでした。注文は変更していません。時間をおいて再度お試しください。");
         } catch (InvalidOrderStatusException | IllegalStateException | org.springframework.dao.DataAccessException e) {
             redirectAttributes.addFlashAttribute("errorMessage",
-                    "出荷中止できませんでした。注文・決済・出荷の状態をご確認ください。注文は変更していません。");
+                    "出荷中止の操作ができませんでした。注文・決済・出荷の状態をご確認ください。");
         }
         return redirectToDetail(id, returnUrl);
     }

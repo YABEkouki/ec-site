@@ -682,37 +682,71 @@
                     <td th:text="${#temporals.format(s.createdAt, 'yyyy/MM/dd HH:mm:ss')}"></td>
                     <td th:text="${s.adminUsername}"></td>
                     <td th:text="${s.reason}"></td>
-                    <td th:text="${s.authorizationKind == 'EXPIRED'} ? '期限切れ' : ${s.authorizationKind}"></td>
+                    <td th:text="${s.authorizationKind == 'EXPIRED'} ? '期限切れ（取消の依頼なし）' : '有効（PAY.JPに取消を依頼）'"></td>
                     <td th:text="${s.preparationKind == 'EMERGENCY'} ? '緊急出荷' : (${s.preparationKind == 'WAREHOUSE_EXPORT'} ? '14:05の倉庫向け出力' : '管理者')"></td>
                     <td th:text="${s.fileState == 'WRITTEN'} ? '書き出し済み' : (${s.fileState == 'NONE'} ? 'なし' : '書き出し前（' + ${s.fileState} + '）')"></td>
-                    <td th:text="${s.status == 'COMPLETED'} ? '取消済み' : ${s.status}"></td>
+                    <td>
+                        <span th:if="${s.status == 'COMPLETED'}" th:text="|取消済み（${#temporals.format(s.resolvedAt, 'yyyy/MM/dd HH:mm:ss')}）|"></span>
+                        <span th:if="${s.status == 'REQUESTED'}" class="action-required-danger">取消の結果を確認中</span>
+                        <span th:if="${s.status == 'REJECTED'}"
+                            th:text="|取りやめ（${#temporals.format(s.resolvedAt, 'yyyy/MM/dd HH:mm:ss')}・${s.withdrawnByUsername}・${s.withdrawalReason}）|"></span>
+                    </td>
                 </tr>
             </tbody>
         </table>
         <th:block th:if="${shippingStop.state.name() != 'NONE'}">
-            <p>
-                発送準備を開始した注文の出荷を中止し、注文を取り消します。在庫は戻り、お客様には注文取消のメールが送られます。
-                倉庫へはシステムから連絡しません。操作の前に、倉庫に出荷しないよう連絡してください。
-            </p>
             <p id="shipping-stop-file" th:text="${shippingStop.fileState == 'WRITTEN'}
                 ? '倉庫向けファイル：書き出し済み（倉庫はこの注文を受け取っています）'
                 : (${shippingStop.fileState == 'NONE'} ? '倉庫向けファイル：なし'
                 : '倉庫向けファイル：書き出し前（' + ${shippingStop.fileState} + '）。中止しても、書き出すファイルにはこの注文が入ります。')"></p>
             <p id="shipping-stop-message" th:if="${shippingStop.message != null}" th:text="${shippingStop.message}"></p>
-            <form th:if="${shippingStop.state.name() == 'AVAILABLE'}" th:action="@{/admin/orders/{id}/stop-shipment(id=${order.id})}" method="post">
-                <p>この注文のカード与信は有効期限が切れています。PAY.JPで与信が取消済みであることを確認してから取り消します（PAY.JPへの取消依頼は送りません）。</p>
-                <p><label for="shippingStopReason">出荷中止の理由（必須）</label></p>
-                <p><textarea id="shippingStopReason" name="reason" rows="3" maxlength="500" required></textarea></p>
+            <th:block th:if="${shippingStop.state.name() == 'AVAILABLE'}">
                 <p>
-                    <label><input type="checkbox" name="warehouseContacted" value="true" required>
-                        倉庫に、この注文を出荷しないよう連絡しました</label>
+                    発送準備を開始した注文の出荷を中止し、注文を取り消します。在庫は戻り、お客様には注文取消のメールが送られます。
+                    倉庫へはシステムから連絡しません。操作の前に、倉庫に出荷しないよう連絡してください。
                 </p>
-                <input type="hidden" name="returnUrl" th:value="${returnUrl}">
-                <button type="submit" class="button-danger"
-                    onclick="return confirm('この注文の出荷を中止し、注文を取り消しますか？この操作は元に戻せません。');">
-                    出荷を中止して取り消す
-                </button>
-            </form>
+                <form th:action="@{/admin/orders/{id}/stop-shipment(id=${order.id})}" method="post">
+                    <p th:if="${shippingStop.expired}">この注文のカード与信は有効期限が切れています。PAY.JPで与信が取消済みであることを確認してから取り消します（PAY.JPへの取消依頼は送りません）。</p>
+                    <p th:unless="${shippingStop.expired}">この注文のカード与信は有効です。PAY.JPに与信の取消を依頼し、取消が確認できたら注文を取り消します。結果がすぐにわからないときは、注文は発送準備済みのまま「取消の結果を確認中」になります。</p>
+                    <p><label for="shippingStopReason">出荷中止の理由（必須）</label></p>
+                    <p><textarea id="shippingStopReason" name="reason" rows="3" maxlength="500" required></textarea></p>
+                    <p>
+                        <label><input type="checkbox" name="warehouseContacted" value="true" required>
+                            倉庫に、この注文を出荷しないよう連絡しました</label>
+                    </p>
+                    <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+                    <button type="submit" class="button-danger"
+                        onclick="return confirm('この注文の出荷を中止し、注文を取り消しますか？この操作は元に戻せません。');">
+                        出荷を中止して取り消す
+                    </button>
+                </form>
+            </th:block>
+            <th:block th:if="${shippingStop.state.name() == 'REQUESTED'}">
+                <p th:unless="${shippingStop.permitted}">再確認と取りやめは、緊急出荷の権限を持つ管理者だけが行えます。</p>
+                <th:block th:if="${shippingStop.permitted}">
+                    <form id="shipping-stop-recheck" th:action="@{/admin/orders/{id}/stop-shipment/recheck(id=${order.id})}" method="post">
+                        <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+                        <button type="submit">PAY.JPで再確認</button>
+                    </form>
+                    <form id="shipping-stop-withdraw" th:action="@{/admin/orders/{id}/stop-shipment/withdraw(id=${order.id})}" method="post">
+                        <p>
+                            PAY.JPが取消を受け付けなかったときや、取消を依頼できなかったときに、出荷中止を取りやめて出荷を続けます。
+                            PAY.JPで与信がまだ有効であることを確認してから取りやめます。注文は発送準備済みのままです。
+                        </p>
+                        <p><label for="shippingStopWithdrawalReason">取りやめの理由（必須）</label></p>
+                        <p><textarea id="shippingStopWithdrawalReason" name="reason" rows="3" maxlength="500" required></textarea></p>
+                        <p>
+                            <label><input type="checkbox" name="warehouseContacted" value="true" required>
+                                倉庫に、この注文の出荷を続けるよう連絡しました</label>
+                        </p>
+                        <input type="hidden" name="returnUrl" th:value="${returnUrl}">
+                        <button type="submit"
+                            onclick="return confirm('出荷中止を取りやめ、この注文の出荷を続けますか？');">
+                            出荷中止を取りやめる
+                        </button>
+                    </form>
+                </th:block>
+            </th:block>
         </th:block>
     </section>
 

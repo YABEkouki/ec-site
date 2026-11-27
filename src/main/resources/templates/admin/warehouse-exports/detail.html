@@ -59,7 +59,8 @@
             <tbody>
                 <tr th:each="line : ${lines}">
                     <td><a th:href="@{/admin/orders/{id}(id=${line.orderId})}" th:text="${line.orderId}"></a></td>
-                    <td th:text="${line.orderStatus == 'PAID' ? '支払済み' : 'カード与信済み'}"></td>
+                    <td><span th:text="${line.orderStatus == 'PAID' ? '支払済み' : 'カード与信済み'}"></span>
+                        <span th:if="${line.shippingStopLabel != null}" class="shipping-stop-label action-required-danger" th:text="${line.shippingStopLabel}"></span></td>
                     <td th:text="${line.shippingName}"></td>
                     <td th:text="${line.itemCount}"></td>
                     <td th:text="${#numbers.formatInteger(line.totalAmount, 1, 'COMMA')} + '円'"></td>

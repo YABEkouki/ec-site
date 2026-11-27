@@ -102,7 +102,18 @@ public class WarehouseExportBatchStore {
 
     /** An export line as shown to administrators. */
     public record Line(long orderId, String orderStatus, int contentRevision, int totalAmount, Long paymentId,
-            LocalDateTime changeDeadlineAt, LocalDateTime preparedAt, String shippingName, int itemCount) {}
+            LocalDateTime changeDeadlineAt, LocalDateTime preparedAt, String shippingName, int itemCount, String shippingStop) {
+        public Line(long orderId, String orderStatus, int contentRevision, int totalAmount, Long paymentId,
+                LocalDateTime changeDeadlineAt, LocalDateTime preparedAt, String shippingName, int itemCount) {
+            this(orderId, orderStatus, contentRevision, totalAmount, paymentId, changeDeadlineAt, preparedAt, shippingName, itemCount, null);
+        }
+        /** Feature146: the order's shipping stop (the file row stays; the administrator contacted the warehouse). */
+        public String getShippingStopLabel() {
+            if ("COMPLETED".equals(shippingStop)) return "出荷中止（取消済み）";
+            if ("REQUESTED".equals(shippingStop)) return "出荷中止（取消の結果を確認中）";
+            return null;
+        }
+    }
 
     public record DownloadRecord(long id, long adminAccountId, String adminUsername, LocalDateTime downloadedAt,
             int lineCount, int rowCount, String sha256) {}
@@ -110,11 +121,13 @@ public class WarehouseExportBatchStore {
     public List<Line> lines(long batchId) {
         return jdbc.query("""
             select order_id,order_status,content_revision,total_amount,payment_id,change_deadline_at,prepared_at,
-              shipping_name,jsonb_array_length(items) as item_count
-            from warehouse_export_lines where batch_id=? order by order_id
+              shipping_name,jsonb_array_length(items) as item_count,
+              (select s.status from order_shipping_stops s where s.order_id=l.order_id and s.status<>'REJECTED'
+               order by s.id desc limit 1) as shipping_stop
+            from warehouse_export_lines l where batch_id=? order by order_id
             """, (r, n) -> new Line(r.getLong("order_id"), r.getString("order_status"), r.getInt("content_revision"),
                 r.getInt("total_amount"), (Long) r.getObject("payment_id"), r.getObject("change_deadline_at", LocalDateTime.class),
-                r.getObject("prepared_at", LocalDateTime.class), r.getString("shipping_name"), r.getInt("item_count")), batchId);
+                r.getObject("prepared_at", LocalDateTime.class), r.getString("shipping_name"), r.getInt("item_count"), r.getString("shipping_stop")), batchId);
     }
 
     public List<DownloadRecord> downloads(long batchId) {
