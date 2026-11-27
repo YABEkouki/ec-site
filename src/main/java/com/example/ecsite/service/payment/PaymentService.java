@@ -572,7 +572,9 @@ public class PaymentService {
                 || competingPending(target)) return PaymentResultApplication.IGNORED_STALE;
         if (result.status() == CancellationResultStatus.CANCELLED) {
             LocalDateTime now = LocalDateTime.now(clock);
-            order.clearActivePaymentAfterTermination(payment.getId());
+            // Feature146: a prepared order is cancelled only by a shipping stop; its active payment is frozen (V98),
+            // so the stopped order keeps pointing at the cancelled payment (V69 allows that for a CANCELLED order).
+            if (order.getShippingPreparationStartedAt() == null) order.clearActivePaymentAfterTermination(payment.getId());
             payment.markCancelled(now); transaction.markSucceeded(result.providerTransactionId(), now);
         }
         return PaymentResultApplication.APPLIED;
