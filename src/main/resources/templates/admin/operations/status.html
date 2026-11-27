@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <title>運用の状態</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <header th:replace="~{fragments/admin-header :: header}">
+    </header>
+
+    <main>
+        <h1>運用の状態</h1>
+
+        <p>定期的に動く処理の状態です（読み取りだけ）。有効・無効は環境変数とアプリの再起動で切り替えます。手順は
+            <code>docs/operations/production-enabling.md</code> を参照してください。</p>
+        <p id="operations-read-at" th:text="|${#temporals.format(status.readAt, 'yyyy/MM/dd HH:mm:ss')} 時点|"></p>
+
+        <section id="operations-warnings" th:unless="${#lists.isEmpty(status.warnings)}">
+            <h2>注意</h2>
+            <ul>
+                <li th:each="w : ${status.warnings}" th:text="${w}" class="action-required-danger"></li>
+            </ul>
+        </section>
+
+        <section id="operations-connection">
+            <h2>PAY.JP と一括編集</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <th>PAY.JP の売上確定の接続</th>
+                        <td id="operations-payjp-mode" th:text="${status.connection.mode}"
+                            th:classappend="${status.connection.live} ? '' : 'action-required-danger'"></td>
+                    </tr>
+                    <tr>
+                        <th>PAY.JP の API の接続先</th>
+                        <td th:text="${status.connection.apiOrigin}"></td>
+                    </tr>
+                    <tr>
+                        <th>一括編集（Feature125）の runtime</th>
+                        <td id="operations-runtime">
+                            <span th:unless="${status.runtime.readable}">読み取れません</span>
+                            <th:block th:if="${status.runtime.readable}">
+                                <span th:text="${status.runtime.available} ? '使えます' : '使えません'"
+                                    th:classappend="${status.runtime.available} ? '' : 'action-required-danger'"></span>
+                                <span th:text="|（状態 ${status.runtime.storedState}、版数 ${status.runtime.version}、世代 ${status.runtime.generation == null ? 'なし' : #strings.substring(status.runtime.generation, 0, 8)}）|"></span>
+                                <br>
+                                <span th:text="|処理中の一括編集 ${status.runtime.openAdmissions} 件、結果が未確定の送信 ${status.runtime.unresolvedDispatches} 件、実行中 ${status.runtime.activeLeases} 件|"></span>
+                            </th:block>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="operations-enabling">
+            <h2>既定で止めている処理（手順書の順）</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>順</th>
+                        <th>処理</th>
+                        <th>状態</th>
+                        <th>外部への影響</th>
+                        <th>主な設定</th>
+                        <th>最後に動いた時刻</th>
+                        <th>未処理など</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="p : ${status.enabling}" th:attr="data-variable=${p.variable}">
+                        <td th:text="${p.order}"></td>
+                        <td>
+                            <a th:if="${p.screenUrl != null}" th:href="@{${p.screenUrl}}" th:text="${p.name}"></a>
+                            <span th:if="${p.screenUrl == null}" th:text="${p.name}"></span>
+                            <br><code th:text="${p.variable}"></code>
+                        </td>
+                        <td th:text="${p.enabled} ? '有効' : '無効'" th:classappend="${p.enabled} ? 'operations-on' : 'operations-off'"></td>
+                        <td th:text="${p.effect}"></td>
+                        <td>
+                            <div th:each="s : ${p.settings}" th:text="|${s.label}：${s.value}|"></div>
+                        </td>
+                        <td>
+                            <span th:text="${p.lastActivityLabel}"></span>：
+                            <span th:text="${p.lastActivity == null} ? '記録なし' : ${#temporals.format(p.lastActivity, 'yyyy/MM/dd HH:mm:ss')}"></span>
+                        </td>
+                        <td>
+                            <div th:each="c : ${p.backlog}" th:text="|${c.label}：${c.count}件|"></div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="operations-always-on">
+            <h2>既定で動いている処理</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>処理</th>
+                        <th>状態</th>
+                        <th>外部への影響</th>
+                        <th>主な設定</th>
+                        <th>最後に動いた時刻</th>
+                        <th>失敗など</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="p : ${status.alwaysOn}" th:attr="data-variable=${p.variable}">
+                        <td>
+                            <a th:if="${p.screenUrl != null}" th:href="@{${p.screenUrl}}" th:text="${p.name}"></a>
+                            <span th:if="${p.screenUrl == null}" th:text="${p.name}"></span>
+                        </td>
+                        <td th:text="${p.enabled} ? '有効' : '無効'" th:classappend="${p.enabled} ? 'operations-on' : 'action-required-danger'"></td>
+                        <td th:text="${p.effect}"></td>
+                        <td>
+                            <div th:each="s : ${p.settings}" th:text="|${s.label}：${s.value}|"></div>
+                        </td>
+                        <td>
+                            <span th:text="${p.lastActivityLabel}"></span>：
+                            <span th:text="${p.lastActivity == null} ? '記録なし' : ${#temporals.format(p.lastActivity, 'yyyy/MM/dd HH:mm:ss')}"></span>
+                        </td>
+                        <td>
+                            <div th:each="c : ${p.backlog}" th:text="|${c.label}：${c.count}件|"></div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>決済の照合には実行の記録がありません。PAY.JP の結果が届かない決済は、決済要対応一覧と決済照合の監査で確かめます。</p>
+        </section>
+    </main>
+
+</body>
+
+</html>
