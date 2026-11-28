@@ -456,6 +456,9 @@ class PaymentDiscrepancyConcurrencyPostgresTest {
             payment.setProviderPaymentId("pfw_" + unique, CREATED_AT);
             payment.markAuthorized(CREATED_AT);
             payments.saveAndFlush(payment);
+            // Feature147: checkout binds the authorization as the order's active payment at once.
+            order.bindActivePayment(payment);
+            orders.saveAndFlush(order);
             PaymentTransaction transaction = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE,
                     1000, 0, unique, CREATED_AT);
             transaction.markSucceeded("txn_" + unique, CREATED_AT);

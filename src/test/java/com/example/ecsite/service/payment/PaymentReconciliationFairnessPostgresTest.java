@@ -70,7 +70,8 @@ class PaymentReconciliationFairnessPostgresTest {
         });
     }
     @AfterEach void clear() {
-        tx(()->{transactions.deleteAllInBatch();payments.deleteAllInBatch();orders.deleteAllInBatch();return null;});
+        // Feature147: release the active payments before deleting them (fk_orders_active_payment_owner).
+        tx(()->{transactions.deleteAllInBatch();jdbc.update("update orders set active_payment_id=null");payments.deleteAllInBatch();orders.deleteAllInBatch();return null;});
     }
     @Test void providerlessBacklogDoesNotOccupyGetQuotaAndKeepsWarning() {
         List<Long> stopped=create(105,false,Duration.ofDays(2));List<Long> eligible=create(101,true,Duration.ofMinutes(10));
@@ -171,6 +172,8 @@ class PaymentReconciliationFairnessPostgresTest {
                 Order o=orders.saveAndFlush(new Order(u.getId(),3000,now.minus(age),now.plusDays(1)));
                 Payment p=new Payment(o,PaymentProvider.PAYJP,PaymentMethod.CARD,3000,now.minus(age));
                 if(providerKnown)p.setProviderPaymentId("pf_"+UUID.randomUUID(),now);payments.saveAndFlush(p);
+                // Feature147: checkout binds the payment as the order's active payment at once.
+                o.bindActivePayment(p);orders.saveAndFlush(o);
                 ids.add(transactions.saveAndFlush(new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,3000,0,UUID.randomUUID().toString(),now.minus(age))).getId());
             }
             return ids;

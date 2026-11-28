@@ -467,6 +467,8 @@ class PaymentSynchronizationPostgresTest {
     }
     private void createAuthorized(Order o,String provider) {
         LocalDateTime now=LocalDateTime.now();Payment p=new Payment(o,PaymentProvider.PAYJP,PaymentMethod.CARD,3000,now);p.setProviderPaymentId(provider,now);p.markAuthorized(now);payments.saveAndFlush(p);
+        // Feature147: checkout binds the authorization as the order's active payment at once.
+        o.bindActivePayment(p);orders.saveAndFlush(o);
         PaymentTransaction t=new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,3000,0,UUID.randomUUID().toString(),now);t.markSucceeded(provider,now);transactions.saveAndFlush(t);
     }
     private <T>T tx(Supplier<T> action) { return new TransactionTemplate(manager).execute(s -> action.get()); }

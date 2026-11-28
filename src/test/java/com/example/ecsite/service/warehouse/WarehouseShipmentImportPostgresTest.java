@@ -479,6 +479,8 @@ class WarehouseShipmentImportPostgresTest {
             if (card) {
                 var payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, total, now);
                 payment.setProviderPaymentId("pfw_" + key, now); payment.markAuthorized(now); payments.saveAndFlush(payment);
+                // Feature147: checkout binds the authorization as the order's active payment at once.
+                order.bindActivePayment(payment); orders.saveAndFlush(order);
                 var auth = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, total, 0, key, now,
                         PaymentTransactionPurpose.INITIAL_ORDER_AUTHORIZATION);
                 auth.markSucceeded(payment.getProviderPaymentId(), now); paymentTransactions.saveAndFlush(auth);
