@@ -517,6 +517,8 @@ class PaymentDiscrepancyAuditRetryPostgresTest {
             Payment payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 1000, CREATED);
             payment.setProviderPaymentId("pfw_" + unique, CREATED); payment.markAuthorized(CREATED);
             payments.saveAndFlush(payment);
+            // Feature147: checkout binds the authorization as the order's active payment at once.
+            order.bindActivePayment(payment); orders.saveAndFlush(order);
             PaymentDiscrepancy entity = new PaymentDiscrepancy(payment, PaymentStatus.AUTHORIZED,
                     PaymentFlowStatus.SUCCEEDED, CREATED);
             for (int i = 1; i < count; i++) entity.detectAgain(CREATED);

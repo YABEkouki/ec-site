@@ -120,6 +120,9 @@ class PaymentShippingPreparationValidationPostgresTest {
             active.setProviderPaymentId(providerId, now);
             active.markAuthorized(now);
             payments.saveAndFlush(active);
+            // Feature147: the earlier failed and cancelled attempts were released; the live authorization is the active payment.
+            order.bindActivePayment(active);
+            orders.saveAndFlush(order);
             PaymentTransaction authorization = new PaymentTransaction(active, PaymentTransactionType.AUTHORIZE,
                     1000, 0, UUID.randomUUID().toString(), now);
             authorization.markSucceeded(providerId, now);

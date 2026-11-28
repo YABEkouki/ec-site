@@ -164,6 +164,8 @@ class ShippedCaptureReadModelsPostgresTest {
             orders.saveAndFlush(order);
             Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);
             String provider="pfw_read_"+unique;payment.setProviderPaymentId(provider,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
+            // Feature147: checkout binds the authorization as the order's active payment at once.
+            order.bindActivePayment(payment);orders.saveAndFlush(order);
             var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,"read_auth_"+unique,now);
             auth.markSucceeded(provider,now);transactions.saveAndFlush(auth);
             return new Fixture(order.getId(),payment.getId(),product.getId(),admin.getId(),admin.getUsername(),provider,orderedAt);

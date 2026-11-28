@@ -884,6 +884,8 @@ class OrderShippingPreparationPostgresTest {
                 Payment payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 3000, now);
                 String providerId = "pf_" + unique; payment.setProviderPaymentId(providerId, now); payment.markAuthorized(now);
                 payments.saveAndFlush(payment); paymentId = payment.getId();
+                // Feature147: checkout binds the authorization as the order's active payment at once.
+                order.bindActivePayment(payment); orders.saveAndFlush(order);
                 PaymentTransaction authorization = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, 3000, 0, unique, now);
                 authorization.markSucceeded(providerId, now); transactions.saveAndFlush(authorization);
             }

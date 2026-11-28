@@ -109,7 +109,7 @@ Feature146-C の不具合は、テストの注文データの形が実際とず�
 - 紐づけが起きた回数は、クラスごとに 4〜1392 回。
 - 2 回目の手直し：紐づけの条件（失敗・取消済みの決済を除く）、2 クラスの後片付け、2 クラスの順の入れ替え。
 
-### 6.3 147-B で直す範囲（案）
+### 6.3 147-B で直す範囲（承認済み）
 
 - テストの注文データ：19 クラスで、チェックアウトと同じく有効な決済を持つ形にする。写しの処理ではなく、各クラスのテストの注文データを作る部分で明示的に紐づける。
   - `ManualOrderShipmentPostgresTest` は対象外。
@@ -119,3 +119,42 @@ Feature146-C の不具合は、テストの注文データの形が実際とず�
 - 出荷中止のあとに、同じ取消の結果がもう一度届いたときのテストを加える（4 章の 4）。
 - 単体テストの 19 クラス：値が空かどうかで動きが分かれる処理（`CaptureShipmentPolicy`、`PaymentService.validateSingleActivePayment`、`PaymentPurposeResolver`）について、値が入った場合のテストがあるかを確かめ、ないものだけ加える。
 
+
+## 7. 147-B の結果（2026-11-28）
+
+6.3 の範囲を承認いただき、`feature/147-b-active-payment-fixtures` で実装した。本体のコードは変えていない（テストだけ）。
+
+### 7.1 変えたこと
+
+- テストの注文データ（19 クラス）：決済を保存した直後に `order.bindActivePayment(payment)` を呼び、チェックアウトと同じく有効な決済を持つ形にした。
+  - `CaptureShipmentFlowPostgresTest`、`CaptureShipmentPolicyPostgresTest`：決済を作って紐づけてから、発送準備を始める順にした。
+  - `AdminOrderShippingPreparationSecurityPostgresTest`、`PaymentReconciliationFairnessPostgresTest`：後片付けで、決済を消す前に有効な決済を外すようにした。
+  - `PaymentShippingPreparationValidationPostgresTest`：失敗・取消済みの決済ではなく、有効な与信に紐づけた。
+  - `PaymentOperationStartPostgresTest`：共通の注文データだけを変えた。テストの中で、わざと複数の決済を作る異常なデータは、そのままにした。
+- 古い形を意図する 5 クラス：決済を作る箇所に、その旨のコメントを加えた。どのクラスも、古い増額が `ActivePaymentService.initializeForOrderChange` で有効な決済を割り出す経路を通っている。
+- 出荷中止のあとの再適用のテスト（`WarehouseExportPostgresTest.theSameCancellationResultAfterAStopIsAlreadyApplied`）：
+  - 対象は、有効な決済が入った注文と、古い形（空）の注文の 2 つ。
+  - 結果が分からないまま出荷中止を始め、そのときの操作の写しを取っておく。そのあと Webhook で中止を完了させる。
+  - 同じ結果を 4 つの入口から届ける。
+    - 古い写しでの同期（照合処理と並んだ場合）：ALREADY_APPLIED
+    - 結果の直接の反映：ALREADY_APPLIED
+    - Webhook がもう一度届く：SKIPPED
+    - 管理画面の再確認：ALREADY_CANCELLED
+  - 注文・決済・決済の操作・出荷中止・状態の履歴・在庫の動き・お客様への通知は、どれも変わらない。照合のずれも記録されない。
+- 単体テスト（3 か所とも、値が入った場合のテストがなかったので加えた）
+  - `CaptureShipmentPolicyTest`：値が入った注文で、NEW・CONTINUE・ALREADY_APPLIED が正しく判定される。別の決済を指していれば INVALID_PAYMENT になる。
+  - `PaymentServiceTest`：値が入った注文は、取消を始められる。別の決済を指していれば「有効な決済が一意でない」で止まり、何も保存しない。
+  - `PaymentPurposeResolverTest`：取消済みの注文が有効な決済を指したまま（146-C の出荷中止のあとの形）でも、決まった取消は再適用できる。別の決済を指していれば再適用しない。
+
+### 7.2 テスト
+
+- 変えたクラス：28 クラス、701 件すべて PASS。
+- 守りを外した確認（写しの中で本体を変えて流す）：5 通りすべてで、テストが失敗して検出された。
+  - 取消済みで有効な決済を持つ注文の再適用を拒む：`theSameCancellationResultAfterAStopIsAlreadyApplied` が失敗。
+  - 再適用の判定で、別の決済を指す場合の確認を外す：`PaymentPurposeResolverTest` の追加テストが失敗。
+  - 古い形の注文の再適用の扱いを外す：既存の `PaymentPurposeResolverTest` のテストが失敗。今回加えた DB のテストの古い形の部分は、これでは失敗しなかった。理由は確かめていない（後ろの再適用の判定だけで同じ結果になっていると見られる）。
+  - 売上確定の判定で、別の決済を指す場合の確認を外す：`CaptureShipmentPolicyTest` の追加テスト（3 件）が失敗。
+  - 決済の一意の確認で、別の決済を指す場合を外す：`PaymentServiceTest` の追加テストが失敗。
+- 回帰テスト：有効な決済・再適用の判定・売上確定の判定・出荷中止に関わるテストを grep で選んだ 40 クラス（今回変えたクラスを除く）、1310 件すべて PASS（スキップなし）。
+  - 1 回目は、共有のテスト用 DB で流すべき 11 クラスを、専用のコンテナで流す計画に入れていたため、起動前に止められた。同じまとまりにいた 1 クラスも止まった。この 12 クラスを正しい方式で流し直して PASS した。
+- 本体を変えていないので、アプリの再起動やブラウザでの確認は要らない。

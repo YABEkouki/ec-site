@@ -107,6 +107,9 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 // Feature136 emergency shipping records are append-only (V97); keep the order with them.
                 if (jdbc.queryForObject("select count(*) from emergency_shipping_preparations where order_id=?",Integer.class,id)>0) continue;
                 jdbc.update("update orders set shipment_capture_payment_id=null where id=?", id);
+                // Feature147: release the active payment before deleting it (fk_orders_active_payment_owner);
+                // V98 freezes it on a prepared order, and those orders are kept above with their emergency record.
+                jdbc.update("update orders set active_payment_id=null where id=? and shipping_preparation_started_at is null", id);
                 jdbc.update("delete from payment_transactions where payment_id in (select id from payments where order_id=?)", id);
                 jdbc.update("delete from payments where order_id=?", id);
                 jdbc.update("delete from order_status_histories where order_id=?", id);
@@ -133,6 +136,8 @@ class AdminOrderShippingPreparationSecurityPostgresTest {
                 Payment payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 100, now);
                 payment.setProviderPaymentId("pfw_ui_" + UUID.randomUUID(), now); payment.markAuthorized(now);
                 payments.saveAndFlush(payment);
+                // Feature147: checkout binds the authorization as the order's active payment at once.
+                order.bindActivePayment(payment); orders.saveAndFlush(order);
                 PaymentTransaction authorization = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE,
                         100, 0, UUID.randomUUID().toString(), now);
                 authorization.markSucceeded(payment.getProviderPaymentId(), now); transactions.saveAndFlush(authorization);

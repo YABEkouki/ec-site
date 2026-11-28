@@ -212,6 +212,8 @@ class PaymentDiscrepancyAuditServicePostgresTest {
             var o=orders.saveAndFlush(new Order(u.getId(),1000,CREATED,CREATED.plusHours(4)));
             var p=new Payment(o,PaymentProvider.PAYJP,PaymentMethod.CARD,1000,CREATED);
             p.setProviderPaymentId("pfw_"+unique,CREATED); p.markAuthorized(CREATED); payments.saveAndFlush(p);
+            // Feature147: checkout binds the authorization as the order's active payment at once.
+            o.bindActivePayment(p); orders.saveAndFlush(o);
             var t=new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,1000,0,unique,CREATED);
             t.markSucceeded("txn_"+unique,CREATED); transactions.saveAndFlush(t);
             var d=discrepancies.saveAndFlush(new PaymentDiscrepancy(p,PaymentStatus.AUTHORIZED,PaymentFlowStatus.SUCCEEDED,CREATED));

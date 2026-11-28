@@ -59,6 +59,8 @@ class CaptureRequestStorePostgresTest {
         var order=new Order(u.getId(),5500,now,now.plusHours(1));orders.saveAndFlush(order);
         var payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,6500,now);
         payment.setProviderPaymentId("pfw_"+suffix,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
+        // Feature147: checkout binds the authorization as the order's active payment at once.
+        order.bindActivePayment(payment);orders.saveAndFlush(order);
         var capture=new PaymentTransaction(payment,PaymentTransactionType.CAPTURE,5500,0,"capture-"+suffix,now);
         transactions.saveAndFlush(capture);
         var request=CaptureHttpRequest.create(new CaptureConnectionIdentity("primary","merchant","TEST","https://api.pay.jp"),payment.getProviderPaymentId(),5500,capture.getIdempotencyKey());

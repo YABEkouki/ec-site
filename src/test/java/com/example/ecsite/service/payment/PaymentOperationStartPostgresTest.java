@@ -313,6 +313,8 @@ class PaymentOperationStartPostgresTest {
             if (!authorized) return new Fixture(o, null, null);
             Payment p = new Payment(o, PaymentProvider.PAYJP, PaymentMethod.CARD, 1000, now);
             String provider = "pfw_" + id; p.setProviderPaymentId(provider, now); p.markAuthorized(now); payments.saveAndFlush(p);
+            // Feature147: checkout binds the authorization as the order's active payment at once.
+            o.bindActivePayment(p); orders.saveAndFlush(o);
             PaymentTransaction t = new PaymentTransaction(p, PaymentTransactionType.AUTHORIZE, 1000, 0, id, now); t.markSucceeded(provider, now); transactions.saveAndFlush(t);
             return new Fixture(o, p.getId(), provider);
         });
