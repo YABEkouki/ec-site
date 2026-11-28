@@ -1291,6 +1291,59 @@ class WarehouseExportPostgresTest {
         assertThat(orderRow(f.order()).get("active_payment_id")).isNull();
     }
 
+    /**
+     * Feature147: after a stop completes, the same cancellation result delivered again (a reconciliation or webhook that
+     * read the operation before the completion, a later webhook, the recheck) is already applied and changes nothing,
+     * for an order bound to its active payment and for a legacy order without one.
+     */
+    @Test void theSameCancellationResultAfterAStopIsAlreadyApplied() {
+        var admin = stopper();
+        var bound = preparedValid();
+        var legacy = card(nextBusinessDate());
+        jdbc.update("update orders set active_payment_id=null where id=?", legacy.order());
+        adminPrepare(legacy.order());
+        var snapshots = context.getBean(com.example.ecsite.service.payment.PaymentOperationSnapshotService.class);
+        var webhook = context.getBean(com.example.ecsite.service.payment.PayJpWebhookCancellationSyncService.class);
+        var sync = context.getBean(com.example.ecsite.service.payment.PaymentOperationSyncService.class);
+        var results = context.getBean(com.example.ecsite.service.payment.AdminPaymentCancellationResultService.class);
+        cancelPostUnknown();
+        for (var f : List.of(bound, legacy)) {
+            assertThat(shippingStops.stop(f.order(), admin.id(), admin.username(), "破損", true))
+                    .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.REQUESTED);
+            var stale = snapshots.pendingForProvider(flow(f), PaymentTransactionType.CANCEL).orElseThrow();
+            stubFlow(f, com.example.ecsite.payment.PaymentFlowStatus.CANCELED);
+            assertThat(webhook.synchronize(flow(f))).isEqualTo(com.example.ecsite.service.payment.PaymentSynchronizationOutcome.APPLIED);
+            assertCancelled(f, "ADMIN");
+            assertThat(stopRow(f)).containsEntry("status", "COMPLETED");
+            assertThat(orderRow(f.order()).get("active_payment_id")).isEqualTo(f == bound ? f.payment() : null);
+            var before = stopState(f);
+
+            assertThat(sync.synchronize(stale)).isEqualTo(com.example.ecsite.service.payment.PaymentSynchronizationOutcome.ALREADY_APPLIED);
+            assertThat(results.apply(stale, new com.example.ecsite.payment.CancellationResult(
+                    com.example.ecsite.payment.CancellationResultStatus.CANCELLED, flow(f))))
+                    .isEqualTo(com.example.ecsite.service.payment.PaymentResultApplication.ALREADY_APPLIED);
+            assertThat(webhook.synchronize(flow(f))).isEqualTo(com.example.ecsite.service.payment.PaymentSynchronizationOutcome.SKIPPED);
+            assertThat(shippingStops.recheck(f.order(), admin.id()))
+                    .isEqualTo(com.example.ecsite.service.shippingstop.ShippingStopService.Outcome.ALREADY_CANCELLED);
+
+            assertThat(stopState(f)).isEqualTo(before);
+            assertThat(jdbc.queryForObject("select count(*) from payment_discrepancies where payment_id=?", Integer.class, f.payment())).isZero();
+        }
+    }
+
+    Map<String, Object> stopState(Fixture f) {
+        var state = new LinkedHashMap<String, Object>();
+        state.put("order", orderRow(f.order()));
+        state.put("payments", jdbc.queryForList("select * from payments where order_id=? order by id", f.order()));
+        state.put("transactions", jdbc.queryForList(
+                "select t.* from payment_transactions t join payments p on p.id=t.payment_id where p.order_id=? order by t.id", f.order()));
+        for (String table : List.of("order_shipping_stops", "order_status_histories", "stock_movements"))
+            state.put(table, jdbc.queryForList("select * from " + table + " where order_id=? order by id", f.order()));
+        state.put("notifications", jdbc.queryForList(
+                "select event_type from customer_order_notifications where order_id=? order by id", f.order()));
+        return state;
+    }
+
     void cancelPostUnknown() {
         org.mockito.Mockito.when(gateway.cancelAuthorization(org.mockito.ArgumentMatchers.any())).thenThrow(new com.example.ecsite.payment.PaymentGatewayException(
                 com.example.ecsite.payment.PaymentGatewayErrorCategory.TRANSPORT_RESULT_UNKNOWN, null, null, true));

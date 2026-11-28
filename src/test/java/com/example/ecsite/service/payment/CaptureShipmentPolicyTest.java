@@ -84,6 +84,19 @@ class CaptureShipmentPolicyTest {
         ReflectionTestUtils.setField(auth,"status",PaymentTransactionStatus.PENDING);
         assertThat(policy.classify(order,payments,transactions,null,Set.of(),Set.of(aborted)).disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.RECOVERY_REQUIRED);
     }
+    /**
+     * Feature147: as at checkout, the order points at its authorization, and each stage is classified as for a legacy
+     * order; a pointer to another payment fails closed. (Bound by reflection: the fixture's preparation is frozen.)
+     */
+    @ParameterizedTest @ValueSource(strings={"NEW","CONTINUE","ALREADY_APPLIED"})
+    void anOrderBoundToItsAuthorizationIsClassifiedAndAnotherPaymentFailsClosed(String stage) {
+        switch(stage) { case "NEW" -> setupNew(); case "CONTINUE" -> setupShipped(false); default -> setupShipped(true); }
+        ReflectionTestUtils.setField(order,"activePaymentId",52L);
+        assertThat(classify().disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.valueOf(stage));
+        ReflectionTestUtils.setField(order,"activePaymentId",53L);
+        assertThat(classify().reason()).isEqualTo(CaptureShipmentPolicy.Reason.INVALID_PAYMENT);
+        recovery();
+    }
     @Test void newAuthorizationIsEligibleAndReturnsPersistedPaymentId() {
         setupNew(); var result=classify(); assertThat(result.disposition()).isEqualTo(CaptureShipmentPolicy.Disposition.NEW);
         assertThat(result.paymentId()).isEqualTo(52L); assertThat(result.captureTransactionId()).isNull();

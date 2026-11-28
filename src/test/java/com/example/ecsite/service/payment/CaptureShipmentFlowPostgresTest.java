@@ -86,9 +86,11 @@ class CaptureShipmentFlowPostgresTest {
             Order order=new Order(user.getId(),200,ordered,ordered.withHour(14));
             order.addItem(new OrderItem(product.getId(),product.getName(),cat.getId(),cat.getName(),tax.getId(),tax.getCode(),tax.getName(),tax.getTaxRate(),100,2));orders.saveAndFlush(order);
             beforePreparation.accept(order);orders.saveAndFlush(order);
-            com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,ordered.withHour(14));orders.saveAndFlush(order);
+            // Feature147: as at checkout, the authorization exists and is the active payment before the preparation.
             Payment payment=new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,200,now);payment.setProviderPaymentId("pfw_flow_"+unique,now);payment.markAuthorized(now);payments.saveAndFlush(payment);
+            order.bindActivePayment(payment);orders.saveAndFlush(order);
             var auth=new PaymentTransaction(payment,PaymentTransactionType.AUTHORIZE,200,0,unique,now);auth.markSucceeded(payment.getProviderPaymentId(),now);transactions.saveAndFlush(auth);
+            com.example.ecsite.support.EmergencyShippingFixtures.begin(jdbc,order,com.example.ecsite.support.EmergencyShippingFixtures.PREPARER,ordered.withHour(14));orders.saveAndFlush(order);
             return new Fixture(order.getId(),payment.getId(),product.getId(),payment.getProviderPaymentId());
         });
     }

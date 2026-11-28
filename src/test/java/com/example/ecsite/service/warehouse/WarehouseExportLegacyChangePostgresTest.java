@@ -57,6 +57,8 @@ class WarehouseExportLegacyChangePostgresTest {
                     tax.getTaxRate(), 10));
             orders.saveAndFlush(order);
             histories.record(order, null, OrderStatus.ORDERED, OrderStatusHistoryActorType.USER, user.getId(), user.getUsername(), null);
+            // Feature147: on purpose, this legacy fixture leaves the order without an active payment (like orders before V55),
+            // so the legacy increase also covers ActivePaymentService.initializeForOrderChange setting it.
             var payment = new Payment(order, PaymentProvider.PAYJP, PaymentMethod.CARD, 750, now);
             payment.setProviderPaymentId("pfw_" + key, now); payment.markAuthorized(now); payments.saveAndFlush(payment);
             var auth = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, 750, 0, key, now,

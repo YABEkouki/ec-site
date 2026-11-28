@@ -824,6 +824,46 @@ class PaymentServiceTest {
         assertEquals(PaymentStartDisposition.NEW, result.disposition());
     }
 
+    /** Feature147: an order bound to its authorization (as at checkout) starts the cancellation. */
+    @Test
+    void startCancellationAcceptsAnOrderBoundToItsAuthorization() {
+        Order order = boundCancellationOrder(77L);
+        PaymentCancellationStart result = paymentService.startCancellation(order, TEST_INITIATOR);
+        assertEquals(PaymentStartDisposition.NEW, result.disposition());
+        assertEquals("pf_test_123", result.providerPaymentId());
+        verify(paymentTransactionRepository).save(any(PaymentTransaction.class));
+    }
+
+    /** Feature147: an active payment pointing at another payment is never cancelled through this one. */
+    @Test
+    void startCancellationRejectsAnOrderBoundToAnotherPayment() {
+        Order order = boundCancellationOrder(78L);
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> paymentService.startCancellation(order, TEST_INITIATOR));
+        assertEquals("有効な決済が一意でないため、決済操作を開始できません。", failure.getMessage());
+        verify(paymentTransactionRepository, never()).save(any(PaymentTransaction.class));
+    }
+
+    /** An ORDERED order with one authorized payment (ID 77) whose active payment is {@code activePaymentId}. */
+    private Order boundCancellationOrder(long activePaymentId) {
+        Order order = legacyOrder();
+        when(order.getId()).thenReturn(100L);
+        when(order.getContentRevision()).thenReturn(3);
+        when(order.getTotalAmount()).thenReturn(12_345);
+        when(order.getStatus()).thenReturn(com.example.ecsite.entity.OrderStatus.ORDERED);
+        when(order.getActivePaymentId()).thenReturn(activePaymentId);
+        Payment payment = createPayment(order);
+        org.springframework.test.util.ReflectionTestUtils.setField(payment, "id", 77L);
+        payment.setProviderPaymentId("pf_test_123", LocalDateTime.of(2026, 10, 1, 9, 10));
+        payment.markAuthorized(LocalDateTime.of(2026, 10, 1, 9, 20));
+        when(paymentRepository.findByOrderIdForUpdate(100L)).thenReturn(List.of(payment));
+        when(paymentTransactionRepository.findByPaymentIdAndTransactionTypeAndStatus(
+                77L, PaymentTransactionType.CANCEL, PaymentTransactionStatus.PENDING)).thenReturn(Optional.empty());
+        savedCancellationJoinsAuthorization(payment);
+        when(orderModificationGuard.requireAllowed(order)).thenReturn(LocalDateTime.of(2026, 10, 1, 10, 7));
+        return order;
+    }
+
     /** The stored history the pre-send check reads: the authorization, then the cancellation being started. */
     private void savedCancellationJoinsAuthorization(Payment payment) {
         var authorization = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE, 12_345, 3,

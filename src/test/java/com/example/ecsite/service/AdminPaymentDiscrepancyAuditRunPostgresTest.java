@@ -309,6 +309,8 @@ class AdminPaymentDiscrepancyAuditRunPostgresTest {
         user.setCreatedAt(first);user.setUpdatedAt(first);users.saveAndFlush(user);
         var order=orders.saveAndFlush(new com.example.ecsite.entity.Order(user.getId(),1000,first,first.plusHours(4)));
         var payment=payments.saveAndFlush(new Payment(order,PaymentProvider.PAYJP,PaymentMethod.CARD,1000,first));
+        // Feature147: checkout binds the payment as the order's active payment at once.
+        order.bindActivePayment(payment);orders.saveAndFlush(order);
         var d=new PaymentDiscrepancy(payment,PaymentStatus.AUTHORIZED,PaymentFlowStatus.SUCCEEDED,first);
         d.changeHandlingStatus(handling,first); if(resolved)d.resolve(first.plusHours(1));discrepancies.saveAndFlush(d);
     }

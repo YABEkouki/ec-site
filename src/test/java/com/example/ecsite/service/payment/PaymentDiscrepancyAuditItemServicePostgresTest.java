@@ -323,6 +323,9 @@ class PaymentDiscrepancyAuditItemServicePostgresTest {
                 payment.markAuthorized(CREATED_AT);
             }
             payments.saveAndFlush(payment);
+            // Feature147: checkout binds the payment as the order's active payment at once.
+            order.bindActivePayment(payment);
+            orders.saveAndFlush(order);
             PaymentTransaction transaction = new PaymentTransaction(payment, PaymentTransactionType.AUTHORIZE,
                     1000, 0, unique, CREATED_AT);
             if (!pending) {

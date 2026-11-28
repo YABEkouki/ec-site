@@ -101,6 +101,26 @@ class PaymentPurposeResolverTest {
         ReflectionTestUtils.setField(order,"status",OrderStatus.ORDERED);
         assertFalse(resolver.matches(order,p,cancel,snapshot,List.of(p),List.of(auth,cancel),java.util.Set.of(change)));
     }
+    /**
+     * Feature147: a stopped order (Feature146-C) stays CANCELLED and keeps its active payment; the exact settled
+     * cancellation still replays, as it does after a normal cancellation clears the binding, but never for another payment.
+     */
+    @Test void exactTerminalCancellationReplaysWhileTheCancelledOrderKeepsItsActivePayment() {
+        var p=payment();p.setProviderPaymentId("pfw_stop",now);p.markAuthorized(now);order.bindActivePayment(p);
+        var auth=new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,100,0,"auth",now);
+        ReflectionTestUtils.setField(auth,"id",30L);auth.markSucceeded("pfw_stop",now);
+        var cancel=new PaymentTransaction(p,PaymentTransactionType.CANCEL,100,0,"stop-cancel",now,
+                new PaymentTransactionInitiator(PaymentTransactionInitiatorType.ADMIN,1L,"admin",null),PaymentTransactionPurpose.ORDER_CANCELLATION);
+        ReflectionTestUtils.setField(cancel,"id",31L);var snapshot=PaymentOperationSnapshot.from(cancel);
+        cancel.markSucceeded("pfw_stop",now);p.markCancelled(now);
+        ReflectionTestUtils.setField(order,"status",OrderStatus.CANCELLED);
+        assertEquals(p.getId(),order.getActivePaymentId());
+        assertTrue(resolver.matches(order,p,cancel,snapshot,List.of(p),List.of(auth,cancel)));
+        ReflectionTestUtils.setField(order,"activePaymentId",null);
+        assertTrue(resolver.matches(order,p,cancel,snapshot,List.of(p),List.of(auth,cancel)));
+        ReflectionTestUtils.setField(order,"activePaymentId",99L);
+        assertFalse(resolver.matches(order,p,cancel,snapshot,List.of(p),List.of(auth,cancel)));
+    }
     @Test void staleCancellationIdentityRejectsContradictorySupportingCapture() {
         var p=payment();p.setProviderPaymentId("flow",now);p.markAuthorized(now);
         var auth=new PaymentTransaction(p,PaymentTransactionType.AUTHORIZE,100,0,"auth",now);
